@@ -1,0 +1,22 @@
+ID:
+  demo
+CONTEXT:
+  c1: World {
+        pos: Pose,          // Pose(of=ee, wrt=root, asb=[root])
+        vel: VelocityTwist  // VelocityTwist(of=ee.origin, wrt=root.origin, asb=[root])
+    }
+  c2: Pre {
+        height_max: Position = 100 cm
+    }
+  c3: Spec {
+        vel_set: LinearVelocity = 0.1 m/s
+    }
+  c4: Post {
+        dist_max: Distance = 0 cm
+    }
+WHEN:
+  we1: pos.linear.z greater than Pre[height_max]
+WHILE:
+  wi1: vel.linear.z equal to Spec[vel_set]
+UNTIL:
+  u1: pos.linear.z less than Post[dist_max]
