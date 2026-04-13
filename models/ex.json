@@ -1,0 +1,711 @@
+{
+  "@context": [
+    "https://comp-rob2b.github.io/metamodels/task/map.json",
+    "https://comp-rob2b.github.io/metamodels/task/solver-specification.json",
+    {
+      "@base": "https://secorolab.github.io/models/generated/",
+      "app": "https://secorolab.github.io/models/generated/",
+      "cstr": "https://comp-rob2b.github.io/metamodels/task/constraint#",
+      "cstr-hdl": "https://comp-rob2b.github.io/metamodels/task/constraint-handler#",
+      "geom-coord": "https://comp-rob2b.github.io/metamodels/geometry/coordinates#",
+      "geom-ent": "https://comp-rob2b.github.io/metamodels/geometry/structural-entities#",
+      "geom-rel": "https://comp-rob2b.github.io/metamodels/geometry/spatial-relations#",
+      "mot": "https://comp-rob2b.github.io/metamodels/task/motion-specification#",
+      "qkind": "http://qudt.org/vocab/quantitykind/",
+      "qudt": "http://qudt.org/schema/qudt/",
+      "rbdyn-coord": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/coordinates#",
+      "rbdyn-ent": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/structural-entities#",
+      "unit": "http://qudt.org/vocab/unit/"
+    }
+  ],
+  "@graph": [
+    {
+      "@id": "app:linvel-ee-y",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:LinearVelocity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:eacc-ee-lin-y-move",
+      "@type": [
+        "qudt:Quantity",
+        "AccelerationEnergy"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "AccelerationEnergy"
+      },
+      "qudt:unit": {
+        "@id": "N-M2-PER-SEC2"
+      }
+    },
+    {
+      "@id": "app:twist-ee-base",
+      "@type": [
+        "geom-coord:VectorXYZ",
+        "geom-coord:VelocityTwistCoordinate",
+        "geom-rel:VelocityTwist"
+      ],
+      "geom-coord:as-seen-by": {
+        "@id": "app:frame-base"
+      },
+      "geom-rel:of": {
+        "@id": "app:link-ee"
+      },
+      "geom-rel:reference-point": {
+        "@id": "app:point-ee-origin"
+      },
+      "geom-rel:with-respect-to": {
+        "@id": "app:link-base"
+      },
+      "qudt:quantity-kind": [
+        {
+          "@id": "qkind:LinearVelocity"
+        },
+        {
+          "@id": "qkind:AngularVelocity"
+        }
+      ],
+      "qudt:unit": [
+        {
+          "@id": "unit:RAD-PER-SEC"
+        },
+        {
+          "@id": "unit:M-PER-SEC"
+        }
+      ]
+    },
+    {
+      "@id": "app:linvel-ee-z",
+      "@type": [
+        "qkind:LinearVelocity",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:mon-contact",
+      "@type": [
+        "cstr-hdl:EdgeTriggeredMonitor",
+        "cstr-hdl:Monitor"
+      ],
+      "cstr-hdl:error": {
+        "@id": "app:u1-err"
+      },
+      "cstr-hdl:event": {
+        "@id": "app:evt-u1"
+      }
+    },
+    {
+      "@id": "app:view-linvel-ee-z",
+      "@type": [
+        "VelocityTwistCoordinateView",
+        "View"
+      ],
+      "map:axis": {
+        "@id": "map:z"
+      },
+      "map:subobject": {
+        "@id": "app:linvel-ee-z"
+      },
+      "map:subspace": {
+        "@id": "map:linear-velocity"
+      },
+      "map:superobject": {
+        "@id": "app:twist-ee-base"
+      }
+    },
+    {
+      "@id": "app:vel-z-down",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:LinearVelocity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      },
+      "qudt:value": "-0.05"
+    },
+    {
+      "@id": "app:acc-cstr-ee-lin-z-move",
+      "@type": [
+        "AccelerationConstraint",
+        "AxisAligned"
+      ],
+      "slv:acceleration-energy": {
+        "@id": "app:eacc-ee-lin-z-move"
+      },
+      "slv:axis": {
+        "@id": "slv:z"
+      },
+      "slv:subspace": {
+        "@id": "slv:linear-acceleration"
+      }
+    },
+    {
+      "@id": "app:vel-zero",
+      "@type": [
+        "qkind:LinearVelocity",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      },
+      "qudt:value": "0.0"
+    },
+    {
+      "@id": "app:eval-wi1",
+      "@type": [
+        "cstr-hdl:ConstraintEvaluator",
+        "cstr-hdl:ErrorEvaluator"
+      ],
+      "cstr-hdl:constraint": {
+        "@id": "app:wi1"
+      },
+      "cstr-hdl:error": {
+        "@id": "app:linvel-ee-z-err-move"
+      }
+    },
+    {
+      "@id": "app:eacc-ee-lin-x-move",
+      "@type": [
+        "AccelerationEnergy",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "AccelerationEnergy"
+      },
+      "qudt:unit": {
+        "@id": "N-M2-PER-SEC2"
+      }
+    },
+    {
+      "@id": "app:handler-move",
+      "@type": "cstr-hdl:ConstraintHandler",
+      "cstr-hdl:controllers": [
+        {
+          "@id": "app:ctrl-vel-y"
+        },
+        {
+          "@id": "app:ctrl-vel-x"
+        },
+        {
+          "@id": "app:ctrl-vel-z"
+        }
+      ],
+      "cstr-hdl:evaluators": [
+        {
+          "@id": "app:eval-wi2"
+        },
+        {
+          "@id": "app:eval-u1"
+        },
+        {
+          "@id": "app:eval-wi1"
+        },
+        {
+          "@id": "app:eval-wi3"
+        }
+      ],
+      "cstr-hdl:monitors": {
+        "@id": "app:mon-contact"
+      },
+      "cstr-hdl:motion": {
+        "@id": "app:motion-move"
+      }
+    },
+    {
+      "@id": "app:wi3",
+      "@type": [
+        "cstr:Constraint",
+        "cstr:EqualityConstraint",
+        "cstr:LinearVelocityConstraint"
+      ],
+      "cstr:quantity": {
+        "@id": "app:linvel-ee-y"
+      },
+      "cstr:reference-value": {
+        "@id": "app:vel-zero"
+      }
+    },
+    {
+      "@id": "app:earth-uniform-gravitational-field",
+      "@type": "geom-ent:UniformGravitationalField"
+    },
+    {
+      "@id": "app:chain-arm",
+      "@type": "geom-ent:KinematicChain"
+    },
+    {
+      "@id": "app:motion-move",
+      "@type": "mot:GuardedMotion",
+      "mot:until": {
+        "@id": "app:u1"
+      },
+      "mot:while": [
+        {
+          "@id": "app:wi2"
+        },
+        {
+          "@id": "app:wi3"
+        },
+        {
+          "@id": "app:wi1"
+        }
+      ]
+    },
+    {
+      "@id": "app:wrench-ee-ee",
+      "@type": [
+        "rbdyn-coord:WrenchCoordinate",
+        "geom-coord:VectorXYZ",
+        "rbdyn-ent:Wrench"
+      ],
+      "geom-coord:as-seen-by": {
+        "@id": "app:frame-ee"
+      },
+      "geom-rel:reference-point": {
+        "@id": "app:point-ee-origin"
+      },
+      "qudt:quantity-kind": [
+        {
+          "@id": "qkind:Force"
+        },
+        {
+          "@id": "qkind:Torque"
+        }
+      ],
+      "qudt:unit": [
+        {
+          "@id": "unit:N"
+        },
+        {
+          "@id": "unit:N-M"
+        }
+      ]
+    },
+    {
+      "@id": "app:link-ee",
+      "@type": "geom-ent:SimplicialComplex"
+    },
+    {
+      "@id": "app:frame-base",
+      "@type": "geom-ent:Frame"
+    },
+    {
+      "@id": "app:view-linvel-ee-y",
+      "@type": [
+        "VelocityTwistCoordinateView",
+        "View"
+      ],
+      "map:axis": {
+        "@id": "map:y"
+      },
+      "map:subobject": {
+        "@id": "app:linvel-ee-y"
+      },
+      "map:subspace": {
+        "@id": "map:linear-velocity"
+      },
+      "map:superobject": {
+        "@id": "app:twist-ee-base"
+      }
+    },
+    {
+      "@id": "app:acc-cstr-ee-lin-y-move",
+      "@type": [
+        "AccelerationConstraint",
+        "AxisAligned"
+      ],
+      "slv:acceleration-energy": {
+        "@id": "app:eacc-ee-lin-y-move"
+      },
+      "slv:axis": {
+        "@id": "slv:y"
+      },
+      "slv:subspace": {
+        "@id": "slv:linear-acceleration"
+      }
+    },
+    {
+      "@id": "app:acc-cstr-ee-lin-x-move",
+      "@type": [
+        "AccelerationConstraint",
+        "AxisAligned"
+      ],
+      "slv:acceleration-energy": {
+        "@id": "app:eacc-ee-lin-x-move"
+      },
+      "slv:axis": {
+        "@id": "slv:x"
+      },
+      "slv:subspace": {
+        "@id": "slv:linear-acceleration"
+      }
+    },
+    {
+      "@id": "app:slv-arm",
+      "@type": "SolverWithInputAndOutput",
+      "slv:gravity": {
+        "@id": "app:earth-uniform-gravitational-field"
+      },
+      "slv:kinematic-chain": {
+        "@id": "app:chain-arm"
+      },
+      "slv:motion-drivers": {
+        "@id": "app:drv-arm-move"
+      },
+      "slv:output": [
+        {
+          "@id": "app:wrench-ee-ee"
+        },
+        {
+          "@id": "app:twist-ee-base"
+        }
+      ],
+      "slv:root": {
+        "@id": "app:frame-base"
+      },
+      "slv:solver": {
+        "@id": "slv:AccelerationConstrainedHybridDynamicsAlgorithm"
+      }
+    },
+    {
+      "@id": "app:spec-acc-ee-move",
+      "@type": "AccelerationConstraintSpecification",
+      "slv:attached-to": {
+        "@id": "app:link-ee"
+      },
+      "slv:constraints": [
+        {
+          "@id": "app:acc-cstr-ee-lin-x-move"
+        },
+        {
+          "@id": "app:acc-cstr-ee-lin-y-move"
+        },
+        {
+          "@id": "app:acc-cstr-ee-lin-z-move"
+        }
+      ]
+    },
+    {
+      "@id": "app:ctrl-vel-x",
+      "@type": [
+        "cstr-hdl:Controller",
+        "cstr-hdl:ProportionalIntegralDerivative"
+      ],
+      "cstr-hdl:control-signal": {
+        "@id": "app:eacc-ee-lin-x-move"
+      },
+      "cstr-hdl:derivative-gain": "1.0",
+      "cstr-hdl:error-signal": {
+        "@id": "app:linvel-ee-x-err-move"
+      },
+      "cstr-hdl:integral-gain": "1.0",
+      "cstr-hdl:proportional-gain": "5.0"
+    },
+    {
+      "@id": "app:linvel-ee-y-err-move",
+      "@type": [
+        "qkind:LinearVelocity",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:u1",
+      "@type": [
+        "cstr:UnilateralConstraint",
+        "cstr:Constraint",
+        "cstr:ForceConstraint",
+        "cstr:GreaterThanConstraint"
+      ],
+      "cstr:quantity": {
+        "@id": "app:force-ee-z"
+      },
+      "cstr:threshold": {
+        "@id": "app:force-contact"
+      }
+    },
+    {
+      "@id": "app:view-linvel-ee-x",
+      "@type": [
+        "View",
+        "VelocityTwistCoordinateView"
+      ],
+      "map:axis": {
+        "@id": "map:x"
+      },
+      "map:subobject": {
+        "@id": "app:linvel-ee-x"
+      },
+      "map:subspace": {
+        "@id": "map:linear-velocity"
+      },
+      "map:superobject": {
+        "@id": "app:twist-ee-base"
+      }
+    },
+    {
+      "@id": "app:linvel-ee-x",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:LinearVelocity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:force-ee-z",
+      "@type": [
+        "qkind:Force",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:Force"
+      },
+      "qudt:unit": {
+        "@id": "unit:N"
+      }
+    },
+    {
+      "@id": "app:wi1",
+      "@type": [
+        "cstr:EqualityConstraint",
+        "cstr:Constraint",
+        "cstr:LinearVelocityConstraint"
+      ],
+      "cstr:quantity": {
+        "@id": "app:linvel-ee-z"
+      },
+      "cstr:reference-value": {
+        "@id": "app:vel-z-down"
+      }
+    },
+    {
+      "@id": "app:link-base",
+      "@type": "geom-ent:SimplicialComplex"
+    },
+    {
+      "@id": "app:view-force-ee-z",
+      "@type": [
+        "WrenchCoordinateView",
+        "View"
+      ],
+      "map:axis": {
+        "@id": "map:z"
+      },
+      "map:subobject": {
+        "@id": "app:force-ee-z"
+      },
+      "map:subspace": {
+        "@id": "map:force"
+      },
+      "map:superobject": {
+        "@id": "app:wrench-ee-ee"
+      }
+    },
+    {
+      "@id": "app:drv-arm-move",
+      "@type": "MotionDrivers",
+      "slv:acceleration-constraint": {
+        "@id": "app:spec-acc-ee-move"
+      },
+      "slv:prioritization-hierarchy": {
+        "@id": "app:prio-move"
+      }
+    },
+    {
+      "@id": "app:ctrl-vel-y",
+      "@type": [
+        "cstr-hdl:ProportionalIntegralDerivative",
+        "cstr-hdl:Controller"
+      ],
+      "cstr-hdl:control-signal": {
+        "@id": "app:eacc-ee-lin-y-move"
+      },
+      "cstr-hdl:derivative-gain": "1.0",
+      "cstr-hdl:error-signal": {
+        "@id": "app:linvel-ee-y-err-move"
+      },
+      "cstr-hdl:integral-gain": "1.0",
+      "cstr-hdl:proportional-gain": "5.0"
+    },
+    {
+      "@id": "app:linvel-ee-z-err-move",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:LinearVelocity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:wi2",
+      "@type": [
+        "cstr:EqualityConstraint",
+        "cstr:LinearVelocityConstraint",
+        "cstr:Constraint"
+      ],
+      "cstr:quantity": {
+        "@id": "app:linvel-ee-x"
+      },
+      "cstr:reference-value": {
+        "@id": "app:vel-zero"
+      }
+    },
+    {
+      "@id": "app:eval-wi2",
+      "@type": [
+        "cstr-hdl:ConstraintEvaluator",
+        "cstr-hdl:ErrorEvaluator"
+      ],
+      "cstr-hdl:constraint": {
+        "@id": "app:wi2"
+      },
+      "cstr-hdl:error": {
+        "@id": "app:linvel-ee-x-err-move"
+      }
+    },
+    {
+      "@id": "app:eacc-ee-lin-z-move",
+      "@type": [
+        "qudt:Quantity",
+        "AccelerationEnergy"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "AccelerationEnergy"
+      },
+      "qudt:unit": {
+        "@id": "N-M2-PER-SEC2"
+      }
+    },
+    {
+      "@id": "app:force-contact",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:Force"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:Force"
+      },
+      "qudt:unit": {
+        "@id": "unit:N"
+      },
+      "qudt:value": "5.0"
+    },
+    {
+      "@id": "app:prio-move",
+      "@type": "PrioritizationLevel",
+      "slv:motion-drivers": {
+        "@id": "app:spec-acc-ee-move"
+      }
+    },
+    {
+      "@id": "app:eval-u1",
+      "@type": [
+        "cstr-hdl:ConstraintEvaluator",
+        "cstr-hdl:ErrorEvaluator"
+      ],
+      "cstr-hdl:constraint": {
+        "@id": "app:u1"
+      },
+      "cstr-hdl:error": {
+        "@id": "app:u1-err"
+      }
+    },
+    {
+      "@id": "app:eval-wi3",
+      "@type": [
+        "cstr-hdl:ConstraintEvaluator",
+        "cstr-hdl:ErrorEvaluator"
+      ],
+      "cstr-hdl:constraint": {
+        "@id": "app:wi3"
+      },
+      "cstr-hdl:error": {
+        "@id": "app:linvel-ee-y-err-move"
+      }
+    },
+    {
+      "@id": "app:u1-err",
+      "@type": [
+        "qudt:Quantity",
+        "qkind:Force"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:Force"
+      },
+      "qudt:unit": {
+        "@id": "unit:N"
+      }
+    },
+    {
+      "@id": "app:ctrl-vel-z",
+      "@type": [
+        "cstr-hdl:Controller",
+        "cstr-hdl:ProportionalIntegralDerivative"
+      ],
+      "cstr-hdl:control-signal": {
+        "@id": "app:eacc-ee-lin-z-move"
+      },
+      "cstr-hdl:derivative-gain": "1.0",
+      "cstr-hdl:error-signal": {
+        "@id": "app:linvel-ee-z-err-move"
+      },
+      "cstr-hdl:integral-gain": "1.0",
+      "cstr-hdl:proportional-gain": "5.0"
+    },
+    {
+      "@id": "app:evt-u1",
+      "@type": "cstr-hdl:Event"
+    },
+    {
+      "@id": "app:linvel-ee-x-err-move",
+      "@type": [
+        "qkind:LinearVelocity",
+        "qudt:Quantity"
+      ],
+      "qudt:quantity-kind": {
+        "@id": "qkind:LinearVelocity"
+      },
+      "qudt:unit": {
+        "@id": "unit:M-PER-SEC"
+      }
+    },
+    {
+      "@id": "app:point-ee-origin",
+      "@type": "geom-ent:Point"
+    }
+  ]
+}

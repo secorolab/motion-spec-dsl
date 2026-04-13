@@ -1,0 +1,170 @@
+ns app = "https://secorolab.github.io/models/demo/"
+
+MOTION_SPEC (ns=app) motion_rightarm {
+    MOVE: "Right arm scenario control for sc1"
+
+    CONTEXT:
+        c1: World {
+            pose-rightarm-platform-shoulder: Pose { of = frame-rightarm-shoulder, wrt = frame-platform },
+            pose-rightarm-platform-ee: Pose { of = frame-rightarm-ee, wrt = frame-platform },
+            twist-rightarm-shoulder-ee-platform: VelocityTwist { of = link-rightarm-ee, wrt = link-rightarm-shoulder, as-seen-by = frame-platform },
+            twist-rightarm-shoulder-ee-shoulder: VelocityTwist { of = link-rightarm-ee, wrt = link-rightarm-shoulder, as-seen-by = frame-rightarm-shoulder },
+            twist-world-platform-rightarm-ee: VelocityTwist { of = link-platform, wrt = link-world, as-seen-by = frame-rightarm-ee },
+            wrench-rightarm-ee-anteroposterior-ee: Wrench { as-seen-by = frame-rightarm-ee, ref-point = point-rightarm-ee-origin },
+            wrench-rightarm-ee-anteroposterior-platform: Wrench { as-seen-by = frame-platform, ref-point = point-rightarm-ee-origin },
+            pose-rightarm-platform-elbow: Pose { of = frame-rightarm-elbow, wrt = frame-platform },
+            pose-rightarm-shoulder-elbow: Pose { of = frame-rightarm-elbow, wrt = frame-rightarm-shoulder },
+            pose-rightarm-shoulder-ee: Pose { of = frame-rightarm-ee, wrt = frame-rightarm-shoulder }
+        }
+        c2: Spec {
+            frc-rightarm-ee-anteroposterior-ref: Force = 20.0 N,
+            linvel-rightarm-shoulder-ee-vertical-ref: LinearVelocity = 0.0 m/s,
+            pos-rightarm-platform-elbow-height-ref: LinearDistance = 0.75 m,
+            angvel-rightarm-shoulder-ee-anteroposterior-ref: AngularVelocity = 0.0 rad/s,
+            angvel-rightarm-shoulder-ee-lateral-ref: AngularVelocity = 0.0 rad/s,
+            linvel-rightarm-world-ee-lateral-ref: LinearVelocity = 0.0 m/s,
+            ang-rightarm-shoulder-ee-vertical-ref: Angle = 0.0 rad,
+            dist-rightarm-shoulder-ee-lower: LinearDistance = 0.68 m,
+            dist-rightarm-shoulder-ee-upper: LinearDistance = 0.72 m
+        }
+
+    WHEN:
+
+    WHILE:
+        cstr-frc-rightarm-ee-anteroposterior: wrench-rightarm-ee-anteroposterior-ee.force.x equal to Spec[frc-rightarm-ee-anteroposterior-ref]
+        cstr-linvel-rightarm-shoulder-ee-vertical: twist-rightarm-shoulder-ee-shoulder.linear.z equal to Spec[linvel-rightarm-shoulder-ee-vertical-ref]
+        cstr-pos-rightarm-platform-elbow-height: pose-rightarm-platform-elbow.distance.z equal to Spec[pos-rightarm-platform-elbow-height-ref]
+        cstr-angvel-rightarm-shoulder-ee-anteroposterior: twist-rightarm-shoulder-ee-shoulder.angular.x equal to Spec[angvel-rightarm-shoulder-ee-anteroposterior-ref]
+        cstr-angvel-rightarm-shoulder-ee-lateral: twist-rightarm-shoulder-ee-shoulder.angular.y equal to Spec[angvel-rightarm-shoulder-ee-lateral-ref]
+        cstr-linvel-rightarm-world-ee-lateral: twist-world-platform-rightarm-ee.linear.y equal to Spec[linvel-rightarm-world-ee-lateral-ref]
+        cstr-ang-rightarm-shoulder-ee-vertical: pose-rightarm-shoulder-ee.rotation.z equal to Spec[ang-rightarm-shoulder-ee-vertical-ref]
+        cstr-dist-rightarm-shoulder-ee: pose-rightarm-shoulder-ee.distance between Spec[dist-rightarm-shoulder-ee-lower] and Spec[dist-rightarm-shoulder-ee-upper]
+
+    UNTIL:
+}
+
+MOTION_SPEC (ns=app) motion_leftarm {
+    MOVE: "Left arm scenario control for sc1"
+
+    CONTEXT:
+        c1: World {
+            pose-leftarm-platform-shoulder: Pose { of = frame-leftarm-shoulder, wrt = frame-platform },
+            pose-leftarm-platform-ee: Pose { of = frame-leftarm-ee, wrt = frame-platform },
+            twist-leftarm-shoulder-ee-platform: VelocityTwist { of = link-leftarm-ee, wrt = link-leftarm-shoulder, as-seen-by = frame-platform },
+            twist-leftarm-shoulder-ee-shoulder: VelocityTwist { of = link-leftarm-ee, wrt = link-leftarm-shoulder, as-seen-by = frame-leftarm-shoulder },
+            twist-world-platform-leftarm-ee: VelocityTwist { of = link-platform, wrt = link-world, as-seen-by = frame-leftarm-ee },
+            wrench-leftarm-ee-anteroposterior-ee: Wrench { as-seen-by = frame-leftarm-ee, ref-point = point-leftarm-ee-origin },
+            wrench-leftarm-ee-anteroposterior-platform: Wrench { as-seen-by = frame-platform, ref-point = point-leftarm-ee-origin },
+            pose-leftarm-platform-elbow: Pose { of = frame-leftarm-elbow, wrt = frame-platform },
+            pose-leftarm-shoulder-elbow: Pose { of = frame-leftarm-elbow, wrt = frame-leftarm-shoulder },
+            pose-leftarm-shoulder-ee: Pose { of = frame-leftarm-ee, wrt = frame-leftarm-shoulder }
+        }
+        c2: Spec {
+            frc-leftarm-ee-anteroposterior-ref: Force = 20.0 N,
+            linvel-leftarm-shoulder-ee-vertical-ref: LinearVelocity = 0.0 m/s,
+            pos-leftarm-platform-elbow-height-ref: LinearDistance = 0.75 m,
+            angvel-leftarm-shoulder-ee-anteroposterior-ref: AngularVelocity = 0.0 rad/s,
+            angvel-leftarm-shoulder-ee-lateral-ref: AngularVelocity = 0.0 rad/s,
+            linvel-leftarm-world-ee-lateral-ref: LinearVelocity = 0.0 m/s,
+            ang-leftarm-shoulder-ee-vertical-ref: Angle = 0.0 rad,
+            dist-leftarm-shoulder-ee-lower: LinearDistance = 0.68 m,
+            dist-leftarm-shoulder-ee-upper: LinearDistance = 0.72 m
+        }
+
+    WHEN:
+
+    WHILE:
+        cstr-frc-leftarm-ee-anteroposterior: wrench-leftarm-ee-anteroposterior-ee.force.x equal to Spec[frc-leftarm-ee-anteroposterior-ref]
+        cstr-linvel-leftarm-shoulder-ee-vertical: twist-leftarm-shoulder-ee-shoulder.linear.z equal to Spec[linvel-leftarm-shoulder-ee-vertical-ref]
+        cstr-pos-leftarm-platform-elbow-height: pose-leftarm-platform-elbow.distance.z equal to Spec[pos-leftarm-platform-elbow-height-ref]
+        cstr-angvel-leftarm-shoulder-ee-anteroposterior: twist-leftarm-shoulder-ee-shoulder.angular.x equal to Spec[angvel-leftarm-shoulder-ee-anteroposterior-ref]
+        cstr-angvel-leftarm-shoulder-ee-lateral: twist-leftarm-shoulder-ee-shoulder.angular.y equal to Spec[angvel-leftarm-shoulder-ee-lateral-ref]
+        cstr-linvel-leftarm-world-ee-lateral: twist-world-platform-leftarm-ee.linear.y equal to Spec[linvel-leftarm-world-ee-lateral-ref]
+        cstr-ang-leftarm-shoulder-ee-vertical: pose-leftarm-shoulder-ee.rotation.z equal to Spec[ang-leftarm-shoulder-ee-vertical-ref]
+        cstr-dist-leftarm-shoulder-ee: pose-leftarm-shoulder-ee.distance between Spec[dist-leftarm-shoulder-ee-lower] and Spec[dist-leftarm-shoulder-ee-upper]
+
+    UNTIL:
+}
+
+CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
+    CONTEXT:
+        c1: World {
+            chain-rightarm: KinematicChain,
+            frame-rightarm-shoulder: Frame,
+            grav-rightarm: UniformGravitationalField { x = 9.72607409, y = 0.90542332, z = -0.90542332 m/s2 },
+            wrench-rightarm-ee-anteroposterior-platform: Wrench { as-seen-by = frame-platform, ref-point = point-rightarm-ee-origin },
+            wrench-rightarm-elbow: Wrench { as-seen-by = frame-platform, ref-point = point-rightarm-elbow-origin }
+        }
+
+    MOTION: motion_rightarm
+
+    MONITORS:
+
+    CONTROLLERS:
+        ctrl-linvel-rightarm-shoulder-ee-vertical: PID { constraint: cstr-linvel-rightarm-shoulder-ee-vertical, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-pos-rightarm-platform-elbow-height: PID { constraint: cstr-pos-rightarm-platform-elbow-height, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-rightarm-shoulder-ee-anteroposterior: PID { constraint: cstr-angvel-rightarm-shoulder-ee-anteroposterior, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-rightarm-shoulder-ee-lateral: PID { constraint: cstr-angvel-rightarm-shoulder-ee-lateral, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-rightarm-world-ee-lateral: PID { constraint: cstr-linvel-rightarm-world-ee-lateral, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-ang-rightarm-shoulder-ee-vertical: PID { constraint: cstr-ang-rightarm-shoulder-ee-vertical, Kp: 200.0, Ki: 2.9, Kd: 80.5 }
+        ctrl-dist-rightarm-shoulder-ee: PID { constraint: cstr-dist-rightarm-shoulder-ee, Kp: 450.0, Ki: 65.5, Kd: 80.0, decay: 0.99 } outputs force apply at World[link-platform] feed to base force
+
+    PRIORITIES:
+        prio-sc1-rightarm: level = 1 { drivers: [ spec-acc-rightarm-ee, spec-frc-rightarm-ee-z, spec-frc-rightarm-elbow ] }
+
+    SOLVER:
+        algorithm: Vereshchagin,
+        chain: World[chain-rightarm],
+        root: World[frame-rightarm-shoulder],
+        gravity: World[grav-rightarm]
+}
+
+CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
+    CONTEXT:
+        c1: World {
+            chain-leftarm: KinematicChain,
+            frame-leftarm-shoulder: Frame,
+            grav-leftarm: UniformGravitationalField { x = 9.72607409, y = -0.90542332, z = -0.90542332 m/s2 },
+            wrench-leftarm-ee-anteroposterior-platform: Wrench { as-seen-by = frame-platform, ref-point = point-leftarm-ee-origin },
+            wrench-leftarm-elbow: Wrench { as-seen-by = frame-platform, ref-point = point-leftarm-elbow-origin }
+        }
+
+    MOTION: motion_leftarm
+
+    MONITORS:
+
+    CONTROLLERS:
+        ctrl-linvel-leftarm-shoulder-ee-vertical: PID { constraint: cstr-linvel-leftarm-shoulder-ee-vertical, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-pos-leftarm-platform-elbow-height: PID { constraint: cstr-pos-leftarm-platform-elbow-height, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-leftarm-shoulder-ee-anteroposterior: PID { constraint: cstr-angvel-leftarm-shoulder-ee-anteroposterior, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-leftarm-shoulder-ee-lateral: PID { constraint: cstr-angvel-leftarm-shoulder-ee-lateral, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-leftarm-world-ee-lateral: PID { constraint: cstr-linvel-leftarm-world-ee-lateral, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-ang-leftarm-shoulder-ee-vertical: PID { constraint: cstr-ang-leftarm-shoulder-ee-vertical, Kp: 200.0, Ki: 2.9, Kd: 80.5 }
+        ctrl-dist-leftarm-shoulder-ee: PID { constraint: cstr-dist-leftarm-shoulder-ee, Kp: 450.0, Ki: 65.5, Kd: 80.0, decay: 0.99 } outputs force apply at World[link-platform] feed to base force
+
+    PRIORITIES:
+        prio-sc1-leftarm: level = 1 { drivers: [ spec-acc-leftarm-ee, spec-frc-leftarm-ee-z, spec-frc-leftarm-elbow ] }
+
+    SOLVER:
+        algorithm: Vereshchagin,
+        chain: World[chain-leftarm],
+        root: World[frame-leftarm-shoulder],
+        gravity: World[grav-leftarm]
+}
+
+CONSTRAINT_HANDLER (ns=app) base_handler {
+    CONTEXT:
+        c1: World {
+            frame-platform: Frame,
+            twist-world-platform-platform: VelocityTwist { of = link-platform, wrt = link-world, as-seen-by = frame-platform },
+            wrench-dist-platform: Wrench { as-seen-by = frame-platform, ref-point = point-platform-origin }
+        }
+
+    SOLVER:
+        velocity-composition: {
+            base-fvk: VelocityCompositionSolver { configuration: hddc2b_example_vel, velocity: World[twist-world-platform-platform] }
+        },
+        force-distribution: {
+            base-ifk: ForceDistributionSolver { configuration: hddc2b_example_frc_sc1, force: World[wrench-dist-platform] }
+        }
+}

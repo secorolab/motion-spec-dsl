@@ -1,0 +1,40 @@
+[project]
+name = "motion_spec_dsl"
+version = "0.1.0"
+description = "A DSL for specifying guarded motions, transforming .rob_mot files to JSON-LD."
+authors = [
+    {name = "Sven Schneider", email = "sven.schneider@h-brs.de"},
+    {name = "Vamsi Kalagaturu", email = "vamsikalagaturu@gmail.com"}
+]
+maintainers = [
+    {name = "Vamsi Kalagaturu", email = "vamsikalagaturu@gmail.com"}
+]
+license = { text = "MPL-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "textX>=4.1.0",
+    "rdflib",
+    "motion_spec",
+    "pyshacl>=0.25.0",
+]
+
+[project.entry-points."textx_languages"]
+"motion_spec" = "motion_spec_dsl.generators.registration:motion_spec_lang"
+
+[project.entry-points."textx_generators"]
+"motion_spec_jsonld" = "motion_spec_dsl.generators.registration:motion_spec_gen"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"motion_spec_dsl" = [
+    "metamodels/*.tx",
+]
+
+[tool.ruff]
+line-length = 100

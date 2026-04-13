@@ -1,0 +1,145 @@
+// Contact-rich find-and-loosen example with two guarded motions.
+
+ns app = "https://secorolab.github.io/models/crf/"
+
+MOTION_SPEC (ns=app) motion_find {
+    MOVE: "Rotate to find the screw engagement point"
+
+    CONTEXT:
+        c1: World {
+            twist-ee-ee: VelocityTwist { of = link-ee, wrt = link-world, ref-point = point-ee-origin, as-seen-by = frame-ee },
+            wrench-ee-ee: Wrench { ref-point = point-ee-origin, as-seen-by = frame-ee },
+            pose-arm-ee-world: Pose { of = frame-ee, wrt = frame-world, as-seen-by = frame-world }
+        }
+        c2: Spec {
+            angvel-ee-z-ref-find: AngularVelocity = 1.0 rad/s,
+            angvel-zero-ref: AngularVelocity = 0.0 rad/s,
+            linvel-zero-ref: LinearVelocity = 0.0 m/s
+        }
+        c3: Post {
+            torque-find-shutoff: Torque = 4.0 Nm,
+            rotation-find-limit: Angle = 2.0944 rad,
+            torque-find-upper-limit: Torque = 12.0 Nm
+        }
+
+    WHEN:
+
+    WHILE:
+        cstr-angvel-find: keeping twist-ee-ee.angular.z equal to Spec[angvel-ee-z-ref-find]
+        cstr-linvel-ee-x-zero: keeping twist-ee-ee.linear.x equal to Spec[linvel-zero-ref]
+        cstr-linvel-ee-y-zero: keeping twist-ee-ee.linear.y equal to Spec[linvel-zero-ref]
+        cstr-linvel-ee-z-zero: keeping twist-ee-ee.linear.z equal to Spec[linvel-zero-ref]
+        cstr-angvel-ee-x-zero: keeping twist-ee-ee.angular.x equal to Spec[angvel-zero-ref]
+        cstr-angvel-ee-y-zero: keeping twist-ee-ee.angular.y equal to Spec[angvel-zero-ref]
+
+    UNTIL:
+        cstr-torque-find-shutoff: wrench-ee-ee.torque.z is larger than Post[torque-find-shutoff]
+        cstr-rotation-find-limit: pose-arm-ee-world.rotation.z is larger than Post[rotation-find-limit]
+        cstr-torque-find-upper-limit: wrench-ee-ee.torque.z is larger than Post[torque-find-upper-limit]
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_find {
+    CONTEXT:
+        c1: World {
+            chain-arm: KinematicChain,
+            frame-world: Frame,
+            earth-uniform-gravitational-field: UniformGravitationalField { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+
+    MOTION: motion_find
+
+    MONITORS:
+        monitor cstr-torque-find-shutoff and trigger event evt-torque-find-shutoff when active
+        monitor cstr-rotation-find-limit and trigger event evt-rotation-find-limit when active
+        monitor cstr-torque-find-upper-limit and trigger event evt-torque-find-upper-limit when active
+
+    CONTROLLERS:
+        ctrl-angvel-find: PID { constraint: cstr-angvel-find, Kp: 8.0, Ki: 0.5, Kd: 3.0 }
+        ctrl-linvel-ee-x-zero: PID { constraint: cstr-linvel-ee-x-zero, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-ee-y-zero: PID { constraint: cstr-linvel-ee-y-zero, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-ee-z-zero: PID { constraint: cstr-linvel-ee-z-zero, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-ee-x-zero: PID { constraint: cstr-angvel-ee-x-zero, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-ee-y-zero: PID { constraint: cstr-angvel-ee-y-zero, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+
+    PRIORITIES:
+        prio-find: level = 1 { drivers: [ spec-acc-ee-find ] }
+
+    SOLVER:
+        algorithm: Vereshchagin,
+        chain: World[chain-arm],
+        root: World[frame-world],
+        gravity: World[earth-uniform-gravitational-field]
+}
+
+MOTION_SPEC (ns=app) motion_loosen {
+    MOVE: "Reverse-rotate to loosen after screw engagement"
+
+    CONTEXT:
+        c1: World {
+            twist-ee-ee: VelocityTwist { of = link-ee, wrt = link-world, ref-point = point-ee-origin, as-seen-by = frame-ee },
+            wrench-ee-ee: Wrench { ref-point = point-ee-origin, as-seen-by = frame-ee },
+            pose-arm-ee-world: Pose { of = frame-ee, wrt = frame-world, as-seen-by = frame-world }
+        }
+        c2: Pre {
+            torque-loosen-min-contact: Torque = 0.5 Nm
+        }
+        c3: Spec {
+            angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s,
+            angvel-zero-ref: AngularVelocity = 0.0 rad/s,
+            linvel-zero-ref: LinearVelocity = 0.0 m/s
+        }
+        c4: Post {
+            rotation-loosen-lower: Angle = 1.4835 rad,
+            rotation-loosen-upper: Angle = 1.6581 rad,
+            torque-loosen-lower: Torque = 0.05 Nm,
+            torque-loosen-upper: Torque = 8.4 Nm
+        }
+
+    WHEN:
+        cstr-torque-loosen-contact: wrench-ee-ee.torque.z is larger than Pre[torque-loosen-min-contact]
+
+    WHILE:
+        cstr-angvel-loosen: keeping twist-ee-ee.angular.z equal to Spec[angvel-ee-z-ref-loosen]
+        cstr-linvel-ee-x-zero-loosen: keeping twist-ee-ee.linear.x equal to Spec[linvel-zero-ref]
+        cstr-linvel-ee-y-zero-loosen: keeping twist-ee-ee.linear.y equal to Spec[linvel-zero-ref]
+        cstr-linvel-ee-z-zero-loosen: keeping twist-ee-ee.linear.z equal to Spec[linvel-zero-ref]
+        cstr-angvel-ee-x-zero-loosen: keeping twist-ee-ee.angular.x equal to Spec[angvel-zero-ref]
+        cstr-angvel-ee-y-zero-loosen: keeping twist-ee-ee.angular.y equal to Spec[angvel-zero-ref]
+
+    UNTIL:
+        cstr-rotation-loosen-bilateral: pose-arm-ee-world.rotation.z between Post[rotation-loosen-lower] and Post[rotation-loosen-upper]
+        cstr-torque-loosen-bilateral: wrench-ee-ee.torque.z between Post[torque-loosen-lower] and Post[torque-loosen-upper]
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_loosen {
+    CONTEXT:
+        c1: World {
+            chain-arm: KinematicChain,
+            frame-world: Frame,
+            earth-uniform-gravitational-field: UniformGravitationalField { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+
+    MOTION: motion_loosen
+
+    MONITORS:
+        monitor cstr-torque-loosen-contact and set flag flg-torque-loosen-contact while active
+        monitor cstr-rotation-loosen-bilateral and trigger event evt-rotation-loosen when active
+        monitor cstr-torque-loosen-bilateral and trigger event evt-torque-loosen when active
+
+    CONTROLLERS:
+        ctrl-angvel-loosen: PID { constraint: cstr-angvel-loosen, Kp: 8.0, Ki: 0.5, Kd: 3.0 }
+        ctrl-linvel-ee-x-zero-loosen: PID { constraint: cstr-linvel-ee-x-zero-loosen, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-ee-y-zero-loosen: PID { constraint: cstr-linvel-ee-y-zero-loosen, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-linvel-ee-z-zero-loosen: PID { constraint: cstr-linvel-ee-z-zero-loosen, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-ee-x-zero-loosen: PID { constraint: cstr-angvel-ee-x-zero-loosen, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+        ctrl-angvel-ee-y-zero-loosen: PID { constraint: cstr-angvel-ee-y-zero-loosen, Kp: 5.0, Ki: 1.0, Kd: 3.0 }
+
+    PRIORITIES:
+        prio-loosen: level = 1 { drivers: [ spec-acc-ee-loosen ] }
+
+    SOLVER:
+        algorithm: Vereshchagin,
+        chain: World[chain-arm],
+        root: World[frame-world],
+        gravity: World[earth-uniform-gravitational-field]
+}
