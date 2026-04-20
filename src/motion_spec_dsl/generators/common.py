@@ -57,16 +57,6 @@ class IHasNamespaceDeclare(IHasNamespace):
         return self._ns_obj
 
 
-class HasParentNamespace:
-    """Mixin that passes namespace through from parent. Used by intermediate grammar objects."""
-
-    parent: IHasNamespace
-
-    @property
-    def namespace(self) -> Namespace:
-        return self.parent.namespace
-
-
 class NamedNamespaceObject(IHasNamespace):
     name: str
     _uri: URIRef | str
@@ -79,7 +69,7 @@ class NamedNamespaceObject(IHasNamespace):
     @property
     def namespace(self) -> Namespace:
         assert self.parent is not None, f"'parent' not set for '{self.__class__.__name__}'"
-        return Namespace(self.parent.namespace)
+        return Namespace(self.parent.namespace + self.parent.name + "/")
 
     @property
     def uri(self) -> str:

@@ -37,9 +37,8 @@ from motion_spec.namespace import (
 )
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
-    ConstraintHandlerBlock,
+    ConstraintHandler,
     ConstraintSpecification,
-    CtrlWorldQuantity,
     ControllerParams,
     EqualityConstraint,
     ForceSolverEntry,
@@ -49,7 +48,7 @@ from motion_spec_dsl.generators.classes import (
     LessThanConstraint,
     Model,
     MonitorEntry,
-    MotionSpecBlock,
+    MotionSpec,
     PostContextDecl,
     PostLookup,
     PreContextDecl,
@@ -68,7 +67,7 @@ ContextLike: TypeAlias = dict[str, str] | list[str | dict[str, str]]
 GraphOutput: TypeAlias = tuple[str, Graph, ContextLike]
 ConstraintSignature: TypeAlias = tuple[str, str, str | None, str]
 ConstraintKey: TypeAlias = tuple[str, str]
-WorldQuantityLike: TypeAlias = WorldQuantity | CtrlWorldQuantity
+WorldQuantityLike: TypeAlias = WorldQuantity
 
 @dataclass(frozen=True)
 class PropertySpec:
@@ -419,7 +418,7 @@ def _attached_link_from_wrench_name(name: str) -> str | None:
     return f"link-{parts[1]}-{parts[2]}"
 
 
-def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandlerBlock, solver: Any) -> str | None:
+def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, solver: Any) -> str | None:
     for binding in _infer_cartesian_force_bindings(index, handler_spec):
         if binding.attached_to is not None:
             return binding.attached_to
@@ -448,7 +447,7 @@ def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandlerBlo
     return None
 
 
-def _handler_world_quantities(handler_spec: ConstraintHandlerBlock) -> list[WorldQuantityLike]:
+def _handler_world_quantities(handler_spec: ConstraintHandler) -> list[WorldQuantityLike]:
     quantities: list[WorldQuantityLike] = []
     for item in handler_spec.spec.context.items:
         quantities.extend(item.decl.declaration)
@@ -456,7 +455,7 @@ def _handler_world_quantities(handler_spec: ConstraintHandlerBlock) -> list[Worl
 
 
 def _wrench_name_for_scalar_signal(
-    index: "ModelIndex", handler_spec: ConstraintHandlerBlock, signal_id: str
+    index: "ModelIndex", handler_spec: ConstraintHandler, signal_id: str
 ) -> str | None:
     candidates: list[WorldQuantityLike] = []
     for quantity in _handler_world_quantities(handler_spec):
@@ -482,7 +481,7 @@ def _wrench_name_for_scalar_signal(
 
 
 def _infer_cartesian_force_bindings(
-    index: "ModelIndex", handler_spec: ConstraintHandlerBlock
+    index: "ModelIndex", handler_spec: ConstraintHandler
 ) -> list[CartesianForceBinding]:
     motion_name = handler_spec.spec.motion
     if not motion_name:
@@ -575,7 +574,7 @@ def _infer_cartesian_force_bindings(
     return bindings
 
 
-def _driver_suffix(handler_spec: ConstraintHandlerBlock) -> str:
+def _driver_suffix(handler_spec: ConstraintHandler) -> str:
     return _motion_suffix(handler_spec.spec.motion) if handler_spec.spec.motion else handler_spec.name
 
 
@@ -768,53 +767,53 @@ class ModelIndex:
         self.models = get_included_models(model)
 
     @cached_property
-    def motion_specs(self) -> list[MotionSpecBlock]:
+    def motion_specs(self) -> list[MotionSpec]:
         return [
             spec
             for model in self.models
             for spec in model.specs
-            if isinstance(spec, MotionSpecBlock)
+            if isinstance(spec, MotionSpec)
         ]
 
     @cached_property
-    def handler_specs(self) -> list[ConstraintHandlerBlock]:
+    def handler_specs(self) -> list[ConstraintHandler]:
         return [
             spec
             for model in self.models
             for spec in model.specs
-            if isinstance(spec, ConstraintHandlerBlock)
+            if isinstance(spec, ConstraintHandler)
         ]
 
     @cached_property
-    def motion_map(self) -> dict[str, MotionSpecBlock]:
+    def motion_map(self) -> dict[str, MotionSpec]:
         return {spec.name: spec for spec in self.motion_specs}
 
-    def _context_decl(self, spec: MotionSpecBlock, kind: str) -> Any | None:
+    def _context_decl(self, spec: MotionSpec, kind: str) -> Any | None:
         for item in spec.spec.context.items:
             if item.__class__.__name__ == kind:
                 return item
         return None
 
-    def world_declarations(self, spec: MotionSpecBlock) -> list[WorldQuantity]:
+    def world_declarations(self, spec: MotionSpec) -> list[WorldQuantity]:
         declaration = self._context_decl(spec, "WorldContextDecl")
         return declaration.decl.declaration if isinstance(declaration, WorldContextDecl) else []
 
-    def value_declarations(self, spec: MotionSpecBlock, kind: str) -> list[ValueVariable]:
+    def value_declarations(self, spec: MotionSpec, kind: str) -> list[ValueVariable]:
         declaration = self._context_decl(spec, kind)
         if isinstance(declaration, (PreContextDecl, SpecContextDecl, PostContextDecl)):
             return declaration.decl.declaration
         return []
 
-    def all_constraints(self, spec: MotionSpecBlock) -> list[ConstraintSpecification]:
+    def all_constraints(self, spec: MotionSpec) -> list[ConstraintSpecification]:
         return [*spec.spec.when, *spec.spec.while_, *spec.spec.until]
 
-    def world_quantity(self, spec: MotionSpecBlock, name: str) -> WorldQuantity | None:
+    def world_quantity(self, spec: MotionSpec, name: str) -> WorldQuantity | None:
         for quantity in self.world_declarations(spec):
             if quantity.name == name:
                 return quantity
         return None
 
-    def value_variable(self, spec: MotionSpecBlock, name: str) -> ValueVariable | None:
+    def value_variable(self, spec: MotionSpec, name: str) -> ValueVariable | None:
         for kind in ("PreContextDecl", "SpecContextDecl", "PostContextDecl"):
             for value in self.value_declarations(spec, kind):
                 if value.name == name:
@@ -890,7 +889,7 @@ class ModelIndex:
     def defined_world_names(self) -> set[str]:
         return set(self.world_quantities) | set(self.implicit_world_entities)
 
-    def _require_value_lookup(self, motion_spec: MotionSpecBlock, constraint_name: str, lookup: Any) -> None:
+    def _require_value_lookup(self, motion_spec: MotionSpec, constraint_name: str, lookup: Any) -> None:
         scope = _lookup_scope_name(lookup)
         variable = lookup.variable
         if scope == "World":
