@@ -14,45 +14,39 @@ from textx.scoping import providers as scoping_providers
 
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
-    ConstraintHandlerBlock,
-    ConstraintHandlerSpecification,
+    ConstraintHandler,
     ConstraintSpecification,
-    ControllerContext,
     ControllerEntry,
     ControllerParams,
-    CtrlWorldContextDecl,
-    CtrlWorldDeclarationList,
-    CtrlWorldQuantity,
     EqualityConstraint,
     ForceSolverEntry,
     GeoPropPair,
     GeometricProps,
-    GravitationalFieldProps,
     GreaterThanConstraint,
-    GuardedMotionSpecification,
+    Import,
     LessThanConstraint,
     Model,
-    ImportDecl,
     MonitorEntry,
-    MotionContext,
-    MotionSpecBlock,
+    MotionSpec,
     NamespaceDeclare,
     PostContextDecl,
     PostLookup,
     PreContextDecl,
     PreLookup,
-    Quantity,
     QuantityRef,
+    ScalarQuantity,
     SolverSpec,
     SpecContextDecl,
     SpecLookup,
-    UnitsContextDecl,
+    UntilSection,
     ValueDeclarationList,
-    VelocitySolverEntry,
     ValueVariable,
+    VectorQuantity,
+    VelocitySolverEntry,
+    WhenSection,
+    WhileSection,
     WorldContextDecl,
     WorldDeclarationList,
-    WorldLookup,
     WorldQuantity,
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
@@ -64,26 +58,26 @@ GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"
 SUPPORTED_FORMATS = {"json-ld": "json", "ttl": "ttl", "xml": "xml"}
 
 LANGUAGE_CLASSES = [
-    NamespaceDeclare,
-    ImportDecl,
     Model,
-    MotionSpecBlock,
-    ConstraintHandlerBlock,
-    GuardedMotionSpecification,
-    MotionContext,
-    UnitsContextDecl,
+    NamespaceDeclare,
+    Import,
+    MotionSpec,
+    ConstraintHandler,
     WorldContextDecl,
     PreContextDecl,
     SpecContextDecl,
     PostContextDecl,
+    WhenSection,
+    WhileSection,
+    UntilSection,
     WorldDeclarationList,
     WorldQuantity,
     GeometricProps,
     GeoPropPair,
-    GravitationalFieldProps,
     ValueDeclarationList,
     ValueVariable,
-    Quantity,
+    ScalarQuantity,
+    VectorQuantity,
     ConstraintSpecification,
     QuantityRef,
     EqualityConstraint,
@@ -93,12 +87,6 @@ LANGUAGE_CLASSES = [
     PreLookup,
     SpecLookup,
     PostLookup,
-    WorldLookup,
-    ConstraintHandlerSpecification,
-    ControllerContext,
-    CtrlWorldContextDecl,
-    CtrlWorldDeclarationList,
-    CtrlWorldQuantity,
     MonitorEntry,
     ControllerEntry,
     ControllerParams,
@@ -110,13 +98,13 @@ LANGUAGE_CLASSES = [
 
 def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
-    metamodel.register_scope_providers({"*.*": scoping_providers.FQNImportURI()})
+    metamodel.register_scope_providers({"*.*": scoping_providers.PlainNameImportURI()})
     return metamodel
 
 
 motion_spec_lang = LanguageDesc(
     name="motion_spec_dsl",
-    pattern="*.rob_mot",
+    pattern="*.robmot",
     description="Motion specification DSL for guarded motions",
     metamodel=motion_spec_metamodel,
 )
@@ -250,25 +238,30 @@ def _write_split_output(graphs, model, output_dir: Path, output_format: str) -> 
     _write_json(manifest_path, _build_manifest(graphs, imported_files))
 
 
-def generate_jsonld(model, output_path=None, overwrite=True, **kwargs) -> None:
-    del overwrite
+def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
+    del metamodel, debug
 
     output_format = kwargs.get("format", "json-ld")
     _graph_format(output_format)
 
-    graphs = get_motion_spec_graphs(model)
-    output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+    for spec in model.specs:
+        if isinstance(spec, MotionSpec):
+            while_section = spec.while_
+            if while_section:
+                for wi in while_section.constraints:
+                    print(f"while: - {wi.uri} - {wi.parent.name}")
+                    print(f"  view: - {wi.view.uri}")
+                    print(f"    wi.view.quantity type: {type(wi.view.quantity).__name__}")
+                    print(f"    quantity: {wi.view.quantity.name} {wi.view.quantity.parent.name} - {wi.view.quantity.uri}")
 
-    if kwargs.get("single", False):
-        _write_single_output(graphs, model, output_dir, output_format)
-    else:
-        _write_split_output(graphs, model, output_dir, output_format)
-
-
-def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
-    del metamodel, debug
-    generate_jsonld(model, output_path=output_path, overwrite=overwrite, **kwargs)
+    # graphs = get_motion_spec_graphs(model)
+    # output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
+    # output_dir.mkdir(parents=True, exist_ok=True)
+    #
+    # if kwargs.get("single", False):
+    #     _write_single_output(graphs, model, output_dir, output_format)
+    # else:
+    #     _write_split_output(graphs, model, output_dir, output_format)
 
 
 motion_spec_gen = GeneratorDesc(

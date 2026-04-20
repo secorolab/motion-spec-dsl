@@ -1,79 +1,61 @@
 // Motion Specification DSL Grammar
-// Use metamodel_from_file(..., autokwd=True) so ID does not match keywords.
 
 Model:
-    imports*=ImportDecl
+    imports*=Import
     namespaces*=NamespaceDeclare
     specs+=Specification
 ;
 
-ImportDecl:
-    "import" importURI=STRING
-;
-
-NamespaceDeclare:
-    "ns" name=ID "=" uri=STRING
-;
-
 Specification:
-    MotionSpecBlock | ConstraintHandlerBlock
+    MotionSpec | ConstraintHandler
 ;
 
-MotionSpecBlock:
-    "MOTION_SPEC" "(" "ns" "=" ns=[NamespaceDeclare|ID] ")" name=Name "{"
-        ("MOVE" ":" move=STRING)?
-        spec=GuardedMotionSpecification
+MotionSpec:
+    "MOTION_SPEC" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        ("MOVE"    ":" move=STRING)?
+        "CONTEXT"  "{" context*=MotionContextDecl[","] "}"
+        "WHEN"     when=WhenSection
+        "WHILE"    while_=WhileSection
+        "UNTIL"    until=UntilSection
     "}"
 ;
 
-ConstraintHandlerBlock:
-    "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|ID] ")" name=Name "{"
-        spec=ConstraintHandlerSpecification
+WhenSection:  "{" constraints*=ConstraintSpecification[","]? "}" ;
+WhileSection: "{" constraints+=ConstraintSpecification[","]? "}" ;
+UntilSection: "{" constraints*=ConstraintSpecification[","]? "}" ;
+
+MotionContextDecl:
+    WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
+;
+
+ConstraintHandler:
+    "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|ID] ")" name=IRI_TRUNK "{"
+        "CONTEXT"      "{" context*=HandlerContextDecl[","] "}"
+        "MOTION"       ":" "@"motion=[MotionSpec|IRI_TRUNK]
+        ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
+        "CONTROLLERS"  "{" controllers+=ControllerEntry[","]? "}"
+        "SOLVER"       solver=SolverSpec
     "}"
 ;
 
-// Motion Specification
-
-GuardedMotionSpecification:
-    "CONTEXT" ":" context=MotionContext
-    "WHEN"    ":" when*=ConstraintSpecification
-    "WHILE"   ":" while_*=ConstraintSpecification
-    "UNTIL"   ":" until*=ConstraintSpecification
-;
-
-// Ordered list of context declarations; each starts with label=ID so autokwd
-// prevents ID from matching WHEN/WHILE/UNTIL/CONTEXT keywords.
-MotionContext:
-    items+=ContextDecl
-;
-
-ContextDecl:
-    UnitsContextDecl | WorldContextDecl | PreContextDecl |
-    SpecContextDecl  | PostContextDecl
-;
-
-UnitsContextDecl:
-    name=ID ":" "Units" decl=UnitsDeclaration
+HandlerContextDecl:
+    WorldContextDecl | SpecContextDecl
 ;
 
 WorldContextDecl:
-    name=ID ":" "World" decl=WorldDeclarationList
+    label=IRI_TRUNK ":" "World" decl=WorldDeclarationList
 ;
 
 PreContextDecl:
-    name=ID ":" "Pre" decl=ValueDeclarationList
+    label=IRI_TRUNK ":" "Pre" decl=ValueDeclarationList
 ;
 
 SpecContextDecl:
-    name=ID ":" "Spec" decl=ValueDeclarationList
+    label=IRI_TRUNK ":" "Spec" decl=ValueDeclarationList
 ;
 
 PostContextDecl:
-    name=ID ":" "Post" decl=ValueDeclarationList
-;
-
-UnitsDeclaration:
-    "{" units+=Name[","] "}"
+    label=IRI_TRUNK ":" "Post" decl=ValueDeclarationList
 ;
 
 WorldDeclarationList:
@@ -81,21 +63,17 @@ WorldDeclarationList:
 ;
 
 WorldQuantity:
-    name=Name ":" type=WorldQuantityType
-    ("{" props=WorldQuantityProps "}")?
+    name=IRI_TRUNK ":" type=WorldQuantityType
+    ("{" props=GeometricProps "}")?
 ;
 
 WorldQuantityType:
-    "VelocityTwist"            |
-    "Wrench"                   |
-    "Pose"                     |
-    "KinematicChain"           |
-    "Frame"                    |
+    "VelocityTwist"              |
+    "Wrench"                     |
+    "Pose"                       |
+    "KinematicChain"             |
+    "Frame"                      |
     "UniformGravitationalField"
-;
-
-WorldQuantityProps:
-    GeometricProps | GravitationalFieldProps
 ;
 
 GeometricProps:
@@ -103,18 +81,11 @@ GeometricProps:
 ;
 
 GeoPropPair:
-    ("between" "=" "[" between+=Name[","] "]") |
-    (key=GeoPropKey "=" value=Name)
+    (key=GeoPropKey "=" value=IRI_TRUNK)
 ;
 
 GeoPropKey:
     "of" | "wrt" | "ref-point" | "as-seen-by"
-;
-
-GravitationalFieldProps:
-    "x" "=" x=FLOAT ","
-    "y" "=" y=FLOAT ","
-    "z" "=" z=FLOAT unit=Unit
 ;
 
 ValueDeclarationList:
@@ -122,25 +93,46 @@ ValueDeclarationList:
 ;
 
 ValueVariable:
-    name=Name ":" type=ScalarQuantityType "=" value=Quantity
+    name=IRI_TRUNK ":" type=QuantityType value=QuantityValue?
 ;
 
-ScalarQuantityType:
+QuantityValue:
+    ScalarQuantity | VectorQuantity
+;
+
+ScalarQuantity:
+    "=" value=FLOAT unit=Unit
+;
+
+VectorQuantity:
+    "{"
+    "x" "=" x=FLOAT ","
+    "y" "=" y=FLOAT ","
+    "z" "=" z=FLOAT unit=Unit
+    "}"
+;
+
+QuantityType:
     "AngularVelocity" |
     "LinearVelocity"  |
     "Force"           |
     "Torque"          |
     "LinearDistance"  |
-    "Angle"
+    "Angle"           |
+    "Vector"
 ;
 
 ConstraintSpecification:
-    name=Name ":" ("keeping")? view=QuantityRef expr=ConstraintExpression
+    name=IRI_TRUNK ":" ("keeping")? view=QuantityRef expr=ConstraintExpression
+;
+
+ConstraintExpression:
+    EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint
 ;
 
 QuantityRef:
-    quantity=Name "." property=QuantityProperty
-    ("." axis=Axis)?
+    quantity=[WorldQuantity:IRI_TRUNK]
+    ("." property=QuantityProperty ("." axis=Axis)?)*
 ;
 
 QuantityProperty:
@@ -156,11 +148,8 @@ Axis:
     "x" | "y" | "z"
 ;
 
-ConstraintExpression:
-    EqualityConstraint    |
-    GreaterThanConstraint |
-    LessThanConstraint    |
-    BilateralConstraint
+ContextLookup:
+    PreLookup | SpecLookup | PostLookup
 ;
 
 EqualityConstraint:
@@ -179,86 +168,35 @@ BilateralConstraint:
     "between" lower=ContextLookup "and" upper=ContextLookup
 ;
 
-ContextLookup:
-    PreLookup | SpecLookup | PostLookup | WorldLookup
-;
-
 PreLookup:
-    "Pre"   "[" variable=Name "]"
+    "Pre"   "[" variable=IRI_TRUNK value=QuantityValue? "]"
 ;
 
 SpecLookup:
-    "Spec"  "[" variable=Name "]"
+    "Spec"  "[" variable=IRI_TRUNK value=QuantityValue? "]"
 ;
 
 PostLookup:
-    "Post"  "[" variable=Name "]"
-;
-
-WorldLookup:
-    "World" "[" variable=Name "]"
+    "Post"  "[" variable=IRI_TRUNK value=QuantityValue? "]"
 ;
 
 
-// Controller Specification
-
-ConstraintHandlerSpecification:
-    "CONTEXT"               ":" context=ControllerContext
-    ("MOTION"               ":" motion=Name)?
-    ("MONITORS"             ":" monitors*=MonitorEntry)?
-    "CONTROLLERS"           ":" controllers+=ControllerEntry
-    "SOLVER"                ":" solver=SolverSpec
-;
-
-// Same list-based approach for controller context
-ControllerContext:
-    items+=CtrlContextDecl
-;
-
-CtrlContextDecl:
-    CtrlWorldContextDecl
-;
-
-CtrlWorldContextDecl:
-    name=ID ":" "World" decl=CtrlWorldDeclarationList
-;
-
-CtrlWorldDeclarationList:
-    "{" declaration+=CtrlWorldQuantity[","] "}"
-;
-
-CtrlWorldQuantity:
-    name=Name ":" type=CtrlWorldQuantityType
-    ("{" props=CtrlWorldQuantityProps "}")?
-;
-
-CtrlWorldQuantityType:
-    "KinematicChain"            |
-    "Frame"                     |
-    "UniformGravitationalField" |
-    "VelocityTwist"             |
-    "Wrench"                    |
-    "Pose"
-;
-
-CtrlWorldQuantityProps:
-    GeometricProps | GravitationalFieldProps
-;
+// Constraint Handler
 
 MonitorEntry:
-    "monitor" constraint=Name "and"
+    "monitor" constraint=IRI_TRUNK "and"
     (
-        ("trigger" "event" event=Name "when" "active") |
-        ("set" "flag" flag=Name "while" "active")
+        ("trigger" "event" event=IRI_TRUNK "when" "active") |
+        ("set" "flag" flag=IRI_TRUNK "while" "active")
     )
 ;
 
 ControllerEntry:
-    name=Name ":" type=ControllerType "{"
+    name=IRI_TRUNK ":" type=ControllerType "{"
         params=ControllerParams
     "}"
     ("outputs" output_type=ControllerOutputType)?
-    ("apply" "at" "World" "[" apply_at=Name "]")?
+    ("apply" "at" "World" "[" apply_at=IRI_TRUNK "]")?
     ("feed" "to" feed_scope=ControllerFeedScope feed_kind=ControllerFeedKind)?
 ;
 
@@ -279,7 +217,7 @@ ControllerFeedKind:
 ;
 
 ControllerParams:
-    "constraint" ":" constraint=Name ","
+    "constraint" ":" constraint=IRI_TRUNK ","
     "Kp" ":" kp=FLOAT ","
     "Ki" ":" ki=FLOAT ","
     "Kd" ":" kd=FLOAT
@@ -287,7 +225,7 @@ ControllerParams:
 ;
 
 SolverSpec:
-    ArmSolverSpec | BaseSolverSpec
+    "{" (ArmSolverSpec | BaseSolverSpec) "}"
 ;
 
 SolverAlgorithm:
@@ -295,12 +233,10 @@ SolverAlgorithm:
 ;
 
 ArmSolverSpec:
-    "algorithm"            ":" algorithm=SolverAlgorithm                        ","
-    "chain"                ":" "World" "[" chain=Name "]"                        ","
-    "root"                 ":" "World" "[" root=Name "]"                         ","
-    "gravity"              ":" "World" "[" gravity=Name "]"
-    ("," "cartesian-force" ":" "[" cartesian_force+=Name[","] "]")?
-    ("," "joint-force"     ":" "[" joint_force+=Name[","] "]")?
+    "algorithm"   ":" algorithm=SolverAlgorithm            ","
+    "chain"       ":" "World" "[" chain=IRI_TRUNK "]"      ","
+    "root"        ":" "World" "[" root=IRI_TRUNK "]"       ","
+    "gravity"     ":" "World" "[" gravity=IRI_TRUNK "]" "equal to" gravity_value=SpecLookup
 ;
 
 BaseSolverSpec:
@@ -315,25 +251,19 @@ BaseSolverSpec:
 ;
 
 VelocitySolverEntry:
-    name=Name ":" "VelocityCompositionSolver" "{"
-        "configuration" ":" configuration=Name ","
-        "velocity"      ":" "World" "[" velocity=Name "]"
+    name=IRI_TRUNK ":" "VelocityCompositionSolver" "{"
+        "configuration" ":" configuration=IRI_TRUNK ","
+        "velocity"      ":" "World" "[" velocity=IRI_TRUNK "]"
     "}"
 ;
 
 ForceSolverEntry:
-    name=Name ":" "ForceDistributionSolver" "{"
-        "configuration" ":" configuration=Name ","
-        "force"         ":" "World" "[" force=Name "]"
+    name=IRI_TRUNK ":" "ForceDistributionSolver" "{"
+        "configuration" ":" configuration=IRI_TRUNK ","
+        "force"         ":" "World" "[" force=IRI_TRUNK "]"
     "}"
 ;
 
-
-// Shared types
-
-Quantity:
-    value=FLOAT unit=Unit
-;
 
 // Compact DSL unit spellings only. Verbose QUDT spellings belong in JSON-LD,
 // not authored .rob_mot files.
@@ -342,13 +272,9 @@ Unit:
     "Nm"    | "rad"  | "deg" | "cm"   | "m"     | "N"
 ;
 
-// Name allows hyphens for entity/variable identifiers like twist-ee-ee, angvel-z-find.
-// Note: autokwd=True does NOT affect this custom terminal, so keywords can still
-// appear in name positions inside {} blocks where it is unambiguous.
-Name:
-    /[A-Za-z_][A-Za-z0-9_\-]*/
-;
 
-Comment:
-    (/\/\/.*$/ | /(?ms)\/\*(.*?)\*\//)
-;
+FQN: IRI_TRUNK+["."];
+Import: "import" importURI=STRING;
+Comment: /\/\/.*$/;
+NamespaceDeclare: "ns" name=IRI_TRUNK "=" uri=STRING ;
+IRI_TRUNK: /[^\d\W][\w-]*\b/;

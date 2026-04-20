@@ -3,301 +3,307 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List, Any
+
+from rdflib.namespace import Namespace
+
 from motion_spec_dsl.generators.common import (
-    HasParentNamespace,
+    NamespaceDeclLike,
     IHasNamespaceDeclare,
     NamedNamespaceObject,
 )
 
 
 class NamespaceDeclare:
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        self.uri: str = kwargs.get("uri", "")
+    def __init__(self, name: str = "", uri: str = "", **_):
+        self.name = name
+        self.uri = uri
 
 
-class ImportDecl:
-    def __init__(self, **kwargs):
-        self.importURI: str = kwargs.get("importURI", "")
+class Import:
+    def __init__(self, importURI: str = "", **_):
+        self.importURI = importURI
 
 
 class Model:
-    def __init__(self, **kwargs):
-        self.imports: list[ImportDecl] = kwargs.get("imports", [])
-        self.namespaces: list[NamespaceDeclare] = kwargs.get("namespaces", [])
-        self.specs: list[MotionSpecBlock | ConstraintHandlerBlock] = kwargs.get("specs", [])
-
-
-class MotionSpecBlock(IHasNamespaceDeclare):
     def __init__(
         self,
-        parent,
-        ns,
-        name: str,
-        move: str | None = None,
-        spec: GuardedMotionSpecification | None = None,
+        imports: Optional[List[Import]] = None,
+        namespaces: Optional[List[NamespaceDeclare]] = None,
+        specs: Optional[List[Any]] = None,
+        **_,
     ):
-        super().__init__(parent=parent, ns=ns, name=name)
-        self.move: Optional[str] = move
-        assert spec is not None
-        self.spec = spec
-
-    @property
-    def motion_suffix(self) -> str:
-        """Extract suffix from motion spec name (e.g., 'motion_find' -> 'find')"""
-        assert self.name is not None
-        return self.name.split("_")[-1]
+        self.imports: List[Import] = imports or []
+        self.namespaces: List[NamespaceDeclare] = namespaces or []
+        self.specs: List[MotionSpec | ConstraintHandler] = specs or []
 
 
-class ConstraintHandlerBlock(IHasNamespaceDeclare):
-    def __init__(
-        self, parent, ns, name: str, spec: ConstraintHandlerSpecification | None = None
-    ):
-        super().__init__(parent=parent, ns=ns, name=name)
-        assert spec is not None
-        self.spec = spec
+@dataclass
+class MotionSpec(IHasNamespaceDeclare):
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    move: Optional[str]
+    context: List[Any] = field(default_factory=list)
+    when: Any = None
+    while_: Any = None
+    until: Any = None
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
 
 
-class GuardedMotionSpecification(HasParentNamespace):
-    def __init__(self, **kwargs):
-        context = kwargs.get("context")
-        assert context is not None
-        self.context: MotionContext = context
-        self.when: list[ConstraintSpecification] = kwargs.get("when", [])
-        self.while_: list[ConstraintSpecification] = kwargs.get("while_", [])
-        self.until: list[ConstraintSpecification] = kwargs.get("until", [])
+@dataclass
+class ConstraintHandler(IHasNamespaceDeclare):
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    motion: MotionSpec
+    solver: SolverSpec
+    context: List[Any] = field(default_factory=list)
+    monitors: List[MonitorEntry] = field(default_factory=list)
+    controllers: List[ControllerEntry] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        while_constraints = self.motion.while_.constraints if self.motion.while_ else []
+        when_constraints = self.motion.when.constraints if self.motion.when else []
+        until_constraints = self.motion.until.constraints if self.motion.until else []
+        if len(while_constraints) > 0 and len(self.controllers) == 0:
+            raise ValueError(
+                "ConstraintHandler with 'while' constraints must have at least one controller"
+            )
+        if (len(when_constraints) > 0 or len(until_constraints) > 0) and len(self.monitors) == 0:
+            raise ValueError(
+                "ConstraintHandler with 'when' or 'until' constraints must have at least one monitor"
+            )
 
 
-class MotionContext(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.items: list[
-            UnitsContextDecl | WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
-        ] = kwargs.get("items", [])
+class WorldContextDecl:
+    kind = "World"
 
-
-class UnitsContextDecl:
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        self.decl = kwargs.get("decl")
-
-
-class WorldContextDecl(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        decl = kwargs.get("decl")
-        assert decl is not None
+    def __init__(self, parent, label: str, decl: WorldDeclarationList, **_):
+        self.parent = parent
+        self.label = label
         self.decl: WorldDeclarationList = decl
 
+    @property
+    def namespace(self):
+        return self.parent.namespace
 
-class PreContextDecl(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        decl = kwargs.get("decl")
-        assert decl is not None
+    @property
+    def name(self) -> str:
+        return self.parent.name
+
+
+class PreContextDecl:
+    kind = "Pre"
+
+    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+        self.parent = parent
+        self.label = label
         self.decl: ValueDeclarationList = decl
 
+    @property
+    def namespace(self):
+        return self.parent.namespace
 
-class SpecContextDecl(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        decl = kwargs.get("decl")
-        assert decl is not None
+    @property
+    def name(self) -> str:
+        return self.parent.name
+
+
+class SpecContextDecl:
+    kind = "Spec"
+
+    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+        self.parent = parent
+        self.label = label
         self.decl: ValueDeclarationList = decl
 
+    @property
+    def namespace(self):
+        return self.parent.namespace
 
-class PostContextDecl(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        decl = kwargs.get("decl")
-        assert decl is not None
+    @property
+    def name(self) -> str:
+        return self.parent.name
+
+
+class PostContextDecl:
+    kind = "Post"
+
+    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+        self.parent = parent
+        self.label = label
         self.decl: ValueDeclarationList = decl
 
+    @property
+    def namespace(self):
+        return self.parent.namespace
 
-class WorldDeclarationList(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.declaration: list["WorldQuantity"] = kwargs.get("declaration", [])
+    @property
+    def name(self) -> str:
+        return self.parent.name
+
+
+class WhenSection(NamedNamespaceObject):
+    kind = "when"
+
+    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
+        super().__init__(parent=parent, name=self.__class__.kind)
+        self.constraints: List[ConstraintSpecification] = constraints or []
+
+
+class WhileSection(NamedNamespaceObject):
+    kind = "while"
+
+    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
+        super().__init__(parent=parent, name=self.__class__.kind)
+        self.constraints: List[ConstraintSpecification] = constraints or []
+
+
+class UntilSection(NamedNamespaceObject):
+    kind = "until"
+
+    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
+        super().__init__(parent=parent, name=self.__class__.kind)
+        self.constraints: List[ConstraintSpecification] = constraints or []
+
+
+class WorldDeclarationList(NamedNamespaceObject):
+    def __init__(self, parent, declaration: List[WorldQuantity], **_):
+        super().__init__(parent=parent, name=parent.kind)
+        self.declaration: List[WorldQuantity] = declaration
 
 
 class WorldQuantity(NamedNamespaceObject):
     def __init__(
         self,
         parent,
-        name: str,
+        name: str = "",
         type: str = "",
-        props: GeometricProps | GravitationalFieldProps | None = None,
+        props: GeometricProps | None = None,
+        **_,
     ):
         super().__init__(parent=parent, name=name)
         self.type: str = type
-        self.props = props
+        self.props: GeometricProps | None = props
 
     @property
     def entity_abbrev(self) -> str:
-        """Extract entity abbreviation from name (e.g., 'twist-ee-base' -> 'ee')"""
         parts = self.name.split("-")
         return parts[1] if len(parts) > 1 else self.name
 
 
 class GeometricProps:
-    def __init__(self, **kwargs):
-        self.pairs: list = kwargs.get("pairs", [])
+    def __init__(self, pairs: List[GeoPropPair], **_):
+        self.pairs: List[GeoPropPair] = pairs
 
 
 class GeoPropPair:
-    def __init__(self, **kwargs):
-        self.key: Optional[str] = kwargs.get("key")
-        self.value: Optional[str] = kwargs.get("value")
-        self.between: list[str] = kwargs.get("between", [])
+    def __init__(self, key: str = "", value: str = "", **_):
+        self.key: str = key
+        self.value: str = value
 
 
-class GravitationalFieldProps:
-    def __init__(self, **kwargs):
-        self.x: float = kwargs.get("x", 0.0)
-        self.y: float = kwargs.get("y", 0.0)
-        self.z: float = kwargs.get("z", 0.0)
-        self.unit: str = kwargs.get("unit", "")
+class ValueDeclarationList:
+    def __init__(self, parent, declaration: List[ValueVariable], **_):
+        self.parent = parent
+        self.declaration: List[ValueVariable] = declaration
 
+    @property
+    def namespace(self):
+        return Namespace(self.parent.namespace + self.parent.name + "/")
 
-class ValueDeclarationList(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.declaration: list["ValueVariable"] = kwargs.get("declaration", [])
+    @property
+    def name(self) -> str:
+        return self.parent.kind
 
 
 class ValueVariable(NamedNamespaceObject):
-    def __init__(self, parent, name: str, type: str = "", value: Quantity | None = None):
+    def __init__(self, parent, name: str = "", type: str = "", value: Any = None, **_):
         super().__init__(parent=parent, name=name)
         self.type: str = type
-        assert value is not None
-        self.value = value
+        self.value: Any = value
 
 
-class Quantity:
-    def __init__(self, **kwargs):
-        self.value: float = kwargs.get("value", 0.0)
-        self.unit: str = kwargs.get("unit", "")
+class ScalarQuantity:
+    def __init__(self, value: float = 0.0, unit: str = "", **_):
+        self.value: float = value
+        self.unit: str = unit
+
+
+class VectorQuantity:
+    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, unit: str = "", **_):
+        self.x: float = x
+        self.y: float = y
+        self.z: float = z
+        self.unit: str = unit
 
 
 class ConstraintSpecification(NamedNamespaceObject):
-    def __init__(
-        self,
-        parent,
-        name: str,
-        view: QuantityRef | None = None,
-        expr: EqualityConstraint
-        | GreaterThanConstraint
-        | LessThanConstraint
-        | BilateralConstraint
-        | None = None,
-    ):
+    def __init__(self, parent, name: str, view: QuantityRef, expr: Any, **_):
         super().__init__(parent=parent, name=name)
-        assert view is not None
-        assert expr is not None
-        self.view = view
-        self.expr = expr
+        self.view: QuantityRef = view
+        self.expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint = expr
 
 
-class QuantityRef:
-    def __init__(self, **kwargs):
-        self.quantity: str = kwargs.get("quantity", "")
-        self.property: str = kwargs.get("property", "")
-        self.axis: Optional[str] = kwargs.get("axis")
+class QuantityRef(NamedNamespaceObject):
+    def __init__(self, parent, quantity: WorldQuantity, property: List[str], axis: List[str], **_):
+        super().__init__(parent=parent, name="")
+        self.quantity: WorldQuantity = quantity
+        self.property: List[str] = property
+        self.axis: List[str] = axis
 
 
 class EqualityConstraint:
-    def __init__(self, **kwargs):
-        reference = kwargs.get("reference")
+    def __init__(self, reference: Any = None, **_):
         assert reference is not None
-        self.reference: PreLookup | SpecLookup | PostLookup | WorldLookup = reference
+        self.reference: PreLookup | SpecLookup | PostLookup = reference
 
 
 class GreaterThanConstraint:
-    def __init__(self, **kwargs):
-        threshold = kwargs.get("threshold")
+    def __init__(self, threshold: Any = None, **_):
         assert threshold is not None
-        self.threshold: PreLookup | SpecLookup | PostLookup | WorldLookup = threshold
+        self.threshold: PreLookup | SpecLookup | PostLookup = threshold
 
 
 class LessThanConstraint:
-    def __init__(self, **kwargs):
-        threshold = kwargs.get("threshold")
+    def __init__(self, threshold: Any = None, **_):
         assert threshold is not None
-        self.threshold: PreLookup | SpecLookup | PostLookup | WorldLookup = threshold
+        self.threshold: PreLookup | SpecLookup | PostLookup = threshold
 
 
 class BilateralConstraint:
-    def __init__(self, **kwargs):
-        lower = kwargs.get("lower")
-        upper = kwargs.get("upper")
+    def __init__(self, lower: Any = None, upper: Any = None, **_):
         assert lower is not None
         assert upper is not None
-        self.lower: PreLookup | SpecLookup | PostLookup | WorldLookup = lower
-        self.upper: PreLookup | SpecLookup | PostLookup | WorldLookup = upper
+        self.lower: PreLookup | SpecLookup | PostLookup = lower
+        self.upper: PreLookup | SpecLookup | PostLookup = upper
 
 
 class PreLookup:
-    def __init__(self, **kwargs):
-        self.variable: str = kwargs.get("variable", "")
+    def __init__(self, variable: str = "", value: Any = None, **_):
+        self.variable: str = variable
+        self.value: ScalarQuantity | VectorQuantity | None = value
 
 
 class SpecLookup:
-    def __init__(self, **kwargs):
-        self.variable: str = kwargs.get("variable", "")
+    def __init__(self, variable: str = "", value: Any = None, **_):
+        self.variable: str = variable
+        self.value: ScalarQuantity | VectorQuantity | None = value
 
 
 class PostLookup:
-    def __init__(self, **kwargs):
-        self.variable: str = kwargs.get("variable", "")
-
-
-class WorldLookup:
-    def __init__(self, **kwargs):
-        self.variable: str = kwargs.get("variable", "")
-
-
-class ConstraintHandlerSpecification(HasParentNamespace):
-    def __init__(self, **kwargs):
-        context = kwargs.get("context")
-        assert context is not None
-        self.context: ControllerContext = context
-        self.motion: str = kwargs.get("motion", "")
-        self.monitors: list[MonitorEntry] = kwargs.get("monitors", [])
-        self.controllers: list[ControllerEntry] = kwargs.get("controllers", [])
-        self.solver: SolverSpec | None = kwargs.get("solver")
-
-
-class ControllerContext(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.items: list[CtrlWorldContextDecl] = kwargs.get("items", [])
-
-
-class CtrlWorldContextDecl(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.name: str = kwargs.get("name", "")
-        decl = kwargs.get("decl")
-        assert decl is not None
-        self.decl: CtrlWorldDeclarationList = decl
-
-
-class CtrlWorldDeclarationList(HasParentNamespace):
-    def __init__(self, **kwargs):
-        self.declaration: list["CtrlWorldQuantity"] = kwargs.get("declaration", [])
-
-
-class CtrlWorldQuantity(NamedNamespaceObject):
-    def __init__(
-        self,
-        parent,
-        name: str,
-        type: str = "",
-        props: GeometricProps | GravitationalFieldProps | None = None,
-    ):
-        super().__init__(parent=parent, name=name)
-        self.type: str = type
-        self.props = props
+    def __init__(self, variable: str = "", value: Any = None, **_):
+        self.variable: str = variable
+        self.value: ScalarQuantity | VectorQuantity | None = value
 
 
 class MonitorEntry(NamedNamespaceObject):
-    def __init__(self, parent, constraint: str = "", event: str = "", flag: str = ""):
+    def __init__(self, parent, constraint: str = "", event: str = "", flag: str = "", **_):
         signal_name = event or flag
         name = f"mon-{signal_name}" if signal_name else f"mon-{constraint}"
         super().__init__(parent=parent, name=name)
@@ -311,17 +317,17 @@ class ControllerEntry(NamedNamespaceObject):
         self,
         parent,
         name: str,
-        type: str = "",
-        params: ControllerParams | None = None,
+        type: str,
+        params: ControllerParams,
         output_type: str = "",
         apply_at: str = "",
         feed_scope: str = "",
         feed_kind: str = "",
+        **_,
     ):
         super().__init__(parent=parent, name=name)
         self.type: str = type
-        assert params is not None
-        self.params = params
+        self.params: ControllerParams = params
         self.output_type: str = output_type
         self.apply_at: str = apply_at
         self.feed_scope: str = feed_scope
@@ -329,49 +335,78 @@ class ControllerEntry(NamedNamespaceObject):
 
 
 class ControllerParams:
-    def __init__(self, **kwargs):
-        self.constraint: str = kwargs.get("constraint", "")
-        self.kp: float = kwargs.get("kp", 0.0)
-        self.ki: float = kwargs.get("ki", 0.0)
-        self.kd: float = kwargs.get("kd", 0.0)
-        self.decay: Optional[float] = kwargs.get("decay")
+    def __init__(
+        self,
+        constraint: str = "",
+        kp: float = 0.0,
+        ki: float = 0.0,
+        kd: float = 0.0,
+        decay: Optional[float] = None,
+        **_,
+    ):
+        self.constraint: str = constraint
+        self.kp: float = kp
+        self.ki: float = ki
+        self.kd: float = kd
+        self.decay: Optional[float] = decay
 
 
 class SolverSpec:
-    def __init__(self, **kwargs):
-        self.algorithm: str = kwargs.get("algorithm", "")
-        self.chain: str = kwargs.get("chain", "")
-        self.root: str = kwargs.get("root", "")
-        self.gravity: str = kwargs.get("gravity", "")
-        self.cartesian_force: list[str] = kwargs.get("cartesian_force", [])
-        self.joint_force: list[str] = kwargs.get("joint_force", [])
-        self.velocity_solvers: list[VelocitySolverEntry] = kwargs.get("velocity_solvers", [])
-        self.force_solvers: list[ForceSolverEntry] = kwargs.get("force_solvers", [])
+    def __init__(
+        self,
+        parent,
+        algorithm: str = "",
+        chain: str = "",
+        root: str = "",
+        gravity: str = "",
+        gravity_value: Any = None,
+        velocity_solvers: Optional[List[VelocitySolverEntry]] = None,
+        force_solvers: Optional[List[ForceSolverEntry]] = None,
+        **_,
+    ):
+        self.parent = parent
+        self.algorithm: str = algorithm
+        self.chain: str = chain
+        self.root: str = root
+        self.gravity: str = gravity
+        self.gravity_value: Any = gravity_value
+        self.velocity_solvers: List[VelocitySolverEntry] = velocity_solvers or []
+        self.force_solvers: List[ForceSolverEntry] = force_solvers or []
+
+    @property
+    def namespace(self):
+        return self.parent.namespace
+
+    @property
+    def name(self) -> str:
+        return self.parent.name
 
 
 class VelocitySolverEntry(NamedNamespaceObject):
-    def __init__(self, parent, name: str, configuration: str = "", velocity: str = ""):
+    def __init__(self, parent, name: str = "", configuration: str = "", velocity: str = "", **_):
         super().__init__(parent=parent, name=name)
         self.configuration: str = configuration
         self.velocity: str = velocity
 
 
 class ForceSolverEntry(NamedNamespaceObject):
-    def __init__(self, parent, name: str, configuration: str = "", force: str = ""):
+    def __init__(self, parent, name: str = "", configuration: str = "", force: str = "", **_):
         super().__init__(parent=parent, name=name)
         self.configuration: str = configuration
         self.force: str = force
 
 
+class WorldLookup:
+    def __init__(self, variable: str = "", **_):
+        self.variable: str = variable
+
+
 class DerivedEntity(NamedNamespaceObject):
     """Base class for entities derived during graph generation (not from DSL)."""
-
     pass
 
 
 class ScalarView(DerivedEntity):
-    """View that maps a world quantity property+axis to a scalar."""
-
     def __init__(self, parent, name, quantity_name, prop, axis, scalar_type, view_type, subspace):
         super().__init__(parent=parent, name=name)
         self.quantity_name = quantity_name
@@ -383,43 +418,32 @@ class ScalarView(DerivedEntity):
 
 
 class ErrorSignal(DerivedEntity):
-    """Error signal quantity for constraint evaluation."""
-
     def __init__(self, parent, name, scalar_type):
         super().__init__(parent=parent, name=name)
         self.scalar_type = scalar_type
 
 
 class AccelerationEnergy(DerivedEntity):
-    """Acceleration energy quantity for control."""
-
     def __init__(self, parent, name):
         super().__init__(parent=parent, name=name)
 
 
 class Motion(DerivedEntity):
-    """Motion entity derived from MotionSpecBlock."""
-
     def __init__(self, parent, name, motion_spec_block):
         super().__init__(parent=parent, name=name)
         self.motion_spec = motion_spec_block
 
 
 class Evaluator(DerivedEntity):
-    """Constraint evaluator."""
-
     def __init__(self, parent, name, constraint, error_signal):
         super().__init__(parent=parent, name=name)
         self.constraint = constraint
         self.error_signal = error_signal
 
 
-class ConstraintHandler(DerivedEntity):
-    """Handler for a guarded motion."""
-
+class ConstraintHandlera(DerivedEntity):
     def __init__(self, parent, name, motion):
         super().__init__(parent=parent, name=name)
         self.motion = motion
         self.evaluators = []
         self.controllers = []
-        self.monitors = []
