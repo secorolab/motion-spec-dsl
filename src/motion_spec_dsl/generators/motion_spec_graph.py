@@ -50,13 +50,9 @@ from motion_spec_dsl.generators.classes import (
     MonitorEntry,
     MotionSpec,
     PostContextDecl,
-    PostLookup,
     PreContextDecl,
-    PreLookup,
     SpecContextDecl,
-    SpecLookup,
     ValueVariable,
-    WorldLookup,
     WorldContextDecl,
     WorldQuantity,
 )
@@ -509,7 +505,7 @@ def _infer_cartesian_force_bindings(
         if controller.motion_name == motion_name and controller.control_signal_id.startswith("frc-")
     ]
     for controller in motion_controllers:
-        explicit_cartesian_force = controller.feed_scope == "cartesian" and controller.feed_kind == "force"
+        explicit_cartesian_force = controller.feed_scope == "cartesian" and controller.feed_kind == "Force"
         force_name = None
         for derivation in index.distance_derivations:
             if derivation.force_id == controller.control_signal_id and derivation.group in motion_name:
@@ -750,15 +746,7 @@ def _of_frame(quantity: WorldQuantityLike) -> str | None:
 
 
 def _lookup_scope_name(lookup: Any) -> str:
-    if isinstance(lookup, PreLookup):
-        return "Pre"
-    if isinstance(lookup, SpecLookup):
-        return "Spec"
-    if isinstance(lookup, PostLookup):
-        return "Post"
-    if isinstance(lookup, WorldLookup):
-        return "World"
-    return lookup.__class__.__name__.removesuffix("Lookup")
+    return lookup.value.parent.kind
 
 
 class ModelIndex:
@@ -805,7 +793,7 @@ class ModelIndex:
         return []
 
     def all_constraints(self, spec: MotionSpec) -> list[ConstraintSpecification]:
-        return [*spec.spec.when, *spec.spec.while_, *spec.spec.until]
+        return [*spec.spec.when.constraints, *spec.spec.while_.constraints, *spec.spec.until.constraints]
 
     def world_quantity(self, spec: MotionSpec, name: str) -> WorldQuantity | None:
         for quantity in self.world_declarations(spec):
@@ -937,7 +925,7 @@ class ModelIndex:
                     raise ValueError(
                         f"Monitor '{monitor.name}' in handler '{handler_spec.name}' requires a MOTION reference."
                     )
-                if (motion_spec.name, monitor.constraint) not in self.constraint_map:
+                if (motion_spec.name, monitor.constraint.name) not in self.constraint_map:
                     raise ValueError(
                         f"Monitor '{monitor.name}' references constraint '{monitor.constraint}', but it is not "
                         f"defined for motion '{motion_spec.name}'."
@@ -948,7 +936,7 @@ class ModelIndex:
                     raise ValueError(
                         f"Controller '{controller.name}' in handler '{handler_spec.name}' requires a MOTION reference."
                     )
-                if (motion_spec.name, controller.params.constraint) not in self.constraint_map:
+                if (motion_spec.name, controller.params.constraint.name) not in self.constraint_map:
                     raise ValueError(
                         f"Controller '{controller.name}' references constraint "
                         f"'{controller.params.constraint}', but it is not defined for motion '{motion_spec.name}'."
@@ -1076,7 +1064,7 @@ class ModelIndex:
     def shared_while_signatures(self) -> set[ConstraintSignature]:
         usage: dict[ConstraintSignature, set[str]] = {}
         for motion_spec in self.motion_specs:
-            for constraint in motion_spec.spec.while_:
+            for constraint in motion_spec.spec.while_.constraints:
                 if not isinstance(constraint.expr, EqualityConstraint):
                     continue
                 usage.setdefault(_while_signature(constraint), set()).add(motion_spec.name)
@@ -1085,7 +1073,7 @@ class ModelIndex:
     @cached_property
     def controlled_constraints(self) -> list[ConstraintData]:
         while_names_by_motion = {
-            motion_spec.name: {constraint.name for constraint in motion_spec.spec.while_}
+            motion_spec.name: {constraint.name for constraint in motion_spec.spec.while_.constraints}
             for motion_spec in self.motion_specs
         }
         return [
@@ -1099,7 +1087,7 @@ class ModelIndex:
         derived_constraints: list[ConstraintData] = []
         for motion_spec in self.motion_specs:
             motion_name = motion_spec.name
-            while_names = {constraint.name for constraint in motion_spec.spec.while_}
+            while_names = {constraint.name for constraint in motion_spec.spec.while_.constraints}
 
             for constraint in self.all_constraints(motion_spec):
                 quantity = self.world_quantity(motion_spec, constraint.view.quantity)
@@ -1217,7 +1205,7 @@ class ModelIndex:
             if motion_spec is None:
                 continue
             for monitor in handler_spec.spec.monitors:
-                constraint = self.constraint_map.get((motion_spec.name, monitor.constraint))
+                constraint = self.constraint_map.get((motion_spec.name, monitor.constraint.name))
                 if constraint is None:
                     continue
                 is_edge = bool(monitor.event)
@@ -1227,8 +1215,8 @@ class ModelIndex:
                         motion_name=motion_spec.name,
                         monitor=monitor,
                         constraint=constraint,
-                        evaluator_id=f"eval-{monitor.constraint.removeprefix('cstr-')}",
-                        error_signal_id=f"{monitor.constraint}-err",
+                        evaluator_id=f"eval-{monitor.constraint.name.removeprefix('cstr-')}",
+                        error_signal_id=f"{monitor.constraint.name}-err",
                         signal_kind="event" if is_edge else "flag",
                         signal_id=signal_name,
                     )
@@ -1253,7 +1241,7 @@ class ModelIndex:
                 continue
             for controller in handler_spec.spec.controllers:
                 key = str(URIRef(controller.uri))
-                constraint = self.constraint_map.get((motion_spec.name, controller.params.constraint))
+                constraint = self.constraint_map.get((motion_spec.name, controller.params.constraint.name))
                 if constraint is None:
                     raise ValueError(
                         f"Controller '{controller.name}' references constraint "
@@ -1928,11 +1916,11 @@ def gen_motion_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
     for motion_spec in index.motion_specs:
         motion_node = base_ns[f"motion-{_motion_suffix(motion_spec.name)}"]
         _add_types(graph, motion_node, MOT.GuardedMotion)
-        for constraint in motion_spec.spec.when:
+        for constraint in motion_spec.spec.when.constraints:
             graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
-        for constraint in motion_spec.spec.while_:
+        for constraint in motion_spec.spec.while_.constraints:
             graph.add((motion_node, MOT["while"], URIRef(constraint.uri)))
-        for constraint in motion_spec.spec.until:
+        for constraint in motion_spec.spec.until.constraints:
             graph.add((motion_node, MOT.until, URIRef(constraint.uri)))
     return graph
 

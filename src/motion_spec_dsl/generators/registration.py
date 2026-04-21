@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from rdflib.graph import Graph
+from rdflib.namespace import Namespace
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
 
@@ -28,24 +29,22 @@ from motion_spec_dsl.generators.classes import (
     Model,
     MonitorEntry,
     MotionSpec,
+    ConstraintRef,
     NamespaceDeclare,
     PostContextDecl,
-    PostLookup,
     PreContextDecl,
-    PreLookup,
-    QuantityRef,
+    View,
     ScalarQuantity,
     SolverSpec,
     SpecContextDecl,
-    SpecLookup,
-    UntilSection,
     ValueVariable,
     VectorQuantity,
     VelocitySolverEntry,
-    WhenSection,
-    WhileSection,
     WorldContextDecl,
     WorldQuantity,
+    WhenSection,
+    WhileSection,
+    UntilSection
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
     CONSTRAINT_PATH_BY_PREFIX,
@@ -65,9 +64,6 @@ LANGUAGE_CLASSES = [
     PreContextDecl,
     SpecContextDecl,
     PostContextDecl,
-    WhenSection,
-    WhileSection,
-    UntilSection,
     WorldQuantity,
     GeometricProps,
     GeoPropPair,
@@ -75,26 +71,98 @@ LANGUAGE_CLASSES = [
     ScalarQuantity,
     VectorQuantity,
     ConstraintSpecification,
-    QuantityRef,
+    ConstraintRef,
+    View,
     EqualityConstraint,
     GreaterThanConstraint,
     LessThanConstraint,
     BilateralConstraint,
-    PreLookup,
-    SpecLookup,
-    PostLookup,
     MonitorEntry,
     ControllerEntry,
     ControllerParams,
     SolverSpec,
     VelocitySolverEntry,
     ForceSolverEntry,
+    WhenSection,
+    WhileSection,
+    UntilSection,
 ]
+
+
+def _motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
+    return [
+        constraint
+        for section in spec.sections
+        for constraint in section.constraints
+    ]
+
+
+def _validate_motion_constraint_ref(
+    ref: ConstraintRef,
+    handler: ConstraintHandler,
+    motion_specs: dict[str, MotionSpec],
+    owner_name: str,
+) -> None:
+    motion_name = ref.motion.name
+    if handler.motion and motion_name != handler.motion.name:
+        raise ValueError(
+            f"{owner_name} references motion '{motion_name}', but handler "
+            f"'{handler.name}' is bound to motion '{handler.motion.name}'."
+        )
+
+    motion = motion_specs.get(motion_name)
+    if motion is None:
+        raise ValueError(f"{owner_name} references unknown motion '{motion_name}'.")
+
+    if not any(constraint.name == ref.name for constraint in _motion_constraints(motion)):
+        raise ValueError(
+            f"{owner_name} references constraint '{motion_name}.{ref.name}', "
+            f"but it is not defined in motion '{motion_name}'."
+        )
+
+
+def _validate_motion_constraint_refs(model, metamodel) -> None:
+    del metamodel
+    motion_specs = {
+        spec.name: spec
+        for spec in model.specs
+        if isinstance(spec, MotionSpec)
+    }
+    for motion in motion_specs.values():
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for constraint in _motion_constraints(motion):
+            if constraint.name in seen:
+                duplicates.add(constraint.name)
+            seen.add(constraint.name)
+        if duplicates:
+            names = ", ".join(sorted(duplicates))
+            raise ValueError(
+                f"Motion '{motion.name}' has duplicate constraint name(s): {names}. "
+                "Constraint names must be unique across WHEN, WHILE, and UNTIL."
+            )
+
+    for handler in (spec for spec in model.specs if isinstance(spec, ConstraintHandler)):
+        for monitor in handler.monitors:
+            _validate_motion_constraint_ref(
+                monitor.constraint,
+                handler,
+                motion_specs,
+                f"Monitor '{monitor.name}'",
+            )
+        for controller in handler.controllers:
+            _validate_motion_constraint_ref(
+                controller.params.constraint,
+                handler,
+                motion_specs,
+                f"Controller '{controller.name}'",
+            )
 
 
 def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
     metamodel.register_scope_providers({"*.*": scoping_providers.FQNImportURI()})
+    metamodel.register_model_processor(_validate_motion_constraint_refs)
     return metamodel
 
 
@@ -104,6 +172,40 @@ motion_spec_lang = LanguageDesc(
     description="Motion specification DSL for guarded motions",
     metamodel=motion_spec_metamodel,
 )
+
+
+def _iter_entity_objects(obj, seen: set[int] | None = None):
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return
+    seen.add(obj_id)
+
+    if isinstance(obj, (str, bytes, int, float, bool, type(None), Namespace)):
+        return
+    if hasattr(obj, "name") and hasattr(obj, "uri"):
+        yield obj
+    if isinstance(obj, dict):
+        children = obj.values()
+    elif isinstance(obj, (list, tuple, set)):
+        children = obj
+    elif hasattr(obj, "__dict__"):
+        children = (
+            value
+            for key, value in obj.__dict__.items()
+            if not key.startswith("_tx_")
+        )
+    else:
+        return
+
+    for child in children:
+        yield from _iter_entity_objects(child, seen)
+
+
+def _print_entity_uris(model) -> None:
+    for entity in _iter_entity_objects(model):
+        print(f"{entity.__class__.__name__} {entity.name}: {entity.uri}")
 
 
 def _graph_format(output_format: str) -> str:
@@ -240,15 +342,8 @@ def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> No
     output_format = kwargs.get("format", "json-ld")
     _graph_format(output_format)
 
-    for spec in model.specs:
-        if isinstance(spec, MotionSpec):
-            while_section = spec.while_
-            if while_section:
-                for wi in while_section.constraints:
-                    print(f"while: - {wi.uri} - {wi.parent.name}")
-                    print(f"  view: - {wi.view.uri}")
-                    print(f"    wi.view.quantity type: {type(wi.view.quantity).__name__}")
-                    print(f"    quantity: {wi.view.quantity.name} {wi.view.quantity.parent.name} - {wi.view.quantity.uri}")
+    # print all entities with their URIs
+    _print_entity_uris(model)
 
     # graphs = get_motion_spec_graphs(model)
     # output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent

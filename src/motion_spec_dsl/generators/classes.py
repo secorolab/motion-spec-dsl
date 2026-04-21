@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Any
+from enum import StrEnum
 
 from rdflib.namespace import Namespace
 
@@ -29,14 +29,14 @@ class Import:
 class Model:
     def __init__(
         self,
-        imports: Optional[List[Import]] = None,
-        namespaces: Optional[List[NamespaceDeclare]] = None,
-        specs: Optional[List[Any]] = None,
+        imports: list[Import] | None = None,
+        namespaces: list[NamespaceDeclare] | None = None,
+        specs: list[MotionSpec | ConstraintHandler] | None = None,
         **_,
     ):
-        self.imports: List[Import] = imports or []
-        self.namespaces: List[NamespaceDeclare] = namespaces or []
-        self.specs: List[MotionSpec | ConstraintHandler] = specs or []
+        self.imports = imports or []
+        self.namespaces = namespaces or []
+        self.specs = specs or []
 
 
 @dataclass
@@ -44,15 +44,256 @@ class MotionSpec(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
-    move: Optional[str]
-    context: List[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
-    when_: WhenSection
-    while_: WhileSection
-    until_: UntilSection
+    move: str | None
+    context: list[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
+    sections: list[WhenSection | WhileSection | UntilSection]
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        self.when = self._section("when")
+        self.while_ = self._section("while")
+        self.until = self._section("until")
         assert len(self.while_.constraints) > 0, "MotionSpec must have at least one 'while' constraint"
+
+    def _section(self, name: str) -> WhenSection | WhileSection | UntilSection:
+        for section in self.sections:
+            if section.name == name:
+                return section
+        raise ValueError(f"MotionSpec '{self.name}' is missing required {name.upper()} section")
+
+
+@dataclass
+class WorldContextDecl(NamedNamespaceObject):
+    kind = "World"
+
+    parent: object
+    name: str = ""
+    declaration: list[WorldQuantity] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def namespace(self):
+        return Namespace(str(self.parent.namespace) + f"{self.parent.name}/{self.kind}/")
+
+
+@dataclass
+class ValVarContextDecl(NamedNamespaceObject):
+    kind = None
+
+    parent: object
+    name: str = ""
+    declaration: list[ValueVariable] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def namespace(self):
+        assert self.kind is not None, "ValVarContextDecl must have 'kind' defined"
+        return Namespace(str(self.parent.namespace) + f"{self.parent.name}/{self.kind}/")
+
+
+class PreContextDecl(ValVarContextDecl):
+    kind = "Pre"
+
+
+class SpecContextDecl(ValVarContextDecl):
+    kind = "Spec"
+
+
+class PostContextDecl(ValVarContextDecl):
+    kind = "Post"
+
+
+@dataclass
+class ConstraintSection(NamedNamespaceObject):
+    kind = ""
+
+    parent: object
+    constraints: list[ConstraintSpecification] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.kind)
+
+
+class WhenSection(ConstraintSection):
+    kind = "when"
+
+
+class WhileSection(ConstraintSection):
+    kind = "while"
+
+
+class UntilSection(ConstraintSection):
+    kind = "until"
+
+
+class WorldQuantityType(StrEnum):
+    Frame          = "Frame"
+    Pose           = "Pose"
+    VelocityTwist  = "VelocityTwist"
+    Wrench         = "Wrench"
+    KinematicChain = "KinematicChain"
+    Gravity        = "Gravity"
+
+
+@dataclass
+class WorldQuantity(NamedNamespaceObject):
+    parent: object
+    name: str
+    type: WorldQuantityType
+    props: GeometricProps | None = None
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+        self.type = WorldQuantityType(self.type)
+
+
+@dataclass
+class GeometricProps:
+    pairs: list[GeoPropPair]
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class GeoPropPair:
+    key: str = ""
+    value: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class ValueVariable(NamedNamespaceObject):
+    parent: object
+    name: str = ""
+    type: str = ""
+    value: ScalarQuantity | VectorQuantity | None = None
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class ScalarQuantity:
+    value: float = 0.0
+    unit: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class VectorQuantity:
+    x: float = 0.0
+    y: float = 0.0
+    z: float = 0.0
+    unit: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class ConstraintSpecification(NamedNamespaceObject):
+    parent: object
+    name: str
+    view: View
+    expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class ConstraintRef:
+    motion: MotionSpec
+    name: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def motion_name(self) -> str:
+        return self.motion.name
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class ViewProperty(StrEnum):
+    Position       = "position"
+    Orientation    = "orientation"
+    LinVel         = "linvel"
+    AngVel         = "angvel"
+    LinAcc         = "linacc"
+    AngAcc         = "angacc"
+    Force          = "force"
+    Torque         = "torque"
+
+
+class Axis(StrEnum):
+    X = "x"
+    Y = "y"
+    Z = "z"
+
+
+@dataclass
+class View:
+    parent: object
+    quantity: WorldQuantity
+    property: ViewProperty
+    axis: Axis | None = None
+
+    def __post_init__(self):
+        if isinstance(self.property, str):
+            self.property = ViewProperty(self.property)
+        if self.axis is not None and isinstance(self.axis, str):
+            self.axis = Axis(self.axis)
+
+
+@dataclass
+class ContextRef:
+    value: ValueVariable
+    quantity: ScalarQuantity | VectorQuantity | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def variable(self) -> str:
+        return self.value.name
+
+
+@dataclass
+class EqualityConstraint:
+    reference: ContextRef
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        assert self.reference is not None
+
+
+@dataclass
+class GreaterThanConstraint:
+    threshold: ContextRef
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        assert self.threshold is not None
+
+
+@dataclass
+class LessThanConstraint:
+    threshold: ContextRef
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        assert self.threshold is not None
+
+
+@dataclass
+class BilateralConstraint:
+    lower: ContextRef
+    upper: ContextRef
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        assert self.lower is not None
+        assert self.upper is not None
 
 
 @dataclass
@@ -60,11 +301,11 @@ class ConstraintHandler(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
-    motion: MotionSpec
     solver: SolverSpec
-    context: List[WorldContextDecl | SpecContextDecl]
-    monitors: List[MonitorEntry] = field(default_factory=list)
-    controllers: List[ControllerEntry] = field(default_factory=list)
+    context: list[WorldContextDecl | SpecContextDecl]
+    motion: MotionSpec
+    monitors: list[MonitorEntry] = field(default_factory=list)
+    controllers: list[ControllerEntry] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
@@ -72,268 +313,68 @@ class ConstraintHandler(IHasNamespaceDeclare):
             raise ValueError(
                 "ConstraintHandler with 'while' constraints must have at least one controller"
             )
-        if (len(self.motion.while_.constraints) > 0 or len(self.motion.until_.constraints) > 0) and len(self.monitors) == 0:
+        if (len(self.motion.when.constraints) > 0 or len(self.motion.until.constraints) > 0) and len(self.monitors) == 0:
             raise ValueError(
                 "ConstraintHandler with 'when' or 'until' constraints must have at least one monitor"
             )
 
 
-class WorldContextDecl:
-    kind = "World"
-
-    def __init__(self, parent, name: str = "", declaration=None, **_):
-        self.parent = parent
-        self.name = name
-        self.declaration: List[WorldQuantity] = declaration or []
-
-    @property
-    def namespace(self):
-        return self.parent.namespace
-
-
-class PreContextDecl:
-    kind = "Pre"
-
-    def __init__(self, parent, name: str = "", declaration=None, **_):
-        self.parent = parent
-        self.name = name
-        self.declaration: List[ValueVariable] = declaration or []
-
-    @property
-    def namespace(self):
-        return self.parent.namespace
-
-
-class SpecContextDecl:
-    kind = "Spec"
-
-    def __init__(self, parent, name: str = "", declaration=None, **_):
-        self.parent = parent
-        self.name = name
-        self.declaration: List[ValueVariable] = declaration or []
-
-    @property
-    def namespace(self):
-        return self.parent.namespace
-
-
-class PostContextDecl:
-    kind = "Post"
-
-    def __init__(self, parent, name: str = "", declaration=None, **_):
-        self.parent = parent
-        self.name = name
-        self.declaration: List[ValueVariable] = declaration or []
-
-    @property
-    def namespace(self):
-        return self.parent.namespace
-
-
-class WhenSection(NamedNamespaceObject):
-    kind = "when"
-
-    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
-        super().__init__(parent=parent, name=self.__class__.kind)
-        self.constraints: List[ConstraintSpecification] = constraints or []
-
-
-class WhileSection(NamedNamespaceObject):
-    kind = "while"
-
-    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
-        super().__init__(parent=parent, name=self.__class__.kind)
-        self.constraints: List[ConstraintSpecification] = constraints or []
-
-
-class UntilSection(NamedNamespaceObject):
-    kind = "until"
-
-    def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
-        super().__init__(parent=parent, name=self.__class__.kind)
-        self.constraints: List[ConstraintSpecification] = constraints or []
-
-
-class WorldQuantity(NamedNamespaceObject):
-    def __init__(
-        self,
-        parent,
-        name: str = "",
-        type: str = "",
-        props: GeometricProps | None = None,
-        **_,
-    ):
-        super().__init__(parent=parent, name=name)
-        self.type: str = type
-        self.props: GeometricProps | None = props
-
-    @property
-    def entity_abbrev(self) -> str:
-        parts = self.name.split("-")
-        return parts[1] if len(parts) > 1 else self.name
-
-
-class GeometricProps:
-    def __init__(self, pairs: List[GeoPropPair], **_):
-        self.pairs: List[GeoPropPair] = pairs
-
-
-class GeoPropPair:
-    def __init__(self, key: str = "", value: str = "", **_):
-        self.key: str = key
-        self.value: str = value
-
-
-class ValueVariable(NamedNamespaceObject):
-    def __init__(self, parent, name: str = "", type: str = "", value: Any = None, **_):
-        super().__init__(parent=parent, name=name)
-        self.type: str = type
-        self.value: Any = value
-
-
-class ScalarQuantity:
-    def __init__(self, value: float = 0.0, unit: str = "", **_):
-        self.value: float = value
-        self.unit: str = unit
-
-
-class VectorQuantity:
-    def __init__(self, x: float = 0.0, y: float = 0.0, z: float = 0.0, unit: str = "", **_):
-        self.x: float = x
-        self.y: float = y
-        self.z: float = z
-        self.unit: str = unit
-
-
-class ConstraintSpecification(NamedNamespaceObject):
-    def __init__(self, parent, name: str, view: QuantityRef, expr: Any, **_):
-        super().__init__(parent=parent, name=name)
-        self.view: QuantityRef = view
-        self.expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint = expr
-
-
-class QuantityRef(NamedNamespaceObject):
-    def __init__(self, parent, quantity: WorldQuantity, property: List[str], axis: List[str], **_):
-        super().__init__(parent=parent, name="")
-        self.quantity: WorldQuantity = quantity
-        self.property: List[str] = property
-        self.axis: List[str] = axis
-
-
-class EqualityConstraint:
-    def __init__(self, reference: Any = None, **_):
-        assert reference is not None
-        self.reference: PreLookup | SpecLookup | PostLookup = reference
-
-
-class GreaterThanConstraint:
-    def __init__(self, threshold: Any = None, **_):
-        assert threshold is not None
-        self.threshold: PreLookup | SpecLookup | PostLookup = threshold
-
-
-class LessThanConstraint:
-    def __init__(self, threshold: Any = None, **_):
-        assert threshold is not None
-        self.threshold: PreLookup | SpecLookup | PostLookup = threshold
-
-
-class BilateralConstraint:
-    def __init__(self, lower: Any = None, upper: Any = None, **_):
-        assert lower is not None
-        assert upper is not None
-        self.lower: PreLookup | SpecLookup | PostLookup = lower
-        self.upper: PreLookup | SpecLookup | PostLookup = upper
-
-
-class PreLookup:
-    def __init__(self, variable: str = "", value: Any = None, **_):
-        self.variable: str = variable
-        self.value: ScalarQuantity | VectorQuantity | None = value
-
-
-class SpecLookup:
-    def __init__(self, variable: str = "", value: Any = None, **_):
-        self.variable: str = variable
-        self.value: ScalarQuantity | VectorQuantity | None = value
-
-
-class PostLookup:
-    def __init__(self, variable: str = "", value: Any = None, **_):
-        self.variable: str = variable
-        self.value: ScalarQuantity | VectorQuantity | None = value
-
-
+@dataclass
 class MonitorEntry(NamedNamespaceObject):
-    def __init__(self, parent, constraint: str = "", event: str = "", flag: str = "", **_):
-        signal_name = event or flag
-        name = f"mon-{signal_name}" if signal_name else f"mon-{constraint}"
-        super().__init__(parent=parent, name=name)
-        self.constraint: str = constraint
-        self.event: str = event
-        self.flag: str = flag
+    parent: object
+    constraint: ConstraintRef
+    event: str = ""
+    flag: str = ""
+
+    def __post_init__(self):
+        signal_name = self.event or self.flag
+        name = f"mon-{signal_name}" if signal_name else f"mon-{self.constraint}"
+        super().__init__(parent=self.parent, name=name)
+
+    @property
+    def constraint_name(self) -> str:
+        return self.constraint.name
 
 
+@dataclass
 class ControllerEntry(NamedNamespaceObject):
-    def __init__(
-        self,
-        parent,
-        name: str,
-        type: str,
-        params: ControllerParams,
-        output_type: str = "",
-        apply_at: str = "",
-        feed_scope: str = "",
-        feed_kind: str = "",
-        **_,
-    ):
-        super().__init__(parent=parent, name=name)
-        self.type: str = type
-        self.params: ControllerParams = params
-        self.output_type: str = output_type
-        self.apply_at: str = apply_at
-        self.feed_scope: str = feed_scope
-        self.feed_kind: str = feed_kind
+    parent: object
+    name: str
+    type: str
+    params: ControllerParams
+    output_type: str = ""
+    apply_at: str = ""
+    feed_scope: str = ""
+    feed_kind: str = ""
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class ControllerParams:
-    def __init__(
-        self,
-        constraint: str = "",
-        kp: float = 0.0,
-        ki: float = 0.0,
-        kd: float = 0.0,
-        decay: Optional[float] = None,
-        **_,
-    ):
-        self.constraint: str = constraint
-        self.kp: float = kp
-        self.ki: float = ki
-        self.kd: float = kd
-        self.decay: Optional[float] = decay
+    constraint: ConstraintRef
+    kp: float = 0.0
+    ki: float = 0.0
+    kd: float = 0.0
+    decay: float | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def constraint_name(self) -> str:
+        return self.constraint.name
 
 
+@dataclass
 class SolverSpec:
-    def __init__(
-        self,
-        parent,
-        algorithm: str = "",
-        chain: str = "",
-        root: str = "",
-        gravity: str = "",
-        gravity_value: Any = None,
-        velocity_solvers: Optional[List[VelocitySolverEntry]] = None,
-        force_solvers: Optional[List[ForceSolverEntry]] = None,
-        **_,
-    ):
-        self.parent = parent
-        self.algorithm: str = algorithm
-        self.chain: str = chain
-        self.root: str = root
-        self.gravity: str = gravity
-        self.gravity_value: Any = gravity_value
-        self.velocity_solvers: List[VelocitySolverEntry] = velocity_solvers or []
-        self.force_solvers: List[ForceSolverEntry] = force_solvers or []
+    parent: object
+    algorithm: str
+    chain: WorldQuantity
+    root: WorldQuantity
+    gravity: WorldQuantity
+    gravity_value: ContextRef
+    velocity_solvers: list[VelocitySolverEntry] = field(default_factory=list)
+    force_solvers: list[ForceSolverEntry] = field(default_factory=list)
 
     @property
     def namespace(self):
@@ -344,23 +385,26 @@ class SolverSpec:
         return self.parent.name
 
 
+@dataclass
 class VelocitySolverEntry(NamedNamespaceObject):
-    def __init__(self, parent, name: str = "", configuration: str = "", velocity: str = "", **_):
-        super().__init__(parent=parent, name=name)
-        self.configuration: str = configuration
-        self.velocity: str = velocity
+    parent: object
+    name: str = ""
+    configuration: str = ""
+    velocity: str = ""
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class ForceSolverEntry(NamedNamespaceObject):
-    def __init__(self, parent, name: str = "", configuration: str = "", force: str = "", **_):
-        super().__init__(parent=parent, name=name)
-        self.configuration: str = configuration
-        self.force: str = force
+    parent: object
+    name: str = ""
+    configuration: str = ""
+    force: str = ""
 
-
-class WorldLookup:
-    def __init__(self, variable: str = "", **_):
-        self.variable: str = variable
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
 class DerivedEntity(NamedNamespaceObject):
@@ -368,44 +412,68 @@ class DerivedEntity(NamedNamespaceObject):
     pass
 
 
+@dataclass
 class ScalarView(DerivedEntity):
-    def __init__(self, parent, name, quantity_name, prop, axis, scalar_type, view_type, subspace):
-        super().__init__(parent=parent, name=name)
-        self.quantity_name = quantity_name
-        self.prop = prop
-        self.axis = axis
-        self.scalar_type = scalar_type
-        self.view_type = view_type
-        self.subspace = subspace
+    parent: object
+    name: str
+    quantity_name: str
+    prop: str
+    axis: str | None
+    scalar_type: str
+    view_type: object
+    subspace: str | None
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class ErrorSignal(DerivedEntity):
-    def __init__(self, parent, name, scalar_type):
-        super().__init__(parent=parent, name=name)
-        self.scalar_type = scalar_type
+    parent: object
+    name: str
+    scalar_type: str
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class AccelerationEnergy(DerivedEntity):
-    def __init__(self, parent, name):
-        super().__init__(parent=parent, name=name)
+    parent: object
+    name: str
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class Motion(DerivedEntity):
-    def __init__(self, parent, name, motion_spec_block):
-        super().__init__(parent=parent, name=name)
-        self.motion_spec = motion_spec_block
+    parent: object
+    name: str
+    motion_spec_block: object
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class Evaluator(DerivedEntity):
-    def __init__(self, parent, name, constraint, error_signal):
-        super().__init__(parent=parent, name=name)
-        self.constraint = constraint
-        self.error_signal = error_signal
+    parent: object
+    name: str
+    constraint: object
+    error_signal: object
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
 
 
+@dataclass
 class ConstraintHandlera(DerivedEntity):
-    def __init__(self, parent, name, motion):
-        super().__init__(parent=parent, name=name)
-        self.motion = motion
-        self.evaluators = []
-        self.controllers = []
+    parent: object
+    name: str
+    motion: Motion
+    evaluators: list[Evaluator] = field(default_factory=list)
+    controllers: list[ControllerEntry] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)

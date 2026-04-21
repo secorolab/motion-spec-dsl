@@ -2,7 +2,7 @@
 
 ns app = "https://secorolab.github.io/models/generated/"
 
-MOTION_SPEC (ns=app) motion_move {
+MOTION_SPEC (ns=app) m_move {
     MOVE: "Move end-effector downward at constant velocity until contact"
 
     CONTEXT {
@@ -22,9 +22,9 @@ MOTION_SPEC (ns=app) motion_move {
     WHEN {}
 
     WHILE {
-        wi1: keeping cw.twist-ee-base.linear.z equal to cs.vel-z-down,
-        wi2: keeping cw.twist-ee-base.linear.x equal to cs.vel-zero,
-        wi3: keeping cw.twist-ee-base.linear.y equal to cs.vel-zero
+        wi1: keeping cw.twist-ee-base.linvel.z equal to cs.vel-z-down,
+        wi2: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero,
+        wi3: keeping cw.twist-ee-base.linvel.y equal to cs.vel-zero
     }
 
     UNTIL {
@@ -37,30 +37,29 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         c1: World {
             chain-arm:  KinematicChain,
             frame-base: Frame,
-            gravity:    UniformGravitationalField
+            gravity:    Gravity
         },
         c2: Spec {
             gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 
-    MOTION: @motion_move
+    MOTION: m_move
 
     MONITORS {
-        monitor u1 and trigger event evt-contact when active
+        monitor m_move.u1 and trigger event evt-contact when active
     }
 
     CONTROLLERS {
-        ctrl-vel-z: PID { constraint: wi1, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
-        ctrl-vel-x: PID { constraint: wi2, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
-        ctrl-vel-y: PID { constraint: wi3, Kp: 5.0, Ki: 1.0, Kd: 1.0 }
+        ctrl-vel-z: PID { constraint: m_move.wi1, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
+        ctrl-vel-x: PID { constraint: m_move.wi2, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
+        ctrl-vel-y: PID { constraint: m_move.wi3, Kp: 5.0, Ki: 1.0, Kd: 1.0 }
     }
 
     SOLVER {
         algorithm: Vereshchagin,
-        chain:     World[chain-arm],
-        root:      World[frame-base],
-        gravity:   World[gravity] equal to Spec[gravity-vec]
+        chain:     c1.chain-arm,
+        root:      c1.frame-base,
+        gravity:   c1.gravity equal to c2.gravity-vec
     }
 }
-
