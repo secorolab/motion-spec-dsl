@@ -45,13 +45,14 @@ class MotionSpec(IHasNamespaceDeclare):
     ns: NamespaceDeclLike
     name: str
     move: Optional[str]
-    context: List[Any] = field(default_factory=list)
-    when: Any = None
-    while_: Any = None
-    until: Any = None
+    context: List[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
+    when_: WhenSection
+    while_: WhileSection
+    until_: UntilSection
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        assert len(self.while_.constraints) > 0, "MotionSpec must have at least one 'while' constraint"
 
 
 @dataclass
@@ -61,20 +62,17 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     motion: MotionSpec
     solver: SolverSpec
-    context: List[Any] = field(default_factory=list)
+    context: List[WorldContextDecl | SpecContextDecl]
     monitors: List[MonitorEntry] = field(default_factory=list)
     controllers: List[ControllerEntry] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        while_constraints = self.motion.while_.constraints if self.motion.while_ else []
-        when_constraints = self.motion.when.constraints if self.motion.when else []
-        until_constraints = self.motion.until.constraints if self.motion.until else []
-        if len(while_constraints) > 0 and len(self.controllers) == 0:
+        if len(self.motion.while_.constraints) > 0 and len(self.controllers) == 0:
             raise ValueError(
                 "ConstraintHandler with 'while' constraints must have at least one controller"
             )
-        if (len(when_constraints) > 0 or len(until_constraints) > 0) and len(self.monitors) == 0:
+        if (len(self.motion.while_.constraints) > 0 or len(self.motion.until_.constraints) > 0) and len(self.monitors) == 0:
             raise ValueError(
                 "ConstraintHandler with 'when' or 'until' constraints must have at least one monitor"
             )
@@ -83,69 +81,53 @@ class ConstraintHandler(IHasNamespaceDeclare):
 class WorldContextDecl:
     kind = "World"
 
-    def __init__(self, parent, label: str, decl: WorldDeclarationList, **_):
+    def __init__(self, parent, name: str = "", declaration=None, **_):
         self.parent = parent
-        self.label = label
-        self.decl: WorldDeclarationList = decl
+        self.name = name
+        self.declaration: List[WorldQuantity] = declaration or []
 
     @property
     def namespace(self):
         return self.parent.namespace
-
-    @property
-    def name(self) -> str:
-        return self.parent.name
 
 
 class PreContextDecl:
     kind = "Pre"
 
-    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+    def __init__(self, parent, name: str = "", declaration=None, **_):
         self.parent = parent
-        self.label = label
-        self.decl: ValueDeclarationList = decl
+        self.name = name
+        self.declaration: List[ValueVariable] = declaration or []
 
     @property
     def namespace(self):
         return self.parent.namespace
-
-    @property
-    def name(self) -> str:
-        return self.parent.name
 
 
 class SpecContextDecl:
     kind = "Spec"
 
-    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+    def __init__(self, parent, name: str = "", declaration=None, **_):
         self.parent = parent
-        self.label = label
-        self.decl: ValueDeclarationList = decl
+        self.name = name
+        self.declaration: List[ValueVariable] = declaration or []
 
     @property
     def namespace(self):
         return self.parent.namespace
-
-    @property
-    def name(self) -> str:
-        return self.parent.name
 
 
 class PostContextDecl:
     kind = "Post"
 
-    def __init__(self, parent, label: str, decl: ValueDeclarationList, **_):
+    def __init__(self, parent, name: str = "", declaration=None, **_):
         self.parent = parent
-        self.label = label
-        self.decl: ValueDeclarationList = decl
+        self.name = name
+        self.declaration: List[ValueVariable] = declaration or []
 
     @property
     def namespace(self):
         return self.parent.namespace
-
-    @property
-    def name(self) -> str:
-        return self.parent.name
 
 
 class WhenSection(NamedNamespaceObject):
@@ -170,12 +152,6 @@ class UntilSection(NamedNamespaceObject):
     def __init__(self, parent, constraints: Optional[List[ConstraintSpecification]] = None, **_):
         super().__init__(parent=parent, name=self.__class__.kind)
         self.constraints: List[ConstraintSpecification] = constraints or []
-
-
-class WorldDeclarationList(NamedNamespaceObject):
-    def __init__(self, parent, declaration: List[WorldQuantity], **_):
-        super().__init__(parent=parent, name=parent.kind)
-        self.declaration: List[WorldQuantity] = declaration
 
 
 class WorldQuantity(NamedNamespaceObject):
@@ -206,20 +182,6 @@ class GeoPropPair:
     def __init__(self, key: str = "", value: str = "", **_):
         self.key: str = key
         self.value: str = value
-
-
-class ValueDeclarationList:
-    def __init__(self, parent, declaration: List[ValueVariable], **_):
-        self.parent = parent
-        self.declaration: List[ValueVariable] = declaration
-
-    @property
-    def namespace(self):
-        return Namespace(self.parent.namespace + self.parent.name + "/")
-
-    @property
-    def name(self) -> str:
-        return self.parent.kind
 
 
 class ValueVariable(NamedNamespaceObject):

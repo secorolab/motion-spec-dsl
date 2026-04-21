@@ -6,29 +6,29 @@ MOTION_SPEC (ns=app) motion_move {
     MOVE: "Move end-effector downward at constant velocity until contact"
 
     CONTEXT {
-        c1: World {
+        cw: World {
             twist-ee-base: VelocityTwist { of = link-ee, wrt = link-base },
             wrench-ee-ee:  Wrench { ref-point = link-ee, as-seen-by = link-ee }
         },
-        c2: Spec {
+        cs: Spec {
             vel-z-down: LinearVelocity = -0.05 m/s,
             vel-zero:   LinearVelocity =  0.0  m/s
         },
-        c3: Post {
-            force-contact: Force = 5.0 N
+        cpo: Post {
+            force-contact: Force
         }
     }
 
     WHEN {}
 
     WHILE {
-        wi1: keeping twist-ee-base.linear.z equal to Spec[vel-z-down],
-        wi2: keeping twist-ee-base.linear.x equal to Spec[vel-zero],
-        wi3: keeping twist-ee-base.linear.y equal to Spec[vel-zero]
+        wi1: keeping cw.twist-ee-base.linear.z equal to cs.vel-z-down,
+        wi2: keeping cw.twist-ee-base.linear.x equal to cs.vel-zero,
+        wi3: keeping cw.twist-ee-base.linear.y equal to cs.vel-zero
     }
 
     UNTIL {
-        u1: wrench-ee-ee.force.z is larger than Post[force-contact]
+        u1: cw.wrench-ee-ee.force.z is larger than [cpo.force-contact = 5.0 N]
     }
 }
 

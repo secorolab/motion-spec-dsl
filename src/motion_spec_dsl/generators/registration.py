@@ -39,14 +39,12 @@ from motion_spec_dsl.generators.classes import (
     SpecContextDecl,
     SpecLookup,
     UntilSection,
-    ValueDeclarationList,
     ValueVariable,
     VectorQuantity,
     VelocitySolverEntry,
     WhenSection,
     WhileSection,
     WorldContextDecl,
-    WorldDeclarationList,
     WorldQuantity,
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
@@ -70,11 +68,9 @@ LANGUAGE_CLASSES = [
     WhenSection,
     WhileSection,
     UntilSection,
-    WorldDeclarationList,
     WorldQuantity,
     GeometricProps,
     GeoPropPair,
-    ValueDeclarationList,
     ValueVariable,
     ScalarQuantity,
     VectorQuantity,
@@ -98,7 +94,7 @@ LANGUAGE_CLASSES = [
 
 def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
-    metamodel.register_scope_providers({"*.*": scoping_providers.PlainNameImportURI()})
+    metamodel.register_scope_providers({"*.*": scoping_providers.FQNImportURI()})
     return metamodel
 
 
