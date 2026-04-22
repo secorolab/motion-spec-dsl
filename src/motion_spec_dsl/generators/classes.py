@@ -63,28 +63,12 @@ class MotionSpec(IHasNamespaceDeclare):
 
 
 @dataclass
-class WorldContextDecl(NamedNamespaceObject):
-    kind = "World"
-
-    parent: object
-    name: str = ""
-    declaration: list[WorldQuantity] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def namespace(self):
-        return Namespace(str(self.parent.namespace) + f"{self.parent.name}/{self.kind}/")
-
-
-@dataclass
 class ValVarContextDecl(NamedNamespaceObject):
     kind = None
 
     parent: object
     name: str = ""
-    declaration: list[ValueVariable] = field(default_factory=list)
+    declaration: list[ValueVariable | WorldQuantity] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -93,6 +77,10 @@ class ValVarContextDecl(NamedNamespaceObject):
     def namespace(self):
         assert self.kind is not None, "ValVarContextDecl must have 'kind' defined"
         return Namespace(str(self.parent.namespace) + f"{self.parent.name}/{self.kind}/")
+
+
+class WorldContextDecl(ValVarContextDecl):
+    kind = "World"
 
 
 class PreContextDecl(ValVarContextDecl):
@@ -157,22 +145,42 @@ class GeometricProps:
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
+class GeometricPropKey(StrEnum):
+    Of        = "of"
+    Wrt       = "wrt"
+    RefPoint  = "ref-point"
+    AsSeenBy    = "as-seen-by"
+
+
 @dataclass
 class GeoPropPair:
-    key: str = ""
+    key: GeometricPropKey
     value: str = ""
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        self.key = GeometricPropKey(self.key)
+
+
+class QuantityType(StrEnum):
+    LinearDistance   = "LinearDistance"
+    AngularDistance  = "AngularDistance"
+    LinearVelocity   = "LinearVelocity"
+    AngularVelocity  = "AngularVelocity"
+    Force            = "Force"
+    Torque           = "Torque"
 
 
 @dataclass
 class ValueVariable(NamedNamespaceObject):
     parent: object
-    name: str = ""
-    type: str = ""
+    name: str
+    type: QuantityType
     value: ScalarQuantity | VectorQuantity | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        self.type = QuantityType(self.type)
 
 
 @dataclass
@@ -216,7 +224,7 @@ class ConstraintRef:
         return self.name
 
 
-class ViewProperty(StrEnum):
+class SubSpace(StrEnum):
     Position       = "position"
     Orientation    = "orientation"
     LinVel         = "linvel"
@@ -237,20 +245,20 @@ class Axis(StrEnum):
 class View:
     parent: object
     quantity: WorldQuantity
-    property: ViewProperty
+    subspace: SubSpace | None = None
     axis: Axis | None = None
 
     def __post_init__(self):
-        if isinstance(self.property, str):
-            self.property = ViewProperty(self.property)
+        if isinstance(self.subspace, str):
+            self.subspace = SubSpace(self.subspace)
         if self.axis is not None and isinstance(self.axis, str):
             self.axis = Axis(self.axis)
 
 
 @dataclass
 class ContextRef:
-    value: ValueVariable
-    quantity: ScalarQuantity | VectorQuantity | None = None
+    valRef: ValueVariable
+    quantityValue: ScalarQuantity | VectorQuantity | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -322,13 +330,12 @@ class ConstraintHandler(IHasNamespaceDeclare):
 @dataclass
 class MonitorEntry(NamedNamespaceObject):
     parent: object
+    name: str
     constraint: ConstraintRef
     event: str = ""
     flag: str = ""
 
     def __post_init__(self):
-        signal_name = self.event or self.flag
-        name = f"mon-{signal_name}" if signal_name else f"mon-{self.constraint}"
         super().__init__(parent=self.parent, name=name)
 
     @property
@@ -343,12 +350,16 @@ class ControllerEntry(NamedNamespaceObject):
     type: str
     params: ControllerParams
     output_type: str = ""
-    apply_at: str = ""
+    apply_at: ContextRef | None = None
     feed_scope: str = ""
-    feed_kind: str = ""
+    feed_kind: QuantityType | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        if self.feed_kind is not None and isinstance(self.feed_kind, str):
+            self.feed_kind = QuantityType(self.feed_kind)
+        if self.apply_at is not None and not isinstance(self.apply_at, ContextRef):
+            raise ValueError("apply_at must be a ContextRef if provided")
 
 
 @dataclass

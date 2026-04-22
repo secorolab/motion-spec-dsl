@@ -112,10 +112,10 @@ ConstraintExpression:
 
 View:
     quantity=[WorldQuantity|ScopedName]
-    ("." property=ViewProperty ("." axis=Axis)?)
+    ("." subspace=SubSpace ("." axis=Axis)?)
 ;
 
-ViewProperty:
+SubSpace:
     "angvel"      |
     "linvel"      |
     "torque"      |
@@ -129,7 +129,7 @@ Axis:
 ;
 
 ContextRef:
-    '[' value=[ValueVariable:FQN] quantity=QuantityValue? ']'
+    '[' valRef=[ValueVariable:FQN] quantityValue=QuantityValue? ']'
   | value=[ValueVariable:FQN]
 ;
 
@@ -167,7 +167,7 @@ HandlerContextDecl:
 ;
 
 MonitorEntry:
-    "monitor" constraint=ConstraintRef "and"
+    name=IRI_TRUNK ":" monitor" constraint=ConstraintRef "and"
     (
         ("trigger" "event" event=IRI_TRUNK "when" "active") |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
@@ -179,7 +179,7 @@ ControllerEntry:
         params=ControllerParams
     "}"
     ("outputs" output_type=QuantityType)?
-    ("apply" "at" "World" "[" apply_at=IRI_TRUNK "]")?
+    ("apply" "at" apply_at=[ContextRef])?
     ("feed" "to" feed_scope=ControllerFeedScope feed_kind=QuantityType)?
 ;
 
