@@ -7,7 +7,36 @@ Model:
 ;
 
 Specification:
-    MotionSpec | ConstraintHandler
+    RobotSpec | MotionSpec | ConstraintHandler
+;
+
+RobotSpec:
+    "ROBOT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        "type" ":" type=RobotType ","
+        "urdf" ":" urdf=STRING ","
+        (
+            base=RobotBaseComponent
+            ("," "manipulators" ":" "{" manipulators+=RobotManipulatorComponent[","] "}")?
+            |
+            chain=RobotChainComponent
+        )
+    "}"
+;
+
+RobotType:
+    "Manipulator" | "MobileBase" | "MobileManipulator"
+;
+
+RobotBaseComponent:
+    "base" ":" "{" "root" ":" root=IRI_TRUNK "}"
+;
+
+RobotChainComponent:
+    "chain" ":" "{" "root" ":" root=IRI_TRUNK ("," "end" ":" end=IRI_TRUNK)? "}"
+;
+
+RobotManipulatorComponent:
+    name=IRI_TRUNK ":" "{" "root" ":" root=IRI_TRUNK "," "end" ":" end=IRI_TRUNK "}"
 ;
 
 MotionSpec:
@@ -57,6 +86,7 @@ WorldQuantityType:
     "Pose"                       |
     "KinematicChain"             |
     "Frame"                      |
+    "Link"                       |
     "Gravity"
 ;
 
@@ -65,7 +95,7 @@ GeometricProps:
 ;
 
 GeoPropPair:
-    (key=GeoPropKey "=" value=IRI_TRUNK)
+    (key=GeoPropKey ":" value=IRI_TRUNK)
 ;
 
 GeoPropKey:
@@ -98,7 +128,7 @@ QuantityType:
     "Force"           |
     "Torque"          |
     "LinearDistance"  |
-    "Angle"           |
+    "AngularDistance" |
     "Vector"
 ;
 
@@ -157,8 +187,8 @@ ConstraintHandler:
         "CONTEXT"      "{" context*=HandlerContextDecl[","] "}"
         "MOTION"       ":" motion=[MotionSpec|IRI_TRUNK]
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
-        "CONTROLLERS"  "{" controllers+=ControllerEntry[","]? "}"
-        "SOLVER"       solver=SolverSpec
+        "CONTROLLERS"  "{" controllers*=ControllerEntry[","]? "}"
+        "SOLVERS"      "{" solvers+=SolverEntry[","] "}"
     "}"
 ;
 
@@ -167,7 +197,7 @@ HandlerContextDecl:
 ;
 
 MonitorEntry:
-    name=IRI_TRUNK ":" monitor" constraint=ConstraintRef "and"
+    name=IRI_TRUNK ":" "monitor" constraint=ConstraintRef "and"
     (
         ("trigger" "event" event=IRI_TRUNK "when" "active") |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
@@ -178,65 +208,52 @@ ControllerEntry:
     name=IRI_TRUNK ":" type="PID" "{"
         params=ControllerParams
     "}"
-    ("outputs" output_type=QuantityType)?
-    ("apply" "at" apply_at=[ContextRef])?
-    ("feed" "to" feed_scope=ControllerFeedScope feed_kind=QuantityType)?
-;
-
-ControllerFeedScope:
-    "cartesian" | "base"
+    ("as" command_type=QuantityType)?
+    ("apply" "at" apply_at=[WorldQuantity|ScopedName])?
 ;
 
 ControllerParams:
     "constraint" ":" constraint=ConstraintRef ","
-    "Kp" ":" kp=FLOAT ","
-    "Ki" ":" ki=FLOAT ","
-    "Kd" ":" kd=FLOAT
+    "solver" ":" solver=[SolverEntry|IRI_TRUNK] ","
+    "Kp" "=" kp=FLOAT ","
+    "Ki" "=" ki=FLOAT ","
+    "Kd" "=" kd=FLOAT
     ("," "decay" ":" decay=FLOAT)?
 ;
 
 ConstraintRef:
-    motion=[MotionSpec|IRI_TRUNK] "." name=IRI_TRUNK
+    motion=[MotionSpec|IRI_TRUNK] "." constraint=[ConstraintSpecification|IRI_TRUNK]
 ;
 
-SolverSpec:
-    "{" (ArmSolverSpec | BaseSolverSpec) "}"
+SolverEntry:
+    name=IRI_TRUNK ":" "Solver" "{"
+        "robot"     ":" robot=RobotRef ","
+        "algorithm" ":" algorithm=SolverAlgorithm ","
+        "root"      ":" root=RobotAnchorRef
+        ("," "end"  ":" end=RobotAnchorRef)?
+        "," "gravity" ":" gravity=[WorldQuantity|ScopedName] "equal to" gravity_value=ContextRef
+    "}"
 ;
 
-ArmSolverSpec:
-    "algorithm"   ":" algorithm=SolverAlgorithm                 ","
-    "chain"       ":" chain=[WorldQuantity|ScopedName]          ","
-    "root"        ":" root=[WorldQuantity|ScopedName]           ","
-    "gravity"     ":" gravity=[WorldQuantity|ScopedName] "equal to" gravity_value=ContextRef
+RobotRef:
+    component=RobotComponentRef | robot=[RobotSpec|IRI_TRUNK]
+;
+
+RobotComponentRef:
+    robot=[RobotSpec|IRI_TRUNK] "." component=IRI_TRUNK
+;
+
+RobotAnchorRef:
+    robot=[RobotSpec|IRI_TRUNK] "." "chain" "." anchor=RobotAnchor
+  | component=RobotComponentRef "." anchor=RobotAnchor
+;
+
+RobotAnchor:
+    "root" | "end"
 ;
 
 SolverAlgorithm:
-    "Vereshchagin" | "NewtonEuler"
-;
-
-BaseSolverSpec:
-    (
-        "velocity-composition" ":" "{" velocity_solvers+=VelocitySolverEntry[","] "}"
-        ("," "force-distribution" ":" "{" force_solvers+=ForceSolverEntry[","] "}")?
-    )
-    |
-    (
-        "force-distribution" ":" "{" force_solvers+=ForceSolverEntry[","] "}"
-    )
-;
-
-VelocitySolverEntry:
-    name=IRI_TRUNK ":" "VelocityCompositionSolver" "{"
-        "configuration" ":" configuration=IRI_TRUNK ","
-        "velocity"      ":" "World" "[" velocity=IRI_TRUNK "]"
-    "}"
-;
-
-ForceSolverEntry:
-    name=IRI_TRUNK ":" "ForceDistributionSolver" "{"
-        "configuration" ":" configuration=IRI_TRUNK ","
-        "force"         ":" "World" "[" force=IRI_TRUNK "]"
-    "}"
+    "Vereshchagin" | "NewtonEuler" | "VelocityDistribution" | "ForceDistribution"
 ;
 
 

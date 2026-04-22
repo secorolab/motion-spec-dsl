@@ -31,7 +31,7 @@ MOTION_SPEC (ns=app) motion_name {
 
     CONTEXT:
         c1: World {
-            twist-ee-base: VelocityTwist { of = link-ee, wrt = link-base },
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base },
             wrench-ee-ee:  Wrench
         }
         c2: Spec {
@@ -68,9 +68,9 @@ CONSTRAINT_HANDLER (ns=app) ctrl_name {
     MOTION: motion_name
 
     CONTROLLERS:
-        ctrl-vel-z: PID { constraint: wi1, Kp: 5.0, Ki: 1.0, Kd: 1.0 }
-        ctrl-vel-x: PID { constraint: wi2, Kp: 5.0, Ki: 1.0, Kd: 1.0 }
-        ctrl-force: PID { constraint: wi3, Kp: 5.0, Ki: 1.0, Kd: 1.0 } outputs Force apply at World[link-ee] feed to cartesian Force
+        ctrl-vel-z: PID { constraint: wi1, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
+        ctrl-vel-x: PID { constraint: wi2, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
+        ctrl-force: PID { constraint: wi3, Kp = 5.0, Ki = 1.0, Kd = 1.0 } outputs Force apply at World[link-ee] feed to cartesian Force
 
     MONITORS:
         monitor u1 and trigger event evt-contact when active

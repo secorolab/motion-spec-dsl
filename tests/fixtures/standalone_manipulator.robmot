@@ -1,0 +1,56 @@
+ns app = "https://secorolab.github.io/models/test/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    urdf: "../robots/kg3.urdf",
+    chain: {
+        root: link-base,
+        end: link-ee
+    }
+}
+
+MOTION_SPEC (ns=app) m_move {
+    CONTEXT {
+        c1: World {
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base }
+        },
+        c2: Spec {
+            vel-z-ref: LinearVelocity = 0.1 m/s
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c1: c1.twist-ee-base.linvel.z equal to c2.vel-z-ref
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: m_move
+
+    CONTROLLERS {
+        ctrl-c1: PID { constraint: m_move.c1, solver: kinova_solver, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+
+    SOLVERS {
+        kinova_solver: Solver {
+            robot: kinova,
+            algorithm: Vereshchagin,
+            root: kinova.chain.root,
+            end: kinova.chain.end,
+            gravity: c1.gravity equal to c2.gravity-vec
+        }
+    }
+}

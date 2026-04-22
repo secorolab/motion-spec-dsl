@@ -1,0 +1,63 @@
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) eddie {
+    type: MobileManipulator,
+    urdf: "../robots/eddie.urdf",
+    base: {
+        root: link-base
+    },
+    manipulators: {
+        right_arm: { root: link-base, end: link-ee }
+    }
+}
+
+MOTION_SPEC (ns=app) m_move {
+    MOVE: "Invalid apply-at target"
+
+    CONTEXT {
+        cw: World {
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base }
+        },
+        cs: Spec {
+            pos-zero: LinearDistance = 0.0 m
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c1: keeping cw.pose-ee-base.position.x equal to cs.pos-zero
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {
+    CONTEXT {
+        c1: World {
+            frame-ee: Frame,
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: m_move
+
+    CONTROLLERS {
+        ctrl-c1: PID { constraint: m_move.c1, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        as Force
+        apply at c1.frame-ee
+    }
+
+    SOLVERS {
+        right_arm_solver: Solver {
+            robot: eddie.right_arm,
+            algorithm: Vereshchagin,
+            root: eddie.right_arm.root,
+            end: eddie.right_arm.end,
+            gravity: c1.gravity equal to c2.gravity-vec
+        }
+    }
+}

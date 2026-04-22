@@ -17,10 +17,10 @@ from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
     ConstraintHandler,
     ConstraintSpecification,
+    ConstraintRef,
     ControllerEntry,
     ControllerParams,
     EqualityConstraint,
-    ForceSolverEntry,
     GeoPropPair,
     GeometricProps,
     GreaterThanConstraint,
@@ -29,17 +29,22 @@ from motion_spec_dsl.generators.classes import (
     Model,
     MonitorEntry,
     MotionSpec,
-    ConstraintRef,
     NamespaceDeclare,
     PostContextDecl,
     PreContextDecl,
-    View,
+    RobotAnchorRef,
+    RobotBaseComponent,
+    RobotChainComponent,
+    RobotComponentRef,
+    RobotManipulatorComponent,
+    RobotRef,
+    RobotSpec,
     ScalarQuantity,
-    SolverSpec,
+    SolverEntry,
     SpecContextDecl,
     ValueVariable,
     VectorQuantity,
-    VelocitySolverEntry,
+    View,
     WorldContextDecl,
     WorldQuantity,
     WhenSection,
@@ -50,6 +55,7 @@ from motion_spec_dsl.generators.motion_spec_graph import (
     CONSTRAINT_PATH_BY_PREFIX,
     get_motion_spec_graphs,
 )
+from motion_spec_dsl.generators.validation import motion_constraints, validate_model
 
 GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"))
 SUPPORTED_FORMATS = {"json-ld": "json", "ttl": "ttl", "xml": "xml"}
@@ -58,6 +64,13 @@ LANGUAGE_CLASSES = [
     Model,
     NamespaceDeclare,
     Import,
+    RobotSpec,
+    RobotBaseComponent,
+    RobotChainComponent,
+    RobotManipulatorComponent,
+    RobotRef,
+    RobotComponentRef,
+    RobotAnchorRef,
     MotionSpec,
     ConstraintHandler,
     WorldContextDecl,
@@ -80,89 +93,49 @@ LANGUAGE_CLASSES = [
     MonitorEntry,
     ControllerEntry,
     ControllerParams,
-    SolverSpec,
-    VelocitySolverEntry,
-    ForceSolverEntry,
+    SolverEntry,
     WhenSection,
     WhileSection,
     UntilSection,
 ]
 
 
-def _motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
-    return [
-        constraint
-        for section in spec.sections
-        for constraint in section.constraints
-    ]
+class MotionConstraintScopeProvider:
+    """Resolve the constraint part of refs authored as motion.constraint."""
+
+    def __call__(self, obj: ConstraintRef, attr, obj_ref):
+        del attr
+        motion = obj.motion
+        if motion is None or not isinstance(motion, MotionSpec):
+            return None
+
+        for constraint in motion_constraints(motion):
+            if constraint.name == obj_ref.obj_name:
+                return constraint
+        return None
 
 
-def _validate_motion_constraint_ref(
-    ref: ConstraintRef,
-    handler: ConstraintHandler,
-    motion_specs: dict[str, MotionSpec],
-    owner_name: str,
-) -> None:
-    motion_name = ref.motion.name
-    if handler.motion and motion_name != handler.motion.name:
-        raise ValueError(
-            f"{owner_name} references motion '{motion_name}', but handler "
-            f"'{handler.name}' is bound to motion '{handler.motion.name}'."
-        )
+class HandlerSolverScopeProvider:
+    """Resolve controller solver refs against solvers declared in the same handler."""
 
-    motion = motion_specs.get(motion_name)
-    if motion is None:
-        raise ValueError(f"{owner_name} references unknown motion '{motion_name}'.")
-
-    if not any(constraint.name == ref.name for constraint in _motion_constraints(motion)):
-        raise ValueError(
-            f"{owner_name} references constraint '{motion_name}.{ref.name}', "
-            f"but it is not defined in motion '{motion_name}'."
-        )
-
-
-def _validate_motion_constraint_refs(model, metamodel) -> None:
-    del metamodel
-    motion_specs = {
-        spec.name: spec
-        for spec in model.specs
-        if isinstance(spec, MotionSpec)
-    }
-    for motion in motion_specs.values():
-        seen: set[str] = set()
-        duplicates: set[str] = set()
-        for constraint in _motion_constraints(motion):
-            if constraint.name in seen:
-                duplicates.add(constraint.name)
-            seen.add(constraint.name)
-        if duplicates:
-            names = ", ".join(sorted(duplicates))
-            raise ValueError(
-                f"Motion '{motion.name}' has duplicate constraint name(s): {names}. "
-                "Constraint names must be unique across WHEN, WHILE, and UNTIL."
-            )
-
-    for handler in (spec for spec in model.specs if isinstance(spec, ConstraintHandler)):
-        for monitor in handler.monitors:
-            _validate_motion_constraint_ref(
-                monitor.constraint,
-                handler,
-                motion_specs,
-                f"Monitor '{monitor.name}'",
-            )
-        for controller in handler.controllers:
-            _validate_motion_constraint_ref(
-                controller.params.constraint,
-                handler,
-                motion_specs,
-                f"Controller '{controller.name}'",
-            )
+    def __call__(self, obj: ControllerParams, attr, obj_ref):
+        del attr
+        controller = obj.parent
+        handler = getattr(controller, "parent", None)
+        for solver in getattr(handler, "solvers", []):
+            if solver.name == obj_ref.obj_name:
+                return solver
+        return None
 
 
 def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
-    metamodel.register_scope_providers({"*.*": scoping_providers.FQNImportURI()})
-    metamodel.register_model_processor(_validate_motion_constraint_refs)
+    metamodel.register_scope_providers({
+        "*.*": scoping_providers.FQNImportURI(),
+        "ConstraintRef.constraint": MotionConstraintScopeProvider(),
+        "ControllerParams.solver": HandlerSolverScopeProvider(),
+    })
+    metamodel.register_model_processor(validate_model)
     return metamodel
 
 
@@ -343,9 +316,9 @@ def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> No
     _graph_format(output_format)
 
     # print all entities with their URIs
-    _print_entity_uris(model)
+    # _print_entity_uris(model)
 
-    # graphs = get_motion_spec_graphs(model)
+    graphs = get_motion_spec_graphs(model)
     # output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
     # output_dir.mkdir(parents=True, exist_ok=True)
     #

@@ -1,0 +1,66 @@
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) eddie {
+    type: MobileManipulator,
+    urdf: "../robots/eddie.urdf",
+    base: {
+        root: link-base
+    },
+    manipulators: {
+        right_arm: { root: link-base, end: link-ee }
+    }
+}
+
+MOTION_SPEC (ns=app) m_move {
+    MOVE: "Invalid duplicate constraint names"
+
+    CONTEXT {
+        cw: World {
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base }
+        },
+        cs: Spec {
+            vel-zero: LinearVelocity = 0.0 m/s
+        }
+    }
+
+    WHEN {
+        c1: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+    }
+
+    WHILE {
+        c1: keeping cw.twist-ee-base.linvel.y equal to cs.vel-zero
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: m_move
+
+    MONITORS {
+        mon-c1: monitor m_move.c1 and trigger event evt-c1 when active
+    }
+
+    CONTROLLERS {
+        ctrl-c1: PID { constraint: m_move.c1, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+    }
+
+    SOLVERS {
+        right_arm_solver: Solver {
+            robot: eddie.right_arm,
+            algorithm: Vereshchagin,
+            root: eddie.right_arm.root,
+            end: eddie.right_arm.end,
+            gravity: c1.gravity equal to c2.gravity-vec
+        }
+    }
+}

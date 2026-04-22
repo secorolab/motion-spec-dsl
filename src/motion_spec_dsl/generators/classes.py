@@ -31,12 +31,139 @@ class Model:
         self,
         imports: list[Import] | None = None,
         namespaces: list[NamespaceDeclare] | None = None,
-        specs: list[MotionSpec | ConstraintHandler] | None = None,
+        specs: list[RobotSpec | MotionSpec | ConstraintHandler] | None = None,
         **_,
     ):
         self.imports = imports or []
         self.namespaces = namespaces or []
         self.specs = specs or []
+
+
+class RobotType(StrEnum):
+    Manipulator = "Manipulator"
+    MobileBase = "MobileBase"
+    MobileManipulator = "MobileManipulator"
+
+
+@dataclass
+class RobotSpec(IHasNamespaceDeclare):
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    type: RobotType
+    urdf: str
+    base: RobotBaseComponent | None = None
+    chain: RobotChainComponent | None = None
+    manipulators: list[RobotManipulatorComponent] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        self.type = RobotType(self.type)
+
+
+@dataclass
+class RobotBaseComponent(NamedNamespaceObject):
+    parent: object
+    root: str
+    name: str = "base"
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class RobotChainComponent(NamedNamespaceObject):
+    parent: object
+    root: str
+    end: str = ""
+    name: str = "chain"
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class RobotManipulatorComponent(NamedNamespaceObject):
+    parent: object
+    name: str
+    root: str
+    end: str
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class RobotRef:
+    component: RobotComponentRef | None = None
+    robot: RobotSpec | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def robot_spec(self) -> RobotSpec:
+        if self.component is not None:
+            return self.component.robot
+        if self.robot is None:
+            raise AttributeError("RobotRef is not resolved yet")
+        return self.robot
+
+    @property
+    def component_name(self) -> str | None:
+        return self.component.component if self.component is not None else None
+
+    @property
+    def name(self) -> str:
+        if self.component is not None:
+            return str(self.component)
+        return self.robot.name if self.robot is not None else ""
+
+    def __str__(self) -> str:
+        return self.name
+
+
+@dataclass
+class RobotComponentRef:
+    robot: RobotSpec
+    component: str
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def name(self) -> str:
+        return f"{self.robot.name}.{self.component}"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+@dataclass
+class RobotAnchorRef:
+    anchor: str
+    component: RobotComponentRef | None = None
+    robot: RobotSpec | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def name(self) -> str:
+        if self.component is not None:
+            return f"{self.component}.{self.anchor}"
+        if self.robot is None:
+            return ""
+        return f"{self.robot.name}.chain.{self.anchor}"
+
+    @property
+    def robot_spec(self) -> RobotSpec:
+        if self.component is not None:
+            return self.component.robot
+        if self.robot is None:
+            raise AttributeError("RobotAnchorRef is not resolved yet")
+        return self.robot
+
+    @property
+    def component_name(self) -> str | None:
+        return self.component.component if self.component is not None else None
+
+    def __str__(self) -> str:
+        return self.name
 
 
 @dataclass
@@ -124,6 +251,7 @@ class WorldQuantityType(StrEnum):
     VelocityTwist  = "VelocityTwist"
     Wrench         = "Wrench"
     KinematicChain = "KinematicChain"
+    Link           = "Link"
     Gravity        = "Gravity"
 
 
@@ -169,6 +297,7 @@ class QuantityType(StrEnum):
     AngularVelocity  = "AngularVelocity"
     Force            = "Force"
     Torque           = "Torque"
+    Vector           = "Vector"
 
 
 @dataclass
@@ -213,15 +342,19 @@ class ConstraintSpecification(NamedNamespaceObject):
 @dataclass
 class ConstraintRef:
     motion: MotionSpec
-    name: str = ""
+    constraint: ConstraintSpecification
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
     def motion_name(self) -> str:
         return self.motion.name
 
+    @property
+    def name(self) -> str:
+        return self.constraint.name
+
     def __str__(self) -> str:
-        return self.name
+        return f"{self.motion.name}.{self.constraint.name}"
 
 
 class SubSpace(StrEnum):
@@ -309,22 +442,14 @@ class ConstraintHandler(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
-    solver: SolverSpec
     context: list[WorldContextDecl | SpecContextDecl]
     motion: MotionSpec
+    solvers: list[SolverEntry]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        if len(self.motion.while_.constraints) > 0 and len(self.controllers) == 0:
-            raise ValueError(
-                "ConstraintHandler with 'while' constraints must have at least one controller"
-            )
-        if (len(self.motion.when.constraints) > 0 or len(self.motion.until.constraints) > 0) and len(self.monitors) == 0:
-            raise ValueError(
-                "ConstraintHandler with 'when' or 'until' constraints must have at least one monitor"
-            )
 
 
 @dataclass
@@ -336,7 +461,7 @@ class MonitorEntry(NamedNamespaceObject):
     flag: str = ""
 
     def __post_init__(self):
-        super().__init__(parent=self.parent, name=name)
+        super().__init__(parent=self.parent, name=self.name)
 
     @property
     def constraint_name(self) -> str:
@@ -349,22 +474,19 @@ class ControllerEntry(NamedNamespaceObject):
     name: str
     type: str
     params: ControllerParams
-    output_type: str = ""
-    apply_at: ContextRef | None = None
-    feed_scope: str = ""
-    feed_kind: QuantityType | None = None
+    command_type: QuantityType | None = None
+    apply_at: WorldQuantity | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-        if self.feed_kind is not None and isinstance(self.feed_kind, str):
-            self.feed_kind = QuantityType(self.feed_kind)
-        if self.apply_at is not None and not isinstance(self.apply_at, ContextRef):
-            raise ValueError("apply_at must be a ContextRef if provided")
+        if self.command_type is not None and isinstance(self.command_type, str):
+            self.command_type = QuantityType(self.command_type)
 
 
 @dataclass
 class ControllerParams:
     constraint: ConstraintRef
+    solver: SolverEntry
     kp: float = 0.0
     ki: float = 0.0
     kd: float = 0.0
@@ -377,42 +499,15 @@ class ControllerParams:
 
 
 @dataclass
-class SolverSpec:
+class SolverEntry(NamedNamespaceObject):
     parent: object
+    name: str
+    robot: RobotRef
     algorithm: str
-    chain: WorldQuantity
-    root: WorldQuantity
+    root: RobotAnchorRef
     gravity: WorldQuantity
     gravity_value: ContextRef
-    velocity_solvers: list[VelocitySolverEntry] = field(default_factory=list)
-    force_solvers: list[ForceSolverEntry] = field(default_factory=list)
-
-    @property
-    def namespace(self):
-        return self.parent.namespace
-
-    @property
-    def name(self) -> str:
-        return self.parent.name
-
-
-@dataclass
-class VelocitySolverEntry(NamedNamespaceObject):
-    parent: object
-    name: str = ""
-    configuration: str = ""
-    velocity: str = ""
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class ForceSolverEntry(NamedNamespaceObject):
-    parent: object
-    name: str = ""
-    configuration: str = ""
-    force: str = ""
+    end: RobotAnchorRef | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)

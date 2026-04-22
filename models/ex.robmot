@@ -2,13 +2,22 @@
 
 ns app = "https://secorolab.github.io/models/generated/"
 
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    urdf: "../robots/kg3.urdf",
+    chain: {
+        root: base-link,
+        end: ee-link
+    }
+}
+
 MOTION_SPEC (ns=app) m_move {
     MOVE: "Move end-effector downward at constant velocity until contact"
 
     CONTEXT {
         cw: World {
-            twist-ee-base: VelocityTwist { of = link-ee, wrt = link-base },
-            wrench-ee-ee:  Wrench { ref-point = link-ee, as-seen-by = link-ee }
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base },
+            wrench-ee-ee:  Wrench { ref-point: link-ee, as-seen-by: link-ee }
         },
         cs: Spec {
             vel-z-down: LinearVelocity = -0.05 m/s,
@@ -35,8 +44,6 @@ MOTION_SPEC (ns=app) m_move {
 CONSTRAINT_HANDLER (ns=app) handler_move {
     CONTEXT {
         c1: World {
-            chain-arm:  KinematicChain,
-            frame-base: Frame,
             gravity:    Gravity
         },
         c2: Spec {
@@ -47,19 +54,30 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     MOTION: m_move
 
     MONITORS {
-        monitor m_move.u1 and trigger event evt-contact when active
+        mon-contact: monitor m_move.u1 and trigger event evt-contact when active
     }
 
     CONTROLLERS {
-        ctrl-vel-z: PID { constraint: m_move.wi1, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
-        ctrl-vel-x: PID { constraint: m_move.wi2, Kp: 5.0, Ki: 1.0, Kd: 1.0 },
-        ctrl-vel-y: PID { constraint: m_move.wi3, Kp: 5.0, Ki: 1.0, Kd: 1.0 }
+        ctrl-vel-z: PID {
+            constraint: m_move.wi1,
+            solver: kinova_solver,
+            Kp = 5.0, Ki = 1.0, Kd = 1.0
+        },
+        ctrl-vel-x: PID {
+            constraint: m_move.wi2,
+            solver: kinova_solver,
+            Kp = 5.0, Ki = 1.0, Kd = 1.0
+        },
+        ctrl-vel-y: PID { constraint: m_move.wi3, solver: kinova_solver, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
     }
 
-    SOLVER {
-        algorithm: Vereshchagin,
-        chain:     c1.chain-arm,
-        root:      c1.frame-base,
-        gravity:   c1.gravity equal to c2.gravity-vec
+    SOLVERS {
+        kinova_solver: Solver {
+            robot: kinova,
+            algorithm: Vereshchagin,
+            root: kinova.chain.root,
+            end: kinova.chain.end,
+            gravity: c1.gravity equal to c2.gravity-vec
+        }
     }
 }

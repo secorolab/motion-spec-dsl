@@ -36,21 +36,25 @@ from motion_spec.namespace import (
     SLV,
 )
 from motion_spec_dsl.generators.classes import (
+    AccelerationEnergy,
     BilateralConstraint,
     ConstraintHandler,
     ConstraintSpecification,
     ControllerParams,
     EqualityConstraint,
-    ForceSolverEntry,
+    ErrorSignal,
+    Evaluator,
     GeoPropPair,
     GeometricProps,
     GreaterThanConstraint,
     LessThanConstraint,
     Model,
     MonitorEntry,
+    Motion,
     MotionSpec,
     PostContextDecl,
     PreContextDecl,
+    ScalarView,
     SpecContextDecl,
     ValueVariable,
     WorldContextDecl,
@@ -84,17 +88,6 @@ class WorldSpec:
 
 
 @dataclass(frozen=True)
-class ScalarViewData:
-    quantity_name: str
-    property_name: str
-    axis: str
-    scalar_id: str
-    scalar_type: str
-    view_type: Any
-    view_subspace: str | None
-
-
-@dataclass(frozen=True)
 class ConstraintData:
     motion_name: str
     constraint: ConstraintSpecification
@@ -112,18 +105,12 @@ class ConstraintData:
 
 
 @dataclass(frozen=True)
-class ErrorSignalData:
-    node_id: str
-    scalar_type: str
-
-
-@dataclass(frozen=True)
 class MonitorData:
     motion_name: str
     monitor: MonitorEntry
     constraint: ConstraintData
-    evaluator_id: str
-    error_signal_id: str
+    evaluator: Evaluator
+    error_signal: ErrorSignal
     signal_kind: str
     signal_id: str
 
@@ -146,8 +133,8 @@ class ControllerData:
 class HandlerData:
     node_id: str
     motion_name: str
-    motion_id: str
-    evaluator_ids: tuple[str, ...]
+    motion: Motion
+    evaluators: tuple[Evaluator, ...]
     controller_ids: tuple[str, ...]
     monitor_ids: tuple[str, ...]
 
@@ -399,19 +386,16 @@ def _dsl_unit(unit_name: str) -> Node:
 
 
 def _motion_suffix(name: str) -> str:
-    return name.split("_")[-1]
+    return name
 
 
 def _entity_abbrev(name: str) -> str:
-    parts = name.split("-")
-    return parts[1] if len(parts) > 1 else name
+    return name
 
 
 def _attached_link_from_wrench_name(name: str) -> str | None:
-    parts = name.split("-")
-    if len(parts) < 3 or parts[0] != "wrench":
-        return None
-    return f"link-{parts[1]}-{parts[2]}"
+    # TODO: resolve attached links from geometric properties, not by parsing authored names.
+    return None
 
 
 def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, solver: Any) -> str | None:
@@ -424,7 +408,7 @@ def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, s
         if attached_force_link is not None:
             return attached_force_link
 
-    motion_name = handler_spec.spec.motion
+    motion_name = _handler_motion_name(handler_spec)
     motion_spec = index.motion_map.get(motion_name) if motion_name else None
     if motion_spec is not None:
         for quantity in index.world_declarations(motion_spec):
@@ -433,8 +417,8 @@ def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, s
                 if attached_link is not None:
                     return attached_link
 
-    for item in handler_spec.spec.context.items:
-        for quantity in item.decl.declaration:
+    for item in _handler_contexts(handler_spec):
+        for quantity in _context_declarations(item):
             if quantity.type == "VelocityTwist" and isinstance(quantity.props, GeometricProps):
                 attached_link = _geometric_property(quantity.props, "of")
                 if attached_link is not None:
@@ -445,8 +429,8 @@ def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, s
 
 def _handler_world_quantities(handler_spec: ConstraintHandler) -> list[WorldQuantityLike]:
     quantities: list[WorldQuantityLike] = []
-    for item in handler_spec.spec.context.items:
-        quantities.extend(item.decl.declaration)
+    for item in _handler_contexts(handler_spec):
+        quantities.extend(_context_declarations(item))
     return quantities
 
 
@@ -479,19 +463,21 @@ def _wrench_name_for_scalar_signal(
 def _infer_cartesian_force_bindings(
     index: "ModelIndex", handler_spec: ConstraintHandler
 ) -> list[CartesianForceBinding]:
-    motion_name = handler_spec.spec.motion
+    motion_name = _handler_motion_name(handler_spec)
     if not motion_name:
         return []
 
     spec_names: list[str] = []
     candidates: list[tuple[str | None, str, str | None, bool]] = []
     seen_force_names: set[str] = set()
-    solver = handler_spec.spec.solver
+    solver = _primary_solver(handler_spec)
+    if solver is None:
+        return []
     for force_name in getattr(solver, "cartesian_force", []):
-        spec_names.append(f"spec-{force_name.removeprefix('wrench-')}")
+        spec_names.append(f"spec-{force_name}")
         candidates.append(
             (
-                f"spec-{force_name.removeprefix('wrench-')}",
+                f"spec-{force_name}",
                 force_name,
                 _attached_link_from_wrench_name(force_name),
                 True,
@@ -518,7 +504,7 @@ def _infer_cartesian_force_bindings(
 
         spec_hint = None
         if explicit_cartesian_force and controller.apply_at:
-            spec_hint = f"spec-frc-{controller.apply_at.removeprefix('link-')}"
+            spec_hint = f"spec-frc-{controller.apply_at}"
         elif controller.control_signal_id:
             spec_hint = f"spec-{controller.control_signal_id}"
 
@@ -571,7 +557,8 @@ def _infer_cartesian_force_bindings(
 
 
 def _driver_suffix(handler_spec: ConstraintHandler) -> str:
-    return _motion_suffix(handler_spec.spec.motion) if handler_spec.spec.motion else handler_spec.name
+    motion_name = _handler_motion_name(handler_spec)
+    return _motion_suffix(motion_name) if motion_name else handler_spec.name
 
 
 def _view_scalar_type(quantity: WorldQuantity, property_name: str, axis: str | None) -> str | None:
@@ -586,40 +573,18 @@ def _axis_label(axis: str) -> str:
 
 
 def _scalar_id(quantity: WorldQuantity, property_name: str, axis: str | None) -> str | None:
-    parts = quantity.name.split("-")
-    if quantity.type == "VelocityTwist" and axis is not None and len(parts) >= 4:
-        prefix = "angvel" if property_name == "angular" else "linvel"
-        if parts[1] == "world" and len(parts) >= 5:
-            return f"{prefix}-{parts[3]}-world-{parts[4]}-{_axis_label(axis)}"
-        return f"{prefix}-{'-'.join(parts[1:4])}-{_axis_label(axis)}"
-
-    if quantity.type == "Wrench" and property_name == "force":
-        if len(parts) >= 5:
-            return f"frc-{'-'.join(parts[1:-1])}"
-        if len(parts) >= 3:
-            return f"frc-{'-'.join(parts[1:3])}"
-
-    if quantity.type == "Pose" and property_name == "distance":
-        if axis is None and len(parts) >= 4:
-            return f"dist-{'-'.join(parts[1:4])}"
-        if axis == "z" and len(parts) >= 4:
-            return f"pos-{'-'.join(parts[1:4])}-height"
-    if quantity.type == "Pose" and property_name == "rotation" and axis == "z" and len(parts) >= 4:
-        return f"ang-{'-'.join(parts[1:4])}-vertical"
-
-    prop = _property_spec(quantity.type, property_name)
-    if prop is None or prop.scalar_prefix is None or axis is None:
-        return None
-    return f"{prop.scalar_prefix}-{_entity_abbrev(quantity.name)}-{axis}"
+    if axis is None:
+        return f"{quantity.name}.{property_name}"
+    return f"{quantity.name}.{property_name}.{axis}"
 
 
 def _while_signature(constraint: ConstraintSpecification) -> ConstraintSignature:
     assert isinstance(constraint.expr, EqualityConstraint)
     return (
-        constraint.view.quantity,
-        constraint.view.property,
-        constraint.view.axis,
-        constraint.expr.reference.variable,
+        _view_quantity_name(constraint),
+        _view_property_name(constraint),
+        _view_axis_name(constraint),
+        _context_value_name(constraint.expr.reference),
     )
 
 
@@ -644,22 +609,10 @@ def _acceleration_energy_id(
     axis: str | None,
     shared: bool,
 ) -> str | None:
-    if quantity.type == "VelocityTwist" and axis is not None:
-        parts = quantity.name.split("-")
-        if parts[1] == "world" and len(parts) >= 5:
-            stem = f"eacc-{parts[3]}-world-{parts[4]}-{'ang' if property_name == 'angular' else 'lin'}-{axis}"
-        else:
-            stem = f"eacc-{'-'.join(parts[1:4])}-{'ang' if property_name == 'angular' else 'lin'}-{axis}"
-        return stem
-    if quantity.type == "Pose" and property_name == "rotation" and axis == "z":
-        parts = quantity.name.split("-")
-        if len(parts) >= 4:
-            return f"eacc-{'-'.join(parts[1:4])}-ang-z"
-
     prop = _property_spec(quantity.type, property_name)
     if prop is None or prop.accel_prefix is None:
         return None
-    stem = f"eacc-ee-{prop.accel_prefix}-{axis}"
+    stem = f"eacc-{quantity.name}.{property_name}{'.' + axis if axis else ''}"
     return stem if shared else f"{stem}-{_motion_suffix(motion_name)}"
 
 
@@ -670,16 +623,10 @@ def _acceleration_constraint_id(
     axis: str | None,
     shared: bool,
 ) -> str:
-    if quantity is not None and quantity.type == "VelocityTwist" and axis is not None:
-        parts = quantity.name.split("-")
-        if parts[1] == "world" and len(parts) >= 5:
-            return f"acc-cstr-{parts[3]}-world-{parts[4]}-{'ang' if property_name == 'angular' else 'lin'}-{axis}"
-        return f"acc-cstr-{'-'.join(parts[1:4])}-{'ang' if property_name == 'angular' else 'lin'}-{axis}"
-    if quantity is not None and quantity.type == "Pose" and property_name == "rotation" and axis == "z":
-        parts = quantity.name.split("-")
-        if len(parts) >= 4:
-            return f"acc-cstr-{'-'.join(parts[1:4])}-ang-z"
-    stem = f"acc-cstr-ee-{property_name[:3]}-{axis}"
+    if quantity is None:
+        stem = f"acc-cstr-{property_name}{'.' + axis if axis else ''}"
+    else:
+        stem = f"acc-cstr-{quantity.name}.{property_name}{'.' + axis if axis else ''}"
     return stem if shared else f"{stem}-{_motion_suffix(motion_name)}"
 
 
@@ -697,22 +644,12 @@ def _control_signal_id(constraint: ConstraintData | None) -> str | None:
         return None
     if constraint.acceleration_energy_id:
         return constraint.acceleration_energy_id
-    qid = constraint.quantity_node_id
-    if qid.startswith("pos-"):
-        parts = qid.split("-")
-        if len(parts) >= 4:
-            return f"frc-{parts[1]}-{parts[3]}"
-    if qid.startswith("dist-"):
-        parts = qid.split("-")
-        if len(parts) >= 2:
-            return f"frc-{parts[1]}-dist"
+    # TODO: infer control signal from model relations rather than quantity-node string shape.
     return None
 
 
 def _control_signal_id_from_wrench_name(name: str) -> str | None:
-    parts = name.split("-")
-    if len(parts) >= 4 and parts[0] == "wrench" and parts[2] == "dist":
-        return f"frc-{parts[1]}-dist"
+    # TODO: infer this from Wrench geometric properties instead of parsing names.
     return None
 
 
@@ -724,7 +661,7 @@ def _required_world_quantity(index: "ModelIndex", name: str, reason: str) -> Wor
 
 
 def _frame_suffix(frame_id: str) -> str:
-    return frame_id.removeprefix("frame-")
+    return frame_id
 
 
 def _reference_frame(quantity: WorldQuantityLike) -> str | None:
@@ -746,7 +683,81 @@ def _of_frame(quantity: WorldQuantityLike) -> str | None:
 
 
 def _lookup_scope_name(lookup: Any) -> str:
-    return lookup.value.parent.kind
+    value = getattr(lookup, "value", None) or getattr(lookup, "valRef", None)
+    return value.parent.kind
+
+
+def _node_name(value: Any) -> str:
+    return value.name if hasattr(value, "name") else str(value)
+
+
+def _node_uri(value: Any) -> str:
+    return str(getattr(value, "uri", URIRef(_node_name(value))))
+
+
+def _context_value_name(lookup: Any) -> str:
+    value = getattr(lookup, "value", None) or getattr(lookup, "valRef", None)
+    return _node_name(value)
+
+
+def _view_quantity_name(constraint: ConstraintSpecification) -> str:
+    return _node_name(constraint.view.quantity)
+
+
+def _view_property_name(constraint: ConstraintSpecification) -> str:
+    subspace = constraint.view.subspace
+    if subspace is None:
+        return ""
+    value = getattr(subspace, "value", subspace)
+    return {
+        "angvel": "angular",
+        "linvel": "linear",
+        "orientation": "rotation",
+        "position": "distance",
+    }.get(str(value), str(value))
+
+
+def _view_axis_name(constraint: ConstraintSpecification) -> str | None:
+    axis = constraint.view.axis
+    return None if axis is None else str(getattr(axis, "value", axis))
+
+
+def _motion_name(motion: MotionSpec | str | None) -> str:
+    return _node_name(motion) if motion is not None else ""
+
+
+def _handler_motion(handler: ConstraintHandler) -> MotionSpec | None:
+    motion = getattr(handler, "motion", None)
+    return motion if isinstance(motion, MotionSpec) else None
+
+
+def _handler_motion_name(handler: ConstraintHandler) -> str:
+    return _motion_name(getattr(handler, "motion", None))
+
+
+def _handler_contexts(handler: ConstraintHandler) -> list[Any]:
+    return list(getattr(handler, "context", []))
+
+
+def _handler_controllers(handler: ConstraintHandler) -> list[Any]:
+    return list(getattr(handler, "controllers", []))
+
+
+def _handler_monitors(handler: ConstraintHandler) -> list[Any]:
+    return list(getattr(handler, "monitors", []))
+
+
+def _handler_solvers(handler: ConstraintHandler) -> list[Any]:
+    return list(getattr(handler, "solvers", []))
+
+
+def _primary_solver(handler: ConstraintHandler) -> Any | None:
+    solvers = _handler_solvers(handler)
+    return solvers[0] if solvers else None
+
+
+def _context_declarations(context: Any) -> list[Any]:
+    return list(getattr(context, "declaration", []))
 
 
 class ModelIndex:
@@ -777,31 +788,33 @@ class ModelIndex:
         return {spec.name: spec for spec in self.motion_specs}
 
     def _context_decl(self, spec: MotionSpec, kind: str) -> Any | None:
-        for item in spec.spec.context.items:
+        for item in spec.context:
             if item.__class__.__name__ == kind:
                 return item
         return None
 
     def world_declarations(self, spec: MotionSpec) -> list[WorldQuantity]:
         declaration = self._context_decl(spec, "WorldContextDecl")
-        return declaration.decl.declaration if isinstance(declaration, WorldContextDecl) else []
+        return declaration.declaration if isinstance(declaration, WorldContextDecl) else []
 
     def value_declarations(self, spec: MotionSpec, kind: str) -> list[ValueVariable]:
         declaration = self._context_decl(spec, kind)
         if isinstance(declaration, (PreContextDecl, SpecContextDecl, PostContextDecl)):
-            return declaration.decl.declaration
+            return declaration.declaration
         return []
 
     def all_constraints(self, spec: MotionSpec) -> list[ConstraintSpecification]:
-        return [*spec.spec.when.constraints, *spec.spec.while_.constraints, *spec.spec.until.constraints]
+        return [*spec.when.constraints, *spec.while_.constraints, *spec.until.constraints]
 
     def world_quantity(self, spec: MotionSpec, name: str) -> WorldQuantity | None:
+        name = _node_name(name)
         for quantity in self.world_declarations(spec):
             if quantity.name == name:
                 return quantity
         return None
 
     def value_variable(self, spec: MotionSpec, name: str) -> ValueVariable | None:
+        name = _node_name(name)
         for kind in ("PreContextDecl", "SpecContextDecl", "PostContextDecl"):
             for value in self.value_declarations(spec, kind):
                 if value.name == name:
@@ -815,9 +828,10 @@ class ModelIndex:
             for quantity in self.world_declarations(motion_spec):
                 quantities[quantity.name] = quantity
         for handler_spec in self.handler_specs:
-            for item in handler_spec.spec.context.items:
-                for quantity in item.decl.declaration:
-                    quantities[quantity.name] = quantity
+            for item in _handler_contexts(handler_spec):
+                for quantity in _context_declarations(item):
+                    if isinstance(quantity, WorldQuantity):
+                        quantities[quantity.name] = quantity
         return quantities
 
     @cached_property
@@ -859,18 +873,6 @@ class ModelIndex:
                 if frame_id:
                     entities.setdefault(frame_id, MISC_ENTITY_TYPE["Frame"])
 
-        for quantity in self.world_quantities.values():
-            if quantity.type in {"VelocityTwist", "Wrench"}:
-                parts = quantity.name.split("-")
-                if len(parts) >= 3:
-                    entities.setdefault(f"frame-{parts[2]}", MISC_ENTITY_TYPE["Frame"])
-                if len(parts) >= 2:
-                    entities.setdefault(f"point-{parts[1]}-origin", MISC_ENTITY_TYPE["Point"])
-            if quantity.type == "Wrench":
-                parts = quantity.name.split("-")
-                if len(parts) >= 3:
-                    entities.setdefault(f"link-{parts[1]}-{parts[2]}", MISC_ENTITY_TYPE["SimplicialComplex"])
-
         return entities
 
     @cached_property
@@ -879,7 +881,7 @@ class ModelIndex:
 
     def _require_value_lookup(self, motion_spec: MotionSpec, constraint_name: str, lookup: Any) -> None:
         scope = _lookup_scope_name(lookup)
-        variable = lookup.variable
+        variable = _context_value_name(lookup)
         if scope == "World":
             if variable not in self.defined_world_names:
                 raise ValueError(
@@ -898,10 +900,10 @@ class ModelIndex:
     def validate_references(self) -> None:
         for motion_spec in self.motion_specs:
             for constraint in self.all_constraints(motion_spec):
-                if self.world_quantity(motion_spec, constraint.view.quantity) is None:
+                if self.world_quantity(motion_spec, _view_quantity_name(constraint)) is None:
                     raise ValueError(
                         f"Constraint '{constraint.name}' references world quantity "
-                        f"'{constraint.view.quantity}' that is not defined in motion '{motion_spec.name}'."
+                        f"'{_view_quantity_name(constraint)}' that is not defined in motion '{motion_spec.name}'."
                     )
                 expr = constraint.expr
                 if isinstance(expr, EqualityConstraint):
@@ -913,14 +915,15 @@ class ModelIndex:
                     self._require_value_lookup(motion_spec, constraint.name, expr.upper)
 
         for handler_spec in self.handler_specs:
-            motion_spec = self.motion_map.get(handler_spec.spec.motion) if handler_spec.spec.motion else None
-            if handler_spec.spec.motion and motion_spec is None:
+            motion_name = _handler_motion_name(handler_spec)
+            motion_spec = self.motion_map.get(motion_name) if motion_name else None
+            if motion_name and motion_spec is None:
                 raise ValueError(
                     f"Constraint handler '{handler_spec.name}' references motion "
-                    f"'{handler_spec.spec.motion}', but it is not defined."
+                    f"'{motion_name}', but it is not defined."
                 )
 
-            for monitor in handler_spec.spec.monitors:
+            for monitor in _handler_monitors(handler_spec):
                 if motion_spec is None:
                     raise ValueError(
                         f"Monitor '{monitor.name}' in handler '{handler_spec.name}' requires a MOTION reference."
@@ -931,7 +934,7 @@ class ModelIndex:
                         f"defined for motion '{motion_spec.name}'."
                     )
 
-            for controller in handler_spec.spec.controllers:
+            for controller in _handler_controllers(handler_spec):
                 if motion_spec is None:
                     raise ValueError(
                         f"Controller '{controller.name}' in handler '{handler_spec.name}' requires a MOTION reference."
@@ -941,17 +944,18 @@ class ModelIndex:
                         f"Controller '{controller.name}' references constraint "
                         f"'{controller.params.constraint}', but it is not defined for motion '{motion_spec.name}'."
                     )
-                if controller.apply_at and controller.apply_at not in self.defined_world_names:
+                apply_at = _node_name(controller.apply_at) if controller.apply_at else ""
+                if apply_at and apply_at not in self.defined_world_names:
                     raise ValueError(
                         f"Controller '{controller.name}' references World[{controller.apply_at}], but "
                         f"'{controller.apply_at}' is not defined in any World context or derived from geometric properties."
                     )
 
-            solver = handler_spec.spec.solver
+            solver = _primary_solver(handler_spec)
             if solver is None:
                 raise ValueError(f"Constraint handler '{handler_spec.name}' is missing required SOLVER section.")
-            for attr in ("chain", "root", "gravity"):
-                value = getattr(solver, attr, "")
+            for attr in ("gravity",):
+                value = _node_name(getattr(solver, attr, "")) if getattr(solver, attr, "") else ""
                 if value and value not in self.defined_world_names:
                     raise ValueError(
                         f"Solver in handler '{handler_spec.name}' references World[{value}] for {attr}, but "
@@ -989,12 +993,14 @@ class ModelIndex:
         rotation_ids: dict[str, str] = {}
         for motion_spec in self.motion_specs:
             for constraint in self.all_constraints(motion_spec):
-                quantity = self.world_quantity(motion_spec, constraint.view.quantity)
+                property_name = _view_property_name(constraint)
+                axis = _view_axis_name(constraint)
+                quantity = self.world_quantity(motion_spec, _view_quantity_name(constraint))
                 if (
                     quantity
                     and quantity.type == "Pose"
-                    and constraint.view.property == "rotation"
-                    and constraint.view.axis is None
+                    and property_name == "rotation"
+                    and axis is None
                 ):
                     rotation_ids[motion_spec.name] = f"rotation-{_motion_suffix(motion_spec.name)}"
         return rotation_ids
@@ -1007,15 +1013,17 @@ class ModelIndex:
         seen: set[str] = set()
         for motion_spec in self.motion_specs:
             for constraint in self.all_constraints(motion_spec):
-                quantity = self.world_quantity(motion_spec, constraint.view.quantity)
+                property_name = _view_property_name(constraint)
+                axis = _view_axis_name(constraint)
+                quantity = self.world_quantity(motion_spec, _view_quantity_name(constraint))
                 if (
                     quantity is None
                     or quantity.type != "Pose"
-                    or constraint.view.property != "rotation"
-                    or constraint.view.axis is None
+                    or property_name != "rotation"
+                    or axis is None
                 ):
                     continue
-                scalar_id = _scalar_id(quantity, "rotation", constraint.view.axis)
+                scalar_id = _scalar_id(quantity, "rotation", axis)
                 if scalar_id is None or scalar_id in seen:
                     continue
                 seen.add(scalar_id)
@@ -1024,38 +1032,41 @@ class ModelIndex:
                         op_id=f"compute-{scalar_id}",
                         pose_name=quantity.name,
                         angle_id=scalar_id,
-                        axis=constraint.view.axis,
+                        axis=axis,
                     )
                 )
         return ops
 
     @cached_property
-    def scalar_views(self) -> dict[tuple[str, str, str], ScalarViewData]:
-        views: dict[tuple[str, str, str], ScalarViewData] = {}
+    def scalar_views(self) -> dict[tuple[str, str, str], ScalarView]:
+        views: dict[tuple[str, str, str], ScalarView] = {}
         for motion_spec in self.motion_specs:
             for constraint in self.all_constraints(motion_spec):
-                quantity = self.world_quantity(motion_spec, constraint.view.quantity)
-                axis = constraint.view.axis
+                quantity_name = _view_quantity_name(constraint)
+                property_name = _view_property_name(constraint)
+                axis = _view_axis_name(constraint)
+                quantity = self.world_quantity(motion_spec, quantity_name)
                 if quantity is None or axis is None:
                     continue
-                prop = _property_spec(quantity.type, constraint.view.property)
-                scalar_id = _scalar_id(quantity, constraint.view.property, axis)
-                scalar_type = _view_scalar_type(quantity, constraint.view.property, axis)
+                prop = _property_spec(quantity.type, property_name)
+                scalar_id = _scalar_id(quantity, property_name, axis)
+                scalar_type = _view_scalar_type(quantity, property_name, axis)
                 if prop is None or prop.view_type is None or scalar_id is None or scalar_type is None:
                     continue
-                if quantity.type == "Pose" and constraint.view.property == "rotation":
+                if quantity.type == "Pose" and property_name == "rotation":
                     continue
-                key = (constraint.view.quantity, constraint.view.property, axis)
+                key = (quantity_name, property_name, axis)
                 views.setdefault(
                     key,
-                    ScalarViewData(
-                        quantity_name=constraint.view.quantity,
-                        property_name=constraint.view.property,
+                    ScalarView(
+                        parent=motion_spec,
+                        name=scalar_id,
+                        quantity_name=quantity_name,
+                        prop=property_name,
                         axis=axis,
-                        scalar_id=scalar_id,
                         scalar_type=scalar_type,
                         view_type=prop.view_type,
-                        view_subspace=prop.view_subspace,
+                        subspace=prop.view_subspace,
                     ),
                 )
         return views
@@ -1064,7 +1075,7 @@ class ModelIndex:
     def shared_while_signatures(self) -> set[ConstraintSignature]:
         usage: dict[ConstraintSignature, set[str]] = {}
         for motion_spec in self.motion_specs:
-            for constraint in motion_spec.spec.while_.constraints:
+            for constraint in motion_spec.while_.constraints:
                 if not isinstance(constraint.expr, EqualityConstraint):
                     continue
                 usage.setdefault(_while_signature(constraint), set()).add(motion_spec.name)
@@ -1073,7 +1084,7 @@ class ModelIndex:
     @cached_property
     def controlled_constraints(self) -> list[ConstraintData]:
         while_names_by_motion = {
-            motion_spec.name: {constraint.name for constraint in motion_spec.spec.while_.constraints}
+            motion_spec.name: {constraint.name for constraint in motion_spec.while_.constraints}
             for motion_spec in self.motion_specs
         }
         return [
@@ -1087,24 +1098,27 @@ class ModelIndex:
         derived_constraints: list[ConstraintData] = []
         for motion_spec in self.motion_specs:
             motion_name = motion_spec.name
-            while_names = {constraint.name for constraint in motion_spec.spec.while_.constraints}
+            while_names = {constraint.name for constraint in motion_spec.while_.constraints}
 
             for constraint in self.all_constraints(motion_spec):
-                quantity = self.world_quantity(motion_spec, constraint.view.quantity)
+                quantity_name = _view_quantity_name(constraint)
+                property_name = _view_property_name(constraint)
+                axis = _view_axis_name(constraint)
+                quantity = self.world_quantity(motion_spec, quantity_name)
                 if quantity is None:
                     raise ValueError(
                         f"Constraint '{constraint.name}' references world quantity "
-                        f"'{constraint.view.quantity}' that is not defined in the motion context."
+                        f"'{quantity_name}' that is not defined in the motion context."
                     )
-                property_spec = _property_spec(quantity.type if quantity else "Unknown", constraint.view.property)
+                property_spec = _property_spec(quantity.type if quantity else "Unknown", property_name)
                 scalar_type_name = (
-                    _view_scalar_type(quantity, constraint.view.property, constraint.view.axis)
+                    _view_scalar_type(quantity, property_name, axis)
                     if quantity is not None
                     else None
-                ) or (property_spec.scalar_type if property_spec else constraint.view.property)
+                ) or (property_spec.scalar_type if property_spec else property_name)
 
-                quantity_node_id = _scalar_id(quantity, constraint.view.property, constraint.view.axis) if quantity else None
-                quantity_node_id = quantity_node_id or constraint.view.quantity
+                quantity_node_id = _scalar_id(quantity, property_name, axis) if quantity else None
+                quantity_node_id = quantity_node_id or quantity_name
 
                 expr = constraint.expr
                 signature = None
@@ -1113,7 +1127,7 @@ class ModelIndex:
 
                 if isinstance(expr, EqualityConstraint):
                     kind = "EqualityConstraint"
-                    reference_var = expr.reference.variable
+                    reference_var = _context_value_name(expr.reference)
                     threshold_var = lower_var = upper_var = None
                     if constraint.name in while_names and quantity is not None:
                         signature = _while_signature(constraint)
@@ -1121,33 +1135,33 @@ class ModelIndex:
                         error_signal_id = _while_error_id(
                             motion_name,
                             quantity,
-                            constraint.view.property,
-                            constraint.view.axis,
+                            property_name,
+                            axis,
                             shared,
                         )
                         acceleration_energy = _acceleration_energy_id(
                             motion_name,
                             quantity,
-                            constraint.view.property,
-                            constraint.view.axis,
+                            property_name,
+                            axis,
                             shared,
                         )
                 elif isinstance(expr, GreaterThanConstraint):
                     kind = "GreaterThanConstraint"
                     reference_var = None
-                    threshold_var = expr.threshold.variable
+                    threshold_var = _context_value_name(expr.threshold)
                     lower_var = upper_var = None
                 elif isinstance(expr, LessThanConstraint):
                     kind = "LessThanConstraint"
                     reference_var = None
-                    threshold_var = expr.threshold.variable
+                    threshold_var = _context_value_name(expr.threshold)
                     lower_var = upper_var = None
                 else:
                     assert isinstance(expr, BilateralConstraint)
                     kind = "BilateralConstraint"
                     reference_var = threshold_var = None
-                    lower_var = expr.lower.variable
-                    upper_var = expr.upper.variable
+                    lower_var = _context_value_name(expr.lower)
+                    upper_var = _context_value_name(expr.upper)
 
                 if constraint.name in while_names and quantity is not None and error_signal_id is None:
                     error_signal_id = f"{quantity_node_id}-err"
@@ -1180,17 +1194,24 @@ class ModelIndex:
         return [constraint for constraint in self.constraints if constraint.signature is not None]
 
     @cached_property
-    def while_error_signals(self) -> dict[str, ErrorSignalData]:
+    def while_error_signals(self) -> dict[str, ErrorSignal]:
         return {
-            constraint.error_signal_id: ErrorSignalData(constraint.error_signal_id, constraint.scalar_type)
+            constraint.error_signal_id: ErrorSignal(
+                parent=constraint.constraint.parent,
+                name=constraint.error_signal_id,
+                scalar_type=constraint.scalar_type,
+            )
             for constraint in self.controlled_constraints
             if constraint.error_signal_id is not None
         }
 
     @cached_property
-    def acceleration_energies(self) -> dict[str, str]:
+    def acceleration_energies(self) -> dict[str, AccelerationEnergy]:
         return {
-            constraint.acceleration_energy_id: constraint.acceleration_energy_id
+            constraint.acceleration_energy_id: AccelerationEnergy(
+                parent=constraint.constraint.parent,
+                name=constraint.acceleration_energy_id,
+            )
             for constraint in self.while_constraints
             if constraint.acceleration_energy_id is not None
         }
@@ -1199,24 +1220,35 @@ class ModelIndex:
     def monitor_data(self) -> list[MonitorData]:
         monitors: list[MonitorData] = []
         for handler_spec in self.handler_specs:
-            if not handler_spec.spec.motion:
+            motion_name = _handler_motion_name(handler_spec)
+            if not motion_name:
                 continue
-            motion_spec = self.motion_map.get(handler_spec.spec.motion)
+            motion_spec = self.motion_map.get(motion_name)
             if motion_spec is None:
                 continue
-            for monitor in handler_spec.spec.monitors:
+            for monitor in _handler_monitors(handler_spec):
                 constraint = self.constraint_map.get((motion_spec.name, monitor.constraint.name))
                 if constraint is None:
                     continue
                 is_edge = bool(monitor.event)
                 signal_name = monitor.event or monitor.flag
+                error_signal = ErrorSignal(
+                    parent=monitor,
+                    name=f"{monitor.constraint.name}-err",
+                    scalar_type=constraint.scalar_type,
+                )
                 monitors.append(
                     MonitorData(
                         motion_name=motion_spec.name,
                         monitor=monitor,
                         constraint=constraint,
-                        evaluator_id=f"eval-{monitor.constraint.name.removeprefix('cstr-')}",
-                        error_signal_id=f"{monitor.constraint.name}-err",
+                        evaluator=Evaluator(
+                            parent=monitor,
+                            name=f"eval-{monitor.constraint.name}",
+                            constraint=constraint.constraint,
+                            error_signal=error_signal,
+                        ),
+                        error_signal=error_signal,
                         signal_kind="event" if is_edge else "flag",
                         signal_id=signal_name,
                     )
@@ -1224,9 +1256,9 @@ class ModelIndex:
         return monitors
 
     @cached_property
-    def monitor_error_signals(self) -> dict[str, ErrorSignalData]:
+    def monitor_error_signals(self) -> dict[str, ErrorSignal]:
         return {
-            monitor.error_signal_id: ErrorSignalData(monitor.error_signal_id, monitor.constraint.scalar_type)
+            monitor.error_signal.name: monitor.error_signal
             for monitor in self.monitor_data
         }
 
@@ -1234,12 +1266,13 @@ class ModelIndex:
     def controller_data(self) -> dict[str, ControllerData]:
         controllers: dict[str, ControllerData] = {}
         for handler_spec in self.handler_specs:
-            if not handler_spec.spec.motion:
+            motion_name = _handler_motion_name(handler_spec)
+            if not motion_name:
                 continue
-            motion_spec = self.motion_map.get(handler_spec.spec.motion)
+            motion_spec = self.motion_map.get(motion_name)
             if motion_spec is None:
                 continue
-            for controller in handler_spec.spec.controllers:
+            for controller in _handler_controllers(handler_spec):
                 key = str(URIRef(controller.uri))
                 constraint = self.constraint_map.get((motion_spec.name, controller.params.constraint.name))
                 if constraint is None:
@@ -1254,25 +1287,37 @@ class ModelIndex:
                     constraint=constraint,
                     error_signal_id=constraint.error_signal_id if constraint else None,
                     control_signal_id=control_signal_id,
-                    output_type=controller.output_type or None,
-                    apply_at=controller.apply_at or None,
-                    feed_scope=controller.feed_scope or None,
-                    feed_kind=controller.feed_kind or None,
+                    output_type=str(getattr(controller.command_type, "value", controller.command_type))
+                    if getattr(controller, "command_type", None)
+                    else None,
+                    apply_at=_node_name(controller.apply_at) if controller.apply_at else None,
+                    feed_scope=None,
+                    feed_kind=str(getattr(controller.command_type, "value", controller.command_type))
+                    if getattr(controller, "command_type", None)
+                    else None,
                     params=controller.params,
                 )
         return controllers
 
     @cached_property
-    def evaluator_defs(self) -> dict[str, tuple[str, str]]:
-        evaluators: dict[str, tuple[str, str]] = {}
+    def evaluator_defs(self) -> dict[str, Evaluator]:
+        evaluators: dict[str, Evaluator] = {}
         for constraint in self.controlled_constraints:
             if constraint.error_signal_id is not None:
-                evaluators[f"eval-{constraint.constraint.name.removeprefix('cstr-')}"] = (
-                    constraint.constraint.uri,
-                    constraint.error_signal_id,
+                error_signal = ErrorSignal(
+                    parent=constraint.constraint.parent,
+                    name=constraint.error_signal_id,
+                    scalar_type=constraint.scalar_type,
                 )
+                evaluator = Evaluator(
+                    parent=constraint.constraint.parent,
+                    name=f"eval-{constraint.constraint.name}",
+                    constraint=constraint.constraint,
+                    error_signal=error_signal,
+                )
+                evaluators[evaluator.name] = evaluator
         for monitor in self.monitor_data:
-            evaluators[monitor.evaluator_id] = (monitor.constraint.constraint.uri, monitor.error_signal_id)
+            evaluators[monitor.evaluator.name] = monitor.evaluator
         return evaluators
 
     @cached_property
@@ -1283,9 +1328,10 @@ class ModelIndex:
             monitors_by_motion.setdefault(monitor.motion_name, []).append(monitor)
 
         for handler_spec in self.handler_specs:
-            if not handler_spec.spec.motion:
+            motion_name = _handler_motion_name(handler_spec)
+            if not motion_name:
                 continue
-            motion_spec = self.motion_map.get(handler_spec.spec.motion)
+            motion_spec = self.motion_map.get(motion_name)
             if motion_spec is None:
                 continue
 
@@ -1295,16 +1341,21 @@ class ModelIndex:
                 if constraint.motion_name == motion_spec.name
             ]
             motion_monitors = monitors_by_motion.get(motion_spec.name, [])
+            motion = Motion(
+                parent=motion_spec,
+                name=f"motion-{_motion_suffix(motion_spec.name)}",
+                motion_spec_block=motion_spec,
+            )
             handlers.append(
                 HandlerData(
                     node_id=str(URIRef(handler_spec.uri)),
                     motion_name=motion_spec.name,
-                    motion_id=f"motion-{_motion_suffix(motion_spec.name)}",
-                    evaluator_ids=tuple(
-                        [f"eval-{constraint.constraint.name.removeprefix('cstr-')}" for constraint in while_constraints]
-                        + [monitor.evaluator_id for monitor in motion_monitors]
+                    motion=motion,
+                    evaluators=tuple(
+                        [self.evaluator_defs[f"eval-{constraint.constraint.name}"] for constraint in while_constraints]
+                        + [monitor.evaluator for monitor in motion_monitors]
                     ),
-                    controller_ids=tuple(str(URIRef(controller.uri)) for controller in handler_spec.spec.controllers),
+                    controller_ids=tuple(str(URIRef(controller.uri)) for controller in _handler_controllers(handler_spec)),
                     monitor_ids=tuple(str(URIRef(monitor.monitor.uri)) for monitor in motion_monitors),
                 )
             )
@@ -1315,7 +1366,9 @@ class ModelIndex:
         constraints: dict[str, AccelerationConstraintData] = {}
         for constraint in self.while_constraints:
             quantity = constraint.quantity
-            prop = _property_spec(quantity.type, constraint.constraint.view.property) if quantity else None
+            property_name = _view_property_name(constraint.constraint)
+            axis = _view_axis_name(constraint.constraint)
+            prop = _property_spec(quantity.type, property_name) if quantity else None
             if (
                 quantity is None
                 or prop is None
@@ -1327,8 +1380,8 @@ class ModelIndex:
             node_id = _acceleration_constraint_id(
                 constraint.motion_name,
                 quantity,
-                constraint.constraint.view.property,
-                constraint.constraint.view.axis,
+                property_name,
+                axis,
                 shared,
             )
             constraints.setdefault(
@@ -1337,7 +1390,7 @@ class ModelIndex:
                     node_id=node_id,
                     energy_id=constraint.acceleration_energy_id,
                     subspace=prop.accel_subspace,
-                    axis=constraint.constraint.view.axis or "",
+                    axis=axis or "",
                 ),
             )
         return constraints
@@ -1346,9 +1399,10 @@ class ModelIndex:
     def base_velocity_solvers(self) -> list[BaseVelocitySolverData]:
         solvers: list[BaseVelocitySolverData] = []
         for handler_spec in self.handler_specs:
-            if handler_spec.spec.solver is None:
+            solver_group = _primary_solver(handler_spec)
+            if solver_group is None:
                 continue
-            for solver in getattr(handler_spec.spec.solver, "velocity_solvers", []):
+            for solver in getattr(solver_group, "velocity_solvers", []):
                 _required_world_quantity(
                     self,
                     solver.velocity,
@@ -1367,9 +1421,10 @@ class ModelIndex:
     def base_force_solvers(self) -> list[BaseForceSolverData]:
         solvers: list[BaseForceSolverData] = []
         for handler_spec in self.handler_specs:
-            if handler_spec.spec.solver is None:
+            solver_group = _primary_solver(handler_spec)
+            if solver_group is None:
                 continue
-            for solver in getattr(handler_spec.spec.solver, "force_solvers", []):
+            for solver in getattr(solver_group, "force_solvers", []):
                 _required_world_quantity(
                     self,
                     solver.force,
@@ -1392,43 +1447,24 @@ class ModelIndex:
         derivations: list[DistanceDerivation] = []
         for constraint in self.controlled_constraints:
             quantity = constraint.quantity
+            property_name = _view_property_name(constraint.constraint)
+            axis = _view_axis_name(constraint.constraint)
             if (
                 quantity is None
                 or quantity.type != "Pose"
-                or constraint.constraint.view.property != "distance"
-                or constraint.constraint.view.axis is not None
+                or property_name != "distance"
+                or axis is not None
             ):
                 continue
 
-            parts = quantity.name.split("-")
             observer_frame = _with_respect_to(quantity)
-            if len(parts) < 4 or observer_frame is None:
-                warnings.warn(
-                    f"Skipping distance derivation for '{quantity.name}' because the pose does not "
-                    "follow the expected naming or is missing 'wrt'."
+            if observer_frame is None:
+                raise NotImplementedError(
+                    f"Distance derivation for '{quantity.name}' needs an explicit 'wrt' frame."
                 )
-                continue
-
-            group, proximal, distal = parts[1], parts[2], parts[3]
-            observer_point = f"point-{group}-{proximal}-origin"
-            derivations.append(
-                DistanceDerivation(
-                    constraint_name=constraint.constraint.name,
-                    pose_name=quantity.name,
-                    group=group,
-                    proximal=proximal,
-                    distal=distal,
-                    observer_frame=observer_frame,
-                    observer_point=observer_point,
-                    distance_id=constraint.quantity_node_id,
-                    direction_id=f"dir-{group}-{proximal}-to-{distal}",
-                    position_id=f"pos-{group}-{proximal}-{proximal}",
-                    force_id=f"frc-{group}-dist",
-                    local_wrench_id=f"wrench-{group}-dist-{proximal}",
-                    pose_to_dist_op_id=f"pose-to-dist-{group}",
-                    pose_to_dir_op_id=f"pose-to-dir-{group}",
-                    wrench_op_id=f"compute-wrench-{group}-dist-{proximal}",
-                )
+            raise NotImplementedError(
+                "Distance derivation needs model-backed proximal/distal/observer fields; "
+                f"refusing to parse them from the authored name '{quantity.name}'."
             )
         return derivations
 
@@ -1470,13 +1506,12 @@ def _derived_transformed_wrenches(
                     f"from '{derivation.observer_frame}' to '{target_frame}'."
                 )
                 continue
-            target_suffix = _frame_suffix(target_frame)
-            transformed_wrench = derivation.local_wrench_id.rsplit("-", 1)[0] + f"-{target_suffix}"
+            transformed_wrench = f"{derivation.local_wrench_id}.as-seen-by.{target_frame}"
             transformed.append((derivation, pose.name, transformed_wrench))
 
         transforms_by_force[solver.force] = transformed
         if len(transformed) > 1:
-            add_ops_by_force[solver.force] = f"add-{solver.force.removesuffix('-' + _frame_suffix(target_frame))}"
+            add_ops_by_force[solver.force] = f"add-{solver.force}"
 
     return transforms_by_force, add_ops_by_force
 
@@ -1527,18 +1562,10 @@ def gen_misc(index: ModelIndex, base_ns: Namespace) -> Graph:
                 if isinstance(quantity.props, GeometricProps)
                 else None
             )
-            if point_id is None:
-                parts = quantity.name.split("-")
-                if len(parts) >= 2:
-                    point_id = f"point-{parts[1]}-origin"
             if point_id:
                 entities.setdefault(point_id, (base_ns[point_id], MISC_ENTITY_TYPE["Point"]))
             if frame_id:
                 entities.setdefault(frame_id, (base_ns[frame_id], MISC_ENTITY_TYPE["Frame"]))
-            parts = quantity.name.split("-")
-            if len(parts) >= 3:
-                link_id = f"link-{parts[1]}-{parts[2]}"
-                entities.setdefault(link_id, (base_ns[link_id], MISC_ENTITY_TYPE["SimplicialComplex"]))
 
     for derivation in index.distance_derivations:
         entities.setdefault(derivation.observer_point, (base_ns[derivation.observer_point], MISC_ENTITY_TYPE["Point"]))
@@ -1654,20 +1681,13 @@ def gen_world_model(index: ModelIndex, base_ns: Namespace) -> Graph:
                 graph.add((node, GEOM_COORD["as-seen-by"], base_ns[wrt_value]))
                 as_seen_by = wrt_value
 
-        parts = quantity.name.split("-")
-        if quantity.type in {"VelocityTwist", "Wrench"} and not as_seen_by and len(parts) >= 3:
-            graph.add((node, GEOM_COORD["as-seen-by"], base_ns[f"frame-{parts[2]}"]))
         if quantity.type in {"VelocityTwist", "Wrench"} and not reference_point:
-            point_owner = None
-            if of_value and of_value.startswith("link-"):
-                point_owner = of_value.removeprefix("link-")
-            elif len(parts) >= 2:
-                point_owner = parts[1]
-            if point_owner:
-                graph.add((node, GEOM_REL["reference-point"], base_ns[f"point-{point_owner}-origin"]))
+            warnings.warn(
+                f"'{quantity.name}' has no explicit ref-point; not inferring one from its name."
+            )
 
     for view in index.scalar_views.values():
-        _add_quantity(graph, base_ns[view.scalar_id], view.scalar_type)
+        _add_quantity(graph, base_ns[view.name], view.scalar_type)
 
     for constraint in index.constraints:
         if constraint.scalar_type == "PlaneAngle" and constraint.quantity_node_id.startswith("ang-"):
@@ -1681,17 +1701,19 @@ def gen_world_model(index: ModelIndex, base_ns: Namespace) -> Graph:
         qkind = _dsl_scalar_qkind(variable.type)
         _add_types(graph, node, QUDT_SCHEMA.Quantity, qkind)
         graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
+        if variable.value is None:
+            continue
         graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(variable.value.unit)))
         graph.add((node, QUDT_SCHEMA.value, Literal(str(variable.value.value))))
 
     for signal in index.while_error_signals.values():
-        _add_quantity(graph, base_ns[signal.node_id], signal.scalar_type)
+        _add_quantity(graph, base_ns[signal.name], signal.scalar_type)
 
     for signal in index.monitor_error_signals.values():
-        _add_quantity(graph, base_ns[signal.node_id], signal.scalar_type)
+        _add_quantity(graph, base_ns[signal.name], signal.scalar_type)
 
     for energy_id in index.acceleration_energies.values():
-        node = base_ns[energy_id]
+        node = base_ns[energy_id.name]
         _add_types(graph, node, QUDT_SCHEMA.Quantity, URIRef("AccelerationEnergy"))
         graph.add((node, QUDT_SCHEMA["quantity-kind"], URIRef("AccelerationEnergy")))
         graph.add((node, QUDT_SCHEMA.unit, URIRef("N-M2-PER-SEC2")))
@@ -1765,14 +1787,14 @@ def gen_map(index: ModelIndex, base_ns: Namespace) -> Graph:
     graph = _graph(("app", base_ns), ("map", MAP), ("geom-op", GEOM_OP), ("rbdyn-op", RBDYN_OP))
 
     for view in index.scalar_views.values():
-        node = base_ns[f"view-{view.scalar_id}"]
+        node = base_ns[f"view-{view.name}"]
         _add_types(graph, node, MAP.View)
         if view.view_type:
             _add_types(graph, node, view.view_type)
         graph.add((node, MAP.superobject, base_ns[view.quantity_name]))
-        graph.add((node, MAP.subobject, base_ns[view.scalar_id]))
-        if view.view_subspace:
-            graph.add((node, MAP.subspace, MAP[view.view_subspace]))
+        graph.add((node, MAP.subobject, base_ns[view.name]))
+        if view.subspace:
+            graph.add((node, MAP.subspace, MAP[view.subspace]))
         graph.add((node, MAP.axis, MAP[view.axis]))
 
     for motion_name, rotation_id in index.rotation_ids.items():
@@ -1780,9 +1802,9 @@ def gen_map(index: ModelIndex, base_ns: Namespace) -> Graph:
         # rotation_ids only covers axis-less rotation constraints
         pose_quantity = next(
             (
-                constraint.view.quantity
+                _view_quantity_name(constraint)
                 for constraint in index.all_constraints(motion_spec)
-                if constraint.view.property == "rotation" and constraint.view.axis is None
+                if _view_property_name(constraint) == "rotation" and _view_axis_name(constraint) is None
             ),
             None,
         )
@@ -1800,9 +1822,9 @@ def gen_map(index: ModelIndex, base_ns: Namespace) -> Graph:
         graph.add((op_node, GEOM_OP.angle, base_ns[op_data.angle_id]))
         graph.add((op_node, GEOM_OP.axis, MAP[op_data.axis]))
 
-    existing_scalar_views = {view.scalar_id for view in index.scalar_views.values()}
+    existing_scalar_views = {view.name for view in index.scalar_views.values()}
     for handler_spec in index.handler_specs:
-        solver = handler_spec.spec.solver
+        solver = _primary_solver(handler_spec)
         if solver is None or not getattr(solver, "algorithm", ""):
             continue
         for binding in _infer_cartesian_force_bindings(index, handler_spec):
@@ -1916,11 +1938,11 @@ def gen_motion_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
     for motion_spec in index.motion_specs:
         motion_node = base_ns[f"motion-{_motion_suffix(motion_spec.name)}"]
         _add_types(graph, motion_node, MOT.GuardedMotion)
-        for constraint in motion_spec.spec.when.constraints:
+        for constraint in motion_spec.when.constraints:
             graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
-        for constraint in motion_spec.spec.while_.constraints:
+        for constraint in motion_spec.while_.constraints:
             graph.add((motion_node, MOT["while"], URIRef(constraint.uri)))
-        for constraint in motion_spec.spec.until.constraints:
+        for constraint in motion_spec.until.constraints:
             graph.add((motion_node, MOT.until, URIRef(constraint.uri)))
     return graph
 
@@ -1928,11 +1950,11 @@ def gen_motion_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
 def gen_constraint_handler(index: ModelIndex, base_ns: Namespace) -> Graph:
     graph = _graph(("app", base_ns), ("cstr-hdl", CSTR_HDL))
 
-    for evaluator_id, (constraint_uri, error_id) in index.evaluator_defs.items():
+    for evaluator_id, evaluator in index.evaluator_defs.items():
         node = base_ns[evaluator_id]
         _add_types(graph, node, CSTR_HDL.ConstraintEvaluator, CSTR_HDL.ErrorEvaluator)
-        graph.add((node, CSTR_HDL.constraint, URIRef(constraint_uri)))
-        graph.add((node, CSTR_HDL.error, base_ns[error_id]))
+        graph.add((node, CSTR_HDL.constraint, URIRef(evaluator.constraint.uri)))
+        graph.add((node, CSTR_HDL.error, base_ns[evaluator.error_signal.name]))
 
     for controller_key, controller in index.controller_data.items():
         node = URIRef(controller_key)
@@ -1950,7 +1972,7 @@ def gen_constraint_handler(index: ModelIndex, base_ns: Namespace) -> Graph:
 
         node = URIRef(monitor.monitor.uri)
         _add_types(graph, node, CSTR_HDL.Monitor)
-        graph.add((node, CSTR_HDL.error, base_ns[monitor.error_signal_id]))
+        graph.add((node, CSTR_HDL.error, base_ns[monitor.error_signal.name]))
         if monitor.signal_kind == "event":
             _add_types(graph, node, CSTR_HDL.EdgeTriggeredMonitor)
             graph.add((node, CSTR_HDL.event, signal_node))
@@ -1961,9 +1983,9 @@ def gen_constraint_handler(index: ModelIndex, base_ns: Namespace) -> Graph:
     for handler in index.handlers:
         node = URIRef(handler.node_id)
         _add_types(graph, node, CSTR_HDL.ConstraintHandler)
-        graph.add((node, CSTR_HDL.motion, base_ns[handler.motion_id]))
-        for evaluator_id in handler.evaluator_ids:
-            graph.add((node, CSTR_HDL.evaluators, base_ns[evaluator_id]))
+        graph.add((node, CSTR_HDL.motion, base_ns[handler.motion.name]))
+        for evaluator in handler.evaluators:
+            graph.add((node, CSTR_HDL.evaluators, base_ns[evaluator.name]))
         for controller_id in handler.controller_ids:
             graph.add((node, CSTR_HDL.controllers, URIRef(controller_id)))
         for monitor_id in handler.monitor_ids:
@@ -1976,10 +1998,10 @@ def gen_solver_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
     graph = _graph(("app", base_ns), ("slv", SLV))
 
     for handler_spec in index.handler_specs:
-        solver = handler_spec.spec.solver
-        if not handler_spec.spec.motion or solver is None or not getattr(solver, "algorithm", ""):
+        solver = _primary_solver(handler_spec)
+        motion_name = _handler_motion_name(handler_spec)
+        if not motion_name or solver is None or not getattr(solver, "algorithm", ""):
             continue
-        motion_name = handler_spec.spec.motion
         motion_spec = index.motion_map.get(motion_name)
         if motion_spec is None:
             continue
@@ -1991,9 +2013,9 @@ def gen_solver_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
             if constraint.motion_name != motion_name:
                 continue
             quantity = constraint.quantity
-            property_spec = (
-                _property_spec(quantity.type, constraint.constraint.view.property) if quantity else None
-            )
+            property_name = _view_property_name(constraint.constraint)
+            axis = _view_axis_name(constraint.constraint)
+            property_spec = _property_spec(quantity.type, property_name) if quantity else None
             if (
                 quantity is None
                 or property_spec is None
@@ -2006,8 +2028,8 @@ def gen_solver_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
             node_id = _acceleration_constraint_id(
                 motion_name,
                 quantity,
-                constraint.constraint.view.property,
-                constraint.constraint.view.axis,
+                property_name,
+                axis,
                 shared,
             )
             if node_id not in spec_constraints:
@@ -2056,11 +2078,11 @@ def gen_scenario(index: ModelIndex, base_ns: Namespace) -> Graph:
         graph.add((node, SLV.force, base_ns[solver.force]))
 
     for handler_spec in index.handler_specs:
-        solver = handler_spec.spec.solver
-        if not handler_spec.spec.motion or solver is None or not getattr(solver, "algorithm", ""):
+        solver = _primary_solver(handler_spec)
+        motion_name = _handler_motion_name(handler_spec)
+        if not motion_name or solver is None or not getattr(solver, "algorithm", ""):
             continue
 
-        motion_name = handler_spec.spec.motion
         motion_suffix = _motion_suffix(motion_name)
         driver_suffix = _driver_suffix(handler_spec)
         motion_spec = index.motion_map.get(motion_name)
@@ -2080,9 +2102,9 @@ def gen_scenario(index: ModelIndex, base_ns: Namespace) -> Graph:
             if constraint.motion_name != motion_name:
                 continue
             quantity = constraint.quantity
-            property_spec = (
-                _property_spec(quantity.type, constraint.constraint.view.property) if quantity else None
-            )
+            property_name = _view_property_name(constraint.constraint)
+            axis = _view_axis_name(constraint.constraint)
+            property_spec = _property_spec(quantity.type, property_name) if quantity else None
             if (
                 quantity is None
                 or property_spec is None
@@ -2094,8 +2116,8 @@ def gen_scenario(index: ModelIndex, base_ns: Namespace) -> Graph:
             node_id = _acceleration_constraint_id(
                 motion_name,
                 quantity,
-                constraint.constraint.view.property,
-                constraint.constraint.view.axis,
+                property_name,
+                axis,
                 shared,
             )
             if node_id not in spec_constraints:
@@ -2129,12 +2151,11 @@ def gen_scenario(index: ModelIndex, base_ns: Namespace) -> Graph:
             solver_algorithm = SLV[solver.algorithm]
         _add_types(graph, solver_node, SLV.SolverWithInputAndOutput)
         graph.add((solver_node, SLV.solver, solver_algorithm))
-        _required_world_quantity(index, solver.chain, f"referenced by solver '{handler_spec.name}' chain")
-        _required_world_quantity(index, solver.root, f"referenced by solver '{handler_spec.name}' root")
-        _required_world_quantity(index, solver.gravity, f"referenced by solver '{handler_spec.name}' gravity")
-        graph.add((solver_node, SLV["kinematic-chain"], base_ns[solver.chain]))
-        graph.add((solver_node, SLV.root, base_ns[solver.root]))
-        graph.add((solver_node, SLV.gravity, base_ns[solver.gravity]))
+        gravity_name = _node_name(solver.gravity)
+        _required_world_quantity(index, gravity_name, f"referenced by solver '{handler_spec.name}' gravity")
+        graph.add((solver_node, SLV["kinematic-chain"], base_ns[_node_name(solver.robot)]))
+        graph.add((solver_node, SLV.root, base_ns[_node_name(solver.root)]))
+        graph.add((solver_node, SLV.gravity, base_ns[gravity_name]))
         graph.add((solver_node, SLV["motion-drivers"], driver_node))
 
     return graph
