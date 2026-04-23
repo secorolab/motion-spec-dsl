@@ -1,0 +1,62 @@
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) eddie {
+    type: MobileManipulator,
+    urdf: "../robots/eddie.urdf",
+    base: {
+        root: link-base
+    },
+    manipulators: {
+        right_arm: { root: link-base, end: link-ee }
+    }
+}
+
+MOTION_SPEC (ns=app) m_press {
+    CONTEXT {
+        cw: World {
+            wrench-ee: Wrench { as-seen-by: frame-base },
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base }
+        },
+        cs: Spec {
+            force-z-ref: Force = 5.0 N
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_force: keeping cw.wrench-ee.force.z equal to cs.force-z-ref
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_press {
+    CONTEXT {
+        c1: World {
+            link-ee: Link,
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: m_press
+
+    CONTROLLERS {
+        ctrl-force: PID { constraint: m_press.c_force, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        as Force
+        apply at c1.link-ee
+    }
+
+    SOLVERS {
+        right_arm_solver: Solver {
+            robot: eddie.right_arm,
+            algorithm: Vereshchagin,
+            root: eddie.right_arm.root,
+            end: eddie.right_arm.end,
+            gravity: c1.gravity equal to c2.gravity-vec
+        }
+    }
+}
