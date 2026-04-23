@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, TypeAlias, cast
 
-from rdflib.graph import Graph
+from rdflib.graph import Dataset, Graph
 from rdflib.namespace import Namespace, RDF
 from rdflib.term import Literal, URIRef
 from textx.scoping import get_included_models
@@ -64,7 +64,7 @@ from motion_spec_dsl.generators.classes import (
 Node: TypeAlias = Any
 NamespaceBinding: TypeAlias = tuple[str, Any]
 ContextLike: TypeAlias = dict[str, str] | list[str | dict[str, str]]
-GraphOutput: TypeAlias = tuple[str, Graph, ContextLike]
+DatasetOutput: TypeAlias = tuple[Dataset, ContextLike]
 ConstraintSignature: TypeAlias = tuple[str, str, str | None, str]
 ConstraintKey: TypeAlias = tuple[str, str]
 WorldQuantityLike: TypeAlias = WorldQuantity
@@ -341,6 +341,13 @@ def _graph(*bindings: NamespaceBinding) -> Any:
     return graph
 
 
+def _dataset(*bindings: NamespaceBinding) -> Dataset:
+    dataset = Dataset()
+    for prefix, namespace in bindings:
+        dataset.bind(prefix, namespace)
+    return dataset
+
+
 def _add_types(graph: Any, node: Node, *rdf_types: Node) -> None:
     for rdf_type in rdf_types:
         graph.add((node, RDF.type, rdf_type))
@@ -398,8 +405,10 @@ def _attached_link_from_wrench_name(name: str) -> str | None:
     return None
 
 
-def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, solver: Any) -> str | None:
-    for binding in _infer_cartesian_force_bindings(index, handler_spec):
+def _infer_attached_link(
+    builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler, solver: Any
+) -> str | None:
+    for binding in _infer_cartesian_force_bindings(builder, handler_spec):
         if binding.attached_to is not None:
             return binding.attached_to
 
@@ -409,9 +418,9 @@ def _infer_attached_link(index: "ModelIndex", handler_spec: ConstraintHandler, s
             return attached_force_link
 
     motion_name = _handler_motion_name(handler_spec)
-    motion_spec = index.motion_map.get(motion_name) if motion_name else None
+    motion_spec = builder.motion_map.get(motion_name) if motion_name else None
     if motion_spec is not None:
-        for quantity in index.world_declarations(motion_spec):
+        for quantity in builder.world_declarations(motion_spec):
             if quantity.type == "VelocityTwist" and isinstance(quantity.props, GeometricProps):
                 attached_link = _geometric_property(quantity.props, "of")
                 if attached_link is not None:
@@ -434,34 +443,34 @@ def _handler_world_quantities(handler_spec: ConstraintHandler) -> list[WorldQuan
     return quantities
 
 
-def _wrench_name_for_scalar_signal(
-    index: "ModelIndex", handler_spec: ConstraintHandler, signal_id: str
-) -> str | None:
-    candidates: list[WorldQuantityLike] = []
-    for quantity in _handler_world_quantities(handler_spec):
-        if quantity.type == "Wrench":
-            candidates.append(quantity)
-    for quantity in index.world_quantities.values():
-        if quantity.type == "Wrench" and quantity.name not in {q.name for q in candidates}:
-            candidates.append(quantity)
+def _constraint_property_name(constraint: ConstraintData) -> str:
+    return _view_property_name(constraint.constraint)
 
-    matches = [q for q in candidates if _scalar_id(q, "force", "z") == signal_id]
-    if not matches:
+
+def _constraint_axis_name(constraint: ConstraintData) -> str | None:
+    return _view_axis_name(constraint.constraint)
+
+
+def _controller_command_kind(controller: ControllerData) -> str | None:
+    return controller.output_type or controller.feed_kind
+
+
+def _controller_force_quantity(controller: ControllerData) -> WorldQuantity | None:
+    constraint = controller.constraint
+    if constraint is None or constraint.quantity is None:
         return None
-
-    platform_match = next(
-        (
-            q
-            for q in matches
-            if isinstance(q.props, GeometricProps) and _geometric_property(q.props, "as-seen-by") == "frame-platform"
-        ),
-        None,
-    )
-    return (platform_match or matches[0]).name
+    if constraint.quantity.type != "Wrench":
+        return None
+    property_name = _constraint_property_name(constraint)
+    if property_name == "force":
+        return constraint.quantity
+    if _controller_command_kind(controller) == "Force":
+        return constraint.quantity
+    return None
 
 
 def _infer_cartesian_force_bindings(
-    index: "ModelIndex", handler_spec: ConstraintHandler
+    builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler
 ) -> list[CartesianForceBinding]:
     motion_name = _handler_motion_name(handler_spec)
     if not motion_name:
@@ -479,7 +488,7 @@ def _infer_cartesian_force_bindings(
             (
                 f"spec-{force_name}",
                 force_name,
-                _attached_link_from_wrench_name(force_name),
+                None,
                 True,
             )
         )
@@ -487,46 +496,41 @@ def _infer_cartesian_force_bindings(
 
     motion_controllers = [
         controller
-        for controller in index.controller_data.values()
-        if controller.motion_name == motion_name and controller.control_signal_id.startswith("frc-")
+        for controller in builder.controller_data.values()
+        if controller.motion_name == motion_name
     ]
     for controller in motion_controllers:
-        explicit_cartesian_force = controller.feed_scope == "cartesian" and controller.feed_kind == "Force"
-        force_name = None
-        for derivation in index.distance_derivations:
-            if derivation.force_id == controller.control_signal_id and derivation.group in motion_name:
-                force_name = derivation.local_wrench_id
-                break
-        if force_name is None:
-            force_name = _wrench_name_for_scalar_signal(index, handler_spec, controller.control_signal_id)
-        if force_name is None or force_name in seen_force_names:
+        force_quantity = _controller_force_quantity(controller)
+        if force_quantity is None or force_quantity.name in seen_force_names:
             continue
+        explicit_cartesian_force = _controller_command_kind(controller) == "Force"
+        force_name = force_quantity.name
 
         spec_hint = None
         if explicit_cartesian_force and controller.apply_at:
-            spec_hint = f"spec-frc-{controller.apply_at}"
-        elif controller.control_signal_id:
-            spec_hint = f"spec-{controller.control_signal_id}"
+            spec_hint = f"spec-{force_name}"
+        else:
+            spec_hint = f"spec-{force_name}"
 
-        attached_to = controller.apply_at or _attached_link_from_wrench_name(force_name)
+        attached_to = controller.apply_at
         candidates.append((spec_hint, force_name, attached_to, explicit_cartesian_force))
         seen_force_names.add(force_name)
         if spec_hint is not None and spec_hint not in spec_names:
             spec_names.append(spec_hint)
 
-    for constraint in index.constraints:
+    for constraint in builder.constraints:
         if constraint.motion_name != motion_name or constraint.quantity is None or constraint.quantity.type != "Wrench":
             continue
-        if not constraint.quantity_node_id.startswith("frc-"):
+        if _constraint_property_name(constraint) != "force":
             continue
-        force_name = _wrench_name_for_scalar_signal(index, handler_spec, constraint.quantity_node_id)
-        if force_name is None or force_name in seen_force_names:
+        force_name = constraint.quantity.name
+        if force_name in seen_force_names:
             continue
         candidates.append(
-            (f"spec-{constraint.quantity_node_id}", force_name, _attached_link_from_wrench_name(force_name), False)
+            (f"spec-{force_name}", force_name, None, False)
         )
         seen_force_names.add(force_name)
-        spec_hint = f"spec-{constraint.quantity_node_id}"
+        spec_hint = f"spec-{force_name}"
         if spec_hint not in spec_names:
             spec_names.append(spec_hint)
 
@@ -644,17 +648,13 @@ def _control_signal_id(constraint: ConstraintData | None) -> str | None:
         return None
     if constraint.acceleration_energy_id:
         return constraint.acceleration_energy_id
-    # TODO: infer control signal from model relations rather than quantity-node string shape.
+    if constraint.quantity is not None and _constraint_property_name(constraint) == "force":
+        return constraint.quantity_node_id
     return None
 
 
-def _control_signal_id_from_wrench_name(name: str) -> str | None:
-    # TODO: infer this from Wrench geometric properties instead of parsing names.
-    return None
-
-
-def _required_world_quantity(index: "ModelIndex", name: str, reason: str) -> WorldQuantityLike:
-    quantity = index.world_quantities.get(name)
+def _required_world_quantity(builder: "MotionSpecDatasetBuilder", name: str, reason: str) -> WorldQuantityLike:
+    quantity = builder.world_quantities.get(name)
     if quantity is None:
         raise ValueError(f"Missing required world quantity '{name}' in context: {reason}")
     return quantity
@@ -680,11 +680,6 @@ def _of_frame(quantity: WorldQuantityLike) -> str | None:
     if not isinstance(quantity.props, GeometricProps):
         return None
     return _geometric_property(quantity.props, "of")
-
-
-def _lookup_scope_name(lookup: Any) -> str:
-    value = getattr(lookup, "value", None) or getattr(lookup, "valRef", None)
-    return value.parent.kind
 
 
 def _node_name(value: Any) -> str:
@@ -760,32 +755,65 @@ def _context_declarations(context: Any) -> list[Any]:
     return list(getattr(context, "declaration", []))
 
 
-class ModelIndex:
+class MotionSpecDatasetBuilder:
+    """Handler-rooted builder that resolves semantics and materializes a Dataset."""
+
     def __init__(self, model: Model):
         self.model = model
         self.models = get_included_models(model)
+        self.dataset = _dataset(
+            ("geom-ent", GEOM_ENT),
+            ("geom-rel", GEOM_REL),
+            ("geom-coord", GEOM_COORD),
+            ("geom-op", GEOM_OP),
+            ("rbdyn-ent", RBDYN_ENT),
+            ("rbdyn-coord", RBDYN_COORD),
+            ("rbdyn-op", RBDYN_OP),
+            ("qudt", QUDT_SCHEMA),
+            ("qkind", QUDT_QKIND),
+            ("unit", QUDT_UNIT),
+            ("map", MAP),
+            ("cstr", CSTR),
+            ("mot", MOT),
+            ("cstr-hdl", CSTR_HDL),
+            ("slv", SLV),
+        )
+        self.graph = self.dataset.default_graph
 
     @cached_property
-    def motion_specs(self) -> list[MotionSpec]:
-        return [
-            spec
-            for model in self.models
-            for spec in model.specs
-            if isinstance(spec, MotionSpec)
-        ]
+    def namespace_owners(self) -> list[Any]:
+        return [*self.handler_specs, *self.motion_specs]
 
     @cached_property
-    def handler_specs(self) -> list[ConstraintHandler]:
-        return [
-            spec
-            for model in self.models
-            for spec in model.specs
-            if isinstance(spec, ConstraintHandler)
-        ]
+    def default_namespace_owner(self) -> Any:
+        owner = next(iter(self.namespace_owners), None)
+        assert owner is not None, "No MOTION_SPEC or CONSTRAINT_HANDLER found in model"
+        return owner
 
-    @cached_property
-    def motion_map(self) -> dict[str, MotionSpec]:
-        return {spec.name: spec for spec in self.motion_specs}
+    def _namespace_owner(self, obj: Any | None) -> Any:
+        current = obj
+        while current is not None:
+            if hasattr(current, "ns") and hasattr(current, "ns_prefix"):
+                return current
+            current = getattr(current, "parent", None)
+        return self.default_namespace_owner
+
+    def root_uri(self, name: str, *, owner: Any | None = None) -> URIRef:
+        ns_owner = self._namespace_owner(owner)
+        return URIRef(Namespace(ns_owner.ns.uri)[name])
+
+    def node(self, value: Any, *, owner: Any | None = None) -> URIRef:
+        if hasattr(value, "uri"):
+            return URIRef(str(value.uri))
+        return self.root_uri(_node_name(value), owner=owner)
+
+    def context(self, *bindings: NamespaceBinding) -> dict[str, str]:
+        context: dict[str, str] = {}
+        for owner in self.namespace_owners:
+            context.setdefault(owner.ns_prefix, owner.ns.uri)
+        for prefix, namespace in bindings:
+            context[prefix] = str(namespace._NS)
+        return context
 
     def _context_decl(self, spec: MotionSpec, kind: str) -> Any | None:
         for item in spec.context:
@@ -821,14 +849,57 @@ class ModelIndex:
                     return value
         return None
 
+    def constraint_quantity_node(self, constraint: ConstraintData) -> Node:
+        return self.node(constraint.quantity_node_id, owner=self.motion_map.get(constraint.motion_name))
+
+    @cached_property
+    def handler_specs(self) -> list[ConstraintHandler]:
+        return [
+            spec
+            for model in self.models
+            for spec in model.specs
+            if isinstance(spec, ConstraintHandler)
+        ]
+
+    @cached_property
+    def handler_map(self) -> dict[str, ConstraintHandler]:
+        return {handler.name: handler for handler in self.handler_specs}
+
+    @cached_property
+    def motion_specs(self) -> list[MotionSpec]:
+        motions: list[MotionSpec] = []
+        seen: set[str] = set()
+        for handler in self.handler_specs:
+            motion = _handler_motion(handler)
+            if motion is None or motion.name in seen:
+                continue
+            seen.add(motion.name)
+            motions.append(motion)
+        if motions:
+            return motions
+        return [
+            spec
+            for model in self.models
+            for spec in model.specs
+            if isinstance(spec, MotionSpec)
+        ]
+
+    @cached_property
+    def motion_names(self) -> set[str]:
+        return {motion.name for motion in self.motion_specs}
+
+    @cached_property
+    def motion_map(self) -> dict[str, MotionSpec]:
+        return {motion.name: motion for motion in self.motion_specs}
+
     @cached_property
     def world_quantities(self) -> dict[str, WorldQuantityLike]:
         quantities: dict[str, WorldQuantityLike] = {}
-        for motion_spec in self.motion_specs:
-            for quantity in self.world_declarations(motion_spec):
+        for motion in self.motion_specs:
+            for quantity in self.world_declarations(motion):
                 quantities[quantity.name] = quantity
-        for handler_spec in self.handler_specs:
-            for item in _handler_contexts(handler_spec):
+        for handler in self.handler_specs:
+            for item in _handler_contexts(handler):
                 for quantity in _context_declarations(item):
                     if isinstance(quantity, WorldQuantity):
                         quantities[quantity.name] = quantity
@@ -837,10 +908,10 @@ class ModelIndex:
     @cached_property
     def value_variables(self) -> dict[str, ValueVariable]:
         values: dict[str, ValueVariable] = {}
-        for motion_spec in self.motion_specs:
+        for motion in self.motion_specs:
             for kind in ("PreContextDecl", "SpecContextDecl", "PostContextDecl"):
-                for variable in self.value_declarations(motion_spec, kind):
-                    values[variable.name] = variable
+                for value in self.value_declarations(motion, kind):
+                    values[value.name] = value
         return values
 
     @cached_property
@@ -872,124 +943,10 @@ class ModelIndex:
                 frame_id = _geometric_property(quantity.props, "as-seen-by")
                 if frame_id:
                     entities.setdefault(frame_id, MISC_ENTITY_TYPE["Frame"])
-
         return entities
 
     @cached_property
-    def defined_world_names(self) -> set[str]:
-        return set(self.world_quantities) | set(self.implicit_world_entities)
-
-    def _require_value_lookup(self, motion_spec: MotionSpec, constraint_name: str, lookup: Any) -> None:
-        scope = _lookup_scope_name(lookup)
-        variable = _context_value_name(lookup)
-        if scope == "World":
-            if variable not in self.defined_world_names:
-                raise ValueError(
-                    f"Constraint '{constraint_name}' references World[{variable}], but '{variable}' "
-                    "is not defined in any World context or derived from geometric properties."
-                )
-            return
-
-        kind = f"{scope}ContextDecl"
-        if not any(value.name == variable for value in self.value_declarations(motion_spec, kind)):
-            raise ValueError(
-                f"Constraint '{constraint_name}' references {scope}[{variable}], but '{variable}' "
-                f"is not defined in the motion '{motion_spec.name}' {scope} context."
-            )
-
-    def validate_references(self) -> None:
-        for motion_spec in self.motion_specs:
-            for constraint in self.all_constraints(motion_spec):
-                if self.world_quantity(motion_spec, _view_quantity_name(constraint)) is None:
-                    raise ValueError(
-                        f"Constraint '{constraint.name}' references world quantity "
-                        f"'{_view_quantity_name(constraint)}' that is not defined in motion '{motion_spec.name}'."
-                    )
-                expr = constraint.expr
-                if isinstance(expr, EqualityConstraint):
-                    self._require_value_lookup(motion_spec, constraint.name, expr.reference)
-                elif isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
-                    self._require_value_lookup(motion_spec, constraint.name, expr.threshold)
-                elif isinstance(expr, BilateralConstraint):
-                    self._require_value_lookup(motion_spec, constraint.name, expr.lower)
-                    self._require_value_lookup(motion_spec, constraint.name, expr.upper)
-
-        for handler_spec in self.handler_specs:
-            motion_name = _handler_motion_name(handler_spec)
-            motion_spec = self.motion_map.get(motion_name) if motion_name else None
-            if motion_name and motion_spec is None:
-                raise ValueError(
-                    f"Constraint handler '{handler_spec.name}' references motion "
-                    f"'{motion_name}', but it is not defined."
-                )
-
-            for monitor in _handler_monitors(handler_spec):
-                if motion_spec is None:
-                    raise ValueError(
-                        f"Monitor '{monitor.name}' in handler '{handler_spec.name}' requires a MOTION reference."
-                    )
-                if (motion_spec.name, monitor.constraint.name) not in self.constraint_map:
-                    raise ValueError(
-                        f"Monitor '{monitor.name}' references constraint '{monitor.constraint}', but it is not "
-                        f"defined for motion '{motion_spec.name}'."
-                    )
-
-            for controller in _handler_controllers(handler_spec):
-                if motion_spec is None:
-                    raise ValueError(
-                        f"Controller '{controller.name}' in handler '{handler_spec.name}' requires a MOTION reference."
-                    )
-                if (motion_spec.name, controller.params.constraint.name) not in self.constraint_map:
-                    raise ValueError(
-                        f"Controller '{controller.name}' references constraint "
-                        f"'{controller.params.constraint}', but it is not defined for motion '{motion_spec.name}'."
-                    )
-                apply_at = _node_name(controller.apply_at) if controller.apply_at else ""
-                if apply_at and apply_at not in self.defined_world_names:
-                    raise ValueError(
-                        f"Controller '{controller.name}' references World[{controller.apply_at}], but "
-                        f"'{controller.apply_at}' is not defined in any World context or derived from geometric properties."
-                    )
-
-            solver = _primary_solver(handler_spec)
-            if solver is None:
-                raise ValueError(f"Constraint handler '{handler_spec.name}' is missing required SOLVER section.")
-            for attr in ("gravity",):
-                value = _node_name(getattr(solver, attr, "")) if getattr(solver, attr, "") else ""
-                if value and value not in self.defined_world_names:
-                    raise ValueError(
-                        f"Solver in handler '{handler_spec.name}' references World[{value}] for {attr}, but "
-                        f"'{value}' is not defined in any World context or derived from geometric properties."
-                    )
-            for force_name in getattr(solver, "cartesian_force", []):
-                if force_name not in self.defined_world_names:
-                    raise ValueError(
-                        f"Solver in handler '{handler_spec.name}' references cartesian-force '{force_name}', "
-                        "but it is not defined in any World context or derived from geometric properties."
-                    )
-            for force_name in getattr(solver, "joint_force", []):
-                if force_name not in self.defined_world_names:
-                    raise ValueError(
-                        f"Solver in handler '{handler_spec.name}' references joint-force '{force_name}', "
-                        "but it is not defined in any World context or derived from geometric properties."
-                    )
-            for velocity_solver in getattr(solver, "velocity_solvers", []):
-                if velocity_solver.velocity not in self.defined_world_names:
-                    raise ValueError(
-                        f"Velocity solver '{velocity_solver.name}' references World[{velocity_solver.velocity}], "
-                        "but it is not defined in any World context or derived from geometric properties."
-                    )
-            for force_solver in getattr(solver, "force_solvers", []):
-                if force_solver.force not in self.defined_world_names:
-                    raise ValueError(
-                        f"Force solver '{force_solver.name}' references World[{force_solver.force}], "
-                        "but it is not defined in any World context or derived from geometric properties."
-                    )
-
-    @cached_property
     def rotation_ids(self) -> dict[str, str]:
-        # Only for axis-less rotation constraints (property == "rotation" with no axis).
-        # Axis-based rotation constraints (e.g. rotation.z) are handled by angle_from_pose_ops.
         rotation_ids: dict[str, str] = {}
         for motion_spec in self.motion_specs:
             for constraint in self.all_constraints(motion_spec):
@@ -1007,8 +964,6 @@ class ModelIndex:
 
     @cached_property
     def angle_from_pose_ops(self) -> list[PoseAngleOpData]:
-        # For pose.rotation.z (explicit axis) constraints: generate GEOM_OP.PoseToAngleAroundAxis
-        # ops so that ir_gen.py can schedule the computation of the angle scalar.
         ops: list[PoseAngleOpData] = []
         seen: set[str] = set()
         for motion_spec in self.motion_specs:
@@ -1074,24 +1029,12 @@ class ModelIndex:
     @cached_property
     def shared_while_signatures(self) -> set[ConstraintSignature]:
         usage: dict[ConstraintSignature, set[str]] = {}
-        for motion_spec in self.motion_specs:
-            for constraint in motion_spec.while_.constraints:
+        for motion in self.motion_specs:
+            for constraint in motion.while_.constraints:
                 if not isinstance(constraint.expr, EqualityConstraint):
                     continue
-                usage.setdefault(_while_signature(constraint), set()).add(motion_spec.name)
+                usage.setdefault(_while_signature(constraint), set()).add(motion.name)
         return {signature for signature, motions in usage.items() if len(motions) > 1}
-
-    @cached_property
-    def controlled_constraints(self) -> list[ConstraintData]:
-        while_names_by_motion = {
-            motion_spec.name: {constraint.name for constraint in motion_spec.while_.constraints}
-            for motion_spec in self.motion_specs
-        }
-        return [
-            constraint
-            for constraint in self.constraints
-            if constraint.constraint.name in while_names_by_motion.get(constraint.motion_name, set())
-        ]
 
     @cached_property
     def constraints(self) -> list[ConstraintData]:
@@ -1110,7 +1053,7 @@ class ModelIndex:
                         f"Constraint '{constraint.name}' references world quantity "
                         f"'{quantity_name}' that is not defined in the motion context."
                     )
-                property_spec = _property_spec(quantity.type if quantity else "Unknown", property_name)
+                property_spec = _property_spec(quantity.type, property_name)
                 scalar_type_name = (
                     _view_scalar_type(quantity, property_name, axis)
                     if quantity is not None
@@ -1190,6 +1133,18 @@ class ModelIndex:
         return {(constraint.motion_name, constraint.constraint.name): constraint for constraint in self.constraints}
 
     @cached_property
+    def controlled_constraints(self) -> list[ConstraintData]:
+        while_names_by_motion = {
+            motion.name: {constraint.name for constraint in motion.while_.constraints}
+            for motion in self.motion_specs
+        }
+        return [
+            constraint
+            for constraint in self.constraints
+            if constraint.constraint.name in while_names_by_motion.get(constraint.motion_name, set())
+        ]
+
+    @cached_property
     def while_constraints(self) -> list[ConstraintData]:
         return [constraint for constraint in self.constraints if constraint.signature is not None]
 
@@ -1257,10 +1212,7 @@ class ModelIndex:
 
     @cached_property
     def monitor_error_signals(self) -> dict[str, ErrorSignal]:
-        return {
-            monitor.error_signal.name: monitor.error_signal
-            for monitor in self.monitor_data
-        }
+        return {monitor.error_signal.name: monitor.error_signal for monitor in self.monitor_data}
 
     @cached_property
     def controller_data(self) -> dict[str, ControllerData]:
@@ -1322,11 +1274,11 @@ class ModelIndex:
 
     @cached_property
     def handlers(self) -> list[HandlerData]:
-        handlers: list[HandlerData] = []
         monitors_by_motion: dict[str, list[MonitorData]] = {}
         for monitor in self.monitor_data:
             monitors_by_motion.setdefault(monitor.motion_name, []).append(monitor)
 
+        handlers: list[HandlerData] = []
         for handler_spec in self.handler_specs:
             motion_name = _handler_motion_name(handler_spec)
             if not motion_name:
@@ -1334,7 +1286,6 @@ class ModelIndex:
             motion_spec = self.motion_map.get(motion_name)
             if motion_spec is None:
                 continue
-
             while_constraints = [
                 constraint
                 for constraint in self.controlled_constraints
@@ -1439,9 +1390,6 @@ class ModelIndex:
                 )
         return solvers
 
-    def constraint_quantity_node(self, constraint: ConstraintData, base_ns: Namespace) -> Node:
-        return base_ns[constraint.quantity_node_id]
-
     @cached_property
     def distance_derivations(self) -> list[DistanceDerivation]:
         derivations: list[DistanceDerivation] = []
@@ -1456,7 +1404,6 @@ class ModelIndex:
                 or axis is not None
             ):
                 continue
-
             observer_frame = _with_respect_to(quantity)
             if observer_frame is None:
                 raise NotImplementedError(
@@ -1468,9 +1415,412 @@ class ModelIndex:
             )
         return derivations
 
+    def build(self) -> DatasetOutput:
+        for owner in self.namespace_owners:
+            self.dataset.bind(owner.ns_prefix, owner.ns.uri)
+        self.materialize_authored()
+        self.materialize_derived()
+        return self.dataset, self.context(
+            ("geom-ent", GEOM_ENT),
+            ("geom-rel", GEOM_REL),
+            ("geom-coord", GEOM_COORD),
+            ("geom-op", GEOM_OP),
+            ("rbdyn-ent", RBDYN_ENT),
+            ("rbdyn-coord", RBDYN_COORD),
+            ("rbdyn-op", RBDYN_OP),
+            ("qudt", QUDT_SCHEMA),
+            ("qkind", QUDT_QKIND),
+            ("unit", QUDT_UNIT),
+            ("map", MAP),
+            ("cstr", CSTR),
+            ("mot", MOT),
+            ("cstr-hdl", CSTR_HDL),
+            ("slv", SLV),
+        )
 
-def _find_pose(index: ModelIndex, *, of_frame: str, wrt_frame: str) -> WorldQuantityLike | None:
-    for quantity in index.world_quantities.values():
+    def materialize_authored(self) -> None:
+        self._add_structural_entities()
+        self._add_world_quantities()
+        self._add_value_variables()
+        self._add_constraints()
+        self._add_motion_specs()
+        self._add_constraint_handlers()
+
+    def materialize_derived(self) -> None:
+        self._add_scalar_views()
+        self._add_error_signals_and_energies()
+        self._add_evaluators()
+        self._add_solver_entities()
+        self._add_map_operations()
+        self._add_transform_operations()
+
+    def _add_structural_entities(self) -> None:
+        entities: dict[str, tuple[Node, Node]] = {}
+        for quantity in self.world_quantities.values():
+            rdf_type = MISC_ENTITY_TYPE.get(quantity.type)
+            if rdf_type is not None:
+                entities[quantity.name] = (URIRef(quantity.uri), rdf_type)
+        for entity_name, rdf_type in self.implicit_world_entities.items():
+            entities.setdefault(entity_name, (self.root_uri(entity_name), rdf_type))
+        for node, rdf_type in sorted(entities.values(), key=lambda item: str(item[0])):
+            _add_types(self.graph, node, rdf_type)
+
+    def _add_world_quantities(self) -> None:
+        for quantity in self.world_quantities.values():
+            world_spec = _world_spec(quantity.type)
+            if world_spec is None:
+                continue
+            node = URIRef(quantity.uri)
+            _add_types(self.graph, node, *world_spec.rdf_types)
+            for qkind in world_spec.qkinds:
+                self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
+            for unit in world_spec.units:
+                self.graph.add((node, QUDT_SCHEMA.unit, unit))
+            if not isinstance(quantity.props, GeometricProps):
+                continue
+            of_value = _geometric_property(quantity.props, "of")
+            wrt_value = _geometric_property(quantity.props, "wrt")
+            reference_point = _geometric_property(quantity.props, "ref-point")
+            as_seen_by = _geometric_property(quantity.props, "as-seen-by")
+            if of_value:
+                self.graph.add((node, GEOM_REL.of, self.root_uri(of_value, owner=quantity)))
+            if wrt_value:
+                self.graph.add((node, GEOM_REL["with-respect-to"], self.root_uri(wrt_value, owner=quantity)))
+            if reference_point:
+                self.graph.add((node, GEOM_REL["reference-point"], self.root_uri(reference_point, owner=quantity)))
+            if as_seen_by:
+                self.graph.add((node, GEOM_COORD["as-seen-by"], self.root_uri(as_seen_by, owner=quantity)))
+            elif quantity.type == "Pose" and wrt_value:
+                self.graph.add((node, GEOM_COORD["as-seen-by"], self.root_uri(wrt_value, owner=quantity)))
+            if quantity.type in {"VelocityTwist", "Wrench"} and not reference_point:
+                warnings.warn(f"'{quantity.name}' has no explicit ref-point; not inferring one from its name.")
+
+    def _add_value_variables(self) -> None:
+        for variable in self.value_variables.values():
+            node = URIRef(variable.uri)
+            qkind = _dsl_scalar_qkind(variable.type)
+            _add_types(self.graph, node, QUDT_SCHEMA.Quantity, qkind)
+            self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
+            if variable.value is None:
+                continue
+            self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(variable.value.unit)))
+            self.graph.add((node, QUDT_SCHEMA.value, Literal(str(variable.value.value))))
+
+    def _add_constraints(self) -> None:
+        for constraint in self.constraints:
+            node = URIRef(constraint.constraint.uri)
+            type_name = {"PlaneAngle": "Angle", "Length": "Distance"}.get(constraint.scalar_type, constraint.scalar_type)
+            _add_types(self.graph, node, CSTR.Constraint, CSTR[f"{type_name}Constraint"])
+            self.graph.add((node, CSTR.quantity, self.constraint_quantity_node(constraint)))
+            motion_spec = self.motion_map[constraint.motion_name]
+            if constraint.kind == "EqualityConstraint":
+                reference = self.value_variable(motion_spec, constraint.reference_var or "")
+                _add_types(self.graph, node, CSTR.EqualityConstraint)
+                ref_node = URIRef(reference.uri) if reference else self.root_uri(constraint.reference_var or "", owner=motion_spec)
+                self.graph.add((node, CSTR["reference-value"], ref_node))
+            elif constraint.kind == "GreaterThanConstraint":
+                threshold = self.value_variable(motion_spec, constraint.threshold_var or "")
+                _add_types(self.graph, node, CSTR.UnilateralConstraint, CSTR.GreaterThanConstraint)
+                threshold_node = URIRef(threshold.uri) if threshold else self.root_uri(constraint.threshold_var or "", owner=motion_spec)
+                self.graph.add((node, CSTR.threshold, threshold_node))
+            elif constraint.kind == "LessThanConstraint":
+                threshold = self.value_variable(motion_spec, constraint.threshold_var or "")
+                _add_types(self.graph, node, CSTR.UnilateralConstraint, CSTR.LessThanConstraint)
+                threshold_node = URIRef(threshold.uri) if threshold else self.root_uri(constraint.threshold_var or "", owner=motion_spec)
+                self.graph.add((node, CSTR.threshold, threshold_node))
+            else:
+                lower = self.value_variable(motion_spec, constraint.lower_var or "")
+                upper = self.value_variable(motion_spec, constraint.upper_var or "")
+                _add_types(self.graph, node, CSTR.BilateralConstraint)
+                lower_node = URIRef(lower.uri) if lower else self.root_uri(constraint.lower_var or "", owner=motion_spec)
+                upper_node = URIRef(upper.uri) if upper else self.root_uri(constraint.upper_var or "", owner=motion_spec)
+                self.graph.add((node, CSTR["lower-threshold"], lower_node))
+                self.graph.add((node, CSTR["upper-threshold"], upper_node))
+
+    def _add_motion_specs(self) -> None:
+        for motion_spec in self.motion_specs:
+            motion_node = self.root_uri(f"motion-{_motion_suffix(motion_spec.name)}", owner=motion_spec)
+            _add_types(self.graph, motion_node, MOT.GuardedMotion)
+            for constraint in motion_spec.when.constraints:
+                self.graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
+            for constraint in motion_spec.while_.constraints:
+                self.graph.add((motion_node, MOT["while"], URIRef(constraint.uri)))
+            for constraint in motion_spec.until.constraints:
+                self.graph.add((motion_node, MOT.until, URIRef(constraint.uri)))
+
+    def _add_constraint_handlers(self) -> None:
+        for controller_key, controller in self.controller_data.items():
+            node = URIRef(controller_key)
+            _add_types(self.graph, node, CSTR_HDL.Controller, CSTR_HDL.ProportionalIntegralDerivative)
+            if controller.error_signal_id:
+                self.graph.add((node, CSTR_HDL["error-signal"], self.root_uri(controller.error_signal_id)))
+            self.graph.add((node, CSTR_HDL["control-signal"], self.root_uri(controller.control_signal_id)))
+            self.graph.add((node, CSTR_HDL["proportional-gain"], Literal(str(controller.params.kp))))
+            self.graph.add((node, CSTR_HDL["integral-gain"], Literal(str(controller.params.ki))))
+            self.graph.add((node, CSTR_HDL["derivative-gain"], Literal(str(controller.params.kd))))
+
+        for monitor in self.monitor_data:
+            signal_node = self.root_uri(monitor.signal_id)
+            _add_types(self.graph, signal_node, CSTR_HDL.Event if monitor.signal_kind == "event" else CSTR_HDL.Flag)
+            node = URIRef(monitor.monitor.uri)
+            _add_types(self.graph, node, CSTR_HDL.Monitor)
+            self.graph.add((node, CSTR_HDL.error, self.node(monitor.error_signal)))
+            if monitor.signal_kind == "event":
+                _add_types(self.graph, node, CSTR_HDL.EdgeTriggeredMonitor)
+                self.graph.add((node, CSTR_HDL.event, signal_node))
+            else:
+                _add_types(self.graph, node, CSTR_HDL.LevelTriggeredMonitor)
+                self.graph.add((node, CSTR_HDL.flag, signal_node))
+
+        for handler in self.handlers:
+            node = URIRef(handler.node_id)
+            _add_types(self.graph, node, CSTR_HDL.ConstraintHandler)
+            self.graph.add((node, CSTR_HDL.motion, self.node(handler.motion)))
+            for evaluator in handler.evaluators:
+                self.graph.add((node, CSTR_HDL.evaluators, self.root_uri(evaluator.name, owner=evaluator.parent)))
+            for controller_id in handler.controller_ids:
+                self.graph.add((node, CSTR_HDL.controllers, URIRef(controller_id)))
+            for monitor_id in handler.monitor_ids:
+                self.graph.add((node, CSTR_HDL.monitors, URIRef(monitor_id)))
+
+    def _add_scalar_views(self) -> None:
+        existing_scalar_views = {view.name for view in self.scalar_views.values()}
+        for view in self.scalar_views.values():
+            _add_quantity(self.graph, self.node(view), view.scalar_type)
+            node = self.root_uri(f"view-{view.name}", owner=view.parent)
+            _add_types(self.graph, node, MAP.View)
+            if view.view_type:
+                _add_types(self.graph, node, view.view_type)
+            self.graph.add((node, MAP.superobject, self.root_uri(view.quantity_name, owner=view.parent)))
+            self.graph.add((node, MAP.subobject, self.node(view)))
+            if view.subspace:
+                self.graph.add((node, MAP.subspace, MAP[view.subspace]))
+            self.graph.add((node, MAP.axis, MAP[view.axis]))
+        for constraint in self.constraints:
+            if constraint.scalar_type == "PlaneAngle":
+                _add_quantity(self.graph, self.constraint_quantity_node(constraint), "PlaneAngle")
+        for rotation_id in self.rotation_ids.values():
+            _add_quantity(self.graph, self.root_uri(rotation_id), "PlaneAngle")
+        for controller in self.controller_data.values():
+            if _controller_command_kind(controller) == "Force":
+                _add_quantity(self.graph, self.root_uri(controller.control_signal_id), "Force")
+        for handler_spec in self.handler_specs:
+            solver = _primary_solver(handler_spec)
+            if solver is None or not getattr(solver, "algorithm", ""):
+                continue
+            for binding in _infer_cartesian_force_bindings(self, handler_spec):
+                quantity = self.world_quantities.get(binding.force_name)
+                if quantity is None or quantity.type != "Wrench":
+                    continue
+                scalar_id = _scalar_id(quantity, "force", "z")
+                if scalar_id is None or scalar_id in existing_scalar_views:
+                    continue
+                node = self.root_uri(f"view-{scalar_id}", owner=quantity)
+                _add_types(self.graph, node, MAP.View, MAP.WrenchCoordinateView)
+                self.graph.add((node, MAP.superobject, self.node(quantity)))
+                self.graph.add((node, MAP.subobject, self.root_uri(scalar_id, owner=quantity)))
+                self.graph.add((node, MAP.subspace, MAP.force))
+                self.graph.add((node, MAP.axis, MAP.z))
+
+    def _add_error_signals_and_energies(self) -> None:
+        for signal in self.while_error_signals.values():
+            _add_quantity(self.graph, self.node(signal), signal.scalar_type)
+        for signal in self.monitor_error_signals.values():
+            _add_quantity(self.graph, self.node(signal), signal.scalar_type)
+        for energy in self.acceleration_energies.values():
+            node = self.node(energy)
+            _add_types(self.graph, node, QUDT_SCHEMA.Quantity, URIRef("AccelerationEnergy"))
+            self.graph.add((node, QUDT_SCHEMA["quantity-kind"], URIRef("AccelerationEnergy")))
+            self.graph.add((node, QUDT_SCHEMA.unit, URIRef("N-M2-PER-SEC2")))
+
+    def _add_evaluators(self) -> None:
+        for evaluator_id, evaluator in self.evaluator_defs.items():
+            node = self.root_uri(evaluator_id, owner=evaluator.parent)
+            _add_types(self.graph, node, CSTR_HDL.ConstraintEvaluator, CSTR_HDL.ErrorEvaluator)
+            self.graph.add((node, CSTR_HDL.constraint, URIRef(evaluator.constraint.uri)))
+            self.graph.add((node, CSTR_HDL.error, self.node(evaluator.error_signal)))
+
+    def _add_solver_entities(self) -> None:
+        for solver in self.base_velocity_solvers:
+            node = self.root_uri(solver.node_id)
+            _add_types(self.graph, node, SLV.VelocityCompositionSolver)
+            self.graph.add((node, SLV.configuration, Literal(solver.configuration)))
+            self.graph.add((node, SLV.velocity, self.root_uri(solver.velocity)))
+
+        for solver in self.base_force_solvers:
+            node = self.root_uri(solver.node_id)
+            _add_types(self.graph, node, SLV.ForceDistributionSolver)
+            self.graph.add((node, SLV.configuration, Literal(solver.configuration)))
+            self.graph.add((node, SLV.force, self.root_uri(solver.force)))
+
+        for handler_spec in self.handler_specs:
+            solver = _primary_solver(handler_spec)
+            motion_name = _handler_motion_name(handler_spec)
+            if not motion_name or solver is None or not getattr(solver, "algorithm", ""):
+                continue
+            motion_spec = self.motion_map.get(motion_name)
+            if motion_spec is None:
+                continue
+            attached_link = _infer_attached_link(self, handler_spec, solver)
+            spec_constraints: list[str] = []
+            for constraint in self.while_constraints:
+                if constraint.motion_name != motion_name:
+                    continue
+                quantity = constraint.quantity
+                property_name = _view_property_name(constraint.constraint)
+                axis = _view_axis_name(constraint.constraint)
+                property_spec = _property_spec(quantity.type, property_name) if quantity else None
+                if quantity is None or property_spec is None or property_spec.accel_subspace is None:
+                    continue
+                if constraint.acceleration_energy_id is None:
+                    continue
+                shared = constraint.signature in self.shared_while_signatures if constraint.signature else False
+                node_id = _acceleration_constraint_id(motion_name, quantity, property_name, axis, shared)
+                if node_id not in spec_constraints:
+                    spec_constraints.append(node_id)
+                data = self.acceleration_constraints[node_id]
+                node = self.root_uri(data.node_id, owner=motion_spec)
+                _add_types(self.graph, node, SLV.AccelerationConstraint, SLV.AxisAligned)
+                self.graph.add((node, SLV.subspace, SLV[data.subspace]))
+                self.graph.add((node, SLV.axis, SLV[data.axis]))
+                self.graph.add((node, SLV["acceleration-energy"], self.root_uri(data.energy_id, owner=motion_spec)))
+
+            motion_suffix = _motion_suffix(motion_name)
+            spec_acc_node = self.root_uri(f"spec-acc-{_entity_abbrev(attached_link)}-{motion_suffix}", owner=motion_spec) if attached_link else self.root_uri(f"spec-acc-ee-{motion_suffix}", owner=motion_spec)
+            _add_types(self.graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
+            for node_id in spec_constraints:
+                self.graph.add((spec_acc_node, SLV.constraints, self.root_uri(node_id, owner=motion_spec)))
+            attached_to = self.root_uri(attached_link, owner=handler_spec) if attached_link else self.root_uri("link-ee", owner=handler_spec)
+            self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
+
+            for binding in _infer_cartesian_force_bindings(self, handler_spec):
+                force_name = binding.force_name
+                _required_world_quantity(self, force_name, f"referenced by cartesian-force solver output '{binding.spec_name}'")
+                spec_node = self.root_uri(binding.spec_name, owner=handler_spec)
+                _add_types(self.graph, spec_node, SLV.CartesianForceSpecification)
+                self.graph.add((spec_node, SLV.force, self.root_uri(force_name, owner=handler_spec)))
+                if binding.attached_to is not None:
+                    self.graph.add((spec_node, SLV["attached-to"], self.root_uri(binding.attached_to, owner=handler_spec)))
+
+            driver_node = self.root_uri(f"drv-{_driver_suffix(handler_spec)}", owner=handler_spec)
+            _add_types(self.graph, driver_node, SLV.MotionDrivers)
+            self.graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
+            for binding in _infer_cartesian_force_bindings(self, handler_spec):
+                self.graph.add((driver_node, SLV["cartesian-force"], self.root_uri(binding.spec_name, owner=handler_spec)))
+            for joint_force in getattr(solver, "joint_force", []):
+                self.graph.add((driver_node, SLV["joint-force"], self.root_uri(joint_force, owner=handler_spec)))
+
+            solver_node = self.root_uri(f"slv-{_driver_suffix(handler_spec)}", owner=handler_spec)
+            solver_algorithm = SLV.AccelerationConstrainedHybridDynamicsAlgorithm if solver.algorithm == "Vereshchagin" else SLV.NewtonEulerAlgorithm if solver.algorithm == "NewtonEuler" else SLV[solver.algorithm]
+            _add_types(self.graph, solver_node, SLV.SolverWithInputAndOutput)
+            self.graph.add((solver_node, SLV.solver, solver_algorithm))
+            gravity_name = _node_name(solver.gravity)
+            _required_world_quantity(self, gravity_name, f"referenced by solver '{handler_spec.name}' gravity")
+            self.graph.add((solver_node, SLV["kinematic-chain"], self.root_uri(_node_name(solver.robot), owner=handler_spec)))
+            self.graph.add((solver_node, SLV.root, self.root_uri(_node_name(solver.root), owner=handler_spec)))
+            self.graph.add((solver_node, SLV.gravity, self.root_uri(gravity_name, owner=handler_spec)))
+            self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
+
+    def _add_map_operations(self) -> None:
+        for motion_name, rotation_id in self.rotation_ids.items():
+            motion_spec = self.motion_map[motion_name]
+            pose_quantity = next(
+                (
+                    _view_quantity_name(constraint)
+                    for constraint in self.all_constraints(motion_spec)
+                    if _view_property_name(constraint) == "rotation" and _view_axis_name(constraint) is None
+                ),
+                None,
+            )
+            if pose_quantity is None:
+                continue
+            op_node = self.root_uri(f"compute-{rotation_id}", owner=motion_spec)
+            _add_types(self.graph, op_node, MAP.ComputeRotationFromPose)
+            self.graph.add((op_node, MAP.pose, self.root_uri(pose_quantity, owner=motion_spec)))
+            self.graph.add((op_node, MAP.rotation, self.root_uri(rotation_id, owner=motion_spec)))
+        for op_data in self.angle_from_pose_ops:
+            op_node = self.root_uri(op_data.op_id)
+            _add_types(self.graph, op_node, GEOM_OP.PoseToAngleAroundAxis)
+            self.graph.add((op_node, GEOM_OP.pose, self.root_uri(op_data.pose_name)))
+            self.graph.add((op_node, GEOM_OP.angle, self.root_uri(op_data.angle_id)))
+            self.graph.add((op_node, GEOM_OP.axis, MAP[op_data.axis]))
+
+    def _add_transform_operations(self) -> None:
+        for derivation in self.distance_derivations:
+            _add_quantity(self.graph, self.root_uri(derivation.distance_id), "Length")
+            direction = self.root_uri(derivation.direction_id)
+            _add_types(self.graph, direction, GEOM_REL.Direction, GEOM_COORD.DirectionCoordinate, GEOM_COORD.VectorXYZ)
+            self.graph.add((direction, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Direction))
+            self.graph.add((direction, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+            self.graph.add((direction, GEOM_COORD["as-seen-by"], self.root_uri(derivation.observer_frame)))
+            position = self.root_uri(derivation.position_id)
+            _add_types(self.graph, position, GEOM_REL.Position, GEOM_COORD.PositionCoordinate, GEOM_COORD.VectorXYZ)
+            self.graph.add((position, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Length))
+            self.graph.add((position, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+            self.graph.add((position, GEOM_REL.of, self.root_uri(derivation.observer_point)))
+            self.graph.add((position, GEOM_REL["with-respect-to"], self.root_uri(derivation.observer_point)))
+            self.graph.add((position, GEOM_COORD["as-seen-by"], self.root_uri(derivation.observer_frame)))
+            self.graph.add((position, GEOM_COORD.x, Literal(0)))
+            self.graph.add((position, GEOM_COORD.y, Literal(0)))
+            self.graph.add((position, GEOM_COORD.z, Literal(0)))
+            wrench = self.root_uri(derivation.local_wrench_id)
+            _add_types(self.graph, wrench, RBDYN_ENT.Wrench, RBDYN_COORD.WrenchCoordinate, GEOM_COORD.VectorXYZ)
+            self.graph.add((wrench, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
+            self.graph.add((wrench, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force))
+            self.graph.add((wrench, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
+            self.graph.add((wrench, QUDT_SCHEMA.unit, QUDT_UNIT.N))
+            self.graph.add((wrench, GEOM_REL["reference-point"], self.root_uri(derivation.observer_point)))
+            self.graph.add((wrench, RBDYN_COORD["as-seen-by"], self.root_uri(derivation.observer_frame)))
+            dist_node = self.root_uri(derivation.pose_to_dist_op_id)
+            _add_types(self.graph, dist_node, GEOM_OP.PoseToLinearDistance)
+            self.graph.add((dist_node, GEOM_OP.pose, self.root_uri(derivation.pose_name)))
+            self.graph.add((dist_node, GEOM_OP.distance, self.root_uri(derivation.distance_id)))
+            dir_node = self.root_uri(derivation.pose_to_dir_op_id)
+            _add_types(self.graph, dir_node, GEOM_OP.PoseToDirection)
+            self.graph.add((dir_node, GEOM_OP.pose, self.root_uri(derivation.pose_name)))
+            self.graph.add((dir_node, GEOM_OP.direction, self.root_uri(derivation.direction_id)))
+            wrench_op = self.root_uri(derivation.wrench_op_id)
+            _add_types(self.graph, wrench_op, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude)
+            self.graph.add((wrench_op, RBDYN_OP.magnitude, self.root_uri(derivation.force_id)))
+            self.graph.add((wrench_op, RBDYN_OP.position, self.root_uri(derivation.position_id)))
+            self.graph.add((wrench_op, RBDYN_OP.direction, self.root_uri(derivation.direction_id)))
+            self.graph.add((wrench_op, RBDYN_OP.wrench, wrench))
+
+        transforms_by_force, add_ops_by_force = _derived_transformed_wrenches(self)
+        for solver_force, transforms in transforms_by_force.items():
+            target_quantity = _required_world_quantity(self, solver_force, "base force target")
+            target_frame = _reference_frame(target_quantity)
+            if target_frame is None:
+                continue
+            target_point = _geometric_property(target_quantity.props, "ref-point") if isinstance(target_quantity.props, GeometricProps) else None
+            for derivation, pose_name, transformed_wrench in transforms:
+                op_node = self.root_uri(f"tf-{derivation.local_wrench_id}-{_frame_suffix(target_frame)}")
+                _add_types(self.graph, op_node, RBDYN_OP.TransformWrenchToProximal)
+                self.graph.add((op_node, RBDYN_OP.pose, self.root_uri(pose_name)))
+                self.graph.add((op_node, RBDYN_OP["from"], self.root_uri(derivation.local_wrench_id)))
+                self.graph.add((op_node, RBDYN_OP.to, self.root_uri(transformed_wrench)))
+                node = self.root_uri(transformed_wrench)
+                _add_types(self.graph, node, RBDYN_ENT.Wrench, RBDYN_COORD.WrenchCoordinate, GEOM_COORD.VectorXYZ)
+                self.graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
+                self.graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force))
+                self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
+                self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.N))
+                if target_point:
+                    self.graph.add((node, GEOM_REL["reference-point"], self.root_uri(target_point, owner=target_quantity)))
+                self.graph.add((node, RBDYN_COORD["as-seen-by"], self.root_uri(target_frame, owner=target_quantity)))
+            add_op = add_ops_by_force.get(solver_force)
+            if add_op and len(transforms) >= 2:
+                op_node = self.root_uri(add_op)
+                _add_types(self.graph, op_node, RBDYN_OP.AddWrench)
+                self.graph.add((op_node, RBDYN_OP.in1, self.root_uri(transforms[0][2])))
+                self.graph.add((op_node, RBDYN_OP.in2, self.root_uri(transforms[1][2])))
+                self.graph.add((op_node, RBDYN_OP.out, self.root_uri(solver_force)))
+
+
+def _find_pose(
+    builder: "MotionSpecDatasetBuilder", *, of_frame: str, wrt_frame: str
+) -> WorldQuantityLike | None:
+    for quantity in builder.world_quantities.values():
         if quantity.type != "Pose":
             continue
         if _of_frame(quantity) == of_frame and _with_respect_to(quantity) == wrt_frame:
@@ -1479,14 +1829,14 @@ def _find_pose(index: ModelIndex, *, of_frame: str, wrt_frame: str) -> WorldQuan
 
 
 def _derived_transformed_wrenches(
-    index: ModelIndex,
+    builder: "MotionSpecDatasetBuilder",
 ) -> tuple[dict[str, list[tuple[DistanceDerivation, str, str]]], dict[str, str]]:
     transforms_by_force: dict[str, list[tuple[DistanceDerivation, str, str]]] = {}
     add_ops_by_force: dict[str, str] = {}
 
-    for solver in index.base_force_solvers:
+    for solver in builder.base_force_solvers:
         target_quantity = _required_world_quantity(
-            index,
+            builder,
             solver.force,
             f"referenced by base force solver '{solver.node_id}'",
         )
@@ -1498,8 +1848,8 @@ def _derived_transformed_wrenches(
             )
 
         transformed: list[tuple[DistanceDerivation, str, str]] = []
-        for derivation in index.distance_derivations:
-            pose = _find_pose(index, of_frame=derivation.observer_frame, wrt_frame=target_frame)
+        for derivation in builder.distance_derivations:
+            pose = _find_pose(builder, of_frame=derivation.observer_frame, wrt_frame=target_frame)
             if pose is None:
                 warnings.warn(
                     f"Skipping transform for '{derivation.local_wrench_id}' because no pose was found "
@@ -1516,717 +1866,5 @@ def _derived_transformed_wrenches(
     return transforms_by_force, add_ops_by_force
 
 
-def gen_misc(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(
-        ("app", base_ns),
-        ("geom-ent", GEOM_ENT),
-        ("geom-op", GEOM_OP),
-        ("rbdyn-op", RBDYN_OP),
-        ("slv", SLV),
-    )
-    entities: dict[str, tuple[Node, Node]] = {}
-
-    for quantity in index.world_quantities.values():
-        rdf_type = MISC_ENTITY_TYPE.get(quantity.type)
-        if rdf_type is not None:
-            entities[quantity.name] = (URIRef(quantity.uri), rdf_type)
-
-    for entity_name, rdf_type in index.implicit_world_entities.items():
-        entities.setdefault(entity_name, (base_ns[entity_name], rdf_type))
-
-    for quantity in index.world_quantities.values():
-        if quantity.type == "VelocityTwist" and isinstance(quantity.props, GeometricProps):
-            for key in ("of", "wrt"):
-                target = _geometric_property(quantity.props, key)
-                if target:
-                    entities.setdefault(target, (base_ns[target], MISC_ENTITY_TYPE["SimplicialComplex"]))
-            point_id = _geometric_property(quantity.props, "ref-point")
-            if point_id:
-                entities.setdefault(point_id, (base_ns[point_id], MISC_ENTITY_TYPE["Point"]))
-            frame_id = _geometric_property(quantity.props, "as-seen-by")
-            if frame_id:
-                entities.setdefault(frame_id, (base_ns[frame_id], MISC_ENTITY_TYPE["Frame"]))
-        elif quantity.type == "Pose" and isinstance(quantity.props, GeometricProps):
-            for key in ("of", "wrt", "as-seen-by"):
-                target = _geometric_property(quantity.props, key)
-                if target:
-                    entities.setdefault(target, (base_ns[target], MISC_ENTITY_TYPE["Frame"]))
-        elif quantity.type == "Wrench":
-            point_id = (
-                _geometric_property(quantity.props, "ref-point")
-                if isinstance(quantity.props, GeometricProps)
-                else None
-            )
-            frame_id = (
-                _geometric_property(quantity.props, "as-seen-by")
-                if isinstance(quantity.props, GeometricProps)
-                else None
-            )
-            if point_id:
-                entities.setdefault(point_id, (base_ns[point_id], MISC_ENTITY_TYPE["Point"]))
-            if frame_id:
-                entities.setdefault(frame_id, (base_ns[frame_id], MISC_ENTITY_TYPE["Frame"]))
-
-    for derivation in index.distance_derivations:
-        entities.setdefault(derivation.observer_point, (base_ns[derivation.observer_point], MISC_ENTITY_TYPE["Point"]))
-
-    for node, rdf_type in sorted(entities.values(), key=lambda item: str(item[0])):
-        _add_types(graph, node, rdf_type)
-
-    for solver in index.base_velocity_solvers:
-        node = base_ns[solver.node_id]
-        _add_types(graph, node, SLV.VelocityCompositionSolver)
-        graph.add((node, SLV.configuration, Literal(solver.configuration)))
-        graph.add((node, SLV.velocity, base_ns[solver.velocity]))
-
-        source_quantity = _required_world_quantity(
-            index,
-            solver.velocity,
-            f"referenced by base velocity solver '{solver.node_id}'",
-        )
-        source_frame = _reference_frame(source_quantity)
-        if source_frame is None:
-            raise ValueError(
-                f"Base velocity solver '{solver.node_id}' references '{solver.velocity}', which is missing "
-                "'as-seen-by' in context."
-            )
-
-        for quantity in index.world_quantities.values():
-            if quantity.type != "VelocityTwist" or quantity.name == solver.velocity:
-                continue
-            if _geometric_property(quantity.props, "of") != _geometric_property(source_quantity.props, "of"):
-                continue
-            if _geometric_property(quantity.props, "wrt") != _geometric_property(source_quantity.props, "wrt"):
-                continue
-            target_frame = _reference_frame(quantity)
-            if target_frame is None or target_frame == source_frame:
-                continue
-            pose = _find_pose(index, of_frame=target_frame, wrt_frame=source_frame)
-            if pose is None:
-                warnings.warn(
-                    f"Skipping derived twist rotation for '{quantity.name}' because no pose was found "
-                    f"from '{target_frame}' to '{source_frame}'."
-                )
-                continue
-            op_node = base_ns[f"rot-{_frame_suffix(source_frame)}-to-{_frame_suffix(target_frame)}"]
-            _add_types(graph, op_node, GEOM_OP.RotateVelocityTwistToProximalWithPose)
-            graph.add((op_node, GEOM_OP.pose, base_ns[pose.name]))
-            graph.add((op_node, GEOM_OP["from"], base_ns[solver.velocity]))
-            graph.add((op_node, GEOM_OP.to, base_ns[quantity.name]))
-
-    transforms_by_force, add_ops_by_force = _derived_transformed_wrenches(index)
-    for solver_force, transforms in transforms_by_force.items():
-        for derivation, pose_name, transformed_wrench in transforms:
-            op_node = base_ns[f"tf-{derivation.local_wrench_id}-{_frame_suffix(_reference_frame(_required_world_quantity(index, solver_force, 'base force target')) or '')}"]
-            _add_types(graph, op_node, RBDYN_OP.TransformWrenchToProximal)
-            graph.add((op_node, RBDYN_OP.pose, base_ns[pose_name]))
-            graph.add((op_node, RBDYN_OP["from"], base_ns[derivation.local_wrench_id]))
-            graph.add((op_node, RBDYN_OP.to, base_ns[transformed_wrench]))
-
-        add_op = add_ops_by_force.get(solver_force)
-        if add_op and len(transforms) >= 2:
-            op_node = base_ns[add_op]
-            _add_types(graph, op_node, RBDYN_OP.AddWrench)
-            graph.add((op_node, RBDYN_OP.in1, base_ns[transforms[0][2]]))
-            graph.add((op_node, RBDYN_OP.in2, base_ns[transforms[1][2]]))
-            graph.add((op_node, RBDYN_OP.out, base_ns[solver_force]))
-
-    return graph
-
-
-def gen_world_model(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(
-        ("app", base_ns),
-        ("geom-ent", GEOM_ENT),
-        ("geom-rel", GEOM_REL),
-        ("geom-coord", GEOM_COORD),
-        ("rbdyn-ent", RBDYN_ENT),
-        ("rbdyn-coord", RBDYN_COORD),
-        ("qudt", QUDT_SCHEMA),
-        ("qkind", QUDT_QKIND),
-        ("unit", QUDT_UNIT),
-    )
-
-    for quantity in index.world_quantities.values():
-        world_spec = _world_spec(quantity.type)
-        if world_spec is None:
-            continue
-
-        node = URIRef(quantity.uri)
-        _add_types(graph, node, *world_spec.rdf_types)
-        for qkind in world_spec.qkinds:
-            graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
-        for unit in world_spec.units:
-            graph.add((node, QUDT_SCHEMA.unit, unit))
-
-        reference_point = None
-        as_seen_by = None
-        of_value = None
-        wrt_value = None
-        if isinstance(quantity.props, GeometricProps):
-            of_value = _geometric_property(quantity.props, "of")
-            wrt_value = _geometric_property(quantity.props, "wrt")
-            reference_point = _geometric_property(quantity.props, "ref-point")
-            as_seen_by = _geometric_property(quantity.props, "as-seen-by")
-            if of_value:
-                graph.add((node, GEOM_REL.of, base_ns[of_value]))
-            if wrt_value:
-                graph.add((node, GEOM_REL["with-respect-to"], base_ns[wrt_value]))
-            if reference_point:
-                graph.add((node, GEOM_REL["reference-point"], base_ns[reference_point]))
-            if as_seen_by:
-                graph.add((node, GEOM_COORD["as-seen-by"], base_ns[as_seen_by]))
-            # Pose quantities default to their reference frame as observer when the DSL omits it.
-            if quantity.type == "Pose" and not as_seen_by and wrt_value:
-                graph.add((node, GEOM_COORD["as-seen-by"], base_ns[wrt_value]))
-                as_seen_by = wrt_value
-
-        if quantity.type in {"VelocityTwist", "Wrench"} and not reference_point:
-            warnings.warn(
-                f"'{quantity.name}' has no explicit ref-point; not inferring one from its name."
-            )
-
-    for view in index.scalar_views.values():
-        _add_quantity(graph, base_ns[view.name], view.scalar_type)
-
-    for constraint in index.constraints:
-        if constraint.scalar_type == "PlaneAngle" and constraint.quantity_node_id.startswith("ang-"):
-            _add_quantity(graph, base_ns[constraint.quantity_node_id], "PlaneAngle")
-
-    for rotation_id in index.rotation_ids.values():
-        _add_quantity(graph, base_ns[rotation_id], "PlaneAngle")
-
-    for variable in index.value_variables.values():
-        node = URIRef(variable.uri)
-        qkind = _dsl_scalar_qkind(variable.type)
-        _add_types(graph, node, QUDT_SCHEMA.Quantity, qkind)
-        graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
-        if variable.value is None:
-            continue
-        graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(variable.value.unit)))
-        graph.add((node, QUDT_SCHEMA.value, Literal(str(variable.value.value))))
-
-    for signal in index.while_error_signals.values():
-        _add_quantity(graph, base_ns[signal.name], signal.scalar_type)
-
-    for signal in index.monitor_error_signals.values():
-        _add_quantity(graph, base_ns[signal.name], signal.scalar_type)
-
-    for energy_id in index.acceleration_energies.values():
-        node = base_ns[energy_id.name]
-        _add_types(graph, node, QUDT_SCHEMA.Quantity, URIRef("AccelerationEnergy"))
-        graph.add((node, QUDT_SCHEMA["quantity-kind"], URIRef("AccelerationEnergy")))
-        graph.add((node, QUDT_SCHEMA.unit, URIRef("N-M2-PER-SEC2")))
-
-    for controller in index.controller_data.values():
-        if controller.control_signal_id.startswith("frc-"):
-            _add_quantity(graph, base_ns[controller.control_signal_id], "Force")
-
-    for derivation in index.distance_derivations:
-        _add_quantity(graph, base_ns[derivation.distance_id], "Length")
-
-        node = base_ns[derivation.direction_id]
-        _add_types(graph, node, GEOM_REL.Direction, GEOM_COORD.DirectionCoordinate, GEOM_COORD.VectorXYZ)
-        graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Direction))
-        graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
-        graph.add((node, GEOM_COORD["as-seen-by"], base_ns[derivation.observer_frame]))
-
-        pos_node = base_ns[derivation.position_id]
-        _add_types(graph, pos_node, GEOM_REL.Position, GEOM_COORD.PositionCoordinate, GEOM_COORD.VectorXYZ)
-        graph.add((pos_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Length))
-        graph.add((pos_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-        graph.add((pos_node, GEOM_REL.of, base_ns[derivation.observer_point]))
-        graph.add((pos_node, GEOM_REL["with-respect-to"], base_ns[derivation.observer_point]))
-        graph.add((pos_node, GEOM_COORD["as-seen-by"], base_ns[derivation.observer_frame]))
-        graph.add((pos_node, GEOM_COORD.x, Literal(0)))
-        graph.add((pos_node, GEOM_COORD.y, Literal(0)))
-        graph.add((pos_node, GEOM_COORD.z, Literal(0)))
-
-        wrench_node = base_ns[derivation.local_wrench_id]
-        _add_types(graph, wrench_node, RBDYN_ENT.Wrench, RBDYN_COORD.WrenchCoordinate, GEOM_COORD.VectorXYZ)
-        graph.add((wrench_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
-        graph.add((wrench_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force))
-        graph.add((wrench_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
-        graph.add((wrench_node, QUDT_SCHEMA.unit, QUDT_UNIT.N))
-        graph.add((wrench_node, GEOM_REL["reference-point"], base_ns[derivation.observer_point]))
-        graph.add((wrench_node, RBDYN_COORD["as-seen-by"], base_ns[derivation.observer_frame]))
-
-    transforms_by_force, _ = _derived_transformed_wrenches(index)
-    for solver_force, transforms in transforms_by_force.items():
-        target_quantity = _required_world_quantity(index, solver_force, "base force target")
-        target_frame = _reference_frame(target_quantity)
-        if target_frame is None:
-            continue
-        target_point = _geometric_property(target_quantity.props, "ref-point") if isinstance(target_quantity.props, GeometricProps) else None
-        for _, _, transformed_wrench in transforms:
-            node = base_ns[transformed_wrench]
-            _add_types(graph, node, RBDYN_ENT.Wrench, RBDYN_COORD.WrenchCoordinate, GEOM_COORD.VectorXYZ)
-            graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
-            graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force))
-            graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
-            graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.N))
-            if target_point:
-                graph.add((node, GEOM_REL["reference-point"], base_ns[target_point]))
-            graph.add((node, RBDYN_COORD["as-seen-by"], base_ns[target_frame]))
-
-        if transforms and solver_force not in index.world_quantities:
-            node = base_ns[solver_force]
-            _add_types(graph, node, RBDYN_ENT.Wrench, RBDYN_COORD.WrenchCoordinate, GEOM_COORD.VectorXYZ)
-            graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
-            graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force))
-            graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
-            graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.N))
-            if target_point:
-                graph.add((node, GEOM_REL["reference-point"], base_ns[target_point]))
-            graph.add((node, RBDYN_COORD["as-seen-by"], base_ns[target_frame]))
-
-    return graph
-
-
-def gen_map(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("map", MAP), ("geom-op", GEOM_OP), ("rbdyn-op", RBDYN_OP))
-
-    for view in index.scalar_views.values():
-        node = base_ns[f"view-{view.name}"]
-        _add_types(graph, node, MAP.View)
-        if view.view_type:
-            _add_types(graph, node, view.view_type)
-        graph.add((node, MAP.superobject, base_ns[view.quantity_name]))
-        graph.add((node, MAP.subobject, base_ns[view.name]))
-        if view.subspace:
-            graph.add((node, MAP.subspace, MAP[view.subspace]))
-        graph.add((node, MAP.axis, MAP[view.axis]))
-
-    for motion_name, rotation_id in index.rotation_ids.items():
-        motion_spec = index.motion_map[motion_name]
-        # rotation_ids only covers axis-less rotation constraints
-        pose_quantity = next(
-            (
-                _view_quantity_name(constraint)
-                for constraint in index.all_constraints(motion_spec)
-                if _view_property_name(constraint) == "rotation" and _view_axis_name(constraint) is None
-            ),
-            None,
-        )
-        if pose_quantity is None:
-            continue
-        op_node = base_ns[f"compute-{rotation_id}"]
-        _add_types(graph, op_node, MAP.ComputeRotationFromPose)
-        graph.add((op_node, MAP.pose, base_ns[pose_quantity]))
-        graph.add((op_node, MAP.rotation, base_ns[rotation_id]))
-
-    for op_data in index.angle_from_pose_ops:
-        op_node = base_ns[op_data.op_id]
-        _add_types(graph, op_node, GEOM_OP.PoseToAngleAroundAxis)
-        graph.add((op_node, GEOM_OP.pose, base_ns[op_data.pose_name]))
-        graph.add((op_node, GEOM_OP.angle, base_ns[op_data.angle_id]))
-        graph.add((op_node, GEOM_OP.axis, MAP[op_data.axis]))
-
-    existing_scalar_views = {view.name for view in index.scalar_views.values()}
-    for handler_spec in index.handler_specs:
-        solver = _primary_solver(handler_spec)
-        if solver is None or not getattr(solver, "algorithm", ""):
-            continue
-        for binding in _infer_cartesian_force_bindings(index, handler_spec):
-            wrench_name = binding.force_name
-            quantity = index.world_quantities.get(wrench_name)
-            if quantity is None or quantity.type != "Wrench":
-                continue
-            scalar_id = _scalar_id(quantity, "force", "z")
-            if scalar_id is None or scalar_id in existing_scalar_views:
-                continue
-            node = base_ns[f"view-{scalar_id}"]
-            _add_types(graph, node, MAP.View, MAP.WrenchCoordinateView)
-            graph.add((node, MAP.superobject, base_ns[wrench_name]))
-            graph.add((node, MAP.subobject, base_ns[scalar_id]))
-            graph.add((node, MAP.subspace, MAP.force))
-            graph.add((node, MAP.axis, MAP.z))
-
-    controller_signals = {controller.control_signal_id for controller in index.controller_data.values()}
-    for derivation in index.distance_derivations:
-        dist_node = base_ns[derivation.pose_to_dist_op_id]
-        _add_types(graph, dist_node, GEOM_OP.PoseToLinearDistance)
-        graph.add((dist_node, GEOM_OP.pose, base_ns[derivation.pose_name]))
-        graph.add((dist_node, GEOM_OP.distance, base_ns[derivation.distance_id]))
-
-        dir_node = base_ns[derivation.pose_to_dir_op_id]
-        _add_types(graph, dir_node, GEOM_OP.PoseToDirection)
-        graph.add((dir_node, GEOM_OP.pose, base_ns[derivation.pose_name]))
-        graph.add((dir_node, GEOM_OP.direction, base_ns[derivation.direction_id]))
-
-        if derivation.force_id not in controller_signals:
-            warnings.warn(
-                f"Skipping wrench derivation for '{derivation.constraint_name}' because no controller "
-                f"produces '{derivation.force_id}'."
-            )
-            continue
-        wrench_node = base_ns[derivation.wrench_op_id]
-        _add_types(graph, wrench_node, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude)
-        graph.add((wrench_node, RBDYN_OP.magnitude, base_ns[derivation.force_id]))
-        graph.add((wrench_node, RBDYN_OP.position, base_ns[derivation.position_id]))
-        graph.add((wrench_node, RBDYN_OP.direction, base_ns[derivation.direction_id]))
-        graph.add((wrench_node, RBDYN_OP.wrench, base_ns[derivation.local_wrench_id]))
-
-    return graph
-
-
-def gen_constraints(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("cstr", CSTR))
-
-    for constraint in index.constraints:
-        node = URIRef(constraint.constraint.uri)
-        type_name = {"PlaneAngle": "Angle", "Length": "Distance"}.get(
-            constraint.scalar_type, constraint.scalar_type
-        )
-        _add_types(graph, node, CSTR.Constraint, CSTR[f"{type_name}Constraint"])
-        graph.add((node, CSTR.quantity, index.constraint_quantity_node(constraint, base_ns)))
-
-        if constraint.kind == "EqualityConstraint":
-            reference = index.value_variable(index.motion_map[constraint.motion_name], constraint.reference_var or "")
-            _add_types(graph, node, CSTR.EqualityConstraint)
-            graph.add(
-                (
-                    node,
-                    CSTR["reference-value"],
-                    URIRef(reference.uri) if reference else base_ns[constraint.reference_var or ""],
-                )
-            )
-        elif constraint.kind == "GreaterThanConstraint":
-            threshold = index.value_variable(index.motion_map[constraint.motion_name], constraint.threshold_var or "")
-            _add_types(graph, node, CSTR.UnilateralConstraint, CSTR.GreaterThanConstraint)
-            graph.add(
-                (
-                    node,
-                    CSTR.threshold,
-                    URIRef(threshold.uri) if threshold else base_ns[constraint.threshold_var or ""],
-                )
-            )
-        elif constraint.kind == "LessThanConstraint":
-            threshold = index.value_variable(index.motion_map[constraint.motion_name], constraint.threshold_var or "")
-            _add_types(graph, node, CSTR.UnilateralConstraint, CSTR.LessThanConstraint)
-            graph.add(
-                (
-                    node,
-                    CSTR.threshold,
-                    URIRef(threshold.uri) if threshold else base_ns[constraint.threshold_var or ""],
-                )
-            )
-        else:
-            lower = index.value_variable(index.motion_map[constraint.motion_name], constraint.lower_var or "")
-            upper = index.value_variable(index.motion_map[constraint.motion_name], constraint.upper_var or "")
-            _add_types(graph, node, CSTR.BilateralConstraint)
-            graph.add(
-                (
-                    node,
-                    CSTR["lower-threshold"],
-                    URIRef(lower.uri) if lower else base_ns[constraint.lower_var or ""],
-                )
-            )
-            graph.add(
-                (
-                    node,
-                    CSTR["upper-threshold"],
-                    URIRef(upper.uri) if upper else base_ns[constraint.upper_var or ""],
-                )
-            )
-
-    return graph
-
-
-def gen_motion_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("mot", MOT))
-    for motion_spec in index.motion_specs:
-        motion_node = base_ns[f"motion-{_motion_suffix(motion_spec.name)}"]
-        _add_types(graph, motion_node, MOT.GuardedMotion)
-        for constraint in motion_spec.when.constraints:
-            graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
-        for constraint in motion_spec.while_.constraints:
-            graph.add((motion_node, MOT["while"], URIRef(constraint.uri)))
-        for constraint in motion_spec.until.constraints:
-            graph.add((motion_node, MOT.until, URIRef(constraint.uri)))
-    return graph
-
-
-def gen_constraint_handler(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("cstr-hdl", CSTR_HDL))
-
-    for evaluator_id, evaluator in index.evaluator_defs.items():
-        node = base_ns[evaluator_id]
-        _add_types(graph, node, CSTR_HDL.ConstraintEvaluator, CSTR_HDL.ErrorEvaluator)
-        graph.add((node, CSTR_HDL.constraint, URIRef(evaluator.constraint.uri)))
-        graph.add((node, CSTR_HDL.error, base_ns[evaluator.error_signal.name]))
-
-    for controller_key, controller in index.controller_data.items():
-        node = URIRef(controller_key)
-        _add_types(graph, node, CSTR_HDL.Controller, CSTR_HDL.ProportionalIntegralDerivative)
-        if controller.error_signal_id:
-            graph.add((node, CSTR_HDL["error-signal"], base_ns[controller.error_signal_id]))
-        graph.add((node, CSTR_HDL["control-signal"], base_ns[controller.control_signal_id]))
-        graph.add((node, CSTR_HDL["proportional-gain"], Literal(str(controller.params.kp))))
-        graph.add((node, CSTR_HDL["integral-gain"], Literal(str(controller.params.ki))))
-        graph.add((node, CSTR_HDL["derivative-gain"], Literal(str(controller.params.kd))))
-
-    for monitor in index.monitor_data:
-        signal_node = base_ns[monitor.signal_id]
-        _add_types(graph, signal_node, CSTR_HDL.Event if monitor.signal_kind == "event" else CSTR_HDL.Flag)
-
-        node = URIRef(monitor.monitor.uri)
-        _add_types(graph, node, CSTR_HDL.Monitor)
-        graph.add((node, CSTR_HDL.error, base_ns[monitor.error_signal.name]))
-        if monitor.signal_kind == "event":
-            _add_types(graph, node, CSTR_HDL.EdgeTriggeredMonitor)
-            graph.add((node, CSTR_HDL.event, signal_node))
-        else:
-            _add_types(graph, node, CSTR_HDL.LevelTriggeredMonitor)
-            graph.add((node, CSTR_HDL.flag, signal_node))
-
-    for handler in index.handlers:
-        node = URIRef(handler.node_id)
-        _add_types(graph, node, CSTR_HDL.ConstraintHandler)
-        graph.add((node, CSTR_HDL.motion, base_ns[handler.motion.name]))
-        for evaluator in handler.evaluators:
-            graph.add((node, CSTR_HDL.evaluators, base_ns[evaluator.name]))
-        for controller_id in handler.controller_ids:
-            graph.add((node, CSTR_HDL.controllers, URIRef(controller_id)))
-        for monitor_id in handler.monitor_ids:
-            graph.add((node, CSTR_HDL.monitors, URIRef(monitor_id)))
-
-    return graph
-
-
-def gen_solver_specification(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("slv", SLV))
-
-    for handler_spec in index.handler_specs:
-        solver = _primary_solver(handler_spec)
-        motion_name = _handler_motion_name(handler_spec)
-        if not motion_name or solver is None or not getattr(solver, "algorithm", ""):
-            continue
-        motion_spec = index.motion_map.get(motion_name)
-        if motion_spec is None:
-            continue
-
-        attached_link = _infer_attached_link(index, handler_spec, solver)
-
-        spec_constraints: list[str] = []
-        for constraint in index.while_constraints:
-            if constraint.motion_name != motion_name:
-                continue
-            quantity = constraint.quantity
-            property_name = _view_property_name(constraint.constraint)
-            axis = _view_axis_name(constraint.constraint)
-            property_spec = _property_spec(quantity.type, property_name) if quantity else None
-            if (
-                quantity is None
-                or property_spec is None
-                or property_spec.accel_subspace is None
-                or constraint.acceleration_energy_id is None
-            ):
-                continue
-
-            shared = constraint.signature in index.shared_while_signatures if constraint.signature else False
-            node_id = _acceleration_constraint_id(
-                motion_name,
-                quantity,
-                property_name,
-                axis,
-                shared,
-            )
-            if node_id not in spec_constraints:
-                spec_constraints.append(node_id)
-            data = index.acceleration_constraints[node_id]
-            node = base_ns[data.node_id]
-            _add_types(graph, node, SLV.AccelerationConstraint, SLV.AxisAligned)
-            graph.add((node, SLV.subspace, SLV[data.subspace]))
-            graph.add((node, SLV.axis, SLV[data.axis]))
-            graph.add((node, SLV["acceleration-energy"], base_ns[data.energy_id]))
-
-        motion_suffix = _motion_suffix(motion_name)
-        if attached_link:
-            abbrev = _entity_abbrev(attached_link) if "-" in attached_link else attached_link
-            spec_acc_node = base_ns[f"spec-acc-{abbrev}-{motion_suffix}"]
-        else:
-            spec_acc_node = base_ns[f"spec-acc-ee-{motion_suffix}"]
-
-        for binding in _infer_cartesian_force_bindings(index, handler_spec):
-            force_name = binding.force_name
-            spec_name = binding.spec_name
-            _required_world_quantity(
-                index,
-                force_name,
-                f"referenced by cartesian-force solver output '{spec_name}'",
-            )
-            spec_node = base_ns[spec_name]
-            _add_types(graph, spec_node, SLV.CartesianForceSpecification)
-            graph.add((spec_node, SLV.force, base_ns[force_name]))
-            attached_force_link = binding.attached_to
-            if attached_force_link is None:
-                attached_force_link = _attached_link_from_wrench_name(force_name)
-            if attached_force_link is not None:
-                graph.add((spec_node, SLV["attached-to"], base_ns[attached_force_link]))
-
-    return graph
-
-
-def gen_scenario(index: ModelIndex, base_ns: Namespace) -> Graph:
-    graph = _graph(("app", base_ns), ("slv", SLV))
-
-    for solver in index.base_force_solvers:
-        node = base_ns[solver.node_id]
-        _add_types(graph, node, SLV.ForceDistributionSolver)
-        graph.add((node, SLV.configuration, Literal(solver.configuration)))
-        graph.add((node, SLV.force, base_ns[solver.force]))
-
-    for handler_spec in index.handler_specs:
-        solver = _primary_solver(handler_spec)
-        motion_name = _handler_motion_name(handler_spec)
-        if not motion_name or solver is None or not getattr(solver, "algorithm", ""):
-            continue
-
-        motion_suffix = _motion_suffix(motion_name)
-        driver_suffix = _driver_suffix(handler_spec)
-        motion_spec = index.motion_map.get(motion_name)
-        if motion_spec is None:
-            continue
-
-        attached_link = _infer_attached_link(index, handler_spec, solver)
-
-        if attached_link:
-            abbrev = _entity_abbrev(attached_link) if "-" in attached_link else attached_link
-            spec_acc_node = base_ns[f"spec-acc-{abbrev}-{motion_suffix}"]
-        else:
-            spec_acc_node = base_ns[f"spec-acc-ee-{motion_suffix}"]
-
-        spec_constraints: list[str] = []
-        for constraint in index.while_constraints:
-            if constraint.motion_name != motion_name:
-                continue
-            quantity = constraint.quantity
-            property_name = _view_property_name(constraint.constraint)
-            axis = _view_axis_name(constraint.constraint)
-            property_spec = _property_spec(quantity.type, property_name) if quantity else None
-            if (
-                quantity is None
-                or property_spec is None
-                or property_spec.accel_subspace is None
-                or constraint.acceleration_energy_id is None
-            ):
-                continue
-            shared = constraint.signature in index.shared_while_signatures if constraint.signature else False
-            node_id = _acceleration_constraint_id(
-                motion_name,
-                quantity,
-                property_name,
-                axis,
-                shared,
-            )
-            if node_id not in spec_constraints:
-                spec_constraints.append(node_id)
-
-        _add_types(graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
-        for node_id in spec_constraints:
-            graph.add((spec_acc_node, SLV.constraints, base_ns[node_id]))
-        graph.add(
-            (
-                spec_acc_node,
-                SLV["attached-to"],
-                base_ns[attached_link] if attached_link else base_ns["link-ee"],
-            )
-        )
-
-        driver_node = base_ns[f"drv-{driver_suffix}"]
-        _add_types(graph, driver_node, SLV.MotionDrivers)
-        graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
-        for binding in _infer_cartesian_force_bindings(index, handler_spec):
-            spec_name = binding.spec_name
-            graph.add((driver_node, SLV["cartesian-force"], base_ns[spec_name]))
-        for joint_force in getattr(solver, "joint_force", []):
-            graph.add((driver_node, SLV["joint-force"], base_ns[joint_force]))
-        solver_node = base_ns[f"slv-{driver_suffix}"]
-        if solver.algorithm == "Vereshchagin":
-            solver_algorithm = SLV.AccelerationConstrainedHybridDynamicsAlgorithm
-        elif solver.algorithm == "NewtonEuler":
-            solver_algorithm = SLV.NewtonEulerAlgorithm
-        else:
-            solver_algorithm = SLV[solver.algorithm]
-        _add_types(graph, solver_node, SLV.SolverWithInputAndOutput)
-        graph.add((solver_node, SLV.solver, solver_algorithm))
-        gravity_name = _node_name(solver.gravity)
-        _required_world_quantity(index, gravity_name, f"referenced by solver '{handler_spec.name}' gravity")
-        graph.add((solver_node, SLV["kinematic-chain"], base_ns[_node_name(solver.robot)]))
-        graph.add((solver_node, SLV.root, base_ns[_node_name(solver.root)]))
-        graph.add((solver_node, SLV.gravity, base_ns[gravity_name]))
-        graph.add((solver_node, SLV["motion-drivers"], driver_node))
-
-    return graph
-
-
-def _context_dict(base_prefix: str, base_ns: Namespace, *bindings: NamespaceBinding) -> dict[str, str]:
-    context = {base_prefix: str(base_ns)}
-    for prefix, namespace in bindings:
-        context[prefix] = str(namespace._NS)
-    return context
-
-
-def _base_namespace(index: ModelIndex) -> tuple[str, Namespace]:
-    first_spec = next(iter([*index.motion_specs, *index.handler_specs]), None)
-    assert first_spec is not None, "No MOTION_SPEC or CONSTRAINT_HANDLER found in model"
-    return first_spec.ns_prefix, Namespace(first_spec.ns.uri)
-
-
-def get_motion_spec_graphs(model: Model) -> list[GraphOutput]:
-    index = ModelIndex(model)
-    index.validate_references()
-    base_prefix, base_ns = _base_namespace(index)
-
-    return [
-        ("00-misc.json", gen_misc(index, base_ns), _context_dict(base_prefix, base_ns, ("geom-ent", GEOM_ENT))),
-        (
-            "01-world-model.json",
-            gen_world_model(index, base_ns),
-            _context_dict(
-                base_prefix,
-                base_ns,
-                ("geom-ent", GEOM_ENT),
-                ("geom-rel", GEOM_REL),
-                ("geom-coord", GEOM_COORD),
-                ("rbdyn-ent", RBDYN_ENT),
-                ("rbdyn-coord", RBDYN_COORD),
-                ("qudt", QUDT_SCHEMA),
-                ("qkind", QUDT_QKIND),
-                ("unit", QUDT_UNIT),
-            ),
-        ),
-        (
-            "02-map.json",
-            gen_map(index, base_ns),
-            ["https://comp-rob2b.github.io/metamodels/task/map.json", {"@base": str(base_ns)}],
-        ),
-        ("03-constraints.json", gen_constraints(index, base_ns), _context_dict(base_prefix, base_ns, ("cstr", CSTR))),
-        (
-            "04-motion-specification.json",
-            gen_motion_specification(index, base_ns),
-            _context_dict(base_prefix, base_ns, ("mot", MOT)),
-        ),
-        (
-            "05-constraint-handler.json",
-            gen_constraint_handler(index, base_ns),
-            _context_dict(base_prefix, base_ns, ("cstr-hdl", CSTR_HDL)),
-        ),
-        (
-            "06-solver-specification.json",
-            gen_solver_specification(index, base_ns),
-            [
-                "https://comp-rob2b.github.io/metamodels/task/solver-specification.json",
-                {"@base": str(base_ns)},
-            ],
-        ),
-        (
-            "07-scenario.json",
-            gen_scenario(index, base_ns),
-            [
-                "https://comp-rob2b.github.io/metamodels/task/solver-specification.json",
-                {"@base": str(base_ns)},
-            ],
-        ),
-    ]
+def get_motion_spec_dataset(model: Model) -> DatasetOutput:
+    return MotionSpecDatasetBuilder(model).build()

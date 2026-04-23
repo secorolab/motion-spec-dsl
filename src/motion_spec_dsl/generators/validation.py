@@ -10,8 +10,13 @@ from textx import get_location
 from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.generators.classes import (
+    BilateralConstraint,
     ConstraintHandler,
     ConstraintSpecification,
+    ContextRef,
+    EqualityConstraint,
+    GreaterThanConstraint,
+    LessThanConstraint,
     Model,
     MotionSpec,
     QuantityType,
@@ -19,6 +24,8 @@ from motion_spec_dsl.generators.classes import (
     RobotType,
     SolverEntry,
     SubSpace,
+    ValueVariable,
+    WorldQuantity,
     WorldQuantityType,
 )
 
@@ -122,6 +129,54 @@ def validate_unique_constraint_names(model: Model) -> None:
                 "Constraint names must be unique across WHEN, WHILE, and UNTIL.",
                 first_duplicate,
             )
+
+
+def _decl_motion(obj: object) -> MotionSpec | None:
+    context = getattr(obj, "parent", None)
+    motion = getattr(context, "parent", None)
+    return motion if isinstance(motion, MotionSpec) else None
+
+
+def _context_ref_value(ref: ContextRef) -> ValueVariable | None:
+    value = getattr(ref, "valRef", None) or getattr(ref, "value", None)
+    return value if isinstance(value, ValueVariable) else None
+
+
+def _constraint_context_refs(constraint: ConstraintSpecification) -> list[ContextRef]:
+    expr = constraint.expr
+    if isinstance(expr, EqualityConstraint):
+        return [expr.reference]
+    if isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
+        return [expr.threshold]
+    if isinstance(expr, BilateralConstraint):
+        return [expr.lower, expr.upper]
+    return []
+
+
+def validate_constraint_context_refs(model: Model) -> None:
+    for motion in _motion_specs(model):
+        for constraint in motion_constraints(motion):
+            quantity = constraint.view.quantity
+            if not isinstance(quantity, WorldQuantity) or _decl_motion(quantity) is not motion:
+                raise _semantic_error(
+                    f"Constraint '{constraint.name}' references world quantity "
+                    f"'{quantity}', but it is not declared in motion '{motion.name}'.",
+                    constraint,
+                )
+
+            for ref in _constraint_context_refs(constraint):
+                value = _context_ref_value(ref)
+                if value is None:
+                    raise _semantic_error(
+                        f"Constraint '{constraint.name}' has an unresolved context reference.",
+                        constraint,
+                    )
+                if _decl_motion(value) is not motion:
+                    raise _semantic_error(
+                        f"Constraint '{constraint.name}' references value '{value.name}', "
+                        f"but it is not declared in motion '{motion.name}'.",
+                        ref,
+                    )
 
 
 def validate_handler_constraint_refs(model: Model) -> None:
@@ -270,6 +325,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     del metamodel
     validate_robot_specs(model)
     validate_unique_constraint_names(model)
+    validate_constraint_context_refs(model)
     validate_handler_constraint_refs(model)
     validate_handler_requirements(model)
     validate_solver_refs(model)

@@ -121,5 +121,56 @@ textx generate models/ex.rob_mot --target jsonld
 textx generate models/ex.rob_mot --target jsonld --single -o output/
 ```
 
+## Planned Generator Algorithm
+
+The JSON-LD generator is being refactored toward a handler-rooted semantic pipeline.
+The target algorithm is:
+
+```text
+Algorithm 1 Motion-Spec Graph Construction
+
+Input: Parsed DSL model M
+Output: JSON-LD graph J
+
+1:  W <- all ConstraintHandler declarations in M
+2:  R <- empty resolved semantic state
+3:  while W is not empty do
+4:      x <- pop(W)
+5:      if x is already recorded in R then
+6:          continue
+7:      end if
+8:      record x in R
+9:      D <- explicit semantic dependencies of x
+10:     for each y in D do
+11:         if y is not yet recorded in R then
+12:             push y into W
+13:         end if
+14:     end for
+15: end while
+16:
+17: G <- empty semantic entity graph stored in an rdflib Dataset
+18: for each authored semantic object a in R do
+19:     materialize a as node(s) and edge(s) in G
+20: end for
+21: for each derived semantic object d in R do
+22:     materialize d as node(s) and edge(s) in G
+23: end for
+24:
+25: T <- empty RDF triple set
+26: for each node n in G do
+27:     emit type triples of n into T
+28:     emit attribute triples of n into T
+29: end for
+30: for each edge e in G do
+31:     emit relation triple of e into T
+32: end for
+33:
+34: J <- serialize T as JSON-LD
+35: return J
+```
+
+This algorithm resolves only the semantics that are explicitly reachable from
+`ConstraintHandler` declarations, and derives secondary entities only from that
+reachable set. It does not infer structure from authored names.
 
 ```
