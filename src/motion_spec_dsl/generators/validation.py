@@ -321,11 +321,27 @@ def validate_controller_commands(model: Model) -> None:
                 )
 
 
+def validate_motion_spec_coverage(model: Model) -> None:
+    referenced = {
+        handler.motion.name
+        for handler in _constraint_handlers(model)
+        if handler.motion is not None
+    }
+    for motion in _motion_specs(model):
+        if motion.name not in referenced:
+            raise _semantic_error(
+                f"MotionSpec '{motion.name}' is not referenced by any ConstraintHandler. "
+                "Every MotionSpec must be bound to exactly one ConstraintHandler.",
+                motion,
+            )
+
+
 def validate_model(model: Model, metamodel=None) -> None:
     del metamodel
     validate_robot_specs(model)
     validate_unique_constraint_names(model)
     validate_constraint_context_refs(model)
+    validate_motion_spec_coverage(model)
     validate_handler_constraint_refs(model)
     validate_handler_requirements(model)
     validate_solver_refs(model)

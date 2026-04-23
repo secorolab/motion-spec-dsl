@@ -53,7 +53,7 @@ from motion_spec_dsl.generators.classes import (
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
     CONSTRAINT_PATH_BY_PREFIX,
-    get_motion_spec_dataset,
+    MotionSpecDatasetBuilder,
 )
 from motion_spec_dsl.generators.validation import motion_constraints, validate_model
 
@@ -290,7 +290,9 @@ def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> No
     # print all entities with their URIs
     # _print_entity_uris(model)
 
-    dataset, context = get_motion_spec_dataset(model)
+    ms_graph_builder = MotionSpecDatasetBuilder(model)
+    dataset, context = ms_graph_builder.build()
+
     output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
     output_dir.mkdir(parents=True, exist_ok=True)
     _write_single_output(dataset, context, model, output_dir, output_format)

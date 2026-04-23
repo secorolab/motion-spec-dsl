@@ -127,7 +127,8 @@ QuantityType:
     "LinearVelocity"  |
     "Force"           |
     "Torque"          |
-    "LinearDistance"  |
+    "Distance"        |
+    "Angle"           |
     "AngularDistance" |
     "Vector"
 ;

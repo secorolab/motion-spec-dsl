@@ -291,13 +291,14 @@ class GeoPropPair:
 
 
 class QuantityType(StrEnum):
-    LinearDistance   = "LinearDistance"
-    AngularDistance  = "AngularDistance"
-    LinearVelocity   = "LinearVelocity"
-    AngularVelocity  = "AngularVelocity"
-    Force            = "Force"
-    Torque           = "Torque"
-    Vector           = "Vector"
+    Distance        = "Distance"
+    Angle           = "Angle"
+    AngularDistance = "AngularDistance"
+    LinearVelocity  = "LinearVelocity"
+    AngularVelocity = "AngularVelocity"
+    Force           = "Force"
+    Torque          = "Torque"
+    Vector          = "Vector"
 
 
 @dataclass
@@ -573,13 +574,3 @@ class Evaluator(DerivedEntity):
         super().__init__(parent=self.parent, name=self.name)
 
 
-@dataclass
-class ConstraintHandlera(DerivedEntity):
-    parent: object
-    name: str
-    motion: Motion
-    evaluators: list[Evaluator] = field(default_factory=list)
-    controllers: list[ControllerEntry] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)

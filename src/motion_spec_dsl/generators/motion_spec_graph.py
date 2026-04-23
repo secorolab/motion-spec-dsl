@@ -11,9 +11,9 @@ from __future__ import annotations
 import warnings
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias
 
-from rdflib.graph import Dataset, Graph
+from rdflib.graph import Dataset
 from rdflib.namespace import Namespace, RDF
 from rdflib.term import Literal, URIRef
 from textx.scoping import get_included_models
@@ -279,25 +279,6 @@ SCALAR_UNIT = {
     "Length": QUDT_UNIT.M,
 }
 
-SCALAR_QKIND = {
-    "AngularVelocity": QUDT_QKIND.AngularVelocity,
-    "LinearVelocity": QUDT_QKIND.LinearVelocity,
-    "Torque": QUDT_QKIND.Torque,
-    "Force": QUDT_QKIND.Force,
-    "Position": QUDT_QKIND.Position,
-    "PlaneAngle": QUDT_QKIND.PlaneAngle,
-    "Length": QUDT_QKIND.Length,
-}
-
-DSL_SCALAR_QKIND = {
-    "AngularVelocity": QUDT_QKIND.AngularVelocity,
-    "LinearVelocity": QUDT_QKIND.LinearVelocity,
-    "Force": QUDT_QKIND.Force,
-    "Torque": QUDT_QKIND.Torque,
-    "LinearDistance": QUDT_QKIND.Length,
-    "Angle": QUDT_QKIND.PlaneAngle,
-}
-
 DSL_UNIT = {
     "rad/s": QUDT_UNIT["RAD-PER-SEC"],
     "rad": QUDT_UNIT["RAD"],
@@ -310,14 +291,6 @@ DSL_UNIT = {
     "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
     "cm": QUDT_UNIT["CentiM"],
     "m/s2": QUDT_UNIT["M-PER-SEC2"],
-}
-
-MISC_ENTITY_TYPE = {
-    "Frame": GEOM_ENT.Frame,
-    "SimplicialComplex": GEOM_ENT.SimplicialComplex,
-    "KinematicChain": GEOM_ENT["KinematicChain"],
-    "Point": GEOM_ENT.Point,
-    "UniformGravitationalField": GEOM_ENT["UniformGravitationalField"],
 }
 
 CONSTRAINT_PATH_BY_PREFIX = {
@@ -334,13 +307,6 @@ CONSTRAINT_PATH_BY_PREFIX = {
 }
 
 
-def _graph(*bindings: NamespaceBinding) -> Any:
-    graph = cast(Any, Graph())
-    for prefix, namespace in bindings:
-        graph.bind(prefix, namespace)
-    return graph
-
-
 def _dataset(*bindings: NamespaceBinding) -> Dataset:
     dataset = Dataset()
     for prefix, namespace in bindings:
@@ -354,31 +320,15 @@ def _add_types(graph: Any, node: Node, *rdf_types: Node) -> None:
 
 
 def _add_quantity(graph: Any, node: Node, scalar_type: str) -> None:
-    qkind = _scalar_qkind(scalar_type)
+    qkind = QUDT_QKIND[scalar_type]
     _add_types(graph, node, QUDT_SCHEMA.Quantity, qkind)
     graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
-    graph.add((node, QUDT_SCHEMA.unit, _scalar_unit(scalar_type)))
-
-
-def _world_spec(world_type: str) -> WorldSpec | None:
-    return WORLD_SPECS.get(world_type)
+    graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))
 
 
 def _property_spec(world_type: str, property_name: str) -> PropertySpec | None:
-    spec = _world_spec(world_type)
+    spec = WORLD_SPECS.get(world_type)
     return spec.properties.get(property_name) if spec else None
-
-
-def _scalar_unit(scalar_type: str) -> Node:
-    return SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)
-
-
-def _scalar_qkind(scalar_type: str) -> Node:
-    return SCALAR_QKIND.get(scalar_type, URIRef(scalar_type))
-
-
-def _dsl_scalar_qkind(scalar_type: str) -> Node:
-    return DSL_SCALAR_QKIND.get(scalar_type, URIRef(scalar_type))
 
 
 def _dsl_unit(unit_name: str) -> Node:
@@ -392,30 +342,12 @@ def _dsl_unit(unit_name: str) -> Node:
         ) from exc
 
 
-def _motion_suffix(name: str) -> str:
-    return name
-
-
-def _entity_abbrev(name: str) -> str:
-    return name
-
-
-def _attached_link_from_wrench_name(name: str) -> str | None:
-    # TODO: resolve attached links from geometric properties, not by parsing authored names.
-    return None
-
-
 def _infer_attached_link(
     builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler, solver: Any
 ) -> str | None:
     for binding in _infer_cartesian_force_bindings(builder, handler_spec):
         if binding.attached_to is not None:
             return binding.attached_to
-
-    for force_name in getattr(solver, "cartesian_force", []):
-        attached_force_link = _attached_link_from_wrench_name(force_name)
-        if attached_force_link is not None:
-            return attached_force_link
 
     motion_name = _handler_motion_name(handler_spec)
     motion_spec = builder.motion_map.get(motion_name) if motion_name else None
@@ -436,19 +368,8 @@ def _infer_attached_link(
     return None
 
 
-def _handler_world_quantities(handler_spec: ConstraintHandler) -> list[WorldQuantityLike]:
-    quantities: list[WorldQuantityLike] = []
-    for item in _handler_contexts(handler_spec):
-        quantities.extend(_context_declarations(item))
-    return quantities
-
-
 def _constraint_property_name(constraint: ConstraintData) -> str:
     return _view_property_name(constraint.constraint)
-
-
-def _constraint_axis_name(constraint: ConstraintData) -> str | None:
-    return _view_axis_name(constraint.constraint)
 
 
 def _controller_command_kind(controller: ControllerData) -> str | None:
@@ -562,7 +483,7 @@ def _infer_cartesian_force_bindings(
 
 def _driver_suffix(handler_spec: ConstraintHandler) -> str:
     motion_name = _handler_motion_name(handler_spec)
-    return _motion_suffix(motion_name) if motion_name else handler_spec.name
+    return motion_name if motion_name else handler_spec.name
 
 
 def _view_scalar_type(quantity: WorldQuantity, property_name: str, axis: str | None) -> str | None:
@@ -570,10 +491,6 @@ def _view_scalar_type(quantity: WorldQuantity, property_name: str, axis: str | N
         return "Position" if axis is not None else "Length"
     prop = _property_spec(quantity.type, property_name)
     return prop.scalar_type if prop else None
-
-
-def _axis_label(axis: str) -> str:
-    return {"x": "anteroposterior", "y": "lateral", "z": "vertical"}.get(axis, axis)
 
 
 def _scalar_id(quantity: WorldQuantity, property_name: str, axis: str | None) -> str | None:
@@ -603,7 +520,7 @@ def _while_error_id(
     if scalar_id is None:
         return None
     # Shared WHILE equality constraints reuse the same error signal across motions.
-    return scalar_id + "-err" if shared else f"{scalar_id}-err-{_motion_suffix(motion_name)}"
+    return scalar_id + "-err" if shared else f"{scalar_id}-err-{motion_name}"
 
 
 def _acceleration_energy_id(
@@ -617,7 +534,7 @@ def _acceleration_energy_id(
     if prop is None or prop.accel_prefix is None:
         return None
     stem = f"eacc-{quantity.name}.{property_name}{'.' + axis if axis else ''}"
-    return stem if shared else f"{stem}-{_motion_suffix(motion_name)}"
+    return stem if shared else f"{stem}-{motion_name}"
 
 
 def _acceleration_constraint_id(
@@ -631,7 +548,7 @@ def _acceleration_constraint_id(
         stem = f"acc-cstr-{property_name}{'.' + axis if axis else ''}"
     else:
         stem = f"acc-cstr-{quantity.name}.{property_name}{'.' + axis if axis else ''}"
-    return stem if shared else f"{stem}-{_motion_suffix(motion_name)}"
+    return stem if shared else f"{stem}-{motion_name}"
 
 
 def _geometric_property(props: GeometricProps | None, key: str) -> str | None:
@@ -660,10 +577,6 @@ def _required_world_quantity(builder: "MotionSpecDatasetBuilder", name: str, rea
     return quantity
 
 
-def _frame_suffix(frame_id: str) -> str:
-    return frame_id
-
-
 def _reference_frame(quantity: WorldQuantityLike) -> str | None:
     if not isinstance(quantity.props, GeometricProps):
         return None
@@ -684,10 +597,6 @@ def _of_frame(quantity: WorldQuantityLike) -> str | None:
 
 def _node_name(value: Any) -> str:
     return value.name if hasattr(value, "name") else str(value)
-
-
-def _node_uri(value: Any) -> str:
-    return str(getattr(value, "uri", URIRef(_node_name(value))))
 
 
 def _context_value_name(lookup: Any) -> str:
@@ -717,17 +626,14 @@ def _view_axis_name(constraint: ConstraintSpecification) -> str | None:
     return None if axis is None else str(getattr(axis, "value", axis))
 
 
-def _motion_name(motion: MotionSpec | str | None) -> str:
-    return _node_name(motion) if motion is not None else ""
-
-
 def _handler_motion(handler: ConstraintHandler) -> MotionSpec | None:
     motion = getattr(handler, "motion", None)
     return motion if isinstance(motion, MotionSpec) else None
 
 
 def _handler_motion_name(handler: ConstraintHandler) -> str:
-    return _motion_name(getattr(handler, "motion", None))
+    motion = getattr(handler, "motion", None)
+    return _node_name(motion) if motion is not None else ""
 
 
 def _handler_contexts(handler: ConstraintHandler) -> list[Any]:
@@ -862,10 +768,6 @@ class MotionSpecDatasetBuilder:
         ]
 
     @cached_property
-    def handler_map(self) -> dict[str, ConstraintHandler]:
-        return {handler.name: handler for handler in self.handler_specs}
-
-    @cached_property
     def motion_specs(self) -> list[MotionSpec]:
         motions: list[MotionSpec] = []
         seen: set[str] = set()
@@ -875,18 +777,7 @@ class MotionSpecDatasetBuilder:
                 continue
             seen.add(motion.name)
             motions.append(motion)
-        if motions:
-            return motions
-        return [
-            spec
-            for model in self.models
-            for spec in model.specs
-            if isinstance(spec, MotionSpec)
-        ]
-
-    @cached_property
-    def motion_names(self) -> set[str]:
-        return {motion.name for motion in self.motion_specs}
+        return motions
 
     @cached_property
     def motion_map(self) -> dict[str, MotionSpec]:
@@ -924,25 +815,25 @@ class MotionSpecDatasetBuilder:
                 for key in ("of", "wrt"):
                     target = _geometric_property(quantity.props, key)
                     if target:
-                        entities.setdefault(target, MISC_ENTITY_TYPE["SimplicialComplex"])
+                        entities.setdefault(target, GEOM_ENT.SimplicialComplex)
                 point_id = _geometric_property(quantity.props, "ref-point")
                 if point_id:
-                    entities.setdefault(point_id, MISC_ENTITY_TYPE["Point"])
+                    entities.setdefault(point_id, GEOM_ENT.Point)
                 frame_id = _geometric_property(quantity.props, "as-seen-by")
                 if frame_id:
-                    entities.setdefault(frame_id, MISC_ENTITY_TYPE["Frame"])
+                    entities.setdefault(frame_id, GEOM_ENT.Frame)
             elif quantity.type == "Pose":
                 for key in ("of", "wrt", "as-seen-by"):
                     target = _geometric_property(quantity.props, key)
                     if target:
-                        entities.setdefault(target, MISC_ENTITY_TYPE["Frame"])
+                        entities.setdefault(target, GEOM_ENT.Frame)
             elif quantity.type == "Wrench":
                 point_id = _geometric_property(quantity.props, "ref-point")
                 if point_id:
-                    entities.setdefault(point_id, MISC_ENTITY_TYPE["Point"])
+                    entities.setdefault(point_id, GEOM_ENT.Point)
                 frame_id = _geometric_property(quantity.props, "as-seen-by")
                 if frame_id:
-                    entities.setdefault(frame_id, MISC_ENTITY_TYPE["Frame"])
+                    entities.setdefault(frame_id, GEOM_ENT.Frame)
         return entities
 
     @cached_property
@@ -959,7 +850,7 @@ class MotionSpecDatasetBuilder:
                     and property_name == "rotation"
                     and axis is None
                 ):
-                    rotation_ids[motion_spec.name] = f"rotation-{_motion_suffix(motion_spec.name)}"
+                    rotation_ids[motion_spec.name] = f"rotation-{motion_spec.name}"
         return rotation_ids
 
     @cached_property
@@ -1294,7 +1185,7 @@ class MotionSpecDatasetBuilder:
             motion_monitors = monitors_by_motion.get(motion_spec.name, [])
             motion = Motion(
                 parent=motion_spec,
-                name=f"motion-{_motion_suffix(motion_spec.name)}",
+                name=f"motion-{motion_spec.name}",
                 motion_spec_block=motion_spec,
             )
             handlers.append(
@@ -1457,9 +1348,8 @@ class MotionSpecDatasetBuilder:
     def _add_structural_entities(self) -> None:
         entities: dict[str, tuple[Node, Node]] = {}
         for quantity in self.world_quantities.values():
-            rdf_type = MISC_ENTITY_TYPE.get(quantity.type)
-            if rdf_type is not None:
-                entities[quantity.name] = (URIRef(quantity.uri), rdf_type)
+            if WORLD_SPECS.get(quantity.type) is None:
+                entities[quantity.name] = (URIRef(quantity.uri), GEOM_ENT[quantity.type])
         for entity_name, rdf_type in self.implicit_world_entities.items():
             entities.setdefault(entity_name, (self.root_uri(entity_name), rdf_type))
         for node, rdf_type in sorted(entities.values(), key=lambda item: str(item[0])):
@@ -1467,7 +1357,7 @@ class MotionSpecDatasetBuilder:
 
     def _add_world_quantities(self) -> None:
         for quantity in self.world_quantities.values():
-            world_spec = _world_spec(quantity.type)
+            world_spec = WORLD_SPECS.get(quantity.type)
             if world_spec is None:
                 continue
             node = URIRef(quantity.uri)
@@ -1498,7 +1388,7 @@ class MotionSpecDatasetBuilder:
     def _add_value_variables(self) -> None:
         for variable in self.value_variables.values():
             node = URIRef(variable.uri)
-            qkind = _dsl_scalar_qkind(variable.type)
+            qkind = QUDT_QKIND[variable.type]
             _add_types(self.graph, node, QUDT_SCHEMA.Quantity, qkind)
             self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
             if variable.value is None:
@@ -1539,7 +1429,7 @@ class MotionSpecDatasetBuilder:
 
     def _add_motion_specs(self) -> None:
         for motion_spec in self.motion_specs:
-            motion_node = self.root_uri(f"motion-{_motion_suffix(motion_spec.name)}", owner=motion_spec)
+            motion_node = self.root_uri(f"motion-{motion_spec.name}", owner=motion_spec)
             _add_types(self.graph, motion_node, MOT.GuardedMotion)
             for constraint in motion_spec.when.constraints:
                 self.graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
@@ -1685,8 +1575,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, SLV.axis, SLV[data.axis]))
                 self.graph.add((node, SLV["acceleration-energy"], self.root_uri(data.energy_id, owner=motion_spec)))
 
-            motion_suffix = _motion_suffix(motion_name)
-            spec_acc_node = self.root_uri(f"spec-acc-{_entity_abbrev(attached_link)}-{motion_suffix}", owner=motion_spec) if attached_link else self.root_uri(f"spec-acc-ee-{motion_suffix}", owner=motion_spec)
+            spec_acc_node = self.root_uri(f"spec-acc-{attached_link}-{motion_name}", owner=motion_spec) if attached_link else self.root_uri(f"spec-acc-ee-{motion_name}", owner=motion_spec)
             _add_types(self.graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
             for node_id in spec_constraints:
                 self.graph.add((spec_acc_node, SLV.constraints, self.root_uri(node_id, owner=motion_spec)))
@@ -1794,7 +1683,7 @@ class MotionSpecDatasetBuilder:
                 continue
             target_point = _geometric_property(target_quantity.props, "ref-point") if isinstance(target_quantity.props, GeometricProps) else None
             for derivation, pose_name, transformed_wrench in transforms:
-                op_node = self.root_uri(f"tf-{derivation.local_wrench_id}-{_frame_suffix(target_frame)}")
+                op_node = self.root_uri(f"tf-{derivation.local_wrench_id}-{target_frame}")
                 _add_types(self.graph, op_node, RBDYN_OP.TransformWrenchToProximal)
                 self.graph.add((op_node, RBDYN_OP.pose, self.root_uri(pose_name)))
                 self.graph.add((op_node, RBDYN_OP["from"], self.root_uri(derivation.local_wrench_id)))
@@ -1865,6 +1754,3 @@ def _derived_transformed_wrenches(
 
     return transforms_by_force, add_ops_by_force
 
-
-def get_motion_spec_dataset(model: Model) -> DatasetOutput:
-    return MotionSpecDatasetBuilder(model).build()
