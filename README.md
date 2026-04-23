@@ -121,10 +121,17 @@ textx generate models/ex.rob_mot --target jsonld
 textx generate models/ex.rob_mot --target jsonld --single -o output/
 ```
 
-## Planned Generator Algorithm
+## Generator Algorithm
 
-The JSON-LD generator is being refactored toward a handler-rooted semantic pipeline.
-The target algorithm is:
+The JSON-LD generator is handler-rooted and builds the RDF graph in ordered
+passes. It keeps only a small amount of indexed state:
+
+- authored handlers
+- motions referenced by those handlers
+- per-motion context (`world` quantities, value variables, constraints)
+- derived constraint metadata needed for `while` evaluators and solver nodes
+
+The current algorithm is:
 
 ```text
 Algorithm 1 Motion-Spec Graph Construction
@@ -132,45 +139,59 @@ Algorithm 1 Motion-Spec Graph Construction
 Input: Parsed DSL model M
 Output: JSON-LD graph J
 
-1:  W <- all ConstraintHandler declarations in M
-2:  R <- empty resolved semantic state
-3:  while W is not empty do
-4:      x <- pop(W)
-5:      if x is already recorded in R then
-6:          continue
-7:      end if
-8:      record x in R
-9:      D <- explicit semantic dependencies of x
-10:     for each y in D do
-11:         if y is not yet recorded in R then
-12:             push y into W
-13:         end if
-14:     end for
-15: end while
-16:
-17: G <- empty semantic entity graph stored in an rdflib Dataset
-18: for each authored semantic object a in R do
-19:     materialize a as node(s) and edge(s) in G
-20: end for
-21: for each derived semantic object d in R do
-22:     materialize d as node(s) and edge(s) in G
+1:  H <- all ConstraintHandler declarations in M
+2:  X <- empty motion scope index
+3:  for each handler h in H do
+4:      if h references motion m and m is not in X then
+5:          collect m.world quantities
+6:          collect m.pre/spec/post value variables
+7:          collect m.when, m.while, m.until constraints
+8:          record m and its local scope in X
+9:      end if
+10: end for
+11:
+12: C <- empty derived constraint list
+13: for each motion scope x in X do
+14:     for each authored constraint c in x do
+15:         resolve the referenced world quantity and viewed property
+16:         derive scalar quantity ids and constraint kind metadata
+17:         if c is a while-equality then
+18:             derive shared/local while error signal ids
+19:             derive acceleration-energy ids when applicable
+20:         end if
+21:         append derived record for c to C
+22:     end for
 23: end for
 24:
-25: T <- empty RDF triple set
-26: for each node n in G do
-27:     emit type triples of n into T
-28:     emit attribute triples of n into T
-29: end for
-30: for each edge e in G do
-31:     emit relation triple of e into T
-32: end for
-33:
-34: J <- serialize T as JSON-LD
-35: return J
+25: G <- empty rdflib Dataset
+26: bind common graph namespaces
+27:
+28: materialize authored entities into G:
+29:     structural entities
+30:     world quantities
+31:     value variables
+32:     constraints
+33:     motions
+34:     constraint handlers, controllers, and monitors
+35:
+36: materialize derived entities into G:
+37:     scalar views
+38:     while error signals
+39:     acceleration energies
+40:     constraint evaluators
+41:     solver entities and motion drivers
+42:     map operations
+43:     transform operations
+44:
+45: J <- serialize G as JSON-LD with the same namespace bindings
+46: return J
 ```
 
-This algorithm resolves only the semantics that are explicitly reachable from
-`ConstraintHandler` declarations, and derives secondary entities only from that
-reachable set. It does not infer structure from authored names.
+This algorithm is intentionally not a generic graph search. It starts from
+`ConstraintHandler` declarations because handlers determine which motions,
+controllers, monitors, and solver structures are relevant to the emitted RDF.
+Derived nodes are then produced from those authored objects in a fixed order.
 
-```
+The generator still refuses to infer missing semantic structure from authored
+names. Unsupported derived cases, such as pose-distance transforms without
+explicit model-backed fields, fail explicitly rather than guessing.
