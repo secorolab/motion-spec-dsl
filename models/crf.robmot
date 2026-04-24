@@ -133,11 +133,17 @@ MOTION_SPEC (ns=app) motion_loosen {
     MOVE: "Reverse-rotate to loosen after screw engagement"
 
     CONTEXT {
+        c1: World {
+            <motion_find.c1.twist-ee-ee>,
+            <motion_find.c1.wrench-ee-ee>,
+            <motion_find.c1.pose-arm-ee-world>
+        },
         c2: Pre {
             torque-loosen-min-contact: Torque = 0.5 Nm
         },
         c3: Spec {
-            angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s
+            angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s,
+            <motion_find.c2.angvel-zero-ref>
         },
         c4: Post {
             rotation-loosen-lower: AngularDistance = 1.4835 rad,

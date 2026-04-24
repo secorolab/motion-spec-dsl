@@ -273,7 +273,7 @@ ControllerEntry:
 
 ControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">" ","
-    "solver" ":" "<" solver=[SolverEntry|IRI_TRUNK] ">" ","
+    "solver" ":" "<" solver=SolverRef ">" ","
     "Kp" "=" kp=FLOAT ","
     "Ki" "=" ki=FLOAT ","
     "Kd" "=" kd=FLOAT
@@ -289,7 +289,7 @@ ControllerRef:
 ;
 
 SolverRef:
-    handler=[ConstraintHandler|IRI_TRUNK] "." solver=[SolverEntry|IRI_TRUNK]
+    (handler=[ConstraintHandler|IRI_TRUNK] ".")? solver=[SolverEntry|IRI_TRUNK]
 ;
 
 SolverEntry:

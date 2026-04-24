@@ -20,6 +20,7 @@ from motion_spec_dsl.generators.classes import (
     ConstraintReference,
     ConstraintSpecification,
     ConstraintRef,
+    ContextRef,
     ControllerAlias,
     ControllerEntry,
     ControllerReference,
@@ -106,6 +107,7 @@ LANGUAGE_CLASSES = [
     ConstraintReference,
     ConstraintSpecification,
     ConstraintRef,
+    ContextRef,
     View,
     EqualityConstraint,
     GreaterThanConstraint,
@@ -172,12 +174,17 @@ class HandlerControllerScopeProvider:
 
 
 class CrossHandlerSolverScopeProvider:
-    """Resolve solver refs against solvers declared in the target handler."""
+    """Resolve solver refs: cross-handler when handler is set, else local handler via parent chain."""
 
     def __call__(self, obj: SolverRef, attr, obj_ref):
         del attr
         handler = obj.handler
-        if handler is None or not isinstance(handler, ConstraintHandler):
+        if not isinstance(handler, ConstraintHandler):
+            # local ref inside ControllerParams: traverse SolverRef -> ControllerParams -> ControllerEntry -> handler
+            controller_params = obj.parent
+            controller = getattr(controller_params, "parent", None)
+            handler = getattr(controller, "parent", None)
+        if not isinstance(handler, ConstraintHandler):
             return None
         for solver in getattr(handler, "solvers", []):
             solver_name = getattr(solver, "name", None) or getattr(_resolved_solver(solver), "name", None)
@@ -191,7 +198,6 @@ def motion_spec_metamodel():
     metamodel.register_scope_providers({
         "*.*": scoping_providers.FQNImportURI(),
         "ConstraintRef.constraint": MotionConstraintScopeProvider(),
-        "ControllerParams.solver": HandlerSolverScopeProvider(),
         "ControllerRef.controller": HandlerControllerScopeProvider(),
         "SolverRef.solver": CrossHandlerSolverScopeProvider(),
     })

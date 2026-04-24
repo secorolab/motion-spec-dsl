@@ -650,7 +650,7 @@ class ControllerReference(ControllerAlias):
 @dataclass
 class ControllerParams:
     constraint: ConstraintRef
-    solver: SolverEntry
+    solver: SolverRef
     kp: float = 0.0
     ki: float = 0.0
     kd: float = 0.0
@@ -679,8 +679,8 @@ class SolverEntry(NamedNamespaceObject):
 
 @dataclass
 class SolverRef:
-    handler: ConstraintHandler
     solver: SolverEntry
+    handler: ConstraintHandler | None = field(default=None)
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -688,7 +688,9 @@ class SolverRef:
         return self.solver.name
 
     def __str__(self) -> str:
-        return f"{self.handler.name}.{self.solver.name}"
+        if self.handler is not None:
+            return f"{self.handler.name}.{self.solver.name}"
+        return self.solver.name
 
 
 @dataclass

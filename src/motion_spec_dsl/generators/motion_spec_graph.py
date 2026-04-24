@@ -619,7 +619,8 @@ class MotionSpecDatasetBuilder:
         controller: Any,
         constraint: ConstraintData,
     ) -> ControllerDispatch | None:
-        solver = getattr(controller.params, "solver", None)
+        solver_ref = getattr(controller.params, "solver", None)
+        solver = getattr(solver_ref, "solver", None)
         algorithm = getattr(solver, "algorithm", None)
         property_spec = (
             _property_spec(constraint.quantity.type, constraint.property_name)

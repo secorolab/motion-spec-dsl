@@ -192,7 +192,7 @@ def _decl_motion(obj: object) -> MotionSpec | None:
 
 
 def _context_ref_value(ref: ContextRef) -> ValueVariable | None:
-    value = getattr(ref, "valRef", None) or getattr(ref, "value", None)
+    value = getattr(ref, "valRef", None) or getattr(ref, "value", None) or getattr(ref, "inline_value", None)
     return value if isinstance(value, ValueVariable) else None
 
 
@@ -345,10 +345,11 @@ def validate_controller_solver_refs(model: Model) -> None:
         resolved_handler_solvers = {id(_resolved_solver(solver)) for solver in handler.solvers}
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
-            if id(resolved_controller.params.solver) not in resolved_handler_solvers:
+            pid_solver = resolved_controller.params.solver.solver
+            if id(pid_solver) not in resolved_handler_solvers:
                 raise _semantic_error(
                     f"Controller '{controller.name}' references solver "
-                    f"'{resolved_controller.params.solver.name}', but handler "
+                    f"'{pid_solver.name}', but handler "
                     f"'{handler.name}' does not assemble it.",
                     controller,
                 )
