@@ -60,21 +60,19 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     CONTROLLERS {
         ctrl-vel-z: PID {
             constraint: <m_move.wi1>,
-            solver: <kinova_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 1.0
         },
         ctrl-vel-x: PID {
             constraint: <m_move.wi2>,
-            solver: <kinova_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 1.0
         },
-        ctrl-vel-y: PID { constraint: <m_move.wi3>, solver: <kinova_solver>, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
+        ctrl-vel-y: PID { constraint: <m_move.wi3>, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
     }
 
     SOLVERS {
         kinova_solver: Solver {
             robot: <kinova>,
-            algorithm: Vereshchagin,
+            algorithm: ACHD,
             root: <kinova.chain.root>,
             end: <kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>

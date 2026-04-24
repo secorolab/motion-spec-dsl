@@ -15,6 +15,8 @@ from motion_spec_dsl.generators.classes import (
     ConstraintHandler,
     ConstraintSpecification,
     ControllerAlias,
+    ControllerEntry,
+    ControllerMode,
     ContextRef,
     EqualityConstraint,
     GreaterThanConstraint,
@@ -26,6 +28,7 @@ from motion_spec_dsl.generators.classes import (
     RobotType,
     SolverAlias,
     SolverEntry,
+    SolverRef,
     SubSpace,
     ValueVariableAlias,
     ValueVariable,
@@ -122,6 +125,8 @@ def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) ->
 
 
 def _infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
+    if subspace is None:
+        return None
     return {
         SubSpace.LinVel: QuantityType.LinearVelocity,
         SubSpace.AngVel: QuantityType.AngularVelocity,
@@ -342,24 +347,89 @@ def validate_solver_refs(model: Model) -> None:
 
 def validate_controller_solver_refs(model: Model) -> None:
     for handler in _constraint_handlers(model):
-        resolved_handler_solvers = {id(_resolved_solver(solver)) for solver in handler.solvers}
+        resolved_handler_solvers = [_resolved_solver(solver) for solver in handler.solvers]
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
-            pid_solver = resolved_controller.params.solver.solver
-            if id(pid_solver) not in resolved_handler_solvers:
+            explicit_solver = getattr(resolved_controller.solver, "solver", None)
+            if explicit_solver is None:
+                if len(resolved_handler_solvers) == 1:
+                    continue
+                raise _semantic_error(
+                    f"Controller '{controller.name}' must specify solver because handler "
+                    f"'{handler.name}' assembles {len(resolved_handler_solvers)} solvers.",
+                    controller,
+                )
+            if all(id(explicit_solver) != id(solver) for solver in resolved_handler_solvers):
                 raise _semantic_error(
                     f"Controller '{controller.name}' references solver "
-                    f"'{pid_solver.name}', but handler "
+                    f"'{explicit_solver.name}', but handler "
                     f"'{handler.name}' does not assemble it.",
                     controller,
                 )
+
+
+def _controller_solver(controller: ControllerEntry | ControllerAlias) -> SolverEntry | None:
+    solver_ref = getattr(controller, "solver", None)
+    if isinstance(solver_ref, SolverRef):
+        return solver_ref.solver
+    return None
+
+
+def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
+    resolved_controller = _resolved_controller(controller)
+    subspace = resolved_controller.params.constraint.constraint.view.subspace
+    command_type = resolved_controller.command_type or _infer_command_type(subspace)
+    if command_type in {QuantityType.Force, QuantityType.Torque} or subspace in {
+        SubSpace.Force,
+        SubSpace.Torque,
+    }:
+        return "force"
+    return "pose"
+
+
+def validate_supported_solver_algorithms(model: Model) -> None:
+    for handler in _constraint_handlers(model):
+        for solver in handler.solvers:
+            resolved_solver = _resolved_solver(solver)
+            if str(resolved_solver.algorithm) == "RNE":
+                raise _semantic_error(
+                    f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
+                    "but RNE is not modeled in the DSL generator yet.",
+                    solver,
+                )
+
+
+def validate_mixed_solver_domains(model: Model) -> None:
+    for handler in _constraint_handlers(model):
+        domains_by_algorithm: dict[str, set[str]] = {}
+        for controller in handler.controllers:
+            solver = _controller_solver(controller)
+            if solver is None:
+                continue
+            domains_by_algorithm.setdefault(str(solver.algorithm), set()).add(
+                _controller_domain(controller)
+            )
+
+        if "ACHD" not in domains_by_algorithm or "RNE" not in domains_by_algorithm:
+            continue
+
+        overlapping_domains = domains_by_algorithm["ACHD"] & domains_by_algorithm["RNE"]
+        if overlapping_domains:
+            overlap = ", ".join(sorted(overlapping_domains))
+            raise _semantic_error(
+                f"Handler '{handler.name}' mixes ACHD and RNE on the same domain(s): "
+                f"{overlap}. They may only coexist when ACHD and RNE controllers are "
+                "split across pose and force domains.",
+                handler,
+            )
 
 
 def validate_controller_commands(model: Model) -> None:
     for handler in _constraint_handlers(model):
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
-            subspace = resolved_controller.params.constraint.constraint.view.subspace
+            constraint_spec = resolved_controller.params.constraint.constraint
+            subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or _infer_command_type(subspace)
             if command_type is None:
                 raise _semantic_error(
@@ -367,6 +437,33 @@ def validate_controller_commands(model: Model) -> None:
                     f"constraint subspace '{subspace}'.",
                     controller,
                 )
+            quantity = constraint_spec.view.quantity
+            if (
+                isinstance(quantity, WorldQuantity)
+                and quantity.type == WorldQuantityType.JointPosition
+                and resolved_controller.control_mode != ControllerMode.Posture
+            ):
+                raise _semantic_error(
+                    f"Controller '{controller.name}' targets JointPosition and must declare "
+                    "'for Posture'.",
+                    controller,
+                )
+            if resolved_controller.control_mode == ControllerMode.Posture:
+                if command_type != QuantityType.Torque:
+                    raise _semantic_error(
+                        f"Controller '{controller.name}' with 'for Posture' must use 'as Torque'.",
+                        controller,
+                    )
+                if not isinstance(quantity, WorldQuantity) or quantity.type != WorldQuantityType.JointPosition:
+                    raise _semantic_error(
+                        f"Controller '{controller.name}' with 'for Posture' must target a JointPosition constraint.",
+                        controller,
+                    )
+                if not isinstance(constraint_spec.expr, EqualityConstraint):
+                    raise _semantic_error(
+                        f"Controller '{controller.name}' with 'for Posture' must control an equality constraint.",
+                        controller,
+                    )
             if (
                 resolved_controller.apply_at is not None
                 and resolved_controller.apply_at.type != WorldQuantityType.Link
@@ -405,5 +502,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_requirements(model)
     validate_solver_refs(model)
     validate_controller_solver_refs(model)
+    validate_supported_solver_algorithms(model)
+    validate_mixed_solver_domains(model)
     validate_controller_commands(model)
     validate_motion_spec_coverage(model)

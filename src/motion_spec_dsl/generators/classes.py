@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 from rdflib.namespace import Namespace
 
@@ -203,7 +204,9 @@ class ValVarContextDecl(NamedNamespaceObject):
     @property
     def namespace(self):
         assert self.kind is not None, "ValVarContextDecl must have 'kind' defined"
-        return Namespace(str(self.parent.namespace) + f"{self.parent.name}/{self.kind}/")
+        parent_namespace = getattr(self.parent, "namespace")
+        parent_name = getattr(self.parent, "name")
+        return Namespace(str(parent_namespace) + f"{parent_name}/{self.kind}/")
 
 
 class WorldContextDecl(ValVarContextDecl):
@@ -250,6 +253,7 @@ class WorldQuantityType(StrEnum):
     Pose           = "Pose"
     VelocityTwist  = "VelocityTwist"
     Wrench         = "Wrench"
+    JointPosition  = "JointPosition"
     KinematicChain = "KinematicChain"
     Link           = "Link"
     Gravity        = "Gravity"
@@ -267,7 +271,7 @@ class WorldQuantity(NamedNamespaceObject):
         self.type = WorldQuantityType(self.type)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class WorldQuantityAlias(WorldQuantity):
     parent: object
     name: str
@@ -327,6 +331,10 @@ class QuantityType(StrEnum):
     Vector          = "Vector"
 
 
+class ControllerMode(StrEnum):
+    Posture = "Posture"
+
+
 @dataclass
 class ValueVariable(NamedNamespaceObject):
     parent: object
@@ -342,7 +350,7 @@ class ValueVariable(NamedNamespaceObject):
         self.type = QuantityType(self.type)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ValueVariableAlias(ValueVariable):
     parent: object
     name: str
@@ -512,11 +520,12 @@ class ContextRef:
 
     @property
     def value(self) -> ValueVariable:
+        assert self.valRef is not None, "ContextRef value is not resolved yet"
         return self.valRef
 
     @property
     def variable(self) -> str:
-        return self.valRef.name
+        return self.value.name
 
 
 @dataclass
@@ -594,13 +603,17 @@ class ControllerEntry(NamedNamespaceObject):
     name: str
     type: str
     params: ControllerParams
+    solver: SolverRef | None = None
     command_type: QuantityType | None = None
+    control_mode: ControllerMode | None = None
     apply_at: WorldQuantity | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         if self.command_type is not None and isinstance(self.command_type, str):
             self.command_type = QuantityType(self.command_type)
+        if self.control_mode is not None and isinstance(self.control_mode, str):
+            self.control_mode = ControllerMode(self.control_mode)
 
 
 @dataclass
@@ -617,14 +630,16 @@ class ControllerRef:
         return f"{self.handler.name}.{self.controller.name}"
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ControllerAlias(ControllerEntry):
     parent: object
     name: str
     ref: ControllerRef
     type: str = field(init=False)
     params: ControllerParams = field(init=False)
+    solver: SolverRef | None = field(init=False, default=None)
     command_type: QuantityType | None = field(init=False, default=None)
+    control_mode: ControllerMode | None = field(init=False, default=None)
     apply_at: WorldQuantity | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -632,7 +647,9 @@ class ControllerAlias(ControllerEntry):
         self._uri = self.ref.controller.uri
         self.type = self.ref.controller.type
         self.params = self.ref.controller.params
+        self.solver = self.ref.controller.solver
         self.command_type = self.ref.controller.command_type
+        self.control_mode = self.ref.controller.control_mode
         self.apply_at = self.ref.controller.apply_at
 
 
@@ -650,7 +667,6 @@ class ControllerReference(ControllerAlias):
 @dataclass
 class ControllerParams:
     constraint: ConstraintRef
-    solver: SolverRef
     kp: float = 0.0
     ki: float = 0.0
     kd: float = 0.0
@@ -693,7 +709,7 @@ class SolverRef:
         return self.solver.name
 
 
-@dataclass
+@dataclass(kw_only=True)
 class SolverAlias(SolverEntry):
     parent: object
     name: str

@@ -45,7 +45,7 @@ CONSTRAINT_HANDLER (ns=app) handler_press {
     MOTION: <m_press>
 
     CONTROLLERS {
-        ctrl-force: PID { constraint: <m_press.c_force>, solver: <right_arm_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        ctrl-force: PID { constraint: <m_press.c_force>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
         as Force
         apply at <c1.link-ee>
     }
@@ -53,7 +53,7 @@ CONSTRAINT_HANDLER (ns=app) handler_press {
     SOLVERS {
         right_arm_solver: Solver {
             robot: <eddie.right_arm>,
-            algorithm: Vereshchagin,
+            algorithm: ACHD,
             root: <eddie.right_arm.root>,
             end: <eddie.right_arm.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>

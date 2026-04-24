@@ -51,13 +51,13 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     }
 
     CONTROLLERS {
-        ctrl-c1: PID { constraint: <m_move.c1>, solver: <right_arm_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        ctrl-c1: PID { constraint: <m_move.c1>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
     }
 
     SOLVERS {
         right_arm_solver: Solver {
             robot: <eddie.right_arm>,
-            algorithm: Vereshchagin,
+            algorithm: ACHD,
             root: <eddie.right_arm.root>,
             end: <eddie.right_arm.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>

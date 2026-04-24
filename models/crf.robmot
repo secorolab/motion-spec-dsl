@@ -88,32 +88,26 @@ CONSTRAINT_HANDLER (ns=app) handler_find {
     CONTROLLERS {
         ctrl-angvel-find: PID {
             constraint: <motion_find.cstr-angvel-find>,
-            solver: <right_arm_solver>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
         ctrl-linvel-ee-x-zero: PID {
             constraint: <motion_find.cstr-linvel-ee-x-zero>,
-            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-y-zero: PID {
             constraint: <motion_find.cstr-linvel-ee-y-zero>,
-            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-z-zero: PID {
             constraint: <motion_find.cstr-linvel-ee-z-zero>,
-            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-x-zero: PID {
             constraint: <motion_find.cstr-angvel-ee-x-zero>,
-            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-y-zero: PID {
             constraint: <motion_find.cstr-angvel-ee-y-zero>,
-            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         }
     }
@@ -121,7 +115,7 @@ CONSTRAINT_HANDLER (ns=app) handler_find {
     SOLVERS {
         right_arm_solver: Solver {
             robot: <kinova>,
-            algorithm: Vereshchagin,
+            algorithm: ACHD,
             root: <kinova.chain.root>,
             end: <kinova.chain.end>,
             gravity: <c1.earth-uniform-gravitational-field> equal to <c2.gravity-vec>
@@ -201,7 +195,6 @@ CONSTRAINT_HANDLER (ns=app) handler_loosen {
     CONTROLLERS {
         ctrl-angvel-loosen: PID {
             constraint: <motion_loosen.cstr-angvel-loosen>,
-            solver: <handler_find.right_arm_solver>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
         <handler_find.ctrl-linvel-ee-x-zero>,

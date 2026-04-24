@@ -48,6 +48,18 @@ FIXTURES = Path(__file__).parent / "fixtures"
             "ambiguous_controller_command.robmot",
             "requires explicit 'as'",
         ),
+        (
+            "mixed_solver_same_domain.robmot",
+            "uses RNE, but RNE is not modeled",
+        ),
+        (
+            "joint_position_missing_posture.robmot",
+            "must declare 'for Posture'",
+        ),
+        (
+            "missing_controller_solver.robmot",
+            "must specify solver because handler 'handler_move' assembles 2 solvers",
+        ),
     ],
 )
 def test_invalid_models_fail_validation(fixture: str, message: str) -> None:
@@ -88,3 +100,14 @@ def test_crf_model_supports_context_and_solver_references() -> None:
     assert isinstance(loosen_controllers[1], ControllerReference)
     assert isinstance(handler_solver, SolverReference)
     assert handler_solver.uri == handler_solver.ref.solver.uri
+
+
+def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
+    metamodel = motion_spec_metamodel()
+
+    model = metamodel.model_from_file(FIXTURES / "posture_controller.robmot")
+    handler = model.specs[-1]
+    controller = handler.controllers[0]
+
+    assert controller.solver is None
+    assert controller.control_mode.value == "Posture"

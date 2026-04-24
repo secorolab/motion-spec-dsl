@@ -180,10 +180,10 @@ class CrossHandlerSolverScopeProvider:
         del attr
         handler = obj.handler
         if not isinstance(handler, ConstraintHandler):
-            # local ref inside ControllerParams: traverse SolverRef -> ControllerParams -> ControllerEntry -> handler
-            controller_params = obj.parent
-            controller = getattr(controller_params, "parent", None)
-            handler = getattr(controller, "parent", None)
+            current = getattr(obj, "parent", None)
+            while current is not None and not isinstance(current, ConstraintHandler):
+                current = getattr(current, "parent", None)
+            handler = current
         if not isinstance(handler, ConstraintHandler):
             return None
         for solver in getattr(handler, "solvers", []):

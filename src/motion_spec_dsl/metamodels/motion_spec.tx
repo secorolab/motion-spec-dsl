@@ -112,6 +112,7 @@ WorldQuantityType:
     "VelocityTwist"              |
     "Wrench"                     |
     "Pose"                       |
+    "JointPosition"              |
     "KinematicChain"             |
     "Frame"                      |
     "Link"                       |
@@ -172,7 +173,7 @@ ConstraintExpression:
 
 View:
     "<" quantity=[WorldQuantity|FQN] ">"
-    ("." subspace=SubSpace ("." axis=Axis)?)
+    ("." subspace=SubSpace ("." axis=Axis)?)?
 ;
 
 SubSpace:
@@ -268,16 +269,21 @@ ControllerEntry:
         params=ControllerParams
     "}"
     ("as" command_type=QuantityType)?
+    ("for" control_mode=ControllerMode)?
     ("apply" "at" "<" apply_at=[WorldQuantity|ScopedName] ">")?
+    ("via" "<" solver=SolverRef ">")?
 ;
 
 ControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">" ","
-    "solver" ":" "<" solver=SolverRef ">" ","
     "Kp" "=" kp=FLOAT ","
     "Ki" "=" ki=FLOAT ","
     "Kd" "=" kd=FLOAT
     ("," "decay" ":" decay=FLOAT)?
+;
+
+ControllerMode:
+    "Posture"
 ;
 
 ConstraintRef:
@@ -322,7 +328,7 @@ RobotAnchor:
 ;
 
 SolverAlgorithm:
-    "Vereshchagin" | "NewtonEuler" | "VelocityDistribution" | "ForceDistribution"
+    "ACHD" | "RNE" | "VelocityDistribution" | "ForceDistribution"
 ;
 
 
