@@ -1,7 +1,5 @@
 # TODO
 
-- Add a proper ontology-backed joint entity instead of reusing `geom-ent:SimplicialComplex` for `JointPosition { of: ... }`.
-- Add an explicit authored robot/joint binding surface so `JointPosition` can point to a real robot joint identifier rather than only an authored name.
 - Carry `JointPosition` / posture-control semantics through `motion-spec` IR parsing and downstream codegen.
 - Decide whether non-posture joint-torque controllers should be supported as a separate dispatch family from `for Posture`.
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.

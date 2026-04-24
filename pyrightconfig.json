@@ -1,4 +1,9 @@
 {
+  "exclude": [
+    "build",
+    ".venv",
+    "**/.venv"
+  ],
   "venvPath": "../..",
   "venv": ".venv",
   "executionEnvironments": [

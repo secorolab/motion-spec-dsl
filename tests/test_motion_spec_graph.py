@@ -9,7 +9,7 @@ import pytest
 from rdflib import URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.namespace import CSTR_HDL, GEOM_ENT, GEOM_REL, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, SLV
+from motion_spec.namespace import CSTR_HDL, GEOM_REL, KC, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, SLV
 from motion_spec_dsl.generators.motion_spec_graph import (
     AccelerationConstraintInterface,
     CartesianForceInterface,
@@ -216,4 +216,4 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     assert (joint_force_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque) in graph
     assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
     assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
-    assert (joint_target_node, RDF.type, GEOM_ENT.SimplicialComplex) in graph
+    assert (joint_target_node, RDF.type, KC.Joint) in graph

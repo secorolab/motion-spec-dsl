@@ -79,7 +79,7 @@ CONSTRAINT_HANDLER (ns=app) ctrl_name {
         prio-move: level = 1 { drivers: [ spec-acc-ee-move ] }
 
     SOLVER:
-        algorithm: Vereshchagin,
+        algorithm: ACHD,
         chain: World[chain-arm],
         root: World[frame-base],
         gravity: World[gravity]
@@ -123,13 +123,18 @@ textx generate models/ex.rob_mot --target jsonld --single -o output/
 
 ## Generator Algorithm
 
-The JSON-LD generator is handler-rooted and builds the RDF graph in ordered
-passes. It keeps only a small amount of indexed state:
+The JSON-LD generator is handler-rooted and compiles the parsed model into an
+RDF dataset through cached analysis records plus ordered materialization
+passes.
+
+The main cached records are:
 
 - authored handlers
 - motions referenced by those handlers
-- per-motion context (`world` quantities, value variables, constraints)
-- derived constraint metadata needed for `while` evaluators and solver nodes
+- one `MotionScope` per referenced motion
+- global indexes for world quantities and value variables
+- controlled, monitored, and shared constraint usage sets
+- one normalized `ConstraintData` record per assembled constraint
 
 The current algorithm is:
 
@@ -140,58 +145,53 @@ Input: Parsed DSL model M
 Output: JSON-LD graph J
 
 1:  H <- all ConstraintHandler declarations in M
-2:  X <- empty motion scope index
-3:  for each handler h in H do
-4:      if h references motion m and m is not in X then
-5:          collect m.world quantities
-6:          collect m.pre/spec/post value variables
-7:          collect m.when, m.while, m.until constraints
-8:          record m and its local scope in X
-9:      end if
-10: end for
-11:
-12: C <- empty derived constraint list
-13: for each motion scope x in X do
-14:     for each authored constraint c in x do
-15:         resolve the referenced world quantity and viewed property
-16:         derive scalar quantity ids and constraint kind metadata
-17:         if c is a while-equality then
-18:             derive shared/local while error signal ids
-19:             derive acceleration-energy ids when applicable
-20:         end if
-21:         append derived record for c to C
-22:     end for
-23: end for
-24:
-25: G <- empty rdflib Dataset
-26: bind common graph namespaces
+2:  Mref <- motions referenced by H, deduplicated by entity identity
+3:  build MotionScope for each motion in Mref:
+4:      collect local world quantities
+5:      collect local value variables
+6:      collect resolved WHEN / WHILE / UNTIL constraints
+7:
+8:  build global indexes from the scopes and handlers:
+9:      world quantities
+10:     value variables
+11:     implicit structural entities
+12:     controlled constraint usage
+13:     monitored constraint usage
+14:     shared constraint reuse across motions
+15:
+16: C <- empty derived constraint list
+17: for each motion scope x do
+18:     for each constraint c in x do
+19:         resolve the viewed quantity and scalar property
+20:         classify c as equality / greater-than / less-than / bilateral
+21:         derive referenced threshold or reference variables
+22:         derive error-signal ids when c is controlled or monitored
+23:         mark whether c is reused across motions
+24:         append normalized ConstraintData record to C
+25:     end for
+26: end for
 27:
-28: materialize authored entities into G:
-29:     structural entities
-30:     world quantities
-31:     value variables
-32:     constraints
-33:     motions
-34:     constraint handlers, controllers, and monitors
-35:
-36: materialize derived entities into G:
-37:     scalar views
-38:     while error signals
-39:     acceleration energies
-40:     constraint evaluators
-41:     solver entities and motion drivers
-42:     map operations
-43:     transform operations
-44:
-45: J <- serialize G as JSON-LD with the same namespace bindings
-46: return J
+28: G <- empty rdflib Dataset
+29: bind namespaces owned by handlers and referenced motions
+30:
+31: materialize authored entities into G:
+32:     structural entities
+33:     world quantities
+34:     value variables
+35:     constraints
+36:     motions
+37:     handlers, controllers, and monitors
+38:
+39: materialize derived entities into G:
+40:     scalar views
+41:     error signals and evaluators
+42:     solver interfaces, motion drivers, and solver nodes
+43:     map operations
+44:     transform operations
+45:
+46: J <- serialize G as JSON-LD with the same namespace bindings
+47: return J
 ```
 
-This algorithm is intentionally not a generic graph search. It starts from
-`ConstraintHandler` declarations because handlers determine which motions,
-controllers, monitors, and solver structures are relevant to the emitted RDF.
-Derived nodes are then produced from those authored objects in a fixed order.
-
-The generator still refuses to infer missing semantic structure from authored
-names. Unsupported derived cases, such as pose-distance transforms without
-explicit model-backed fields, fail explicitly rather than guessing.
+The generator is rooted at `ConstraintHandler` declarations and emits authored
+entities before derived solver and mapping structures.

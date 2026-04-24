@@ -26,6 +26,7 @@ from motion_spec.namespace import (
     GEOM_ENT,
     GEOM_OP,
     GEOM_REL,
+    KC,
     MAP,
     MOT,
     QUDT_QKIND,
@@ -338,6 +339,7 @@ CONSTRAINT_PATH_BY_PREFIX = {
 }
 
 GRAPH_BINDINGS: tuple[NamespaceBinding, ...] = (
+    ("kc", KC),
     ("geom-ent", GEOM_ENT),
     ("geom-rel", GEOM_REL),
     ("geom-coord", GEOM_COORD),
@@ -1298,7 +1300,7 @@ class MotionSpecDatasetBuilder:
             elif quantity.type == WorldQuantityType.JointPosition:
                 target = _geometric_property(quantity.props, "of")
                 if target:
-                    entities.setdefault(target, GEOM_ENT.SimplicialComplex)
+                    entities.setdefault(target, KC.Joint)
         return entities
 
     @cached_property

@@ -49,7 +49,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     SOLVERS {
         right_arm_solver: Solver {
             robot: <eddie.right_arm>,
-            algorithm: Vereshchagin,
+            algorithm: ACHD,
             root: <eddie.right_arm.root>,
             end: <eddie.right_arm.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
