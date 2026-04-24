@@ -9,7 +9,7 @@ import pytest
 from rdflib import URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.namespace import CSTR_HDL, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, SLV
+from motion_spec.namespace import CSTR_HDL, GEOM_ENT, GEOM_REL, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, SLV
 from motion_spec_dsl.generators.motion_spec_graph import (
     AccelerationConstraintInterface,
     CartesianForceInterface,
@@ -197,6 +197,14 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     controller = handler.controllers[0]
     driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
     joint_force_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
+    joint_position = builder.resolve_world_quantity(
+        "q-j2",
+        motion=handler.motion,
+        handler=handler,
+        reason="test posture joint position",
+    )
+    joint_position_node = builder.node(joint_position)
+    joint_target_node = builder.root_uri("joint-2", owner=handler.motion)
 
     assert (
         URIRef(controller.uri),
@@ -207,3 +215,5 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     assert (joint_force_node, RDF.type, SLV.JointForce) in graph
     assert (joint_force_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque) in graph
     assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
+    assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
+    assert (joint_target_node, RDF.type, GEOM_ENT.SimplicialComplex) in graph

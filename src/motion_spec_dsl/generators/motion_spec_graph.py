@@ -1295,6 +1295,10 @@ class MotionSpecDatasetBuilder:
                 frame_id = _geometric_property(quantity.props, "as-seen-by")
                 if frame_id:
                     entities.setdefault(frame_id, GEOM_ENT.Frame)
+            elif quantity.type == WorldQuantityType.JointPosition:
+                target = _geometric_property(quantity.props, "of")
+                if target:
+                    entities.setdefault(target, GEOM_ENT.SimplicialComplex)
         return entities
 
     @cached_property

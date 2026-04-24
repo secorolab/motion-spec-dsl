@@ -12,7 +12,7 @@ ROBOT (ns=app) kinova {
 MOTION_SPEC (ns=app) m_posture {
     CONTEXT {
         cw: World {
-            q-j2: JointPosition
+            q-j2: JointPosition { of: joint-2 }
         },
         cs: Spec {
             q-j2-safe: Angle = 2.4 rad

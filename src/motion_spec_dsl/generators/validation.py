@@ -464,6 +464,15 @@ def validate_controller_commands(model: Model) -> None:
                         f"Controller '{controller.name}' with 'for Posture' must control an equality constraint.",
                         controller,
                     )
+                quantity_props = getattr(quantity, "props", None)
+                if quantity_props is None or not any(
+                    getattr(pair, "key", None) == "of" and getattr(pair, "value", "")
+                    for pair in getattr(quantity_props, "pairs", [])
+                ):
+                    raise _semantic_error(
+                        f"Controller '{controller.name}' with 'for Posture' must target a JointPosition with explicit 'of'.",
+                        controller,
+                    )
             if (
                 resolved_controller.apply_at is not None
                 and resolved_controller.apply_at.type != WorldQuantityType.Link
