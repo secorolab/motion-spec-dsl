@@ -1,6 +1,6 @@
 # motion-spec-dsl
 
-A [textX](https://textx.github.io/textX/) DSL for specifying guarded motions, transforming `.rob_mot` files into JSON-LD models for robotic control code generation.
+A [textX](https://textx.github.io/textX/) DSL for specifying guarded motions, transforming `.robmot` files into JSON-LD models for robotic control code generation.
 
 ## Installation
 
