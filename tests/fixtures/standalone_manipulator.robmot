@@ -22,7 +22,7 @@ MOTION_SPEC (ns=app) m_move {
     WHEN {}
 
     WHILE {
-        c1: c1.twist-ee-base.linvel.z equal to c2.vel-z-ref
+        c1: <c1.twist-ee-base>.linvel.z equal to <c2.vel-z-ref>
     }
 
     UNTIL {}
@@ -38,19 +38,19 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: m_move
+    MOTION: <m_move>
 
     CONTROLLERS {
-        ctrl-c1: PID { constraint: m_move.c1, solver: kinova_solver, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+        ctrl-c1: PID { constraint: <m_move.c1>, solver: <kinova_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }
 
     SOLVERS {
         kinova_solver: Solver {
-            robot: kinova,
+            robot: <kinova>,
             algorithm: Vereshchagin,
-            root: kinova.chain.root,
-            end: kinova.chain.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }

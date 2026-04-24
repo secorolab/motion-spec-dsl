@@ -30,11 +30,11 @@ MOTION_SPEC (ns=app) m_move {
     WHEN {}
 
     WHILE {
-        c1: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+        c1: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>
     }
 
     UNTIL {
-        u1: cw.wrench-ee-ee.force.z is larger than [cpo.force-contact = 5.0 N]
+        u1: <cw.wrench-ee-ee>.force.z is larger than [cpo.force-contact = 5.0 N]
     }
 }
 
@@ -48,21 +48,21 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: m_move
+    MOTION: <m_move>
 
     MONITORS {}
 
     CONTROLLERS {
-        ctrl-c1: PID { constraint: m_move.c1, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        ctrl-c1: PID { constraint: <m_move.c1>, solver: <right_arm_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
     }
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: eddie.right_arm,
+            robot: <eddie.right_arm>,
             algorithm: Vereshchagin,
-            root: eddie.right_arm.root,
-            end: eddie.right_arm.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <eddie.right_arm.root>,
+            end: <eddie.right_arm.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }

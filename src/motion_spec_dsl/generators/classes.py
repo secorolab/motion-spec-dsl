@@ -227,7 +227,7 @@ class ConstraintSection(NamedNamespaceObject):
     kind = ""
 
     parent: object
-    constraints: list[ConstraintSpecification] = field(default_factory=list)
+    constraints: list[ConstraintSpecification | ConstraintAlias] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.kind)
@@ -265,6 +265,32 @@ class WorldQuantity(NamedNamespaceObject):
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         self.type = WorldQuantityType(self.type)
+
+
+@dataclass
+class WorldQuantityAlias(WorldQuantity):
+    parent: object
+    name: str
+    ref: WorldQuantity
+    type: WorldQuantityType = field(init=False)
+    props: GeometricProps | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
+        self._uri = self.ref.uri
+        self.type = self.ref.type
+        self.props = self.ref.props
+
+
+@dataclass
+class WorldQuantityReference(WorldQuantityAlias):
+    parent: object
+    ref: WorldQuantity
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        self.name = self.ref.name
+        super().__post_init__()
 
 
 @dataclass
@@ -310,7 +336,36 @@ class ValueVariable(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        if self.type == "LinearDistance":
+            self.type = QuantityType.Distance
+            return
         self.type = QuantityType(self.type)
+
+
+@dataclass
+class ValueVariableAlias(ValueVariable):
+    parent: object
+    name: str
+    ref: ValueVariable
+    type: QuantityType = field(init=False)
+    value: ScalarQuantity | VectorQuantity | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
+        self._uri = self.ref.uri
+        self.type = self.ref.type
+        self.value = self.ref.value
+
+
+@dataclass
+class ValueVariableReference(ValueVariableAlias):
+    parent: object
+    ref: ValueVariable
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        self.name = self.ref.name
+        super().__post_init__()
 
 
 @dataclass
@@ -358,6 +413,45 @@ class ConstraintRef:
         return f"{self.motion.name}.{self.constraint.name}"
 
 
+@dataclass
+class ConstraintAlias(NamedNamespaceObject):
+    """Local name in a section that references a constraint from another motion."""
+    parent: object
+    name: str
+    ref: ConstraintRef
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def constraint(self) -> ConstraintSpecification:
+        return self.ref.constraint
+
+
+@dataclass
+class ConstraintReference(ConstraintAlias):
+    parent: object
+    ref: ConstraintRef
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        self.name = self.ref.constraint.name
+        super().__post_init__()
+
+
+def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> ConstraintSpecification:
+    """Return the underlying ConstraintSpecification, resolving aliases."""
+    return item.ref.constraint if isinstance(item, ConstraintAlias) else item
+
+
+def _resolved_world_quantity(item: WorldQuantity | WorldQuantityAlias) -> WorldQuantity:
+    return item.ref if isinstance(item, WorldQuantityAlias) else item
+
+
+def _resolved_value_variable(item: ValueVariable | ValueVariableAlias) -> ValueVariable:
+    return item.ref if isinstance(item, ValueVariableAlias) else item
+
+
 class SubSpace(StrEnum):
     Position       = "position"
     Orientation    = "orientation"
@@ -391,13 +485,38 @@ class View:
 
 @dataclass
 class ContextRef:
-    valRef: ValueVariable
+    valRef: ValueVariable | None = None
+    inline_value: ValueVariable | None = None
+    context_scope: str | None = None
     quantityValue: ScalarQuantity | VectorQuantity | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
+    def __post_init__(self):
+        if self.valRef is None:
+            self.valRef = self.inline_value
+
+    @property
+    def name(self) -> str:
+        return self.context_scope or "ref"
+
+    @property
+    def namespace(self) -> Namespace:
+        current = self.parent
+        while current is not None:
+            namespace = getattr(current, "namespace", None)
+            name = getattr(current, "name", None)
+            if namespace is not None and name is not None:
+                return Namespace(str(namespace) + f"{name}/")
+            current = getattr(current, "parent", None)
+        raise AttributeError("ContextRef namespace is not resolved yet")
+
+    @property
+    def value(self) -> ValueVariable:
+        return self.valRef
+
     @property
     def variable(self) -> str:
-        return self.value.name
+        return self.valRef.name
 
 
 @dataclass
@@ -445,9 +564,9 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     context: list[WorldContextDecl | SpecContextDecl]
     motion: MotionSpec
-    solvers: list[SolverEntry]
+    solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
-    controllers: list[ControllerEntry] = field(default_factory=list)
+    controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
@@ -485,6 +604,50 @@ class ControllerEntry(NamedNamespaceObject):
 
 
 @dataclass
+class ControllerRef:
+    handler: ConstraintHandler
+    controller: ControllerEntry
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def name(self) -> str:
+        return self.controller.name
+
+    def __str__(self) -> str:
+        return f"{self.handler.name}.{self.controller.name}"
+
+
+@dataclass
+class ControllerAlias(ControllerEntry):
+    parent: object
+    name: str
+    ref: ControllerRef
+    type: str = field(init=False)
+    params: ControllerParams = field(init=False)
+    command_type: QuantityType | None = field(init=False, default=None)
+    apply_at: WorldQuantity | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
+        self._uri = self.ref.controller.uri
+        self.type = self.ref.controller.type
+        self.params = self.ref.controller.params
+        self.command_type = self.ref.controller.command_type
+        self.apply_at = self.ref.controller.apply_at
+
+
+@dataclass
+class ControllerReference(ControllerAlias):
+    parent: object
+    ref: ControllerRef
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        self.name = self.ref.controller.name
+        super().__post_init__()
+
+
+@dataclass
 class ControllerParams:
     constraint: ConstraintRef
     solver: SolverEntry
@@ -512,6 +675,62 @@ class SolverEntry(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class SolverRef:
+    handler: ConstraintHandler
+    solver: SolverEntry
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def name(self) -> str:
+        return self.solver.name
+
+    def __str__(self) -> str:
+        return f"{self.handler.name}.{self.solver.name}"
+
+
+@dataclass
+class SolverAlias(SolverEntry):
+    parent: object
+    name: str
+    ref: SolverRef
+    robot: RobotRef = field(init=False)
+    algorithm: str = field(init=False)
+    root: RobotAnchorRef = field(init=False)
+    gravity: WorldQuantity = field(init=False)
+    gravity_value: ContextRef = field(init=False)
+    end: RobotAnchorRef | None = field(init=False, default=None)
+
+    def __post_init__(self):
+        NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
+        self._uri = self.ref.solver.uri
+        self.robot = self.ref.solver.robot
+        self.algorithm = self.ref.solver.algorithm
+        self.root = self.ref.solver.root
+        self.gravity = self.ref.solver.gravity
+        self.gravity_value = self.ref.solver.gravity_value
+        self.end = self.ref.solver.end
+
+
+@dataclass
+class SolverReference(SolverAlias):
+    parent: object
+    ref: SolverRef
+    name: str = field(init=False)
+
+    def __post_init__(self):
+        self.name = self.ref.solver.name
+        super().__post_init__()
+
+
+def _resolved_controller(item: ControllerEntry | ControllerAlias) -> ControllerEntry:
+    return item.ref.controller if isinstance(item, ControllerAlias) else item
+
+
+def _resolved_solver(item: SolverEntry | SolverAlias) -> SolverEntry:
+    return item.ref.solver if isinstance(item, SolverAlias) else item
 
 
 class DerivedEntity(NamedNamespaceObject):
@@ -572,5 +791,3 @@ class Evaluator(DerivedEntity):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-
-

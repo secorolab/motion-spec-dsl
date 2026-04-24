@@ -40,22 +40,23 @@ MOTION_SPEC (ns=app) motion_find {
     WHEN {}
 
     WHILE {
-        cstr-angvel-find: keeping c1.twist-ee-ee.angvel.z equal to c2.angvel-ee-z-ref-find,
-        cstr-linvel-ee-x-zero: keeping c1.twist-ee-ee.linvel.x equal to c2.linvel-zero-ref,
-        cstr-linvel-ee-y-zero: keeping c1.twist-ee-ee.linvel.y equal to c2.linvel-zero-ref,
-        cstr-linvel-ee-z-zero: keeping c1.twist-ee-ee.linvel.z equal to c2.linvel-zero-ref,
-        cstr-angvel-ee-x-zero: keeping c1.twist-ee-ee.angvel.x equal to c2.angvel-zero-ref,
-        cstr-angvel-ee-y-zero: keeping c1.twist-ee-ee.angvel.y equal to c2.angvel-zero-ref
+        cstr-angvel-find: keeping <c1.twist-ee-ee>.angvel.z equal to <c2.angvel-ee-z-ref-find>,
+        cstr-linvel-ee-x-zero: keeping <c1.twist-ee-ee>.linvel.x equal to <c2.linvel-zero-ref>,
+        cstr-linvel-ee-y-zero:
+            keeping <c1.twist-ee-ee>.linvel.y equal to Spec[linvel-zero-inline-ref: LinearVelocity = 0.0 m/s],
+        cstr-linvel-ee-z-zero: keeping <c1.twist-ee-ee>.linvel.z equal to <c2.linvel-zero-ref>,
+        cstr-angvel-ee-x-zero: keeping <c1.twist-ee-ee>.angvel.x equal to <c2.angvel-zero-ref>,
+        cstr-angvel-ee-y-zero: keeping <c1.twist-ee-ee>.angvel.y equal to <c2.angvel-zero-ref>
     }
 
     UNTIL {
-        cstr-torque-find-shutoff: c1.wrench-ee-ee.torque.z is larger than c3.torque-find-shutoff,
+        cstr-torque-find-shutoff: <c1.wrench-ee-ee>.torque.z is larger than <c3.torque-find-shutoff>,
         cstr-rotation-find-limit:
-            c1.pose-arm-ee-world.orientation.z
-            is larger than c3.rotation-find-limit,
+            <c1.pose-arm-ee-world>.orientation.z
+            is larger than <c3.rotation-find-limit>,
         cstr-torque-find-upper-limit:
-            c1.wrench-ee-ee.torque.z
-            is larger than c3.torque-find-upper-limit
+            <c1.wrench-ee-ee>.torque.z
+            is larger than <c3.torque-find-upper-limit>
     }
 }
 
@@ -70,60 +71,60 @@ CONSTRAINT_HANDLER (ns=app) handler_find {
         }
     }
 
-    MOTION: motion_find
+    MOTION: <motion_find>
 
     MONITORS {
         mon-torque-find-shutoff:
-            monitor motion_find.cstr-torque-find-shutoff and
+            monitor <motion_find.cstr-torque-find-shutoff> and
             trigger event evt-torque-find-shutoff when active,
         mon-rotation-find-limit:
-            monitor motion_find.cstr-rotation-find-limit and
+            monitor <motion_find.cstr-rotation-find-limit> and
             trigger event evt-rotation-find-limit when active,
         mon-torque-find-upper-limit:
-            monitor motion_find.cstr-torque-find-upper-limit and
+            monitor <motion_find.cstr-torque-find-upper-limit> and
             trigger event evt-torque-find-upper-limit when active
     }
 
     CONTROLLERS {
         ctrl-angvel-find: PID {
-            constraint: motion_find.cstr-angvel-find,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-angvel-find>,
+            solver: <right_arm_solver>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
         ctrl-linvel-ee-x-zero: PID {
-            constraint: motion_find.cstr-linvel-ee-x-zero,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-linvel-ee-x-zero>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-y-zero: PID {
-            constraint: motion_find.cstr-linvel-ee-y-zero,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-linvel-ee-y-zero>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-z-zero: PID {
-            constraint: motion_find.cstr-linvel-ee-z-zero,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-linvel-ee-z-zero>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-x-zero: PID {
-            constraint: motion_find.cstr-angvel-ee-x-zero,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-angvel-ee-x-zero>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-y-zero: PID {
-            constraint: motion_find.cstr-angvel-ee-y-zero,
-            solver: right_arm_solver,
+            constraint: <motion_find.cstr-angvel-ee-y-zero>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         }
     }
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: kinova,
+            robot: <kinova>,
             algorithm: Vereshchagin,
-            root: kinova.chain.root,
-            end: kinova.chain.end,
-            gravity: c1.earth-uniform-gravitational-field equal to c2.gravity-vec
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.earth-uniform-gravitational-field> equal to <c2.gravity-vec>
         }
     }
 }
@@ -132,23 +133,11 @@ MOTION_SPEC (ns=app) motion_loosen {
     MOVE: "Reverse-rotate to loosen after screw engagement"
 
     CONTEXT {
-        c1: World {
-            twist-ee-ee: VelocityTwist {
-                of: link-ee,
-                wrt: link-world,
-                ref-point: point-ee-origin,
-                as-seen-by: frame-ee
-            },
-            wrench-ee-ee: Wrench { ref-point: point-ee-origin, as-seen-by: frame-ee },
-            pose-arm-ee-world: Pose { of: frame-ee, wrt: frame-world, as-seen-by: frame-world }
-        },
         c2: Pre {
             torque-loosen-min-contact: Torque = 0.5 Nm
         },
         c3: Spec {
-            angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s,
-            angvel-zero-ref: AngularVelocity = 0.0 rad/s,
-            linvel-zero-ref: LinearVelocity = 0.0 m/s
+            angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s
         },
         c4: Post {
             rotation-loosen-lower: AngularDistance = 1.4835 rad,
@@ -160,96 +149,63 @@ MOTION_SPEC (ns=app) motion_loosen {
 
     WHEN {
         cstr-torque-loosen-contact:
-            c1.wrench-ee-ee.torque.z
-            is larger than c2.torque-loosen-min-contact
+            <motion_find.c1.wrench-ee-ee>.torque.z
+            is larger than <c2.torque-loosen-min-contact>
     }
 
     WHILE {
-        cstr-angvel-loosen: keeping c1.twist-ee-ee.angvel.z equal to c3.angvel-ee-z-ref-loosen,
-        cstr-linvel-ee-x-zero-loosen: keeping c1.twist-ee-ee.linvel.x equal to c3.linvel-zero-ref,
-        cstr-linvel-ee-y-zero-loosen: keeping c1.twist-ee-ee.linvel.y equal to c3.linvel-zero-ref,
-        cstr-linvel-ee-z-zero-loosen: keeping c1.twist-ee-ee.linvel.z equal to c3.linvel-zero-ref,
-        cstr-angvel-ee-x-zero-loosen: keeping c1.twist-ee-ee.angvel.x equal to c3.angvel-zero-ref,
-        cstr-angvel-ee-y-zero-loosen: keeping c1.twist-ee-ee.angvel.y equal to c3.angvel-zero-ref
+        cstr-angvel-loosen:
+            keeping <motion_find.c1.twist-ee-ee>.angvel.z equal to <c3.angvel-ee-z-ref-loosen>,
+        <motion_find.cstr-linvel-ee-x-zero>,
+        <motion_find.cstr-linvel-ee-y-zero>,
+        <motion_find.cstr-linvel-ee-z-zero>,
+        <motion_find.cstr-angvel-ee-x-zero>,
+        <motion_find.cstr-angvel-ee-y-zero>
     }
 
     UNTIL {
         cstr-rotation-loosen-bilateral:
-            c1.pose-arm-ee-world.orientation.z
-            between c4.rotation-loosen-lower
-            and c4.rotation-loosen-upper,
+            <motion_find.c1.pose-arm-ee-world>.orientation.z
+            between <c4.rotation-loosen-lower>
+            and <c4.rotation-loosen-upper>,
         cstr-torque-loosen-bilateral:
-            c1.wrench-ee-ee.torque.z
-            between c4.torque-loosen-lower
-            and c4.torque-loosen-upper
+            <motion_find.c1.wrench-ee-ee>.torque.z
+            between <c4.torque-loosen-lower>
+            and <c4.torque-loosen-upper>
     }
 }
 
 CONSTRAINT_HANDLER (ns=app) handler_loosen {
-    CONTEXT {
-        c1: World {
-            link-ee: Link,
-            earth-uniform-gravitational-field: Gravity
-        },
-        c2: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
-        }
-    }
+    CONTEXT {}
 
-    MOTION: motion_loosen
+    MOTION: <motion_loosen>
 
     MONITORS {
         mon-torque-loosen-contact:
-            monitor motion_loosen.cstr-torque-loosen-contact and
+            monitor <motion_loosen.cstr-torque-loosen-contact> and
             set flag flg-torque-loosen-contact while active,
         mon-rotation-loosen-bilateral:
-            monitor motion_loosen.cstr-rotation-loosen-bilateral and
+            monitor <motion_loosen.cstr-rotation-loosen-bilateral> and
             trigger event evt-rotation-loosen when active,
         mon-torque-loosen-bilateral:
-            monitor motion_loosen.cstr-torque-loosen-bilateral and
+            monitor <motion_loosen.cstr-torque-loosen-bilateral> and
             trigger event evt-torque-loosen when active
     }
 
     CONTROLLERS {
         ctrl-angvel-loosen: PID {
-            constraint: motion_loosen.cstr-angvel-loosen,
-            solver: right_arm_solver,
+            constraint: <motion_loosen.cstr-angvel-loosen>,
+            solver: <handler_find.right_arm_solver>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
-        ctrl-linvel-ee-x-zero-loosen: PID {
-            constraint: motion_loosen.cstr-linvel-ee-x-zero-loosen,
-            solver: right_arm_solver,
-            Kp = 5.0, Ki = 1.0, Kd = 3.0
-        },
-        ctrl-linvel-ee-y-zero-loosen: PID {
-            constraint: motion_loosen.cstr-linvel-ee-y-zero-loosen,
-            solver: right_arm_solver,
-            Kp = 5.0, Ki = 1.0, Kd = 3.0
-        },
-        ctrl-linvel-ee-z-zero-loosen: PID {
-            constraint: motion_loosen.cstr-linvel-ee-z-zero-loosen,
-            solver: right_arm_solver,
-            Kp = 5.0, Ki = 1.0, Kd = 3.0
-        },
-        ctrl-angvel-ee-x-zero-loosen: PID {
-            constraint: motion_loosen.cstr-angvel-ee-x-zero-loosen,
-            solver: right_arm_solver,
-            Kp = 5.0, Ki = 1.0, Kd = 3.0
-        },
-        ctrl-angvel-ee-y-zero-loosen: PID {
-            constraint: motion_loosen.cstr-angvel-ee-y-zero-loosen,
-            solver: right_arm_solver,
-            Kp = 5.0, Ki = 1.0, Kd = 3.0
-        }
+        <handler_find.ctrl-linvel-ee-x-zero>,
+        <handler_find.ctrl-linvel-ee-y-zero>,
+        <handler_find.ctrl-linvel-ee-z-zero>,
+        <handler_find.ctrl-angvel-ee-x-zero>,
+        <handler_find.ctrl-angvel-ee-y-zero>
     }
 
     SOLVERS {
-        right_arm_solver: Solver {
-            robot: kinova,
-            algorithm: Vereshchagin,
-            root: kinova.chain.root,
-            end: kinova.chain.end,
-            gravity: c1.earth-uniform-gravitational-field equal to c2.gravity-vec
-        }
+        <handler_find.right_arm_solver>
     }
 }

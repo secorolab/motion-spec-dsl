@@ -24,11 +24,11 @@ MOTION_SPEC (ns=app) m_move {
     }
 
     WHEN {
-        c1: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+        c1: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>
     }
 
     WHILE {
-        c1: keeping cw.twist-ee-base.linvel.y equal to cs.vel-zero
+        c1: keeping <cw.twist-ee-base>.linvel.y equal to <cs.vel-zero>
     }
 
     UNTIL {}
@@ -44,23 +44,23 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: m_move
+    MOTION: <m_move>
 
     MONITORS {
-        mon-c1: monitor m_move.c1 and trigger event evt-c1 when active
+        mon-c1: monitor <m_move.c1> and trigger event evt-c1 when active
     }
 
     CONTROLLERS {
-        ctrl-c1: PID { constraint: m_move.c1, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        ctrl-c1: PID { constraint: <m_move.c1>, solver: <right_arm_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
     }
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: eddie.right_arm,
+            robot: <eddie.right_arm>,
             algorithm: Vereshchagin,
-            root: eddie.right_arm.root,
-            end: eddie.right_arm.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <eddie.right_arm.root>,
+            end: <eddie.right_arm.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }

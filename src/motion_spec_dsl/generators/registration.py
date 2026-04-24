@@ -15,10 +15,15 @@ from textx.scoping import providers as scoping_providers
 
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
+    ConstraintAlias,
     ConstraintHandler,
+    ConstraintReference,
     ConstraintSpecification,
     ConstraintRef,
+    ControllerAlias,
     ControllerEntry,
+    ControllerReference,
+    ControllerRef,
     ControllerParams,
     EqualityConstraint,
     GeoPropPair,
@@ -40,22 +45,32 @@ from motion_spec_dsl.generators.classes import (
     RobotRef,
     RobotSpec,
     ScalarQuantity,
+    SolverAlias,
     SolverEntry,
+    SolverReference,
+    SolverRef,
     SpecContextDecl,
+    ValueVariableAlias,
+    ValueVariableReference,
     ValueVariable,
     VectorQuantity,
     View,
     WorldContextDecl,
+    WorldQuantityAlias,
+    WorldQuantityReference,
     WorldQuantity,
     WhenSection,
     WhileSection,
-    UntilSection
+    UntilSection,
+    _resolved_controller,
+    _resolved_spec,
+    _resolved_solver,
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
     CONSTRAINT_PATH_BY_PREFIX,
     MotionSpecDatasetBuilder,
 )
-from motion_spec_dsl.generators.validation import motion_constraints, validate_model
+from motion_spec_dsl.generators.validation import motion_constraint_items, validate_model
 
 GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"))
 SUPPORTED_FORMATS = {"json-ld": "json", "ttl": "ttl", "xml": "xml"}
@@ -78,11 +93,17 @@ LANGUAGE_CLASSES = [
     SpecContextDecl,
     PostContextDecl,
     WorldQuantity,
+    WorldQuantityAlias,
+    WorldQuantityReference,
     GeometricProps,
     GeoPropPair,
     ValueVariable,
+    ValueVariableAlias,
+    ValueVariableReference,
     ScalarQuantity,
     VectorQuantity,
+    ConstraintAlias,
+    ConstraintReference,
     ConstraintSpecification,
     ConstraintRef,
     View,
@@ -91,9 +112,15 @@ LANGUAGE_CLASSES = [
     LessThanConstraint,
     BilateralConstraint,
     MonitorEntry,
+    ControllerAlias,
+    ControllerReference,
     ControllerEntry,
+    ControllerRef,
     ControllerParams,
+    SolverAlias,
+    SolverReference,
     SolverEntry,
+    SolverRef,
     WhenSection,
     WhileSection,
     UntilSection,
@@ -109,9 +136,10 @@ class MotionConstraintScopeProvider:
         if motion is None or not isinstance(motion, MotionSpec):
             return None
 
-        for constraint in motion_constraints(motion):
-            if constraint.name == obj_ref.obj_name:
-                return constraint
+        for item in motion_constraint_items(motion):
+            item_name = getattr(item, "name", None) or getattr(_resolved_spec(item), "name", None)
+            if item_name == obj_ref.obj_name:
+                return _resolved_spec(item)
         return None
 
 
@@ -123,8 +151,38 @@ class HandlerSolverScopeProvider:
         controller = obj.parent
         handler = getattr(controller, "parent", None)
         for solver in getattr(handler, "solvers", []):
-            if solver.name == obj_ref.obj_name:
-                return solver
+            solver_name = getattr(solver, "name", None) or getattr(_resolved_solver(solver), "name", None)
+            if solver_name == obj_ref.obj_name:
+                return _resolved_solver(solver)
+        return None
+
+
+class HandlerControllerScopeProvider:
+    """Resolve controller refs against controllers declared in the target handler."""
+
+    def __call__(self, obj: ControllerRef, attr, obj_ref):
+        del attr
+        handler = obj.handler
+        if handler is None or not isinstance(handler, ConstraintHandler):
+            return None
+        for controller in getattr(handler, "controllers", []):
+            if controller.name == obj_ref.obj_name:
+                return _resolved_controller(controller)
+        return None
+
+
+class CrossHandlerSolverScopeProvider:
+    """Resolve solver refs against solvers declared in the target handler."""
+
+    def __call__(self, obj: SolverRef, attr, obj_ref):
+        del attr
+        handler = obj.handler
+        if handler is None or not isinstance(handler, ConstraintHandler):
+            return None
+        for solver in getattr(handler, "solvers", []):
+            solver_name = getattr(solver, "name", None) or getattr(_resolved_solver(solver), "name", None)
+            if solver_name == obj_ref.obj_name:
+                return _resolved_solver(solver)
         return None
 
 
@@ -134,6 +192,8 @@ def motion_spec_metamodel():
         "*.*": scoping_providers.FQNImportURI(),
         "ConstraintRef.constraint": MotionConstraintScopeProvider(),
         "ControllerParams.solver": HandlerSolverScopeProvider(),
+        "ControllerRef.controller": HandlerControllerScopeProvider(),
+        "SolverRef.solver": CrossHandlerSolverScopeProvider(),
     })
     metamodel.register_model_processor(validate_model)
     return metamodel

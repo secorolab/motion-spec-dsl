@@ -26,7 +26,7 @@ MOTION_SPEC (ns=app) m_move {
     WHEN {}
 
     WHILE {
-        c1: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+        c1: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>
     }
 
     UNTIL {}
@@ -42,17 +42,17 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: m_move
+    MOTION: <m_move>
 
     CONTROLLERS {}
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: eddie.right_arm,
+            robot: <eddie.right_arm>,
             algorithm: Vereshchagin,
-            root: eddie.right_arm.root,
-            end: eddie.right_arm.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <eddie.right_arm.root>,
+            end: <eddie.right_arm.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }

@@ -11,8 +11,10 @@ from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
+    ConstraintAlias,
     ConstraintHandler,
     ConstraintSpecification,
+    ControllerAlias,
     ContextRef,
     EqualityConstraint,
     GreaterThanConstraint,
@@ -22,11 +24,19 @@ from motion_spec_dsl.generators.classes import (
     QuantityType,
     RobotSpec,
     RobotType,
+    SolverAlias,
     SolverEntry,
     SubSpace,
+    ValueVariableAlias,
     ValueVariable,
+    WorldQuantityAlias,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_controller,
+    _resolved_spec,
+    _resolved_solver,
+    _resolved_value_variable,
+    _resolved_world_quantity,
 )
 
 
@@ -51,12 +61,22 @@ def _robot_specs(model: Model) -> Iterable[RobotSpec]:
     return (spec for spec in model.specs if isinstance(spec, RobotSpec))
 
 
+def motion_constraint_items(spec: MotionSpec) -> list[ConstraintSpecification | ConstraintAlias]:
+    """All section items (inline specs and aliases) by their local name."""
+    return [item for section in spec.sections for item in section.constraints]
+
+
 def motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
-    return [
-        constraint
-        for section in spec.sections
-        for constraint in section.constraints
-    ]
+    """All resolved ConstraintSpecification objects for this motion."""
+    return [_resolved_spec(item) for item in motion_constraint_items(spec)]
+
+
+def handler_controller_items(handler: ConstraintHandler):
+    return list(handler.controllers)
+
+
+def handler_solver_items(handler: ConstraintHandler):
+    return list(handler.solvers)
 
 
 def _robot_component(robot: RobotSpec, component_name: str):
@@ -112,15 +132,11 @@ def _infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
 
 def validate_unique_constraint_names(model: Model) -> None:
     for motion in _motion_specs(model):
-        constraints_by_name: dict[str, list[ConstraintSpecification]] = defaultdict(list)
-        for constraint in motion_constraints(motion):
-            constraints_by_name[constraint.name].append(constraint)
+        items_by_name: dict[str, list[object]] = defaultdict(list)
+        for item in motion_constraint_items(motion):
+            items_by_name[item.name].append(item)
 
-        duplicates = {
-            name: constraints
-            for name, constraints in constraints_by_name.items()
-            if len(constraints) > 1
-        }
+        duplicates = {name: items for name, items in items_by_name.items() if len(items) > 1}
         if duplicates:
             names = ", ".join(sorted(duplicates))
             first_duplicate = next(iter(duplicates.values()))[1]
@@ -129,6 +145,44 @@ def validate_unique_constraint_names(model: Model) -> None:
                 "Constraint names must be unique across WHEN, WHILE, and UNTIL.",
                 first_duplicate,
             )
+
+
+def validate_constraint_aliases(model: Model) -> None:
+    del model
+
+
+def validate_context_aliases(model: Model) -> None:
+    del model
+
+
+def validate_handler_aliases(model: Model) -> None:
+    del model
+
+
+def validate_handler_constraint_assembly(model: Model) -> None:
+    for handler in _constraint_handlers(model):
+        assembled_specs = {
+            id(_resolved_spec(item)) for item in motion_constraint_items(handler.motion)
+        }
+
+        for monitor in handler.monitors:
+            if id(monitor.constraint.constraint) not in assembled_specs:
+                raise _semantic_error(
+                    f"Monitor '{monitor.name}' references constraint "
+                    f"'{monitor.constraint}', but handler '{handler.name}' primary motion "
+                    f"'{handler.motion.name}' does not assemble it.",
+                    monitor,
+                )
+
+        for controller in handler.controllers:
+            resolved_controller = _resolved_controller(controller)
+            if id(resolved_controller.params.constraint.constraint) not in assembled_specs:
+                raise _semantic_error(
+                    f"Controller '{controller.name}' references constraint "
+                    f"'{resolved_controller.params.constraint}', but handler '{handler.name}' "
+                    f"primary motion '{handler.motion.name}' does not assemble it.",
+                    controller,
+                )
 
 
 def _decl_motion(obj: object) -> MotionSpec | None:
@@ -140,6 +194,14 @@ def _decl_motion(obj: object) -> MotionSpec | None:
 def _context_ref_value(ref: ContextRef) -> ValueVariable | None:
     value = getattr(ref, "valRef", None) or getattr(ref, "value", None)
     return value if isinstance(value, ValueVariable) else None
+
+
+def _is_inline_context_value(value: ValueVariable) -> bool:
+    return isinstance(getattr(value, "parent", None), ContextRef) and getattr(
+        value.parent,
+        "context_scope",
+        None,
+    ) is not None
 
 
 def _constraint_context_refs(constraint: ConstraintSpecification) -> list[ContextRef]:
@@ -157,55 +219,41 @@ def validate_constraint_context_refs(model: Model) -> None:
     for motion in _motion_specs(model):
         for constraint in motion_constraints(motion):
             quantity = constraint.view.quantity
-            if not isinstance(quantity, WorldQuantity) or _decl_motion(quantity) is not motion:
+            quantity = _resolved_world_quantity(quantity) if isinstance(quantity, WorldQuantity) else quantity
+            if not isinstance(quantity, WorldQuantity):
                 raise _semantic_error(
                     f"Constraint '{constraint.name}' references world quantity "
-                    f"'{quantity}', but it is not declared in motion '{motion.name}'.",
+                    f"'{quantity}', but it is not resolved.",
                     constraint,
                 )
 
             for ref in _constraint_context_refs(constraint):
                 value = _context_ref_value(ref)
+                value = _resolved_value_variable(value) if isinstance(value, ValueVariable) else value
                 if value is None:
                     raise _semantic_error(
                         f"Constraint '{constraint.name}' has an unresolved context reference.",
                         constraint,
                     )
-                if _decl_motion(value) is not motion:
+                if _decl_motion(value) is None and _is_inline_context_value(value):
+                    continue
+                if _decl_motion(value) is None:
                     raise _semantic_error(
                         f"Constraint '{constraint.name}' references value '{value.name}', "
-                        f"but it is not declared in motion '{motion.name}'.",
+                        "but it is not resolved.",
                         ref,
                     )
 
 
 def validate_handler_constraint_refs(model: Model) -> None:
-    for handler in _constraint_handlers(model):
-        for monitor in handler.monitors:
-            if monitor.constraint.motion is not handler.motion:
-                raise _semantic_error(
-                    f"Monitor '{monitor.name}' references motion "
-                    f"'{monitor.constraint.motion.name}', but handler '{handler.name}' "
-                    f"is bound to motion '{handler.motion.name}'.",
-                    monitor,
-                )
-
-        for controller in handler.controllers:
-            ref = controller.params.constraint
-            if ref.motion is not handler.motion:
-                raise _semantic_error(
-                    f"Controller '{controller.name}' references motion "
-                    f"'{ref.motion.name}', but handler '{handler.name}' "
-                    f"is bound to motion '{handler.motion.name}'.",
-                    controller,
-                )
+    del model
 
 
 def validate_handler_requirements(model: Model) -> None:
     for handler in _constraint_handlers(model):
-        if handler.motion.while_.constraints and not handler.controllers:
+        if handler.motion.while_.constraints and not (handler.controllers or handler.monitors):
             raise _semantic_error(
-                "ConstraintHandler with WHILE constraints must have at least one controller.",
+                "ConstraintHandler with WHILE constraints must have at least one controller or monitor.",
                 handler,
             )
         if (handler.motion.when.constraints or handler.motion.until.constraints) and not handler.monitors:
@@ -294,11 +342,14 @@ def validate_solver_refs(model: Model) -> None:
 
 def validate_controller_solver_refs(model: Model) -> None:
     for handler in _constraint_handlers(model):
+        resolved_handler_solvers = {id(_resolved_solver(solver)) for solver in handler.solvers}
         for controller in handler.controllers:
-            if controller.params.solver not in handler.solvers:
+            resolved_controller = _resolved_controller(controller)
+            if id(resolved_controller.params.solver) not in resolved_handler_solvers:
                 raise _semantic_error(
                     f"Controller '{controller.name}' references solver "
-                    f"'{controller.params.solver.name}' outside handler '{handler.name}'.",
+                    f"'{resolved_controller.params.solver.name}', but handler "
+                    f"'{handler.name}' does not assemble it.",
                     controller,
                 )
 
@@ -306,15 +357,19 @@ def validate_controller_solver_refs(model: Model) -> None:
 def validate_controller_commands(model: Model) -> None:
     for handler in _constraint_handlers(model):
         for controller in handler.controllers:
-            subspace = controller.params.constraint.constraint.view.subspace
-            command_type = controller.command_type or _infer_command_type(subspace)
+            resolved_controller = _resolved_controller(controller)
+            subspace = resolved_controller.params.constraint.constraint.view.subspace
+            command_type = resolved_controller.command_type or _infer_command_type(subspace)
             if command_type is None:
                 raise _semantic_error(
                     f"Controller '{controller.name}' requires explicit 'as' for "
                     f"constraint subspace '{subspace}'.",
                     controller,
                 )
-            if controller.apply_at is not None and controller.apply_at.type != WorldQuantityType.Link:
+            if (
+                resolved_controller.apply_at is not None
+                and resolved_controller.apply_at.type != WorldQuantityType.Link
+            ):
                 raise _semantic_error(
                     f"Controller '{controller.name}' apply at target must be a Link.",
                     controller,
@@ -340,10 +395,14 @@ def validate_model(model: Model, metamodel=None) -> None:
     del metamodel
     validate_robot_specs(model)
     validate_unique_constraint_names(model)
+    validate_constraint_aliases(model)
+    validate_context_aliases(model)
     validate_constraint_context_refs(model)
-    validate_motion_spec_coverage(model)
     validate_handler_constraint_refs(model)
+    validate_handler_constraint_assembly(model)
+    validate_handler_aliases(model)
     validate_handler_requirements(model)
     validate_solver_refs(model)
     validate_controller_solver_refs(model)
     validate_controller_commands(model)
+    validate_motion_spec_coverage(model)

@@ -75,30 +75,30 @@ MOTION_SPEC (ns=app) motion_rightarm {
 
     WHILE {
         cstr-frc-rightarm-ee-anteroposterior:
-            c1.wrench-rightarm-ee-anteroposterior-ee.force.x
-            equal to c2.frc-rightarm-ee-anteroposterior-ref,
+            <c1.wrench-rightarm-ee-anteroposterior-ee>.force.x
+            equal to <c2.frc-rightarm-ee-anteroposterior-ref>,
         cstr-linvel-rightarm-shoulder-ee-vertical:
-            c1.twist-rightarm-shoulder-ee-shoulder.linvel.z
-            equal to c2.linvel-rightarm-shoulder-ee-vertical-ref,
+            <c1.twist-rightarm-shoulder-ee-shoulder>.linvel.z
+            equal to <c2.linvel-rightarm-shoulder-ee-vertical-ref>,
         cstr-pos-rightarm-platform-elbow-height:
-            c1.pose-rightarm-platform-elbow.position.z
-            equal to c2.pos-rightarm-platform-elbow-height-ref,
+            <c1.pose-rightarm-platform-elbow>.position.z
+            equal to <c2.pos-rightarm-platform-elbow-height-ref>,
         cstr-angvel-rightarm-shoulder-ee-anteroposterior:
-            c1.twist-rightarm-shoulder-ee-shoulder.angvel.x
-            equal to c2.angvel-rightarm-shoulder-ee-anteroposterior-ref,
+            <c1.twist-rightarm-shoulder-ee-shoulder>.angvel.x
+            equal to <c2.angvel-rightarm-shoulder-ee-anteroposterior-ref>,
         cstr-angvel-rightarm-shoulder-ee-lateral:
-            c1.twist-rightarm-shoulder-ee-shoulder.angvel.y
-            equal to c2.angvel-rightarm-shoulder-ee-lateral-ref,
+            <c1.twist-rightarm-shoulder-ee-shoulder>.angvel.y
+            equal to <c2.angvel-rightarm-shoulder-ee-lateral-ref>,
         cstr-linvel-rightarm-world-ee-lateral:
-            c1.twist-world-platform-rightarm-ee.linvel.y
-            equal to c2.linvel-rightarm-world-ee-lateral-ref,
+            <c1.twist-world-platform-rightarm-ee>.linvel.y
+            equal to <c2.linvel-rightarm-world-ee-lateral-ref>,
         cstr-ang-rightarm-shoulder-ee-vertical:
-            c1.pose-rightarm-shoulder-ee.orientation.z
-            equal to c2.ang-rightarm-shoulder-ee-vertical-ref,
+            <c1.pose-rightarm-shoulder-ee>.orientation.z
+            equal to <c2.ang-rightarm-shoulder-ee-vertical-ref>,
         cstr-dist-rightarm-shoulder-ee:
-            c1.pose-rightarm-shoulder-ee.position
-            between c2.dist-rightarm-shoulder-ee-lower
-            and c2.dist-rightarm-shoulder-ee-upper
+            <c1.pose-rightarm-shoulder-ee>.position
+            between <c2.dist-rightarm-shoulder-ee-lower>
+            and <c2.dist-rightarm-shoulder-ee-upper>
 
     }
 
@@ -166,30 +166,30 @@ MOTION_SPEC (ns=app) motion_leftarm {
 
     WHILE {
         cstr-frc-leftarm-ee-anteroposterior:
-            c1.wrench-leftarm-ee-anteroposterior-ee.force.x
-            equal to c2.frc-leftarm-ee-anteroposterior-ref,
+            <c1.wrench-leftarm-ee-anteroposterior-ee>.force.x
+            equal to <c2.frc-leftarm-ee-anteroposterior-ref>,
         cstr-linvel-leftarm-shoulder-ee-vertical:
-            c1.twist-leftarm-shoulder-ee-shoulder.linvel.z
-            equal to c2.linvel-leftarm-shoulder-ee-vertical-ref,
+            <c1.twist-leftarm-shoulder-ee-shoulder>.linvel.z
+            equal to <c2.linvel-leftarm-shoulder-ee-vertical-ref>,
         cstr-pos-leftarm-platform-elbow-height:
-            c1.pose-leftarm-platform-elbow.position.z
-            equal to c2.pos-leftarm-platform-elbow-height-ref,
+            <c1.pose-leftarm-platform-elbow>.position.z
+            equal to <c2.pos-leftarm-platform-elbow-height-ref>,
         cstr-angvel-leftarm-shoulder-ee-anteroposterior:
-            c1.twist-leftarm-shoulder-ee-shoulder.angvel.x
-            equal to c2.angvel-leftarm-shoulder-ee-anteroposterior-ref,
+            <c1.twist-leftarm-shoulder-ee-shoulder>.angvel.x
+            equal to <c2.angvel-leftarm-shoulder-ee-anteroposterior-ref>,
         cstr-angvel-leftarm-shoulder-ee-lateral:
-            c1.twist-leftarm-shoulder-ee-shoulder.angvel.y
-            equal to c2.angvel-leftarm-shoulder-ee-lateral-ref,
+            <c1.twist-leftarm-shoulder-ee-shoulder>.angvel.y
+            equal to <c2.angvel-leftarm-shoulder-ee-lateral-ref>,
         cstr-linvel-leftarm-world-ee-lateral:
-            c1.twist-world-platform-leftarm-ee.linvel.y
-            equal to c2.linvel-leftarm-world-ee-lateral-ref,
+            <c1.twist-world-platform-leftarm-ee>.linvel.y
+            equal to <c2.linvel-leftarm-world-ee-lateral-ref>,
         cstr-ang-leftarm-shoulder-ee-vertical:
-            c1.pose-leftarm-shoulder-ee.orientation.z
-            equal to c2.ang-leftarm-shoulder-ee-vertical-ref,
+            <c1.pose-leftarm-shoulder-ee>.orientation.z
+            equal to <c2.ang-leftarm-shoulder-ee-vertical-ref>,
         cstr-dist-leftarm-shoulder-ee:
-            c1.pose-leftarm-shoulder-ee.position
-            between c2.dist-leftarm-shoulder-ee-lower
-            and c2.dist-leftarm-shoulder-ee-upper
+            <c1.pose-leftarm-shoulder-ee>.position
+            between <c2.dist-leftarm-shoulder-ee-lower>
+            and <c2.dist-leftarm-shoulder-ee-upper>
 
     }
 
@@ -220,7 +220,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
         }
     }
 
-    MOTION: motion_rightarm
+    MOTION: <motion_rightarm>
 
 
     MONITORS {
@@ -229,52 +229,52 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
 
     CONTROLLERS {
         ctrl-linvel-rightarm-shoulder-ee-vertical: PID {
-            constraint: motion_rightarm.cstr-linvel-rightarm-shoulder-ee-vertical,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-linvel-rightarm-shoulder-ee-vertical>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-pos-rightarm-platform-elbow-height: PID {
-            constraint: motion_rightarm.cstr-pos-rightarm-platform-elbow-height,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-pos-rightarm-platform-elbow-height>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
-        } as LinearVelocity apply at c1.link-rightarm-ee,
+        } as LinearVelocity apply at <c1.link-rightarm-ee>,
         ctrl-angvel-rightarm-shoulder-ee-anteroposterior: PID {
-            constraint: motion_rightarm.cstr-angvel-rightarm-shoulder-ee-anteroposterior,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-angvel-rightarm-shoulder-ee-anteroposterior>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-rightarm-shoulder-ee-lateral: PID {
-            constraint: motion_rightarm.cstr-angvel-rightarm-shoulder-ee-lateral,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-angvel-rightarm-shoulder-ee-lateral>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-rightarm-world-ee-lateral: PID {
-            constraint: motion_rightarm.cstr-linvel-rightarm-world-ee-lateral,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-linvel-rightarm-world-ee-lateral>,
+            solver: <right_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-ang-rightarm-shoulder-ee-vertical: PID {
-            constraint: motion_rightarm.cstr-ang-rightarm-shoulder-ee-vertical,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-ang-rightarm-shoulder-ee-vertical>,
+            solver: <right_arm_solver>,
             Kp = 200.0, Ki = 2.9, Kd = 80.5
-        } as AngularVelocity apply at c1.link-rightarm-ee,
+        } as AngularVelocity apply at <c1.link-rightarm-ee>,
         ctrl-dist-rightarm-shoulder-ee: PID {
-            constraint: motion_rightarm.cstr-dist-rightarm-shoulder-ee,
-            solver: right_arm_solver,
+            constraint: <motion_rightarm.cstr-dist-rightarm-shoulder-ee>,
+            solver: <right_arm_solver>,
             Kp = 450.0, Ki = 65.5, Kd = 80.0,
             decay: 0.99
-        } as Force apply at c1.link-rightarm-ee
+        } as Force apply at <c1.link-rightarm-ee>
 
 
     }
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: eddie.right_arm,
+            robot: <eddie.right_arm>,
             algorithm: Vereshchagin,
-            root: eddie.right_arm.root,
-            end: eddie.right_arm.end,
-            gravity: c1.gravity-rightarm equal to c2.gravity-vec
+            root: <eddie.right_arm.root>,
+            end: <eddie.right_arm.end>,
+            gravity: <c1.gravity-rightarm> equal to <c2.gravity-vec>
         }
     }
 }
@@ -302,7 +302,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
         }
     }
 
-    MOTION: motion_leftarm
+    MOTION: <motion_leftarm>
 
 
     MONITORS {
@@ -311,52 +311,52 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
 
     CONTROLLERS {
         ctrl-linvel-leftarm-shoulder-ee-vertical: PID {
-            constraint: motion_leftarm.cstr-linvel-leftarm-shoulder-ee-vertical,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-linvel-leftarm-shoulder-ee-vertical>,
+            solver: <left_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-pos-leftarm-platform-elbow-height: PID {
-            constraint: motion_leftarm.cstr-pos-leftarm-platform-elbow-height,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-pos-leftarm-platform-elbow-height>,
+            solver: <left_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
-        } as LinearVelocity apply at c1.link-leftarm-ee,
+        } as LinearVelocity apply at <c1.link-leftarm-ee>,
         ctrl-angvel-leftarm-shoulder-ee-anteroposterior: PID {
-            constraint: motion_leftarm.cstr-angvel-leftarm-shoulder-ee-anteroposterior,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-angvel-leftarm-shoulder-ee-anteroposterior>,
+            solver: <left_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-leftarm-shoulder-ee-lateral: PID {
-            constraint: motion_leftarm.cstr-angvel-leftarm-shoulder-ee-lateral,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-angvel-leftarm-shoulder-ee-lateral>,
+            solver: <left_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-leftarm-world-ee-lateral: PID {
-            constraint: motion_leftarm.cstr-linvel-leftarm-world-ee-lateral,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-linvel-leftarm-world-ee-lateral>,
+            solver: <left_arm_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-ang-leftarm-shoulder-ee-vertical: PID {
-            constraint: motion_leftarm.cstr-ang-leftarm-shoulder-ee-vertical,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-ang-leftarm-shoulder-ee-vertical>,
+            solver: <left_arm_solver>,
             Kp = 200.0, Ki = 2.9, Kd = 80.5
-        } as AngularVelocity apply at c1.link-leftarm-ee,
+        } as AngularVelocity apply at <c1.link-leftarm-ee>,
         ctrl-dist-leftarm-shoulder-ee: PID {
-            constraint: motion_leftarm.cstr-dist-leftarm-shoulder-ee,
-            solver: left_arm_solver,
+            constraint: <motion_leftarm.cstr-dist-leftarm-shoulder-ee>,
+            solver: <left_arm_solver>,
             Kp = 450.0, Ki = 65.5, Kd = 80.0,
             decay: 0.99
-        } as Force apply at c1.link-leftarm-ee
+        } as Force apply at <c1.link-leftarm-ee>
 
 
     }
 
     SOLVERS {
         left_arm_solver: Solver {
-            robot: eddie.left_arm,
+            robot: <eddie.left_arm>,
             algorithm: Vereshchagin,
-            root: eddie.left_arm.root,
-            end: eddie.left_arm.end,
-            gravity: c1.gravity-leftarm equal to c2.gravity-vec
+            root: <eddie.left_arm.root>,
+            end: <eddie.left_arm.end>,
+            gravity: <c1.gravity-leftarm> equal to <c2.gravity-vec>
         }
     }
 }

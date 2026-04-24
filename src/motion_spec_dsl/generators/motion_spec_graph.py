@@ -38,6 +38,7 @@ from motion_spec.namespace import (
 )
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
+    ConstraintAlias,
     ConstraintHandler,
     ConstraintSpecification,
     EqualityConstraint,
@@ -57,6 +58,7 @@ from motion_spec_dsl.generators.classes import (
     WorldContextDecl,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_spec,
 )
 
 Node: TypeAlias = Any
@@ -64,7 +66,6 @@ NamespaceBinding: TypeAlias = tuple[str, Any]
 ContextLike: TypeAlias = dict[str, str] | list[str | dict[str, str]]
 DatasetOutput: TypeAlias = tuple[Dataset, ContextLike]
 ViewAxis: TypeAlias = str
-ConstraintSignature: TypeAlias = tuple[str, "ViewProperty", str | None, str]
 ConstraintKey: TypeAlias = tuple[str, str]
 WorldQuantityLike: TypeAlias = WorldQuantity
 ViewKey: TypeAlias = tuple[str, "ViewProperty", ViewAxis]
@@ -89,6 +90,12 @@ class ConstraintKind(StrEnum):
 class SolverAlgorithm(StrEnum):
     VERESHCHAGIN = "Vereshchagin"
     NEWTON_EULER = "NewtonEuler"
+
+
+class SignalKind(StrEnum):
+    ACCELERATION_ENERGY = "AccelerationEnergy"
+    FORCE = "Force"
+    GENERIC = "generic"
 
 
 @dataclass(frozen=True)
@@ -116,7 +123,6 @@ class MotionScope:
     quantities: dict[str, WorldQuantity]
     values: dict[str, ValueVariable]
     constraints: tuple[ConstraintSpecification, ...]
-    while_constraint_names: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -134,10 +140,8 @@ class ConstraintData:
     threshold_var: str | None = None
     lower_var: str | None = None
     upper_var: str | None = None
-    signature: ConstraintSignature | None = None
     error_signal_id: str | None = None
-    acceleration_energy_id: str | None = None
-    shared_while: bool = False
+    shared: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,26 +156,60 @@ class ResolvedConstraintView:
 
 
 @dataclass(frozen=True)
-class CartesianForceBinding:
-    spec_name: str
+class SignalDescriptor:
+    node_id: str
+    kind: SignalKind
+    scalar_type: QuantityType | str | None = None
+
+
+@dataclass(frozen=True)
+class ScalarViewRequirement:
+    quantity_name: str
+    property_name: ViewProperty
+    axis: str
+    scalar_type: QuantityType | str
+
+
+@dataclass(frozen=True)
+class SolverInterface:
+    node_id: str
+    signal_id: str
+    owner: Any
+
+
+@dataclass(frozen=True)
+class AccelerationConstraintInterface(SolverInterface):
+    subspace: str
+    axis: str
+
+
+@dataclass(frozen=True)
+class CartesianForceInterface(SolverInterface):
     force_name: str
     attached_to: str | None = None
 
 
 @dataclass(frozen=True)
-class CartesianForceCandidate:
-    spec_hint: str | None
-    force_name: str
-    attached_to: str | None
-    explicit_force_command: bool
+class JointForceInterface(SolverInterface):
+    pass
 
 
 @dataclass(frozen=True)
-class AccelerationConstraintBinding:
-    node_id: str
-    energy_id: str
-    subspace: str
-    axis: str
+class VelocitySolverInterface(SolverInterface):
+    quantity_name: str
+    configuration: str
+
+
+@dataclass(frozen=True)
+class ForceSolverInterface(SolverInterface):
+    quantity_name: str
+    configuration: str
+
+
+@dataclass(frozen=True)
+class ControllerDispatch:
+    signal: SignalDescriptor
+    interfaces: tuple[SolverInterface, ...] = ()
 
 
 WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
@@ -351,132 +389,11 @@ def _dsl_unit(unit_name: str) -> Node:
         ) from exc
 
 
-def _infer_attached_link(
-    builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler, solver: Any
-) -> str | None:
-    del solver
-    for binding in builder.cartesian_force_bindings(handler_spec):
-        if binding.attached_to is not None:
-            return binding.attached_to
-
-    motion = getattr(handler_spec, "motion", None)
-    scope = builder.scope_for_motion(motion)
-    if scope is not None:
-        for quantity in scope.quantities.values():
-            if quantity.type == WorldQuantityType.VelocityTwist and isinstance(
-                quantity.props, GeometricProps
-            ):
-                attached_link = _geometric_property(quantity.props, "of")
-                if attached_link is not None:
-                    return attached_link
-
-    for item in getattr(handler_spec, "context", []):
-        for quantity in getattr(item, "declaration", []):
-            if quantity.type == WorldQuantityType.VelocityTwist and isinstance(
-                quantity.props, GeometricProps
-            ):
-                attached_link = _geometric_property(quantity.props, "of")
-                if attached_link is not None:
-                    return attached_link
-
+def _infer_attached_link(builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler) -> str | None:
+    for interface in builder.solver_interfaces(handler_spec):
+        if isinstance(interface, CartesianForceInterface) and interface.attached_to is not None:
+            return interface.attached_to
     return None
-
-
-def _collect_cartesian_force_bindings(
-    builder: "MotionSpecDatasetBuilder", handler_spec: ConstraintHandler
-) -> list[CartesianForceBinding]:
-    motion = getattr(handler_spec, "motion", None)
-    motion_id = _entity_id(motion)
-    if not motion_id:
-        return []
-
-    spec_names: list[str] = []
-    candidates: list[CartesianForceCandidate] = []
-    seen_force_names: set[str] = set()
-    solver = _primary_solver(handler_spec)
-    if solver is None:
-        return []
-    for force_name in getattr(solver, "cartesian_force", []):
-        spec_names.append(f"spec-{force_name}")
-        candidates.append(CartesianForceCandidate(f"spec-{force_name}", force_name, None, True))
-        seen_force_names.add(force_name)
-
-    for controller in getattr(handler_spec, "controllers", []):
-        constraint = builder.constraint_data(controller.params.constraint)
-        if (
-            constraint is None
-            or constraint.quantity is None
-            or constraint.quantity.type != WorldQuantityType.Wrench
-        ):
-            continue
-        command_type = (
-            str(getattr(controller.command_type, "value", controller.command_type))
-            if getattr(controller, "command_type", None)
-            else None
-        )
-        if (
-            _view_property_name(constraint.constraint) != ViewProperty.FORCE
-            and command_type != QuantityType.Force
-        ):
-            continue
-        force_name = constraint.quantity.name
-        if force_name in seen_force_names:
-            continue
-        explicit_cartesian_force = command_type == QuantityType.Force
-        spec_hint = f"spec-{force_name}"
-        attached_to = _node_name(controller.apply_at) if controller.apply_at else None
-        candidates.append(
-            CartesianForceCandidate(spec_hint, force_name, attached_to, explicit_cartesian_force)
-        )
-        seen_force_names.add(force_name)
-        if spec_hint not in spec_names:
-            spec_names.append(spec_hint)
-
-    for constraint in builder.constraints_by_motion.get(motion_id, ()):
-        if constraint.quantity is None or constraint.quantity.type != WorldQuantityType.Wrench:
-            continue
-        if constraint.property_name != ViewProperty.FORCE:
-            continue
-        force_name = constraint.quantity.name
-        if force_name in seen_force_names:
-            continue
-        candidates.append(CartesianForceCandidate(f"spec-{force_name}", force_name, None, False))
-        seen_force_names.add(force_name)
-        spec_hint = f"spec-{force_name}"
-        if spec_hint not in spec_names:
-            spec_names.append(spec_hint)
-
-    if not spec_names:
-        return []
-
-    bindings: list[CartesianForceBinding] = []
-    used_forces: set[str] = set()
-    remaining_specs = list(spec_names)
-    remaining_candidates = list(candidates)
-
-    for spec_name in list(remaining_specs):
-        match = next(
-            (candidate for candidate in remaining_candidates if candidate.spec_hint == spec_name),
-            None,
-        )
-        if match is None:
-            continue
-        bindings.append(CartesianForceBinding(spec_name, match.force_name, match.attached_to))
-        used_forces.add(match.force_name)
-        remaining_specs.remove(spec_name)
-        remaining_candidates.remove(match)
-
-    fallback_candidates = [
-        candidate
-        for candidate in remaining_candidates
-        if candidate.force_name not in used_forces and candidate.explicit_force_command
-    ]
-    for spec_name, candidate in zip(remaining_specs, fallback_candidates):
-        bindings.append(
-            CartesianForceBinding(spec_name, candidate.force_name, candidate.attached_to)
-        )
-
-    return bindings
 
 
 def _view_scalar_type(
@@ -496,21 +413,7 @@ def _scalar_id(
     return f"{quantity.name}.{property_name}.{axis}"
 
 
-def _while_signature(constraint: ConstraintSpecification) -> ConstraintSignature:
-    assert isinstance(constraint.expr, EqualityConstraint)
-    axis = constraint.view.axis
-    return (
-        _entity_id(constraint.view.quantity),
-        _view_property_name(constraint),
-        None if axis is None else str(getattr(axis, "value", axis)),
-        _entity_id(
-            getattr(constraint.expr.reference, "value", None)
-            or getattr(constraint.expr.reference, "valRef", None)
-        ),
-    )
-
-
-def _while_error_id(
+def _controller_error_signal_id(
     motion_name: str,
     quantity: WorldQuantity,
     property_name: ViewProperty,
@@ -520,7 +423,7 @@ def _while_error_id(
     scalar_id = _scalar_id(quantity, property_name, axis)
     if scalar_id is None:
         return None
-    # Shared WHILE equality constraints reuse the same error signal across motions.
+    # Shared WHILE equality constraints use the same error signal across motions.
     return scalar_id + "-err" if shared else f"{scalar_id}-err-{motion_name}"
 
 
@@ -595,13 +498,24 @@ def _primary_solver(handler: ConstraintHandler) -> Any | None:
 
 
 def _resolve_constraint_view(
-    scope: MotionScope, constraint: ConstraintSpecification
+    builder: "MotionSpecDatasetBuilder",
+    scope: MotionScope,
+    constraint: ConstraintSpecification,
 ) -> ResolvedConstraintView:
     quantity_name = _node_name(constraint.view.quantity)
     property_name = _view_property_name(constraint)
     axis_value = constraint.view.axis
     axis = None if axis_value is None else str(getattr(axis_value, "value", axis_value))
     quantity = scope.quantities.get(quantity_name)
+    if quantity is None:
+        try:
+            quantity = builder.resolve_world_quantity(
+                constraint.view.quantity,
+                motion=scope.motion,
+                reason=f"constraint '{constraint.name}' view",
+            )
+        except ValueError:
+            quantity = None
     property_spec = _property_spec(quantity.type, property_name) if quantity is not None else None
     scalar_type = (
         _view_scalar_type(quantity, property_name, axis) if quantity is not None else None
@@ -616,6 +530,17 @@ def _resolve_constraint_view(
         scalar_type=scalar_type,
         scalar_id=scalar_id,
     )
+
+
+def _constraint_context_refs(constraint: ConstraintSpecification) -> list[ContextRef]:
+    expr = constraint.expr
+    if isinstance(expr, EqualityConstraint):
+        return [expr.reference]
+    if isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
+        return [expr.threshold]
+    if isinstance(expr, BilateralConstraint):
+        return [expr.lower, expr.upper]
+    return []
 
 
 class MotionSpecDatasetBuilder:
@@ -663,16 +588,251 @@ class MotionSpecDatasetBuilder:
         return context
 
     def all_constraints(self, spec: MotionSpec) -> list[ConstraintSpecification]:
-        return [*spec.when.constraints, *spec.while_.constraints, *spec.until.constraints]
+        return [
+            *(_resolved_spec(constraint) for constraint in spec.when.constraints),
+            *(_resolved_spec(constraint) for constraint in spec.while_.constraints),
+            *(_resolved_spec(constraint) for constraint in spec.until.constraints),
+        ]
 
     def scope_for_motion(self, motion: MotionSpec | None) -> MotionScope | None:
         if motion is None:
             return None
         return self.motion_scope.get(_entity_id(motion))
 
-    def constraint_data(self, constraint_ref: Any) -> ConstraintData | None:
+    def constraint_data_for_motion(
+        self,
+        motion: MotionSpec | None,
+        constraint_ref: Any,
+    ) -> ConstraintData | None:
+        if motion is None:
+            return None
         target = getattr(constraint_ref, "constraint", constraint_ref)
-        return self.constraints_by_ref.get(_entity_id(target))
+        motion_id = _entity_id(motion)
+        for constraint in self.constraints_by_motion.get(motion_id, ()):
+            if constraint.constraint is target:
+                return constraint
+        return None
+
+    def _decode_acceleration_interface(
+        self,
+        motion_spec: MotionSpec,
+        controller: Any,
+        constraint: ConstraintData,
+    ) -> ControllerDispatch | None:
+        solver = getattr(controller.params, "solver", None)
+        algorithm = getattr(solver, "algorithm", None)
+        property_spec = (
+            _property_spec(constraint.quantity.type, constraint.property_name)
+            if constraint.quantity is not None
+            else None
+        )
+        if (
+            algorithm != SolverAlgorithm.VERESHCHAGIN
+            or constraint.quantity is None
+            or constraint.axis is None
+            or property_spec is None
+            or property_spec.accel_prefix is None
+            or property_spec.accel_subspace is None
+        ):
+            return None
+        control_signal_id = _acceleration_energy_id(
+            motion_spec.name,
+            constraint.quantity,
+            constraint.property_name,
+            constraint.axis,
+            constraint.shared,
+        )
+        if control_signal_id is None:
+            return None
+        return ControllerDispatch(
+            signal=SignalDescriptor(
+                node_id=control_signal_id,
+                kind=SignalKind.ACCELERATION_ENERGY,
+                scalar_type="AccelerationEnergy",
+            ),
+            interfaces=(
+                AccelerationConstraintInterface(
+                    node_id=_acceleration_constraint_id(
+                        motion_spec.name,
+                        constraint.quantity,
+                        constraint.property_name,
+                        constraint.axis,
+                        constraint.shared,
+                    ),
+                    signal_id=control_signal_id,
+                    owner=motion_spec,
+                    subspace=property_spec.accel_subspace,
+                    axis=constraint.axis,
+                ),
+            ),
+        )
+
+    def _decode_cartesian_force_interface(
+        self,
+        motion_spec: MotionSpec,
+        controller: Any,
+        constraint: ConstraintData,
+    ) -> ControllerDispatch | None:
+        command_type = (
+            str(getattr(controller.command_type, "value", controller.command_type))
+            if getattr(controller, "command_type", None)
+            else None
+        )
+        if (
+            constraint.quantity is None
+            or (
+                constraint.property_name != ViewProperty.FORCE
+                and command_type != QuantityType.Force
+            )
+        ):
+            return None
+        return ControllerDispatch(
+            signal=SignalDescriptor(
+                node_id=constraint.quantity_node_id,
+                kind=SignalKind.FORCE,
+                scalar_type=QuantityType.Force,
+            ),
+            interfaces=(
+                CartesianForceInterface(
+                    node_id=f"spec-{constraint.quantity.name}",
+                    signal_id=constraint.quantity_node_id,
+                    owner=motion_spec,
+                    force_name=constraint.quantity.name,
+                    attached_to=(
+                        _node_name(controller.apply_at)
+                        if getattr(controller, "apply_at", None)
+                        else None
+                    ),
+                ),
+            ),
+        )
+
+    def _controller_interface_decoders(self) -> tuple[Any, ...]:
+        return (
+            self._decode_acceleration_interface,
+            self._decode_cartesian_force_interface,
+        )
+
+    def _solver_interface_priority(self, interface: SolverInterface) -> int:
+        return 0 if isinstance(interface.owner, MotionSpec) else 1
+
+    def _decode_controller_dispatch(
+        self,
+        motion_spec: MotionSpec,
+        controller: Any,
+        constraint: ConstraintData,
+    ) -> ControllerDispatch:
+        for decoder in self._controller_interface_decoders():
+            dispatch = decoder(motion_spec, controller, constraint)
+            if dispatch is not None:
+                return dispatch
+
+        return ControllerDispatch(
+            signal=SignalDescriptor(node_id=f"eacc-{controller.name}", kind=SignalKind.GENERIC),
+        )
+
+    def controller_dispatches(
+        self, handler_spec: ConstraintHandler
+    ) -> tuple[tuple[Any, ConstraintData, ControllerDispatch], ...]:
+        motion = getattr(handler_spec, "motion", None)
+        motion_id = _entity_id(motion)
+        scope = self.motion_scope.get(motion_id)
+        if scope is None:
+            return ()
+        dispatches: list[tuple[Any, ConstraintData, ControllerDispatch]] = []
+        for controller in getattr(handler_spec, "controllers", []):
+            constraint = self.constraint_data_for_motion(scope.motion, controller.params.constraint)
+            if constraint is None:
+                raise ValueError(
+                    f"Controller '{controller.name}' references constraint "
+                    f"'{controller.params.constraint}' that is not assembled in motion '{scope.motion.name}'."
+                )
+            dispatches.append(
+                (
+                    controller,
+                    constraint,
+                    self._decode_controller_dispatch(scope.motion, controller, constraint),
+                )
+            )
+        return tuple(dispatches)
+
+    def solver_interfaces(self, handler_spec: ConstraintHandler) -> tuple[SolverInterface, ...]:
+        motion = getattr(handler_spec, "motion", None)
+        motion_id = _entity_id(motion)
+        scope = self.motion_scope.get(motion_id)
+        if scope is None:
+            return ()
+
+        interfaces: dict[tuple[type[SolverInterface], str], SolverInterface] = {}
+        for _, _, dispatch in self.controller_dispatches(handler_spec):
+            for interface in dispatch.interfaces:
+                interfaces[(type(interface), interface.node_id)] = interface
+
+        solver = _primary_solver(handler_spec)
+        if solver is not None:
+            for velocity_solver in getattr(solver, "velocity_solvers", []):
+                interface = VelocitySolverInterface(
+                        node_id=velocity_solver.name,
+                        signal_id=_node_name(velocity_solver.velocity),
+                        owner=handler_spec,
+                        quantity_name=_node_name(velocity_solver.velocity),
+                        configuration=velocity_solver.configuration,
+                    )
+                key = (VelocitySolverInterface, velocity_solver.name)
+                if key not in interfaces or self._solver_interface_priority(interface) < self._solver_interface_priority(interfaces[key]):
+                    interfaces[key] = interface
+            for force_solver in getattr(solver, "force_solvers", []):
+                interface = ForceSolverInterface(
+                        node_id=force_solver.name,
+                        signal_id=_node_name(force_solver.force),
+                        owner=handler_spec,
+                        quantity_name=_node_name(force_solver.force),
+                        configuration=force_solver.configuration,
+                    )
+                key = (ForceSolverInterface, force_solver.name)
+                if key not in interfaces or self._solver_interface_priority(interface) < self._solver_interface_priority(interfaces[key]):
+                    interfaces[key] = interface
+            for force_name in getattr(solver, "cartesian_force", []):
+                interface = CartesianForceInterface(
+                        node_id=f"spec-{force_name}",
+                        signal_id=force_name,
+                        owner=handler_spec,
+                        force_name=force_name,
+                    )
+                key = (CartesianForceInterface, f"spec-{force_name}")
+                if key not in interfaces or self._solver_interface_priority(interface) < self._solver_interface_priority(interfaces[key]):
+                    interfaces[key] = interface
+            for joint_force in getattr(solver, "joint_force", []):
+                interface = JointForceInterface(
+                        node_id=joint_force,
+                        signal_id=joint_force,
+                        owner=handler_spec,
+                    )
+                key = (JointForceInterface, joint_force)
+                if key not in interfaces or self._solver_interface_priority(interface) < self._solver_interface_priority(interfaces[key]):
+                    interfaces[key] = interface
+
+        return tuple(
+            interface for _, interface in sorted(interfaces.items(), key=lambda item: (item[0][0].__name__, item[0][1]))
+        )
+
+    def interface_scalar_view_requirements(
+        self, handler_spec: ConstraintHandler
+    ) -> tuple[ScalarViewRequirement, ...]:
+        requirements: dict[tuple[str, ViewProperty, str], ScalarViewRequirement] = {}
+        for interface in self.solver_interfaces(handler_spec):
+            if not isinstance(interface, CartesianForceInterface):
+                continue
+            requirements.setdefault(
+                (interface.force_name, ViewProperty.FORCE, "z"),
+                ScalarViewRequirement(
+                    quantity_name=interface.force_name,
+                    property_name=ViewProperty.FORCE,
+                    axis="z",
+                    scalar_type=QuantityType.Force,
+                ),
+            )
+        return tuple(requirements.values())
 
     def resolve_world_quantity(
         self,
@@ -709,20 +869,10 @@ class MotionSpecDatasetBuilder:
             raise ValueError(f"Ambiguous world quantity reference '{name}' in context: {reason}")
         raise ValueError(f"Missing required world quantity '{name}' in context: {reason}")
 
-    def cartesian_force_bindings(
-        self, handler_spec: ConstraintHandler
-    ) -> tuple[CartesianForceBinding, ...]:
-        return self.cartesian_force_bindings_by_handler.get(_entity_id(handler_spec), ())
-
-    def _emit_acceleration_energy(self, constraint: ConstraintData) -> None:
-        assert constraint.acceleration_energy_id is not None
-        node = self.root_uri(constraint.acceleration_energy_id, owner=constraint.constraint.parent)
-        acceleration_energy_kind = self.root_uri(
-            "AccelerationEnergy", owner=constraint.constraint.parent
-        )
-        acceleration_energy_unit = self.root_uri(
-            "N-M2-PER-SEC2", owner=constraint.constraint.parent
-        )
+    def _emit_acceleration_energy(self, energy_id: str, *, owner: Any) -> None:
+        node = self.root_uri(energy_id, owner=owner)
+        acceleration_energy_kind = self.root_uri("AccelerationEnergy", owner=owner)
+        acceleration_energy_unit = self.root_uri("N-M2-PER-SEC2", owner=owner)
         _add_types(self.graph, node, QUDT_SCHEMA.Quantity, acceleration_energy_kind)
         self.graph.add((node, QUDT_SCHEMA["quantity-kind"], acceleration_energy_kind))
         self.graph.add((node, QUDT_SCHEMA.unit, acceleration_energy_unit))
@@ -730,17 +880,17 @@ class MotionSpecDatasetBuilder:
     def _emit_acceleration_constraint(
         self,
         motion_spec: MotionSpec,
-        binding: AccelerationConstraintBinding,
+        interface: AccelerationConstraintInterface,
     ) -> None:
-        node = self.root_uri(binding.node_id, owner=motion_spec)
+        node = self.root_uri(interface.node_id, owner=motion_spec)
         _add_types(self.graph, node, SLV.AccelerationConstraint, SLV.AxisAligned)
-        self.graph.add((node, SLV.subspace, SLV[binding.subspace]))
-        self.graph.add((node, SLV.axis, SLV[binding.axis]))
+        self.graph.add((node, SLV.subspace, SLV[interface.subspace]))
+        self.graph.add((node, SLV.axis, SLV[interface.axis]))
         self.graph.add(
             (
                 node,
                 SLV["acceleration-energy"],
-                self.root_uri(binding.energy_id, owner=motion_spec),
+                self.root_uri(interface.signal_id, owner=motion_spec),
             )
         )
 
@@ -748,25 +898,93 @@ class MotionSpecDatasetBuilder:
         self,
         handler_spec: ConstraintHandler,
         motion_spec: MotionSpec,
-        binding: CartesianForceBinding,
+        interface: CartesianForceInterface,
     ) -> None:
         force_quantity = self.resolve_world_quantity(
-            binding.force_name,
+            interface.force_name,
             motion=motion_spec,
             handler=handler_spec,
-            reason=f"referenced by cartesian-force solver output '{binding.spec_name}'",
+            reason=f"referenced by cartesian-force solver output '{interface.node_id}'",
         )
-        spec_node = self.root_uri(binding.spec_name, owner=handler_spec)
+        spec_node = self.root_uri(interface.node_id, owner=handler_spec)
         _add_types(self.graph, spec_node, SLV.CartesianForceSpecification)
         self.graph.add((spec_node, SLV.force, self.node(force_quantity)))
-        if binding.attached_to is not None:
+        if interface.attached_to is not None:
             self.graph.add(
                 (
                     spec_node,
                     SLV["attached-to"],
-                    self.root_uri(binding.attached_to, owner=handler_spec),
+                    self.root_uri(interface.attached_to, owner=handler_spec),
                 )
             )
+
+    def _emit_authored_solver_interface(
+        self,
+        handler_spec: ConstraintHandler,
+        interface: SolverInterface,
+    ) -> None:
+        emitter = self._solver_interface_emitters().get(type(interface))
+        if emitter is not None:
+            emitter(handler_spec, interface)
+
+    def _emit_velocity_solver_interface(
+        self, handler_spec: ConstraintHandler, interface: VelocitySolverInterface
+    ) -> None:
+        _required_world_quantity(
+            self,
+            interface.quantity_name,
+            f"referenced by base velocity solver '{interface.node_id}'",
+        )
+        node = self.root_uri(interface.node_id, owner=handler_spec)
+        _add_types(self.graph, node, SLV.VelocityCompositionSolver)
+        self.graph.add((node, SLV.configuration, Literal(interface.configuration)))
+        velocity_quantity = self.resolve_world_quantity(
+            interface.quantity_name,
+            handler=handler_spec,
+            reason=f"referenced by base velocity solver '{interface.node_id}'",
+        )
+        self.graph.add((node, SLV.velocity, self.node(velocity_quantity)))
+
+    def _emit_force_solver_interface(
+        self, handler_spec: ConstraintHandler, interface: ForceSolverInterface
+    ) -> None:
+        _required_world_quantity(
+            self,
+            interface.quantity_name,
+            f"referenced by base force solver '{interface.node_id}'",
+        )
+        node = self.root_uri(interface.node_id, owner=handler_spec)
+        _add_types(self.graph, node, SLV.ForceDistributionSolver)
+        self.graph.add((node, SLV.configuration, Literal(interface.configuration)))
+        force_quantity = self.resolve_world_quantity(
+            interface.quantity_name,
+            handler=handler_spec,
+            reason=f"referenced by base force solver '{interface.node_id}'",
+        )
+        self.graph.add((node, SLV.force, self.node(force_quantity)))
+
+    def _solver_interface_emitters(self) -> dict[type[SolverInterface], Any]:
+        return {
+            VelocitySolverInterface: self._emit_velocity_solver_interface,
+            ForceSolverInterface: self._emit_force_solver_interface,
+        }
+
+    def _driver_attachment(
+        self,
+        interface: SolverInterface,
+        *,
+        handler_spec: ConstraintHandler,
+    ) -> tuple[Node, Node] | None:
+        predicate = self._driver_attachment_predicates().get(type(interface))
+        if predicate is None:
+            return None
+        return (predicate, self.root_uri(interface.node_id, owner=handler_spec))
+
+    def _driver_attachment_predicates(self) -> dict[type[SolverInterface], Node]:
+        return {
+            CartesianForceInterface: SLV["cartesian-force"],
+            JointForceInterface: SLV["joint-force"],
+        }
 
     def constraint_quantity_node(self, constraint: ConstraintData) -> Node:
         scope = self.motion_scope.get(constraint.motion_id)
@@ -815,9 +1033,6 @@ class MotionSpecDatasetBuilder:
                 quantities=quantities,
                 values=values,
                 constraints=tuple(self.all_constraints(motion)),
-                while_constraint_names=frozenset(
-                    constraint.name for constraint in motion.while_.constraints
-                ),
             )
         return scopes
 
@@ -846,7 +1061,54 @@ class MotionSpecDatasetBuilder:
         values: dict[str, ValueVariable] = {}
         for scope in self.motion_scope.values():
             values.update(scope.values)
+        for scope in self.motion_scope.values():
+            for constraint in scope.constraints:
+                for ref in _constraint_context_refs(constraint):
+                    value = getattr(ref, "value", None) or getattr(ref, "valRef", None)
+                    if isinstance(value, ValueVariable):
+                        values[str(value.uri)] = value
+        for handler in self.authored_handlers:
+            for solver in handler.solvers:
+                gravity_value = getattr(solver, "gravity_value", None)
+                value = getattr(gravity_value, "value", None) or getattr(gravity_value, "valRef", None)
+                if isinstance(value, ValueVariable):
+                    values[str(value.uri)] = value
         return values
+
+    @cached_property
+    def value_variables_by_name(self) -> dict[str, tuple[ValueVariable, ...]]:
+        grouped: dict[str, list[ValueVariable]] = {}
+        for value in self.value_variables.values():
+            grouped.setdefault(value.name, []).append(value)
+        return {name: tuple(values) for name, values in grouped.items()}
+
+    def resolve_value_variable(
+        self,
+        ref: Any,
+        *,
+        motion: MotionSpec | None = None,
+        reason: str = "",
+    ) -> ValueVariable | None:
+        if isinstance(ref, ValueVariable):
+            return ref
+
+        uri = _entity_id(ref) if hasattr(ref, "uri") else None
+        if uri:
+            value = self.value_variables.get(uri)
+            if value is not None:
+                return value
+
+        name = _node_name(ref)
+        scope = self.scope_for_motion(motion)
+        if scope is not None and name in scope.values:
+            return scope.values[name]
+
+        matches = self.value_variables_by_name.get(name, ())
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ValueError(f"Ambiguous value reference '{name}' in context: {reason}")
+        return None
 
     @cached_property
     def implicit_world_entities(self) -> dict[str, Node]:
@@ -854,7 +1116,12 @@ class MotionSpecDatasetBuilder:
         for quantity in self.world_quantities.values():
             if not isinstance(quantity.props, GeometricProps):
                 continue
-            if quantity.type == WorldQuantityType.VelocityTwist:
+            if quantity.type == WorldQuantityType.Pose:
+                for key in ("of", "wrt", "as-seen-by"):
+                    target = _geometric_property(quantity.props, key)
+                    if target:
+                        entities.setdefault(target, GEOM_ENT.Frame)
+            elif quantity.type == WorldQuantityType.VelocityTwist:
                 for key in ("of", "wrt"):
                     target = _geometric_property(quantity.props, key)
                     if target:
@@ -865,11 +1132,6 @@ class MotionSpecDatasetBuilder:
                 frame_id = _geometric_property(quantity.props, "as-seen-by")
                 if frame_id:
                     entities.setdefault(frame_id, GEOM_ENT.Frame)
-            elif quantity.type == WorldQuantityType.Pose:
-                for key in ("of", "wrt", "as-seen-by"):
-                    target = _geometric_property(quantity.props, key)
-                    if target:
-                        entities.setdefault(target, GEOM_ENT.Frame)
             elif quantity.type == WorldQuantityType.Wrench:
                 point_id = _geometric_property(quantity.props, "ref-point")
                 if point_id:
@@ -880,22 +1142,80 @@ class MotionSpecDatasetBuilder:
         return entities
 
     @cached_property
-    def shared_while_signatures(self) -> set[ConstraintSignature]:
-        usage: dict[ConstraintSignature, set[str]] = {}
+    def controlled_constraint_names(self) -> dict[str, frozenset[str]]:
+        controlled: dict[str, set[str]] = {motion_id: set() for motion_id in self.motion_scope}
+        for handler in self.authored_handlers:
+            motion_id = _entity_id(getattr(handler, "motion", None))
+            if motion_id not in controlled:
+                continue
+            for controller in getattr(handler, "controllers", []):
+                controlled[motion_id].add(controller.params.constraint_name)
+        return {motion_id: frozenset(names) for motion_id, names in controlled.items()}
+
+    @cached_property
+    def controlled_constraint_specs(self) -> dict[str, frozenset[int]]:
+        controlled: dict[str, set[int]] = {motion_id: set() for motion_id in self.motion_scope}
+        for handler in self.authored_handlers:
+            motion = getattr(handler, "motion", None)
+            motion_id = _entity_id(motion)
+            if motion_id not in controlled:
+                continue
+            for controller in getattr(handler, "controllers", []):
+                target = getattr(controller.params.constraint, "constraint", None)
+                if target is not None:
+                    controlled[motion_id].add(id(target))
+        return {motion_id: frozenset(specs) for motion_id, specs in controlled.items()}
+
+    @cached_property
+    def monitored_constraint_names(self) -> dict[str, frozenset[str]]:
+        monitored: dict[str, set[str]] = {motion_id: set() for motion_id in self.motion_scope}
+        for handler in self.authored_handlers:
+            motion_id = _entity_id(getattr(handler, "motion", None))
+            if motion_id not in monitored:
+                continue
+            for monitor in getattr(handler, "monitors", []):
+                monitored[motion_id].add(monitor.constraint_name)
+        return {motion_id: frozenset(names) for motion_id, names in monitored.items()}
+
+    @cached_property
+    def monitored_constraint_specs(self) -> dict[str, frozenset[int]]:
+        monitored: dict[str, set[int]] = {motion_id: set() for motion_id in self.motion_scope}
+        for handler in self.authored_handlers:
+            motion_id = _entity_id(getattr(handler, "motion", None))
+            if motion_id not in monitored:
+                continue
+            for monitor in getattr(handler, "monitors", []):
+                target = getattr(monitor.constraint, "constraint", None)
+                if target is not None:
+                    monitored[motion_id].add(id(target))
+        return {motion_id: frozenset(specs) for motion_id, specs in monitored.items()}
+
+    @cached_property
+    def shared_constraint_specs(self) -> frozenset[int]:
+        usage: dict[int, set[str]] = {}
         for scope in self.motion_scope.values():
-            for constraint in scope.motion.while_.constraints:
-                if not isinstance(constraint.expr, EqualityConstraint):
-                    continue
-                usage.setdefault(_while_signature(constraint), set()).add(scope.motion_id)
-        return {signature for signature, motions in usage.items() if len(motions) > 1}
+            seen_specs: set[int] = set()
+            for section in (scope.motion.when, scope.motion.while_, scope.motion.until):
+                for item in section.constraints:
+                    spec_id = id(_resolved_spec(item))
+                    if spec_id in seen_specs:
+                        continue
+                    seen_specs.add(spec_id)
+                    usage.setdefault(spec_id, set()).add(scope.motion_id)
+        return frozenset(
+            spec_id for spec_id, motions in usage.items() if len(motions) > 1
+        )
 
     @cached_property
     def constraints(self) -> list[ConstraintData]:
         derived_constraints: list[ConstraintData] = []
         for motion_id, scope in self.motion_scope.items():
-            while_names = scope.while_constraint_names
+            controlled_names = self.controlled_constraint_names.get(motion_id, frozenset())
+            controlled_specs = self.controlled_constraint_specs.get(motion_id, frozenset())
+            monitored_names = self.monitored_constraint_names.get(motion_id, frozenset())
+            monitored_specs = self.monitored_constraint_specs.get(motion_id, frozenset())
             for constraint in scope.constraints:
-                resolved = _resolve_constraint_view(scope, constraint)
+                resolved = _resolve_constraint_view(self, scope, constraint)
                 quantity = resolved.quantity
                 if quantity is None:
                     raise ValueError(
@@ -905,10 +1225,8 @@ class MotionSpecDatasetBuilder:
                 quantity_node_id = resolved.scalar_id or resolved.quantity_name
 
                 expr = constraint.expr
-                signature = None
                 error_signal_id = None
-                acceleration_energy = None
-                shared = False
+                shared = id(constraint) in self.shared_constraint_specs
 
                 if isinstance(expr, EqualityConstraint):
                     kind = ConstraintKind.EQUALITY
@@ -917,18 +1235,11 @@ class MotionSpecDatasetBuilder:
                         or getattr(expr.reference, "valRef", None)
                     )
                     threshold_var = lower_var = upper_var = None
-                    shared = False
-                    if constraint.name in while_names and quantity is not None:
-                        signature = _while_signature(constraint)
-                        shared = signature in self.shared_while_signatures
-                        error_signal_id = _while_error_id(
-                            scope.motion.name,
-                            quantity,
-                            resolved.property_name,
-                            resolved.axis,
-                            shared,
-                        )
-                        acceleration_energy = _acceleration_energy_id(
+                    if (
+                        constraint.name in controlled_names
+                        or id(constraint) in controlled_specs
+                    ) and quantity is not None:
+                        error_signal_id = _controller_error_signal_id(
                             scope.motion.name,
                             quantity,
                             resolved.property_name,
@@ -963,10 +1274,9 @@ class MotionSpecDatasetBuilder:
                     )
 
                 if (
-                    constraint.name in while_names
-                    and quantity is not None
-                    and error_signal_id is None
-                ):
+                    constraint.name in monitored_names
+                    or id(constraint) in monitored_specs
+                ) and quantity is not None and error_signal_id is None:
                     error_signal_id = f"{quantity_node_id}-err"
 
                 derived_constraints.append(
@@ -984,17 +1294,11 @@ class MotionSpecDatasetBuilder:
                         threshold_var=threshold_var,
                         lower_var=lower_var,
                         upper_var=upper_var,
-                        signature=signature,
                         error_signal_id=error_signal_id,
-                        acceleration_energy_id=acceleration_energy,
-                        shared_while=shared if isinstance(expr, EqualityConstraint) else False,
+                        shared=shared,
                     )
                 )
         return derived_constraints
-
-    @cached_property
-    def constraints_by_ref(self) -> dict[str, ConstraintData]:
-        return {_entity_id(constraint.constraint): constraint for constraint in self.constraints}
 
     @cached_property
     def constraints_by_motion(self) -> dict[str, tuple[ConstraintData, ...]]:
@@ -1004,22 +1308,30 @@ class MotionSpecDatasetBuilder:
         return {motion_id: tuple(values) for motion_id, values in grouped.items()}
 
     @cached_property
-    def while_constraints(self) -> list[ConstraintData]:
+    def controlled_constraints(self) -> list[ConstraintData]:
         return [
             constraint
             for constraint in self.constraints
             if (
-                (scope := self.motion_scope.get(constraint.motion_id)) is not None
-                and constraint.constraint.name in scope.while_constraint_names
+                constraint.constraint.name
+                in self.controlled_constraint_names.get(constraint.motion_id, frozenset())
+                or id(constraint.constraint)
+                in self.controlled_constraint_specs.get(constraint.motion_id, frozenset())
             )
         ]
 
     @cached_property
-    def cartesian_force_bindings_by_handler(self) -> dict[str, tuple[CartesianForceBinding, ...]]:
-        return {
-            _entity_id(handler): tuple(_collect_cartesian_force_bindings(self, handler))
-            for handler in self.authored_handlers
-        }
+    def monitored_constraints(self) -> list[ConstraintData]:
+        return [
+            constraint
+            for constraint in self.constraints
+            if (
+                constraint.constraint.name
+                in self.monitored_constraint_names.get(constraint.motion_id, frozenset())
+                or id(constraint.constraint)
+                in self.monitored_constraint_specs.get(constraint.motion_id, frozenset())
+            )
+        ]
 
     def build(self) -> DatasetOutput:
         for owner in self.namespace_owners:
@@ -1038,7 +1350,7 @@ class MotionSpecDatasetBuilder:
 
     def materialize_derived(self) -> None:
         self._add_scalar_views()
-        self._add_error_signals_and_energies()
+        self._add_error_signals()
         self._add_solver_entities()
         self._add_map_operations()
         self._add_transform_operations()
@@ -1130,7 +1442,11 @@ class MotionSpecDatasetBuilder:
             motion_spec = scope.motion
             motion_values = scope.values
             if constraint.kind == ConstraintKind.EQUALITY:
-                reference = motion_values.get(constraint.reference_var or "")
+                reference = motion_values.get(constraint.reference_var or "") or self.resolve_value_variable(
+                    constraint.reference_var,
+                    motion=motion_spec,
+                    reason=f"constraint '{constraint.constraint.name}' equality reference",
+                )
                 _add_types(self.graph, node, CSTR.EqualityConstraint)
                 ref_node = (
                     URIRef(reference.uri)
@@ -1139,7 +1455,11 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
             elif constraint.kind == ConstraintKind.GREATER_THAN:
-                threshold = motion_values.get(constraint.threshold_var or "")
+                threshold = motion_values.get(constraint.threshold_var or "") or self.resolve_value_variable(
+                    constraint.threshold_var,
+                    motion=motion_spec,
+                    reason=f"constraint '{constraint.constraint.name}' threshold",
+                )
                 _add_types(self.graph, node, CSTR.UnilateralConstraint, CSTR.GreaterThanConstraint)
                 threshold_node = (
                     URIRef(threshold.uri)
@@ -1148,7 +1468,11 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((node, CSTR.threshold, threshold_node))
             elif constraint.kind == ConstraintKind.LESS_THAN:
-                threshold = motion_values.get(constraint.threshold_var or "")
+                threshold = motion_values.get(constraint.threshold_var or "") or self.resolve_value_variable(
+                    constraint.threshold_var,
+                    motion=motion_spec,
+                    reason=f"constraint '{constraint.constraint.name}' threshold",
+                )
                 _add_types(self.graph, node, CSTR.UnilateralConstraint, CSTR.LessThanConstraint)
                 threshold_node = (
                     URIRef(threshold.uri)
@@ -1157,8 +1481,16 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((node, CSTR.threshold, threshold_node))
             else:
-                lower = motion_values.get(constraint.lower_var or "")
-                upper = motion_values.get(constraint.upper_var or "")
+                lower = motion_values.get(constraint.lower_var or "") or self.resolve_value_variable(
+                    constraint.lower_var,
+                    motion=motion_spec,
+                    reason=f"constraint '{constraint.constraint.name}' lower threshold",
+                )
+                upper = motion_values.get(constraint.upper_var or "") or self.resolve_value_variable(
+                    constraint.upper_var,
+                    motion=motion_spec,
+                    reason=f"constraint '{constraint.constraint.name}' upper threshold",
+                )
                 _add_types(self.graph, node, CSTR.BilateralConstraint)
                 lower_node = (
                     URIRef(lower.uri)
@@ -1179,17 +1511,13 @@ class MotionSpecDatasetBuilder:
             motion_node = self.root_uri(f"motion-{motion_spec.name}", owner=motion_spec)
             _add_types(self.graph, motion_node, MOT.GuardedMotion)
             for constraint in motion_spec.when.constraints:
-                self.graph.add((motion_node, MOT.when, URIRef(constraint.uri)))
+                self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(constraint).uri)))
             for constraint in motion_spec.while_.constraints:
-                self.graph.add((motion_node, MOT["while"], URIRef(constraint.uri)))
+                self.graph.add((motion_node, MOT["while"], URIRef(_resolved_spec(constraint).uri)))
             for constraint in motion_spec.until.constraints:
-                self.graph.add((motion_node, MOT.until, URIRef(constraint.uri)))
+                self.graph.add((motion_node, MOT.until, URIRef(_resolved_spec(constraint).uri)))
 
     def _add_constraint_handlers(self) -> None:
-        while_constraints_by_motion: dict[str, list[ConstraintData]] = {}
-        for constraint in self.while_constraints:
-            while_constraints_by_motion.setdefault(constraint.motion_id, []).append(constraint)
-
         for handler_spec in self.authored_handlers:
             motion = getattr(handler_spec, "motion", None)
             motion_id = _entity_id(motion)
@@ -1208,7 +1536,9 @@ class MotionSpecDatasetBuilder:
                 )
             )
 
-            for constraint in while_constraints_by_motion.get(motion_id, []):
+            for constraint in self.controlled_constraints:
+                if constraint.motion_id != motion_id:
+                    continue
                 self.graph.add(
                     (
                         node,
@@ -1219,28 +1549,7 @@ class MotionSpecDatasetBuilder:
                     )
                 )
 
-            for controller in getattr(handler_spec, "controllers", []):
-                constraint = self.constraint_data(controller.params.constraint)
-                if constraint is None:
-                    raise ValueError(
-                        f"Controller '{controller.name}' references constraint "
-                        f"'{controller.params.constraint}' that is not defined for motion '{scope.motion.name}'."
-                    )
-                command_type = (
-                    str(getattr(controller.command_type, "value", controller.command_type))
-                    if getattr(controller, "command_type", None)
-                    else None
-                )
-                control_signal_id = (
-                    constraint.acceleration_energy_id
-                    or (
-                        constraint.quantity_node_id
-                        if constraint.quantity is not None
-                        and constraint.property_name == ViewProperty.FORCE
-                        else None
-                    )
-                    or f"eacc-{controller.name}"
-                )
+            for controller, constraint, dispatch in self.controller_dispatches(handler_spec):
                 controller_node = URIRef(controller.uri)
                 _add_types(
                     self.graph,
@@ -1253,11 +1562,17 @@ class MotionSpecDatasetBuilder:
                         (
                             controller_node,
                             CSTR_HDL["error-signal"],
-                            self.root_uri(constraint.error_signal_id),
+                            self.root_uri(
+                                constraint.error_signal_id, owner=constraint.constraint.parent
+                            ),
                         )
                     )
                 self.graph.add(
-                    (controller_node, CSTR_HDL["control-signal"], self.root_uri(control_signal_id))
+                    (
+                        controller_node,
+                        CSTR_HDL["control-signal"],
+                        self.root_uri(dispatch.signal.node_id, owner=handler_spec),
+                    )
                 )
                 self.graph.add(
                     (
@@ -1277,11 +1592,17 @@ class MotionSpecDatasetBuilder:
                     )
                 )
                 self.graph.add((node, CSTR_HDL.controllers, controller_node))
-                if command_type == QuantityType.Force:
-                    _add_quantity(self.graph, self.root_uri(control_signal_id), QuantityType.Force)
+                if dispatch.signal.kind == "AccelerationEnergy":
+                    self._emit_acceleration_energy(dispatch.signal.node_id, owner=scope.motion)
+                elif dispatch.signal.scalar_type is not None:
+                    _add_quantity(
+                        self.graph,
+                        self.root_uri(dispatch.signal.node_id, owner=scope.motion),
+                        dispatch.signal.scalar_type,
+                    )
 
             for monitor in getattr(handler_spec, "monitors", []):
-                constraint = self.constraint_data(monitor.constraint)
+                constraint = self.constraint_data_for_motion(scope.motion, monitor.constraint)
                 if constraint is None:
                     continue
                 signal_name = monitor.event or monitor.flag
@@ -1298,7 +1619,7 @@ class MotionSpecDatasetBuilder:
                     (
                         monitor_node,
                         CSTR_HDL.error,
-                        self.root_uri(f"{monitor.constraint.name}-err", owner=monitor),
+                        self.root_uri(constraint.error_signal_id, owner=constraint.constraint.parent),
                     )
                 )
                 if signal_kind == "event":
@@ -1312,7 +1633,7 @@ class MotionSpecDatasetBuilder:
                     (
                         node,
                         CSTR_HDL.evaluators,
-                        self.root_uri(f"eval-{monitor.constraint.name}", owner=monitor),
+                        self.root_uri(f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent),
                     )
                 )
 
@@ -1322,7 +1643,7 @@ class MotionSpecDatasetBuilder:
         rotation_ids: set[str] = set()
         for scope in self.motion_scope.values():
             for constraint in scope.constraints:
-                resolved = _resolve_constraint_view(scope, constraint)
+                resolved = _resolve_constraint_view(self, scope, constraint)
                 quantity = resolved.quantity
                 if quantity is None:
                     continue
@@ -1381,60 +1702,44 @@ class MotionSpecDatasetBuilder:
         for rotation_id in rotation_ids:
             _add_quantity(self.graph, self.root_uri(rotation_id), QuantityType.Angle)
         for handler_spec in self.authored_handlers:
-            solver = _primary_solver(handler_spec)
-            if solver is None or not getattr(solver, "algorithm", ""):
-                continue
-            for binding in self.cartesian_force_bindings(handler_spec):
+            for requirement in self.interface_scalar_view_requirements(handler_spec):
                 quantity = self.resolve_world_quantity(
-                    binding.force_name,
+                    requirement.quantity_name,
                     motion=getattr(handler_spec, "motion", None),
                     handler=handler_spec,
-                    reason=f"referenced by cartesian-force solver output '{binding.spec_name}'",
+                    reason=f"referenced by solver interface scalar view '{requirement.quantity_name}'",
                 )
                 if quantity is None or quantity.type != WorldQuantityType.Wrench:
                     continue
-                scalar_id = _scalar_id(quantity, ViewProperty.FORCE, "z")
+                scalar_id = _scalar_id(quantity, requirement.property_name, requirement.axis)
                 if scalar_id is None or scalar_id in existing_scalar_views:
                     continue
                 existing_scalar_views.add(scalar_id)
                 _add_quantity(
-                    self.graph, self.root_uri(scalar_id, owner=quantity), QuantityType.Force
+                    self.graph, self.root_uri(scalar_id, owner=quantity), requirement.scalar_type
                 )
                 node = self.root_uri(f"view-{scalar_id}", owner=quantity)
                 _add_types(self.graph, node, MAP.View, MAP.WrenchCoordinateView)
                 self.graph.add((node, MAP.superobject, self.node(quantity)))
                 self.graph.add((node, MAP.subobject, self.root_uri(scalar_id, owner=quantity)))
-                self.graph.add((node, MAP.subspace, MAP.force))
-                self.graph.add((node, MAP.axis, MAP.z))
+                self.graph.add((node, MAP.subspace, MAP[requirement.property_name]))
+                self.graph.add((node, MAP.axis, MAP[requirement.axis]))
 
-    def _add_error_signals_and_energies(self) -> None:
-        for constraint in self.while_constraints:
-            if constraint.error_signal_id is not None:
+    def _add_error_signals(self) -> None:
+        seen_error_ids: set[str] = set()
+        seen_eval_constraints: set[str] = set()
+        for constraint in [*self.controlled_constraints, *self.monitored_constraints]:
+            if constraint.error_signal_id is not None and constraint.error_signal_id not in seen_error_ids:
+                seen_error_ids.add(constraint.error_signal_id)
                 _add_quantity(
-                    self.graph, self.root_uri(constraint.error_signal_id), constraint.scalar_type
+                    self.graph,
+                    self.root_uri(constraint.error_signal_id, owner=constraint.constraint.parent),
+                    constraint.scalar_type,
                 )
-        for handler_spec in self.authored_handlers:
-            motion = getattr(handler_spec, "motion", None)
-            motion_id = _entity_id(motion)
-            if not motion_id:
+            constraint_id = _entity_id(constraint.constraint)
+            if constraint.error_signal_id is None or constraint_id in seen_eval_constraints:
                 continue
-            for monitor in getattr(handler_spec, "monitors", []):
-                constraint = self.constraint_data(monitor.constraint)
-                if constraint is not None:
-                    _add_quantity(
-                        self.graph,
-                        self.root_uri(f"{monitor.constraint.name}-err", owner=monitor),
-                        constraint.scalar_type,
-                    )
-        for constraint in self.constraints:
-            if constraint.signature is None:
-                continue
-            if constraint.acceleration_energy_id is None:
-                continue
-            self._emit_acceleration_energy(constraint)
-        for constraint in self.while_constraints:
-            if constraint.error_signal_id is None:
-                continue
+            seen_eval_constraints.add(constraint_id)
             node = self.root_uri(
                 f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent
             )
@@ -1447,65 +1752,9 @@ class MotionSpecDatasetBuilder:
                     self.root_uri(constraint.error_signal_id, owner=constraint.constraint.parent),
                 )
             )
-        for handler_spec in self.authored_handlers:
-            motion = getattr(handler_spec, "motion", None)
-            motion_id = _entity_id(motion)
-            if not motion_id:
-                continue
-            for monitor in getattr(handler_spec, "monitors", []):
-                constraint = self.constraint_data(monitor.constraint)
-                if constraint is None:
-                    continue
-                node = self.root_uri(f"eval-{monitor.constraint.name}", owner=monitor)
-                _add_types(self.graph, node, CSTR_HDL.ConstraintEvaluator, CSTR_HDL.ErrorEvaluator)
-                self.graph.add((node, CSTR_HDL.constraint, URIRef(constraint.constraint.uri)))
-                self.graph.add(
-                    (
-                        node,
-                        CSTR_HDL.error,
-                        self.root_uri(f"{monitor.constraint.name}-err", owner=monitor),
-                    )
-                )
 
     def _add_solver_entities(self) -> None:
-        self._add_base_solvers()
         self._add_handler_solvers()
-
-    def _add_base_solvers(self) -> None:
-        for handler_spec in self.authored_handlers:
-            solver_group = _primary_solver(handler_spec)
-            if solver_group is None:
-                continue
-            for solver in getattr(solver_group, "velocity_solvers", []):
-                _required_world_quantity(
-                    self,
-                    solver.velocity,
-                    f"referenced by base velocity solver '{solver.name}'",
-                )
-                node = self.root_uri(solver.name)
-                _add_types(self.graph, node, SLV.VelocityCompositionSolver)
-                self.graph.add((node, SLV.configuration, Literal(solver.configuration)))
-                velocity_quantity = self.resolve_world_quantity(
-                    solver.velocity,
-                    handler=handler_spec,
-                    reason=f"referenced by base velocity solver '{solver.name}'",
-                )
-                self.graph.add((node, SLV.velocity, self.node(velocity_quantity)))
-            for solver in getattr(solver_group, "force_solvers", []):
-                _required_world_quantity(
-                    self,
-                    solver.force,
-                    f"referenced by base force solver '{solver.name}'",
-                )
-                node = self.root_uri(solver.name)
-                _add_types(self.graph, node, SLV.ForceDistributionSolver)
-                self.graph.add((node, SLV.configuration, Literal(solver.configuration)))
-                force_quantity = self.resolve_world_quantity(
-                    solver.force,
-                    handler=handler_spec,
-                    reason=f"referenced by base force solver '{solver.name}'",
-                )
-                self.graph.add((node, SLV.force, self.node(force_quantity)))
 
     def _add_handler_solvers(self) -> None:
         for handler_spec in self.authored_handlers:
@@ -1518,87 +1767,59 @@ class MotionSpecDatasetBuilder:
             if scope is None:
                 continue
             motion_spec = scope.motion
-            attached_link = _infer_attached_link(self, handler_spec, solver)
-            spec_constraints: list[str] = []
-            acceleration_constraints: dict[str, AccelerationConstraintBinding] = {}
-            for constraint in self.constraints_by_motion.get(motion_id, ()):
-                if constraint.signature is None:
-                    continue
-                quantity = constraint.quantity
-                property_spec = (
-                    _property_spec(quantity.type, constraint.property_name) if quantity else None
-                )
-                if (
-                    quantity is None
-                    or property_spec is None
-                    or property_spec.accel_subspace is None
-                ):
-                    continue
-                if constraint.acceleration_energy_id is None:
-                    continue
-                node_id = _acceleration_constraint_id(
-                    motion_spec.name,
-                    quantity,
-                    constraint.property_name,
-                    constraint.axis,
-                    constraint.shared_while,
-                )
-                if node_id not in spec_constraints:
-                    spec_constraints.append(node_id)
-                acceleration_constraints.setdefault(
-                    node_id,
-                    AccelerationConstraintBinding(
-                        node_id=node_id,
-                        energy_id=constraint.acceleration_energy_id,
-                        subspace=property_spec.accel_subspace,
-                        axis=constraint.axis or "",
-                    ),
-                )
-                self._emit_acceleration_constraint(
-                    motion_spec,
-                    acceleration_constraints[node_id],
-                )
+            attached_link = _infer_attached_link(self, handler_spec)
+            interfaces = self.solver_interfaces(handler_spec)
+            for interface in interfaces:
+                self._emit_authored_solver_interface(handler_spec, interface)
+            acceleration_interfaces = [
+                interface
+                for interface in interfaces
+                if isinstance(interface, AccelerationConstraintInterface)
+            ]
+            cartesian_force_interfaces = [
+                interface for interface in interfaces if isinstance(interface, CartesianForceInterface)
+            ]
 
-            spec_acc_node = (
-                self.root_uri(f"spec-acc-{attached_link}-{motion_spec.name}", owner=motion_spec)
-                if attached_link
-                else self.root_uri(f"spec-acc-ee-{motion_spec.name}", owner=motion_spec)
-            )
-            _add_types(self.graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
-            for node_id in spec_constraints:
-                self.graph.add(
-                    (spec_acc_node, SLV.constraints, self.root_uri(node_id, owner=motion_spec))
+            if acceleration_interfaces:
+                spec_acc_node = (
+                    self.root_uri(f"spec-acc-{attached_link}-{motion_spec.name}", owner=motion_spec)
+                    if attached_link
+                    else self.root_uri(f"spec-acc-ee-{motion_spec.name}", owner=motion_spec)
                 )
-            attached_to = (
-                self.root_uri(attached_link, owner=handler_spec)
-                if attached_link
-                else self.root_uri("link-ee", owner=handler_spec)
-            )
-            self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
+                _add_types(self.graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
+                for interface in acceleration_interfaces:
+                    self._emit_acceleration_constraint(motion_spec, interface)
+                    self.graph.add(
+                        (
+                            spec_acc_node,
+                            SLV.constraints,
+                            self.root_uri(interface.node_id, owner=motion_spec),
+                        )
+                    )
+                attached_to = (
+                    self.root_uri(attached_link, owner=handler_spec)
+                    if attached_link
+                    else self.root_uri("link-ee", owner=handler_spec)
+                )
+                self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
 
-            for binding in self.cartesian_force_bindings(handler_spec):
-                self._emit_cartesian_force_spec(handler_spec, motion_spec, binding)
+            for interface in cartesian_force_interfaces:
+                self._emit_cartesian_force_spec(handler_spec, motion_spec, interface)
 
             driver_name = motion_spec.name or handler_spec.name
             driver_node = self.root_uri(f"drv-{driver_name}", owner=handler_spec)
             _add_types(self.graph, driver_node, SLV.MotionDrivers)
-            self.graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
-            for binding in self.cartesian_force_bindings(handler_spec):
-                self.graph.add(
-                    (
-                        driver_node,
-                        SLV["cartesian-force"],
-                        self.root_uri(binding.spec_name, owner=handler_spec),
-                    )
+            if acceleration_interfaces:
+                spec_acc_node = (
+                    self.root_uri(f"spec-acc-{attached_link}-{motion_spec.name}", owner=motion_spec)
+                    if attached_link
+                    else self.root_uri(f"spec-acc-ee-{motion_spec.name}", owner=motion_spec)
                 )
-            for joint_force in getattr(solver, "joint_force", []):
-                self.graph.add(
-                    (
-                        driver_node,
-                        SLV["joint-force"],
-                        self.root_uri(joint_force, owner=handler_spec),
-                    )
-                )
+                self.graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
+            for interface in interfaces:
+                attachment = self._driver_attachment(interface, handler_spec=handler_spec)
+                if attachment is not None:
+                    self.graph.add((driver_node, *attachment))
 
             solver_node = self.root_uri(f"slv-{driver_name}", owner=handler_spec)
             solver_algorithm = (
@@ -1675,7 +1896,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((op_node, GEOM_OP.axis, MAP[axis]))
 
     def _add_transform_operations(self) -> None:
-        for constraint in self.while_constraints:
+        for constraint in self.controlled_constraints:
             quantity = constraint.quantity
             property_name = _view_property_name(constraint.constraint)
             axis_value = constraint.constraint.view.axis

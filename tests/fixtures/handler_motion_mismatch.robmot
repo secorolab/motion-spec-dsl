@@ -26,7 +26,7 @@ MOTION_SPEC (ns=app) m_a {
     WHEN {}
 
     WHILE {
-        c_a: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+        c_a: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>
     }
 
     UNTIL {}
@@ -47,7 +47,7 @@ MOTION_SPEC (ns=app) m_b {
     WHEN {}
 
     WHILE {
-        c_b: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero
+        c_b: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>
     }
 
     UNTIL {}
@@ -63,19 +63,19 @@ CONSTRAINT_HANDLER (ns=app) handler_a {
         }
     }
 
-    MOTION: m_a
+    MOTION: <m_a>
 
     CONTROLLERS {
-        ctrl-wrong-motion: PID { constraint: m_b.c_b, solver: right_arm_solver, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+        ctrl-wrong-motion: PID { constraint: <m_b.c_b>, solver: <right_arm_solver>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
     }
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: eddie.right_arm,
+            robot: <eddie.right_arm>,
             algorithm: Vereshchagin,
-            root: eddie.right_arm.root,
-            end: eddie.right_arm.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <eddie.right_arm.root>,
+            end: <eddie.right_arm.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }

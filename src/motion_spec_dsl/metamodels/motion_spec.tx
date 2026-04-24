@@ -51,28 +51,56 @@ ConstraintSection:
     WhenSection | WhileSection | UntilSection
 ;
 
-WhenSection: "WHEN" "{" constraints*=ConstraintSpecification[","]? "}" ;
-WhileSection: "WHILE" "{" constraints*=ConstraintSpecification[","]? "}" ;
-UntilSection: "UNTIL" "{" constraints*=ConstraintSpecification[","]? "}" ;
+WhenSection:  "WHEN"  "{" constraints*=ConstraintItem[","]? "}" ;
+WhileSection: "WHILE" "{" constraints*=ConstraintItem[","]? "}" ;
+UntilSection: "UNTIL" "{" constraints*=ConstraintItem[","]? "}" ;
+
+ConstraintItem: ConstraintSpecification | ConstraintAlias | ConstraintReference ;
+ConstraintAlias: name=IRI_TRUNK ":" "<" ref=ConstraintRef ">" ;
+ConstraintReference: "<" ref=ConstraintRef ">" ;
 
 MotionContextDecl:
     WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
 ;
 
 WorldContextDecl:
-    name=IRI_TRUNK ":" "World" "{" declaration+=WorldQuantity[","] "}"
+    name=IRI_TRUNK ":" "World" "{" declaration+=WorldQuantityItem[","] "}"
 ;
 
 PreContextDecl:
-    name=IRI_TRUNK ":" "Pre" "{" declaration+=ValueVariable[","] "}"
+    name=IRI_TRUNK ":" "Pre" "{" declaration+=ValueVariableItem[","] "}"
 ;
 
 SpecContextDecl:
-    name=IRI_TRUNK ":" "Spec" "{" declaration+=ValueVariable[","] "}"
+    name=IRI_TRUNK ":" "Spec" "{" declaration+=ValueVariableItem[","] "}"
 ;
 
 PostContextDecl:
-    name=IRI_TRUNK ":" "Post" "{" declaration+=ValueVariable[","] "}"
+    name=IRI_TRUNK ":" "Post" "{" declaration+=ValueVariableItem[","] "}"
+;
+
+WorldQuantityItem:
+    WorldQuantityAlias | WorldQuantityReference | WorldQuantity
+;
+
+WorldQuantityAlias:
+    name=IRI_TRUNK ":" "<" ref=[WorldQuantity|FQN] ">"
+;
+
+WorldQuantityReference:
+    "<" ref=[WorldQuantity|FQN] ">"
+;
+
+ValueVariableItem:
+    ValueVariableAlias | ValueVariableReference | ValueVariable
+;
+
+ValueVariableAlias:
+    name=IRI_TRUNK ":" "<" ref=[ValueVariable|FQN] ">"
+;
+
+ValueVariableReference:
+    "<" ref=[ValueVariable|FQN] ">"
 ;
 
 WorldQuantity:
@@ -128,6 +156,7 @@ QuantityType:
     "Force"           |
     "Torque"          |
     "Distance"        |
+    "LinearDistance"  |
     "Angle"           |
     "AngularDistance" |
     "Vector"
@@ -142,7 +171,7 @@ ConstraintExpression:
 ;
 
 View:
-    quantity=[WorldQuantity|ScopedName]
+    "<" quantity=[WorldQuantity|FQN] ">"
     ("." subspace=SubSpace ("." axis=Axis)?)
 ;
 
@@ -160,8 +189,13 @@ Axis:
 ;
 
 ContextRef:
-    '[' valRef=[ValueVariable:FQN] quantityValue=QuantityValue? ']'
-  | value=[ValueVariable:FQN]
+    "[" valRef=[ValueVariable:FQN] quantityValue=QuantityValue? "]"
+  | "<" valRef=[ValueVariable|ScopedName] ">"
+  | context_scope=ContextScope "[" inline_value=ValueVariable "]"
+;
+
+ContextScope:
+    "Pre" | "Spec" | "Post"
 ;
 
 EqualityConstraint:
@@ -186,11 +220,35 @@ BilateralConstraint:
 ConstraintHandler:
     "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "CONTEXT"      "{" context*=HandlerContextDecl[","] "}"
-        "MOTION"       ":" motion=[MotionSpec|IRI_TRUNK]
+        "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
-        "CONTROLLERS"  "{" controllers*=ControllerEntry[","]? "}"
-        "SOLVERS"      "{" solvers+=SolverEntry[","] "}"
+        "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
+        "SOLVERS"      "{" solvers+=SolverItem[","] "}"
     "}"
+;
+
+ControllerItem:
+    ControllerAlias | ControllerReference | ControllerEntry
+;
+
+ControllerAlias:
+    name=IRI_TRUNK ":" "<" ref=ControllerRef ">"
+;
+
+ControllerReference:
+    "<" ref=ControllerRef ">"
+;
+
+SolverItem:
+    SolverAlias | SolverReference | SolverEntry
+;
+
+SolverAlias:
+    name=IRI_TRUNK ":" "<" ref=SolverRef ">"
+;
+
+SolverReference:
+    "<" ref=SolverRef ">"
 ;
 
 HandlerContextDecl:
@@ -198,7 +256,7 @@ HandlerContextDecl:
 ;
 
 MonitorEntry:
-    name=IRI_TRUNK ":" "monitor" constraint=ConstraintRef "and"
+    name=IRI_TRUNK ":" "monitor" "<" constraint=ConstraintRef ">" "and"
     (
         ("trigger" "event" event=IRI_TRUNK "when" "active") |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
@@ -210,12 +268,12 @@ ControllerEntry:
         params=ControllerParams
     "}"
     ("as" command_type=QuantityType)?
-    ("apply" "at" apply_at=[WorldQuantity|ScopedName])?
+    ("apply" "at" "<" apply_at=[WorldQuantity|ScopedName] ">")?
 ;
 
 ControllerParams:
-    "constraint" ":" constraint=ConstraintRef ","
-    "solver" ":" solver=[SolverEntry|IRI_TRUNK] ","
+    "constraint" ":" "<" constraint=ConstraintRef ">" ","
+    "solver" ":" "<" solver=[SolverEntry|IRI_TRUNK] ">" ","
     "Kp" "=" kp=FLOAT ","
     "Ki" "=" ki=FLOAT ","
     "Kd" "=" kd=FLOAT
@@ -226,18 +284,26 @@ ConstraintRef:
     motion=[MotionSpec|IRI_TRUNK] "." constraint=[ConstraintSpecification|IRI_TRUNK]
 ;
 
+ControllerRef:
+    handler=[ConstraintHandler|IRI_TRUNK] "." controller=[ControllerEntry|IRI_TRUNK]
+;
+
+SolverRef:
+    handler=[ConstraintHandler|IRI_TRUNK] "." solver=[SolverEntry|IRI_TRUNK]
+;
+
 SolverEntry:
     name=IRI_TRUNK ":" "Solver" "{"
         "robot"     ":" robot=RobotRef ","
         "algorithm" ":" algorithm=SolverAlgorithm ","
         "root"      ":" root=RobotAnchorRef
         ("," "end"  ":" end=RobotAnchorRef)?
-        "," "gravity" ":" gravity=[WorldQuantity|ScopedName] "equal to" gravity_value=ContextRef
+        "," "gravity" ":" "<" gravity=[WorldQuantity|ScopedName] ">" "equal to" gravity_value=ContextRef
     "}"
 ;
 
 RobotRef:
-    component=RobotComponentRef | robot=[RobotSpec|IRI_TRUNK]
+    "<" (component=RobotComponentRef | robot=[RobotSpec|IRI_TRUNK]) ">"
 ;
 
 RobotComponentRef:
@@ -245,8 +311,10 @@ RobotComponentRef:
 ;
 
 RobotAnchorRef:
-    robot=[RobotSpec|IRI_TRUNK] "." "chain" "." anchor=RobotAnchor
-  | component=RobotComponentRef "." anchor=RobotAnchor
+    "<" (
+        robot=[RobotSpec|IRI_TRUNK] "." "chain" "." anchor=RobotAnchor
+      | component=RobotComponentRef "." anchor=RobotAnchor
+    ) ">"
 ;
 
 RobotAnchor:

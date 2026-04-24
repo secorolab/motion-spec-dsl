@@ -31,13 +31,13 @@ MOTION_SPEC (ns=app) m_move {
     WHEN {}
 
     WHILE {
-        wi1: keeping cw.twist-ee-base.linvel.z equal to cs.vel-z-down,
-        wi2: keeping cw.twist-ee-base.linvel.x equal to cs.vel-zero,
-        wi3: keeping cw.twist-ee-base.linvel.y equal to cs.vel-zero
+        wi1: keeping <cw.twist-ee-base>.linvel.z equal to <cs.vel-z-down>,
+        wi2: keeping <cw.twist-ee-base>.linvel.x equal to <cs.vel-zero>,
+        wi3: keeping <cw.twist-ee-base>.linvel.y equal to <cs.vel-zero>
     }
 
     UNTIL {
-        u1: cw.wrench-ee-ee.force.z is larger than [cpo.force-contact = 5.0 N]
+        u1: <cw.wrench-ee-ee>.force.z is larger than [cpo.force-contact = 5.0 N]
     }
 }
 
@@ -51,33 +51,33 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: m_move
+    MOTION: <m_move>
 
     MONITORS {
-        mon-contact: monitor m_move.u1 and trigger event evt-contact when active
+        mon-contact: monitor <m_move.u1> and trigger event evt-contact when active
     }
 
     CONTROLLERS {
         ctrl-vel-z: PID {
-            constraint: m_move.wi1,
-            solver: kinova_solver,
+            constraint: <m_move.wi1>,
+            solver: <kinova_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 1.0
         },
         ctrl-vel-x: PID {
-            constraint: m_move.wi2,
-            solver: kinova_solver,
+            constraint: <m_move.wi2>,
+            solver: <kinova_solver>,
             Kp = 5.0, Ki = 1.0, Kd = 1.0
         },
-        ctrl-vel-y: PID { constraint: m_move.wi3, solver: kinova_solver, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
+        ctrl-vel-y: PID { constraint: <m_move.wi3>, solver: <kinova_solver>, Kp = 5.0, Ki = 1.0, Kd = 1.0 }
     }
 
     SOLVERS {
         kinova_solver: Solver {
-            robot: kinova,
+            robot: <kinova>,
             algorithm: Vereshchagin,
-            root: kinova.chain.root,
-            end: kinova.chain.end,
-            gravity: c1.gravity equal to c2.gravity-vec
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }
 }
