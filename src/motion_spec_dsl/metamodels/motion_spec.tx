@@ -200,7 +200,7 @@ ContextScope:
 ;
 
 EqualityConstraint:
-    "equal" "to" reference=ContextRef
+    ("equal" "to" | "away" "from") reference=ContextRef
 ;
 
 GreaterThanConstraint:

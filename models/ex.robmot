@@ -42,7 +42,7 @@ MOTION_SPEC (ns=app) m-approach {
         cstr-linvel-z: keeping <cw.twist-ee>.linvel.z equal to <cs.vel-z-down>,
         cstr-linvel-x: keeping <cw.twist-ee>.linvel.x equal to <cs.vel-zero>,
         cstr-linvel-y: keeping <cw.twist-ee>.linvel.y equal to Spec[vel-y-zero: LinearVelocity = 0.0 m/s],
-        cstr-keep-j2:  keeping <cw.q-j2> equal to <cs.q-j2-ref>,
+        cstr-keep-j2:  keeping <cw.q-j2> away from <cs.q-j2-ref>,
         cstr-limit-j4: keeping <cw.q-j4> between <cs.q-j4-lower> and <cs.q-j4-upper>
     }
 
