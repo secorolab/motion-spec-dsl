@@ -15,6 +15,7 @@ from motion_spec_dsl.generators.motion_spec_graph import (
     CartesianForceInterface,
     JointForceInterface,
     MotionSpecDatasetBuilder,
+    _evaluator_id,
 )
 from motion_spec_dsl.generators.registration import motion_spec_metamodel
 
@@ -37,7 +38,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
     constraint = builder.controlled_constraints[0]
     motion_node = builder.root_uri(f"motion-{motion.name}", owner=motion)
     evaluator_node = builder.root_uri(
-        f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent
+        _evaluator_id(constraint.constraint), owner=constraint.constraint.parent
     )
     assert constraint.error_signal_id is not None
     error_node = builder.root_uri(

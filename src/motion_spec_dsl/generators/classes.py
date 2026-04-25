@@ -325,6 +325,7 @@ class GeoPropPair:
 class QuantityType(StrEnum):
     Distance        = "Distance"
     Angle           = "Angle"
+    PlaneAngle      = "PlaneAngle"
     AngularDistance = "AngularDistance"
     LinearVelocity  = "LinearVelocity"
     AngularVelocity = "AngularVelocity"

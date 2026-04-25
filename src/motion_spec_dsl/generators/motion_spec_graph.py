@@ -271,7 +271,7 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
         units=(QUDT_UNIT.UNITLESS, QUDT_UNIT.M),
         properties={
             ViewProperty.ROTATION: PropertySpec(
-                scalar_type=QuantityType.Angle,
+                scalar_type=QuantityType.PlaneAngle,
                 view_type=MAP.PoseCoordinateView,
                 view_subspace="rotation",
             ),
@@ -290,6 +290,10 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
     ),
 }
 
+CSTR_TYPE_NAME: dict[QuantityType | str, str] = {
+    QuantityType.PlaneAngle: QuantityType.Angle,
+}
+
 SCALAR_UNIT: dict[QuantityType | str, Node] = {
     QuantityType.AngularVelocity: QUDT_UNIT["RAD-PER-SEC"],
     QuantityType.LinearVelocity: QUDT_UNIT["M-PER-SEC"],
@@ -297,6 +301,7 @@ SCALAR_UNIT: dict[QuantityType | str, Node] = {
     QuantityType.Force: QUDT_UNIT.N,
     "Position": QUDT_UNIT.M,
     QuantityType.Angle: QUDT_UNIT["RAD"],
+    QuantityType.PlaneAngle: QUDT_UNIT["RAD"],
     QuantityType.Distance: QUDT_UNIT.M,
 }
 
@@ -387,6 +392,16 @@ def _entity_id(value: Any) -> str:
     if hasattr(value, "name"):
         return f"name:{value.name}"
     return str(value)
+
+
+def _evaluator_id(spec: Any) -> str:
+    section = getattr(spec, "parent", None)
+    motion = getattr(section, "parent", None) if section is not None else None
+    section_kind = getattr(section, "kind", None)
+    motion_name = getattr(motion, "name", None)
+    if motion_name and section_kind:
+        return f"eval-{motion_name}-{section_kind}-{spec.name}"
+    return f"eval-{spec.name}"
 
 
 def _dsl_unit(unit_name: str) -> Node:
@@ -1610,7 +1625,7 @@ class MotionSpecDatasetBuilder:
                 continue
             seen_uris.add(uri_str)
             node = URIRef(constraint.constraint.uri)
-            type_name = constraint.scalar_type
+            type_name = CSTR_TYPE_NAME.get(constraint.scalar_type, constraint.scalar_type)
             _add_types(self.graph, node, CSTR.Constraint, CSTR[f"{type_name}Constraint"])
             self.graph.add((node, CSTR.quantity, self.constraint_quantity_node(constraint)))
             owning_motion = getattr(getattr(constraint.constraint, "parent", None), "parent", None)
@@ -1724,7 +1739,7 @@ class MotionSpecDatasetBuilder:
                         node,
                         CSTR_HDL.evaluators,
                         self.root_uri(
-                            f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent
+                            _evaluator_id(constraint.constraint), owner=constraint.constraint.parent
                         ),
                     )
                 )
@@ -1814,7 +1829,7 @@ class MotionSpecDatasetBuilder:
                     (
                         node,
                         CSTR_HDL.evaluators,
-                        self.root_uri(f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent),
+                        self.root_uri(_evaluator_id(constraint.constraint), owner=constraint.constraint.parent),
                     )
                 )
 
@@ -1876,9 +1891,9 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((node, MAP.subspace, MAP[resolved.property_spec.view_subspace]))
                 self.graph.add((node, MAP.axis, MAP[resolved.axis]))
         for constraint in self.constraints:
-            if constraint.scalar_type == QuantityType.Angle:
+            if constraint.scalar_type in (QuantityType.Angle, QuantityType.PlaneAngle):
                 _add_quantity(
-                    self.graph, self.constraint_quantity_node(constraint), QuantityType.Angle
+                    self.graph, self.constraint_quantity_node(constraint), constraint.scalar_type
                 )
         for rotation_id in rotation_ids:
             _add_quantity(self.graph, self.root_uri(rotation_id), QuantityType.Angle)
@@ -1921,9 +1936,8 @@ class MotionSpecDatasetBuilder:
             if constraint.error_signal_id is None or constraint_id in seen_eval_constraints:
                 continue
             seen_eval_constraints.add(constraint_id)
-            node = self.root_uri(
-                f"eval-{constraint.constraint.name}", owner=constraint.constraint.parent
-            )
+            spec = constraint.constraint
+            node = self.root_uri(_evaluator_id(spec), owner=spec.parent)
             _add_types(self.graph, node, CSTR_HDL.ConstraintEvaluator, CSTR_HDL.ErrorEvaluator)
             self.graph.add((node, CSTR_HDL.constraint, URIRef(constraint.constraint.uri)))
             self.graph.add(
@@ -2078,7 +2092,7 @@ class MotionSpecDatasetBuilder:
                 _add_types(self.graph, op_node, GEOM_OP.PoseToAngleAroundAxis)
                 self.graph.add((op_node, GEOM_OP.pose, self.root_uri(quantity.name, owner=scope.motion)))
                 self.graph.add((op_node, GEOM_OP.angle, self.root_uri(scalar_id, owner=scope.motion)))
-                self.graph.add((op_node, GEOM_OP.axis, MAP[axis]))
+                self.graph.add((op_node, GEOM_OP.axis, GEOM_OP[axis]))
 
     def _add_transform_operations(self) -> None:
         for constraint in self.controlled_constraints:
