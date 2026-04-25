@@ -415,16 +415,6 @@ def _dsl_unit(unit_name: str) -> Node:
         ) from exc
 
 
-def _infer_attached_link(
-    builder: "MotionSpecDatasetBuilder",
-    handler_spec: ConstraintHandler,
-    solver_name: str | None = None,
-) -> str | None:
-    for interface in builder.solver_interfaces(handler_spec, solver_name=solver_name):
-        if isinstance(interface, CartesianForceInterface) and interface.attached_to is not None:
-            return interface.attached_to
-    return None
-
 
 def _view_scalar_type(
     quantity: WorldQuantity, property_name: ViewProperty, axis: str | None
@@ -1115,13 +1105,10 @@ class MotionSpecDatasetBuilder:
         self,
         motion_spec: MotionSpec,
         solver: Any,
-        attached_link: str | None,
         *,
         handler_spec: ConstraintHandler,
     ) -> URIRef:
         stem = self._solver_node_stem(handler_spec, motion_spec, solver)
-        if attached_link:
-            return self.root_uri(f"spec-acc-{attached_link}-{stem}", owner=motion_spec)
         return self.root_uri(f"spec-acc-{stem}", owner=motion_spec)
 
     def _driver_attachment(
@@ -1964,7 +1951,6 @@ class MotionSpecDatasetBuilder:
             for solver in self.handler_solvers(handler_spec):
                 if not getattr(solver, "algorithm", ""):
                     continue
-                attached_link = _infer_attached_link(self, handler_spec, solver.name)
                 interfaces = self.solver_interfaces(handler_spec, solver_name=solver.name)
                 for interface in interfaces:
                     self._emit_authored_solver_interface(handler_spec, interface)
@@ -1982,7 +1968,6 @@ class MotionSpecDatasetBuilder:
                     spec_acc_node = self._spec_acc_node(
                         motion_spec,
                         solver,
-                        attached_link,
                         handler_spec=handler_spec,
                     )
                     _add_types(self.graph, spec_acc_node, SLV.AccelerationConstraintSpecification)
@@ -1993,17 +1978,6 @@ class MotionSpecDatasetBuilder:
                                 spec_acc_node,
                                 SLV.constraints,
                                 self.root_uri(interface.node_id, owner=motion_spec),
-                            )
-                        )
-                    attached_to_name = attached_link or (
-                        _node_name(solver.end) if getattr(solver, "end", None) is not None else None
-                    )
-                    if attached_to_name is not None:
-                        self.graph.add(
-                            (
-                                spec_acc_node,
-                                SLV["attached-to"],
-                                self.root_uri(attached_to_name, owner=handler_spec),
                             )
                         )
 
