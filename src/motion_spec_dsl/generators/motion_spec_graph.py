@@ -1781,6 +1781,7 @@ class MotionSpecDatasetBuilder:
                 )
                 monitor_node = URIRef(monitor.uri)
                 _add_types(self.graph, monitor_node, CSTR_HDL.Monitor)
+                self.graph.add((monitor_node, CSTR_HDL.constraint, URIRef(constraint.constraint.uri)))
                 self.graph.add(
                     (
                         monitor_node,

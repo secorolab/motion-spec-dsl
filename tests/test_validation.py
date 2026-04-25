@@ -85,8 +85,8 @@ def test_crf_model_supports_context_and_solver_references() -> None:
     metamodel = motion_spec_metamodel()
 
     model = metamodel.model_from_file(Path(__file__).parents[1] / "models" / "crf.robmot")
-    motion_loosen = next(spec for spec in model.specs if getattr(spec, "name", "") == "motion_loosen")
-    handler_loosen = next(spec for spec in model.specs if getattr(spec, "name", "") == "handler_loosen")
+    motion_loosen = next(spec for spec in model.specs if getattr(spec, "name", "") == "m-loosen")
+    handler_loosen = next(spec for spec in model.specs if getattr(spec, "name", "") == "handler-loosen")
 
     loosen_world = motion_loosen.context[0].declaration
     loosen_spec = motion_loosen.context[2].declaration

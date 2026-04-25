@@ -11,7 +11,7 @@ ROBOT (ns=app) kinova {
     }
 }
 
-MOTION_SPEC (ns=app) motion_find {
+MOTION_SPEC (ns=app) m-find {
     MOVE: "Rotate to find the screw engagement point"
 
     CONTEXT {
@@ -60,7 +60,7 @@ MOTION_SPEC (ns=app) motion_find {
     }
 }
 
-CONSTRAINT_HANDLER (ns=app) handler_find {
+CONSTRAINT_HANDLER (ns=app) handler-find {
     CONTEXT {
         c1: World {
             link-ee: Link,
@@ -71,43 +71,43 @@ CONSTRAINT_HANDLER (ns=app) handler_find {
         }
     }
 
-    MOTION: <motion_find>
+    MOTION: <m-find>
 
     MONITORS {
         mon-torque-find-shutoff:
-            monitor <motion_find.cstr-torque-find-shutoff> and
+            monitor <m-find.cstr-torque-find-shutoff> and
             trigger event evt-torque-find-shutoff when active,
         mon-rotation-find-limit:
-            monitor <motion_find.cstr-rotation-find-limit> and
+            monitor <m-find.cstr-rotation-find-limit> and
             trigger event evt-rotation-find-limit when active,
         mon-torque-find-upper-limit:
-            monitor <motion_find.cstr-torque-find-upper-limit> and
+            monitor <m-find.cstr-torque-find-upper-limit> and
             trigger event evt-torque-find-upper-limit when active
     }
 
     CONTROLLERS {
         ctrl-angvel-find: PID {
-            constraint: <motion_find.cstr-angvel-find>,
+            constraint: <m-find.cstr-angvel-find>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
         ctrl-linvel-ee-x-zero: PID {
-            constraint: <motion_find.cstr-linvel-ee-x-zero>,
+            constraint: <m-find.cstr-linvel-ee-x-zero>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-y-zero: PID {
-            constraint: <motion_find.cstr-linvel-ee-y-zero>,
+            constraint: <m-find.cstr-linvel-ee-y-zero>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-linvel-ee-z-zero: PID {
-            constraint: <motion_find.cstr-linvel-ee-z-zero>,
+            constraint: <m-find.cstr-linvel-ee-z-zero>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-x-zero: PID {
-            constraint: <motion_find.cstr-angvel-ee-x-zero>,
+            constraint: <m-find.cstr-angvel-ee-x-zero>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
         ctrl-angvel-ee-y-zero: PID {
-            constraint: <motion_find.cstr-angvel-ee-y-zero>,
+            constraint: <m-find.cstr-angvel-ee-y-zero>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         }
     }
@@ -123,21 +123,21 @@ CONSTRAINT_HANDLER (ns=app) handler_find {
     }
 }
 
-MOTION_SPEC (ns=app) motion_loosen {
+MOTION_SPEC (ns=app) m-loosen {
     MOVE: "Reverse-rotate to loosen after screw engagement"
 
     CONTEXT {
         c1: World {
-            <motion_find.c1.twist-ee-ee>,
-            <motion_find.c1.wrench-ee-ee>,
-            <motion_find.c1.pose-arm-ee-world>
+            <m-find.c1.twist-ee-ee>,
+            <m-find.c1.wrench-ee-ee>,
+            <m-find.c1.pose-arm-ee-world>
         },
         c2: Pre {
             torque-loosen-min-contact: Torque = 0.5 Nm
         },
         c3: Spec {
             angvel-ee-z-ref-loosen: AngularVelocity = -1.0 rad/s,
-            <motion_find.c2.angvel-zero-ref>
+            <m-find.c2.angvel-zero-ref>
         },
         c4: Post {
             rotation-loosen-lower: AngularDistance = 1.4835 rad,
@@ -149,62 +149,62 @@ MOTION_SPEC (ns=app) motion_loosen {
 
     WHEN {
         cstr-torque-loosen-contact:
-            <motion_find.c1.wrench-ee-ee>.torque.z
+            <m-find.c1.wrench-ee-ee>.torque.z
             is larger than <c2.torque-loosen-min-contact>
     }
 
     WHILE {
         cstr-angvel-loosen:
-            keeping <motion_find.c1.twist-ee-ee>.angvel.z equal to <c3.angvel-ee-z-ref-loosen>,
-        <motion_find.cstr-linvel-ee-x-zero>,
-        <motion_find.cstr-linvel-ee-y-zero>,
-        <motion_find.cstr-linvel-ee-z-zero>,
-        <motion_find.cstr-angvel-ee-x-zero>,
-        <motion_find.cstr-angvel-ee-y-zero>
+            keeping <m-find.c1.twist-ee-ee>.angvel.z equal to <c3.angvel-ee-z-ref-loosen>,
+        <m-find.cstr-linvel-ee-x-zero>,
+        <m-find.cstr-linvel-ee-y-zero>,
+        <m-find.cstr-linvel-ee-z-zero>,
+        <m-find.cstr-angvel-ee-x-zero>,
+        <m-find.cstr-angvel-ee-y-zero>
     }
 
     UNTIL {
         cstr-rotation-loosen-bilateral:
-            <motion_find.c1.pose-arm-ee-world>.orientation.z
+            <m-find.c1.pose-arm-ee-world>.orientation.z
             between <c4.rotation-loosen-lower>
             and <c4.rotation-loosen-upper>,
         cstr-torque-loosen-bilateral:
-            <motion_find.c1.wrench-ee-ee>.torque.z
+            <m-find.c1.wrench-ee-ee>.torque.z
             between <c4.torque-loosen-lower>
             and <c4.torque-loosen-upper>
     }
 }
 
-CONSTRAINT_HANDLER (ns=app) handler_loosen {
+CONSTRAINT_HANDLER (ns=app) handler-loosen {
     CONTEXT {}
 
-    MOTION: <motion_loosen>
+    MOTION: <m-loosen>
 
     MONITORS {
         mon-torque-loosen-contact:
-            monitor <motion_loosen.cstr-torque-loosen-contact> and
+            monitor <m-loosen.cstr-torque-loosen-contact> and
             set flag flg-torque-loosen-contact while active,
         mon-rotation-loosen-bilateral:
-            monitor <motion_loosen.cstr-rotation-loosen-bilateral> and
+            monitor <m-loosen.cstr-rotation-loosen-bilateral> and
             trigger event evt-rotation-loosen when active,
         mon-torque-loosen-bilateral:
-            monitor <motion_loosen.cstr-torque-loosen-bilateral> and
+            monitor <m-loosen.cstr-torque-loosen-bilateral> and
             trigger event evt-torque-loosen when active
     }
 
     CONTROLLERS {
         ctrl-angvel-loosen: PID {
-            constraint: <motion_loosen.cstr-angvel-loosen>,
+            constraint: <m-loosen.cstr-angvel-loosen>,
             Kp = 8.0, Ki = 0.5, Kd = 3.0
         },
-        <handler_find.ctrl-linvel-ee-x-zero>,
-        <handler_find.ctrl-linvel-ee-y-zero>,
-        <handler_find.ctrl-linvel-ee-z-zero>,
-        <handler_find.ctrl-angvel-ee-x-zero>,
-        <handler_find.ctrl-angvel-ee-y-zero>
+        <handler-find.ctrl-linvel-ee-x-zero>,
+        <handler-find.ctrl-linvel-ee-y-zero>,
+        <handler-find.ctrl-linvel-ee-z-zero>,
+        <handler-find.ctrl-angvel-ee-x-zero>,
+        <handler-find.ctrl-angvel-ee-y-zero>
     }
 
     SOLVERS {
-        <handler_find.right_arm_solver>
+        <handler-find.right_arm_solver>
     }
 }
