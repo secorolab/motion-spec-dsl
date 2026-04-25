@@ -1144,7 +1144,9 @@ class MotionSpecDatasetBuilder:
         }
 
     def constraint_quantity_node(self, constraint: ConstraintData) -> Node:
-        scope = self.motion_scope.get(constraint.motion_id)
+        owning_motion = getattr(getattr(constraint.constraint, "parent", None), "parent", None)
+        owning_scope = self.scope_for_motion(owning_motion)
+        scope = owning_scope or self.motion_scope.get(constraint.motion_id)
         return self.node(constraint.quantity_node_id, owner=scope.motion if scope else None)
 
     @cached_property
@@ -1217,7 +1219,8 @@ class MotionSpecDatasetBuilder:
     def value_variables(self) -> dict[str, ValueVariable]:
         values: dict[str, ValueVariable] = {}
         for scope in self.motion_scope.values():
-            values.update(scope.values)
+            for val in scope.values.values():
+                values[str(val.uri)] = val
         for scope in self.motion_scope.values():
             for constraint in scope.constraints:
                 for ref in _constraint_context_refs(constraint):
@@ -1617,12 +1620,19 @@ class MotionSpecDatasetBuilder:
                 )
 
     def _add_constraints(self) -> None:
+        seen_uris: set[str] = set()
         for constraint in self.constraints:
+            uri_str = str(constraint.constraint.uri)
+            if uri_str in seen_uris:
+                continue
+            seen_uris.add(uri_str)
             node = URIRef(constraint.constraint.uri)
             type_name = constraint.scalar_type
             _add_types(self.graph, node, CSTR.Constraint, CSTR[f"{type_name}Constraint"])
             self.graph.add((node, CSTR.quantity, self.constraint_quantity_node(constraint)))
-            scope = self.motion_scope[constraint.motion_id]
+            owning_motion = getattr(getattr(constraint.constraint, "parent", None), "parent", None)
+            owning_scope = self.scope_for_motion(owning_motion)
+            scope = owning_scope or self.motion_scope[constraint.motion_id]
             motion_spec = scope.motion
             motion_values = scope.values
             if constraint.kind == ConstraintKind.EQUALITY:
