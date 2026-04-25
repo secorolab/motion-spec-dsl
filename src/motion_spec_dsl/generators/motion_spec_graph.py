@@ -55,7 +55,7 @@ from motion_spec_dsl.generators.classes import (
     SpecContextDecl,
     ScalarQuantity,
     ValueVariable,
-    VectorQuantity,
+
     WorldContextDecl,
     WorldQuantity,
     WorldQuantityType,
@@ -1516,16 +1516,13 @@ class MotionSpecDatasetBuilder:
         self._add_transform_operations()
 
     def _add_structural_entities(self) -> None:
-        entities: dict[str, tuple[Node, Node]] = {}
         for quantity in self.world_quantities.values():
             if WORLD_SPECS.get(quantity.type) is None:
                 rdf_type = WORLD_STRUCTURE_TYPES.get(quantity.type)
                 if rdf_type is not None:
-                    entities[quantity.name] = (URIRef(quantity.uri), rdf_type)
+                    _add_types(self.graph, URIRef(quantity.uri), rdf_type)
         for entity_name, rdf_type in self.implicit_world_entities.items():
-            entities.setdefault(entity_name, (self.root_uri(entity_name), rdf_type))
-        for node, rdf_type in sorted(entities.values(), key=lambda item: str(item[0])):
-            _add_types(self.graph, node, rdf_type)
+            _add_types(self.graph, self.root_uri(entity_name), rdf_type)
 
     def _add_world_quantities(self) -> None:
         for quantity in self.world_quantities.values():
@@ -1589,14 +1586,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(variable.value.unit)))
             if isinstance(variable.value, ScalarQuantity):
                 self.graph.add((node, QUDT_SCHEMA.value, Literal(str(variable.value.value))))
-            elif isinstance(variable.value, VectorQuantity):
-                self.graph.add(
-                    (
-                        node,
-                        QUDT_SCHEMA.value,
-                        Literal(f"{variable.value.x} {variable.value.y} {variable.value.z}"),
-                    )
-                )
 
     def _add_constraints(self) -> None:
         seen_uris: set[str] = set()
@@ -1858,13 +1847,7 @@ class MotionSpecDatasetBuilder:
                 node = self.root_uri(f"view-{resolved.scalar_id}", owner=scope.motion)
                 _add_types(self.graph, node, MAP.View)
                 _add_types(self.graph, node, resolved.property_spec.view_type)
-                self.graph.add(
-                    (
-                        node,
-                        MAP.superobject,
-                        self.root_uri(resolved.quantity_name, owner=scope.motion),
-                    )
-                )
+                self.graph.add((node, MAP.superobject, self.node(quantity)))
                 self.graph.add(
                     (node, MAP.subobject, self.root_uri(resolved.scalar_id, owner=scope.motion))
                 )
