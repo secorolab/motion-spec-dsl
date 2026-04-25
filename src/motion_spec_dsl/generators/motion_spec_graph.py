@@ -737,8 +737,8 @@ class MotionSpecDatasetBuilder:
                     solver_name=solver_name,
                     force_name=constraint.quantity.name,
                     attached_to=(
-                        _node_name(controller.apply_at)
-                        if getattr(controller, "apply_at", None)
+                        str(controller.apply_at.uri)
+                        if getattr(controller, "apply_at", None) and hasattr(controller.apply_at, "uri")
                         else None
                     ),
                     axis=constraint.axis if constraint.property_name == ViewProperty.FORCE else None,
@@ -1023,13 +1023,7 @@ class MotionSpecDatasetBuilder:
         _add_types(self.graph, spec_node, SLV.CartesianForceSpecification)
         self.graph.add((spec_node, SLV.force, self.node(force_quantity)))
         if interface.attached_to is not None:
-            self.graph.add(
-                (
-                    spec_node,
-                    SLV["attached-to"],
-                    self.root_uri(interface.attached_to, owner=handler_spec),
-                )
-            )
+            self.graph.add((spec_node, SLV["attached-to"], URIRef(interface.attached_to)))
 
     def _emit_authored_solver_interface(
         self,
@@ -2017,9 +2011,9 @@ class MotionSpecDatasetBuilder:
                         self.root_uri(_node_name(solver.robot), owner=handler_spec),
                     )
                 )
-                self.graph.add(
-                    (solver_node, SLV.root, self.root_uri(_node_name(solver.root), owner=handler_spec))
-                )
+                root_node = self.root_uri(_node_name(solver.root), owner=handler_spec)
+                _add_types(self.graph, root_node, GEOM_ENT.Frame)
+                self.graph.add((solver_node, SLV.root, root_node))
                 self.graph.add((solver_node, SLV.gravity, self.node(gravity_quantity)))
                 self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
 
