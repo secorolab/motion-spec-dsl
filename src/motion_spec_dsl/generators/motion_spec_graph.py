@@ -31,7 +31,6 @@ from motion_spec.namespace import (
     MOT,
     QUDT_QKIND,
     QUDT_SCHEMA,
-    RBDYN_OP,
     QUDT_UNIT,
     RBDYN_COORD,
     RBDYN_ENT,
@@ -39,7 +38,6 @@ from motion_spec.namespace import (
 )
 from motion_spec_dsl.generators.classes import (
     BilateralConstraint,
-    ConstraintAlias,
     ConstraintHandler,
     ConstraintSpecification,
     ControllerMode,
@@ -70,7 +68,6 @@ NamespaceBinding: TypeAlias = tuple[str, Any]
 ContextLike: TypeAlias = dict[str, str] | list[str | dict[str, str]]
 DatasetOutput: TypeAlias = tuple[Dataset, ContextLike]
 ViewAxis: TypeAlias = str
-ConstraintKey: TypeAlias = tuple[str, str]
 WorldQuantityLike: TypeAlias = WorldQuantity
 ViewKey: TypeAlias = tuple[str, "ViewProperty", ViewAxis]
 
@@ -106,7 +103,6 @@ class SignalKind(StrEnum):
 @dataclass(frozen=True)
 class PropertySpec:
     scalar_type: QuantityType
-    scalar_prefix: str | None = None
     accel_prefix: str | None = None
     view_type: Any = None
     view_subspace: str | None = None
@@ -233,7 +229,6 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
         properties={
             ViewProperty.ANGULAR: PropertySpec(
                 scalar_type=QuantityType.AngularVelocity,
-                scalar_prefix="angvel",
                 accel_prefix="ang",
                 view_type=MAP.VelocityTwistCoordinateView,
                 view_subspace="angular-velocity",
@@ -241,7 +236,6 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
             ),
             ViewProperty.LINEAR: PropertySpec(
                 scalar_type=QuantityType.LinearVelocity,
-                scalar_prefix="linvel",
                 accel_prefix="lin",
                 view_type=MAP.VelocityTwistCoordinateView,
                 view_subspace="linear-velocity",
@@ -256,15 +250,11 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
         properties={
             ViewProperty.TORQUE: PropertySpec(
                 scalar_type=QuantityType.Torque,
-                scalar_prefix="torque",
-                accel_prefix="torque",
                 view_type=MAP.WrenchCoordinateView,
                 view_subspace="torque",
             ),
             ViewProperty.FORCE: PropertySpec(
                 scalar_type=QuantityType.Force,
-                scalar_prefix="force",
-                accel_prefix="force",
                 view_type=MAP.WrenchCoordinateView,
                 view_subspace="force",
             ),
@@ -284,7 +274,6 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
                 scalar_type=QuantityType.Angle,
                 view_type=MAP.PoseCoordinateView,
                 view_subspace="rotation",
-                accel_subspace="angular-acceleration",
             ),
             ViewProperty.DISTANCE: PropertySpec(
                 scalar_type=QuantityType.Distance,
@@ -346,7 +335,6 @@ GRAPH_BINDINGS: tuple[NamespaceBinding, ...] = (
     ("geom-op", GEOM_OP),
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
-    ("rbdyn-op", RBDYN_OP),
     ("qudt", QUDT_SCHEMA),
     ("qkind", QUDT_QKIND),
     ("unit", QUDT_UNIT),
@@ -529,11 +517,6 @@ def _view_property_name(constraint: ConstraintSpecification) -> ViewProperty:
     if normalized is None:
         return ViewProperty(str(value))
     return normalized
-
-
-def _primary_solver(handler: ConstraintHandler) -> Any | None:
-    solvers = getattr(handler, "solvers", [])
-    return solvers[0] if solvers else None
 
 
 def _resolve_constraint_view(
