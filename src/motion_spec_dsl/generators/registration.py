@@ -8,8 +8,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from rdflib.graph import Dataset, Graph
-from rdflib.namespace import Namespace
+from rdflib.graph import Dataset
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
 
@@ -145,20 +144,6 @@ class MotionConstraintScopeProvider:
         return None
 
 
-class HandlerSolverScopeProvider:
-    """Resolve controller solver refs against solvers declared in the same handler."""
-
-    def __call__(self, obj: ControllerParams, attr, obj_ref):
-        del attr
-        controller = obj.parent
-        handler = getattr(controller, "parent", None)
-        for solver in getattr(handler, "solvers", []):
-            solver_name = getattr(solver, "name", None) or getattr(_resolved_solver(solver), "name", None)
-            if solver_name == obj_ref.obj_name:
-                return _resolved_solver(solver)
-        return None
-
-
 class HandlerControllerScopeProvider:
     """Resolve controller refs against controllers declared in the target handler."""
 
@@ -213,57 +198,9 @@ motion_spec_lang = LanguageDesc(
 )
 
 
-def _iter_entity_objects(obj, seen: set[int] | None = None):
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return
-    seen.add(obj_id)
-
-    if isinstance(obj, (str, bytes, int, float, bool, type(None), Namespace)):
-        return
-    if hasattr(obj, "name") and hasattr(obj, "uri"):
-        yield obj
-    if isinstance(obj, dict):
-        children = obj.values()
-    elif isinstance(obj, (list, tuple, set)):
-        children = obj
-    elif hasattr(obj, "__dict__"):
-        children = (
-            value
-            for key, value in obj.__dict__.items()
-            if not key.startswith("_tx_")
-        )
-    else:
-        return
-
-    for child in children:
-        yield from _iter_entity_objects(child, seen)
-
-
-def _print_entity_uris(model) -> None:
-    for entity in _iter_entity_objects(model):
-        print(f"{entity.__class__.__name__} {entity.name}: {entity.uri}")
-
-
-def _graph_format(output_format: str) -> str:
-    if output_format not in SUPPORTED_FORMATS:
-        raise ValueError(
-            f"Unsupported format '{output_format}', supported: {list(SUPPORTED_FORMATS)}"
-        )
-    return SUPPORTED_FORMATS[output_format]
-
-
-def _serialize_graph(graph: Graph, output_format: str, context: Any) -> str:
-    serialized = graph.serialize(format=output_format, indent=2, context=context)
-    return serialized.decode() if isinstance(serialized, bytes) else serialized
-
-
 def _merged_context(context: Any) -> list[str | dict[str, str]]:
     context_urls: set[str] = set()
     local_context: dict[str, str] = {}
-
     if isinstance(context, list):
         for item in context:
             if isinstance(item, str):
@@ -272,27 +209,16 @@ def _merged_context(context: Any) -> list[str | dict[str, str]]:
                 local_context.update(item)
     elif isinstance(context, dict):
         local_context.update(context)
-
     return [*sorted(context_urls), local_context]
 
 
-def _constraint_paths(dataset: Dataset, context: Any) -> list[str]:
+def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, Any]:
     constraint_paths: set[str] = set()
-
     for prefix, _ in dataset.namespaces():
         path = CONSTRAINT_PATH_BY_PREFIX.get(prefix)
         if path:
             constraint_paths.add(path)
 
-    if isinstance(context, list):
-        for item in context:
-            if isinstance(item, str) and "metamodels/" in item:
-                constraint_paths.add(item.split("metamodels/")[1].replace(".json", ".ttl"))
-
-    return sorted(constraint_paths)
-
-
-def _build_manifest(dataset: Dataset, context: Any, imported_files: list[str]) -> dict[str, Any]:
     return {
         "license": "https://github.com/aws/mit-0",
         "@context": {
@@ -317,7 +243,7 @@ def _build_manifest(dataset: Dataset, context: Any, imported_files: list[str]) -
         "@graph": [
             {
                 "import": imported_files,
-                "constraints": _constraint_paths(dataset, context),
+                "constraints": sorted(constraint_paths),
                 "iri-map": {
                     "https://comp-rob2b.github.io/": {"path": "comp-rob2b/"},
                     "https://secorolab.github.io/": {"path": "models/"},
@@ -327,46 +253,35 @@ def _build_manifest(dataset: Dataset, context: Any, imported_files: list[str]) -
     }
 
 
-def _write_text(path: Path, content: str) -> None:
-    path.write_text(content)
-    print(f"  wrote {path}")
-
-
-def _write_json(path: Path, content: dict[str, Any]) -> None:
-    path.write_text(json.dumps(content, indent=2))
-    print(f"  wrote {path}")
-
-
-def _write_single_output(dataset: Dataset, context: Any, model, output_dir: Path, output_format: str) -> None:
-    file_extension = _graph_format(output_format)
-    stem = Path(model._tx_filename).stem
-    graph_path = output_dir / f"{stem}.{file_extension}"
-    _write_text(graph_path, _serialize_graph(dataset.default_graph, output_format, _merged_context(context)))
-
-    manifest_path = output_dir / f"{stem}-app.json"
-    _write_json(manifest_path, _build_manifest(dataset, context, [graph_path.name]))
-
-
-def _gen_jsonld(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
-    del metamodel, debug
+def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
+    del metamodel, overwrite, debug
 
     output_format = kwargs.get("format", "json-ld")
-    _graph_format(output_format)
+    if output_format not in SUPPORTED_FORMATS:
+        raise ValueError(f"Unsupported format '{output_format}', supported: {list(SUPPORTED_FORMATS)}")
 
-    # print all entities with their URIs
-    # _print_entity_uris(model)
-
-    ms_graph_builder = MotionSpecDatasetBuilder(model)
-    dataset, context = ms_graph_builder.build()
+    builder = MotionSpecDatasetBuilder(model)
+    dataset, context = builder.build()
 
     output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
     output_dir.mkdir(parents=True, exist_ok=True)
-    _write_single_output(dataset, context, model, output_dir, output_format)
+    stem = Path(model._tx_filename).stem
+
+    graph_path = output_dir / f"{stem}.{SUPPORTED_FORMATS[output_format]}"
+    serialized = dataset.default_graph.serialize(
+        format=output_format, indent=2, context=_merged_context(context)
+    )
+    graph_path.write_text(serialized.decode() if isinstance(serialized, bytes) else serialized)
+    print(f"  wrote {graph_path}")
+
+    manifest_path = output_dir / f"{stem}-app.json"
+    manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name]), indent=2))
+    print(f"  wrote {manifest_path}")
 
 
 motion_spec_gen = GeneratorDesc(
     language="motion_spec_dsl",
     target="jsonld",
     description="Generates JSON-LD files from a .rob_mot motion specification",
-    generator=_gen_jsonld,
+    generator=_gen_graph,
 )
