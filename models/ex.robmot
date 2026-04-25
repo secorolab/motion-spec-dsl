@@ -32,7 +32,7 @@ MOTION_SPEC (ns=app) m-approach {
             q-j4-upper:  Angle =  0.8 rad
         },
         cpo: Post {
-            frc-threshold: Force
+            frc-threshold: Force = 5.0 N
         }
     }
 
@@ -47,7 +47,7 @@ MOTION_SPEC (ns=app) m-approach {
     }
 
     UNTIL {
-        cstr-contact: <cw.wrench-ee>.force.z is larger than [cpo.frc-threshold = 5.0 N]
+        cstr-contact: <cw.wrench-ee>.force.z is larger than <cpo.frc-threshold>
     }
 }
 

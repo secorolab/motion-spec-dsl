@@ -200,15 +200,15 @@ ContextScope:
 ;
 
 EqualityConstraint:
-    ("equal" "to" | "away" "from") reference=ContextRef
+    "equal" "to" reference=ContextRef
 ;
 
 GreaterThanConstraint:
-    ("greater" "than" | "is" "larger" "than") threshold=ContextRef
+    ("greater" "than" | "is" "larger" "than" | "away" "from") threshold=ContextRef
 ;
 
 LessThanConstraint:
-    ("less" "than" | "is" "smaller" "than") threshold=ContextRef
+    ("less" "than" | "is" "smaller" "than" | "up" "to") threshold=ContextRef
 ;
 
 BilateralConstraint:
