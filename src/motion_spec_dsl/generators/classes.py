@@ -53,6 +53,7 @@ class RobotSpec(IHasNamespaceDeclare):
     name: str
     type: RobotType
     urdf: str
+    model: str = ""
     base: RobotBaseComponent | None = None
     chain: RobotChainComponent | None = None
     manipulators: list[RobotManipulatorComponent] = field(default_factory=list)
@@ -65,6 +66,7 @@ class RobotSpec(IHasNamespaceDeclare):
 @dataclass
 class RobotBaseComponent(NamedNamespaceObject):
     parent: object
+    model: str
     root: str
     name: str = "base"
 
@@ -87,6 +89,7 @@ class RobotChainComponent(NamedNamespaceObject):
 class RobotManipulatorComponent(NamedNamespaceObject):
     parent: object
     name: str
+    model: str
     root: str
     end: str
 

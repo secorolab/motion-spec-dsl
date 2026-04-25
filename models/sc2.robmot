@@ -3,12 +3,10 @@ ns app = "https://secorolab.github.io/models/demo/"
 ROBOT (ns=app) eddie {
     type: MobileManipulator,
     urdf: "../robots/eddie.urdf",
-    base: {
-        root: link-platform
-    },
+    base: { model: Kelo, chain: { root: link-platform } },
     manipulators: {
-        right_arm: { root: link-rightarm-shoulder, end: link-rightarm-ee },
-        left_arm: { root: link-leftarm-shoulder, end: link-leftarm-ee }
+        right_arm: { model: KinovaGen3, chain: { root: link-rightarm-shoulder, end: link-rightarm-ee } },
+        left_arm:  { model: KinovaGen3, chain: { root: link-leftarm-shoulder,  end: link-leftarm-ee  } }
     }
 }
 

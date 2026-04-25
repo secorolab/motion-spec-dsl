@@ -3,6 +3,7 @@ ns handler = "https://secorolab.github.io/models/test/handler/"
 
 ROBOT (ns=motion) kinova {
     type: Manipulator,
+    model: KinovaGen3,
     urdf: "../robots/kg3.urdf",
     chain: {
         root: link-base,

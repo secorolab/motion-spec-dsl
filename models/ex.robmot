@@ -2,11 +2,9 @@ ns app = "https://secorolab.github.io/models/generated/"
 
 ROBOT (ns=app) kinova {
     type: Manipulator,
+    model: KinovaGen3,
     urdf: "../robots/kg3.urdf",
-    chain: {
-        root: link-base,
-        end: link-ee
-    }
+    chain: { root: base_link, end: Bracelet_Link }
 }
 
 MOTION_SPEC (ns=app) m-approach {

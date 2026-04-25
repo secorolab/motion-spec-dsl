@@ -13,12 +13,14 @@ Specification:
 RobotSpec:
     "ROBOT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "type" ":" type=RobotType ","
-        "urdf" ":" urdf=STRING ","
         (
+            "model" ":" model=RobotModel ","
+            "urdf" ":" urdf=STRING ","
+            chain=RobotChainComponent
+            |
+            "urdf" ":" urdf=STRING ","
             base=RobotBaseComponent
             ("," "manipulators" ":" "{" manipulators+=RobotManipulatorComponent[","] "}")?
-            |
-            chain=RobotChainComponent
         )
     "}"
 ;
@@ -27,8 +29,10 @@ RobotType:
     "Manipulator" | "MobileBase" | "MobileManipulator"
 ;
 
+RobotModel: "KinovaGen3" | "Kelo";
+
 RobotBaseComponent:
-    "base" ":" "{" "root" ":" root=IRI_TRUNK "}"
+    "base" ":" "{" "model" ":" model=RobotModel "," "chain" ":" "{" "root" ":" root=IRI_TRUNK "}" "}"
 ;
 
 RobotChainComponent:
@@ -36,7 +40,7 @@ RobotChainComponent:
 ;
 
 RobotManipulatorComponent:
-    name=IRI_TRUNK ":" "{" "root" ":" root=IRI_TRUNK "," "end" ":" end=IRI_TRUNK "}"
+    name=IRI_TRUNK ":" "{" "model" ":" model=RobotModel "," "chain" ":" "{" "root" ":" root=IRI_TRUNK "," "end" ":" end=IRI_TRUNK "}" "}"
 ;
 
 MotionSpec:

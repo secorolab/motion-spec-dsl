@@ -2,6 +2,7 @@ ns app = "https://secorolab.github.io/models/reuse/"
 
 ROBOT (ns=app) kinova {
     type: Manipulator,
+    model: KinovaGen3,
     urdf: "../robots/kg3.urdf",
     chain: {
         root: link-base,

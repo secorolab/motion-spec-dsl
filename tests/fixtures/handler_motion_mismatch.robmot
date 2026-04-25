@@ -3,11 +3,9 @@ ns app = "https://secorolab.github.io/models/tests/"
 ROBOT (ns=app) eddie {
     type: MobileManipulator,
     urdf: "../robots/eddie.urdf",
-    base: {
-        root: link-base
-    },
+    base: { model: Kelo, chain: { root: link-base } },
     manipulators: {
-        right_arm: { root: link-base, end: link-ee }
+        right_arm: { model: KinovaGen3, chain: { root: link-base, end: link-ee } }
     }
 }
 

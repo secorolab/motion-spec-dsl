@@ -20,6 +20,7 @@ from rdflib.term import Literal, URIRef
 from textx.scoping import get_included_models
 
 from motion_spec.namespace import (
+    APP,
     CSTR,
     CSTR_HDL,
     GEOM_COORD,
@@ -2000,6 +2001,26 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((solver_node, SLV.root, root_node))
                 self.graph.add((solver_node, SLV.gravity, self.node(gravity_quantity)))
                 self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
+                robot_spec = solver.root.robot_spec
+                self.graph.add((solver_node, APP["urdf"], Literal(robot_spec.urdf)))
+                self.graph.add((solver_node, APP["robot-type"], Literal(str(robot_spec.type))))
+                component_ref = solver.root.component
+                if component_ref is not None:
+                    arm = next(
+                        (m for m in robot_spec.manipulators if m.name == component_ref.component),
+                        None,
+                    )
+                    if arm is not None:
+                        self.graph.add((solver_node, APP["chain-root"], Literal(arm.root)))
+                        self.graph.add((solver_node, APP["chain-end"], Literal(arm.end)))
+                        self.graph.add((solver_node, APP["robot-model"], Literal(arm.model)))
+                else:
+                    chain = robot_spec.chain
+                    if chain is not None:
+                        self.graph.add((solver_node, APP["chain-root"], Literal(chain.root)))
+                        if chain.end:
+                            self.graph.add((solver_node, APP["chain-end"], Literal(chain.end)))
+                        self.graph.add((solver_node, APP["robot-model"], Literal(robot_spec.model)))
 
     def _add_map_operations(self) -> None:
         seen_angle_ops: set[str] = set()
