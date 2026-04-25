@@ -1710,6 +1710,9 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((motion_node, MOT["while"], URIRef(_resolved_spec(constraint).uri)))
             for constraint in motion_spec.until.constraints:
                 self.graph.add((motion_node, MOT.until, URIRef(_resolved_spec(constraint).uri)))
+            raw_logic = getattr(motion_spec.until, "logic", None)
+            until_logic = raw_logic if raw_logic in ("any", "all") else "any"
+            self.graph.add((motion_node, MOT.untilLogic, Literal(until_logic)))
 
     def _add_constraint_handlers(self) -> None:
         for handler_spec in self.authored_handlers:

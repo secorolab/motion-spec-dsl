@@ -244,8 +244,10 @@ class WhileSection(ConstraintSection):
     kind = "while"
 
 
+@dataclass
 class UntilSection(ConstraintSection):
     kind = "until"
+    logic: str | None = None
 
 
 class WorldQuantityType(StrEnum):

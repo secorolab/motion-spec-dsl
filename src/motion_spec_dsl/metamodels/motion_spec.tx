@@ -53,7 +53,8 @@ ConstraintSection:
 
 WhenSection:  "WHEN"  "{" constraints*=ConstraintItem[","]? "}" ;
 WhileSection: "WHILE" "{" constraints*=ConstraintItem[","]? "}" ;
-UntilSection: "UNTIL" "{" constraints*=ConstraintItem[","]? "}" ;
+UntilSection: "UNTIL" (logic=UntilLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
+UntilLogic:   "any" | "all" ;
 
 ConstraintItem: ConstraintSpecification | ConstraintAlias | ConstraintReference ;
 ConstraintAlias: name=IRI_TRUNK ":" "<" ref=ConstraintRef ">" ;

@@ -32,7 +32,8 @@ MOTION_SPEC (ns=app) m-approach {
             q-j4-upper:  Angle =  0.8 rad
         },
         cpo: Post {
-            frc-threshold: Force = 5.0 N
+            frc-threshold: Force = 5.0 N,
+            frc-overload:  Force = 20.0 N
         }
     }
 
@@ -46,8 +47,9 @@ MOTION_SPEC (ns=app) m-approach {
         cstr-limit-j4: keeping <cw.q-j4> between <cs.q-j4-lower> and <cs.q-j4-upper>
     }
 
-    UNTIL {
-        cstr-contact: <cw.wrench-ee>.force.z is larger than <cpo.frc-threshold>
+    UNTIL any {
+        cstr-contact:  <cw.wrench-ee>.force.z is larger than <cpo.frc-threshold>,
+        cstr-overload: <cw.wrench-ee>.force.z is larger than <cpo.frc-overload>
     }
 }
 
@@ -84,7 +86,7 @@ MOTION_SPEC (ns=app) m-contact {
     }
 
     UNTIL {
-        cstr-overload: <m-approach.cw.wrench-ee>.force.z is larger than Spec[frc-overload: Force = 25.0 N]
+        cstr-overload: <m-approach.cw.wrench-ee>.force.z is larger than Spec[frc-contact-overload: Force = 25.0 N]
     }
 }
 
@@ -101,7 +103,8 @@ CONSTRAINT_HANDLER (ns=app) handler-approach {
     MOTION: <m-approach>
 
     MONITORS {
-        mon-contact: monitor <m-approach.cstr-contact> and trigger event evt-contact when active
+        mon-contact:  monitor <m-approach.cstr-contact>  and trigger event evt-contact  when active,
+        mon-overload: monitor <m-approach.cstr-overload> and trigger event evt-overload when active
     }
 
     CONTROLLERS {
