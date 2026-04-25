@@ -102,6 +102,16 @@ def test_crf_model_supports_context_and_solver_references() -> None:
     assert handler_solver.uri == handler_solver.ref.solver.uri
 
 
+def test_posture_controller_accepts_unilateral_and_bilateral_joint_limits() -> None:
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(FIXTURES / "joint_limit_posture.robmot")
+    handler = model.specs[-1]
+    controllers = {c.name: c for c in handler.controllers}
+
+    assert controllers["ctrl-bilateral-j2"].control_mode.value == "Posture"
+    assert controllers["ctrl-less-than-j4"].control_mode.value == "Posture"
+
+
 def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
     metamodel = motion_spec_metamodel()
 

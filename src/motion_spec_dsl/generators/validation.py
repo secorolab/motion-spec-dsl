@@ -459,11 +459,6 @@ def validate_controller_commands(model: Model) -> None:
                         f"Controller '{controller.name}' with 'for Posture' must target a JointPosition constraint.",
                         controller,
                     )
-                if not isinstance(constraint_spec.expr, EqualityConstraint):
-                    raise _semantic_error(
-                        f"Controller '{controller.name}' with 'for Posture' must control an equality constraint.",
-                        controller,
-                    )
                 quantity_props = getattr(quantity, "props", None)
                 if quantity_props is None or not any(
                     getattr(pair, "key", None) == "of" and getattr(pair, "value", "")

@@ -778,7 +778,6 @@ class MotionSpecDatasetBuilder:
             or control_mode != ControllerMode.Posture
             or quantity is None
             or quantity.type != WorldQuantityType.JointPosition
-            or constraint.kind != ConstraintKind.EQUALITY
         ):
             return None
         signal_id = f"tau-{controller.name}"
@@ -1433,6 +1432,23 @@ class MotionSpecDatasetBuilder:
                     )
                     upper_var = _node_name(
                         getattr(expr.upper, "value", None) or getattr(expr.upper, "valRef", None)
+                    )
+
+                if (
+                    error_signal_id is None
+                    and (
+                        constraint.name in controlled_names
+                        or id(constraint) in controlled_specs
+                    )
+                    and quantity is not None
+                    and quantity.type == WorldQuantityType.JointPosition
+                ):
+                    error_signal_id = _controller_error_signal_id(
+                        scope.motion.name,
+                        quantity,
+                        resolved.property_name,
+                        resolved.axis,
+                        shared,
                     )
 
                 if (

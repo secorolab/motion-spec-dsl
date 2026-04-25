@@ -13,6 +13,7 @@ from motion_spec.namespace import CSTR_HDL, GEOM_REL, KC, MAP, MOT, QUDT_QKIND, 
 from motion_spec_dsl.generators.motion_spec_graph import (
     AccelerationConstraintInterface,
     CartesianForceInterface,
+    JointForceInterface,
     MotionSpecDatasetBuilder,
 )
 from motion_spec_dsl.generators.registration import motion_spec_metamodel
@@ -217,3 +218,22 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
     assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
     assert (joint_target_node, RDF.type, KC.Joint) in graph
+
+
+def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() -> None:
+    builder, graph, _ = _build_dataset("joint_limit_posture.robmot")
+
+    handler = builder.authored_handlers[0]
+    interfaces = builder.solver_interfaces(handler)
+    joint_force_interfaces = [i for i in interfaces if isinstance(i, JointForceInterface)]
+    assert len(joint_force_interfaces) == 2
+
+    driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
+    joint_force_nodes = list(graph.objects(driver_node, SLV["joint-force"]))
+    assert len(joint_force_nodes) == 2
+
+    for constraint in builder.controlled_constraints:
+        assert constraint.error_signal_id is not None
+        error_node = builder.root_uri(constraint.error_signal_id, owner=constraint.constraint.parent)
+        assert (error_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND["Angle"]) in graph
+        assert (error_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]) in graph

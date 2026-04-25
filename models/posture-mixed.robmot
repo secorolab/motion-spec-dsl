@@ -1,0 +1,108 @@
+// Combined ACHD handler: posture torque, cartesian acceleration, and cartesian force.
+// Demonstrates all three solver input types within a single ACHD solver.
+
+ns app = "https://secorolab.github.io/models/generated/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    urdf: "../robots/kg3.urdf",
+    chain: {
+        root: link-base,
+        end: link-ee
+    }
+}
+
+MOTION_SPEC (ns=app) m-posture-mixed {
+    MOVE: "Hold ee velocity zero, regulate contact force, keep j2 posture, limit j4 range"
+
+    CONTEXT {
+        cw: World {
+            twist-ee-base-ee: VelocityTwist {
+                of: link-ee,
+                wrt: link-base,
+                ref-point: point-ee-origin,
+                as-seen-by: frame-ee
+            },
+            wrench-ee-base-ee: Wrench { ref-point: point-ee-origin, as-seen-by: frame-ee },
+            q-j2: JointPosition { of: joint-2 },
+            q-j4: JointPosition { of: joint-4 }
+        },
+        cs: Spec {
+            angvel-ee-z-ref: AngularVelocity = 0.0 rad/s,
+            linvel-ee-x-ref: LinearVelocity = 0.0 m/s,
+            linvel-ee-y-ref: LinearVelocity = 0.0 m/s,
+            frc-ee-z-ref: Force = 10.0 N,
+            q-j2-ref: Angle = 2.4 rad,
+            q-j4-lower: Angle = -0.8 rad,
+            q-j4-upper: Angle = 0.8 rad
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        cstr-angvel-ee-z: keeping <cw.twist-ee-base-ee>.angvel.z equal to <cs.angvel-ee-z-ref>,
+        cstr-linvel-ee-x: keeping <cw.twist-ee-base-ee>.linvel.x equal to <cs.linvel-ee-x-ref>,
+        cstr-linvel-ee-y: keeping <cw.twist-ee-base-ee>.linvel.y equal to <cs.linvel-ee-y-ref>,
+        cstr-frc-ee-z: keeping <cw.wrench-ee-base-ee>.force.z equal to <cs.frc-ee-z-ref>,
+        cstr-keep-j2: keeping <cw.q-j2> equal to <cs.q-j2-ref>,
+        cstr-limit-j4: keeping <cw.q-j4> between <cs.q-j4-lower> and <cs.q-j4-upper>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler-posture-mixed {
+    CONTEXT {
+        c1: World {
+            link-ee: Link,
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m-posture-mixed>
+
+    CONTROLLERS {
+        // Cartesian acceleration controllers (ACHD AccelerationConstraint inputs)
+        ctrl-angvel-ee-z: PID {
+            constraint: <m-posture-mixed.cstr-angvel-ee-z>,
+            Kp = 5.0, Ki = 0.5, Kd = 1.0
+        },
+        ctrl-linvel-ee-x: PID {
+            constraint: <m-posture-mixed.cstr-linvel-ee-x>,
+            Kp = 5.0, Ki = 0.5, Kd = 1.0
+        },
+        ctrl-linvel-ee-y: PID {
+            constraint: <m-posture-mixed.cstr-linvel-ee-y>,
+            Kp = 5.0, Ki = 0.5, Kd = 1.0
+        },
+        // Cartesian force controller (ACHD CartesianForceSpecification input)
+        ctrl-frc-ee-z: PID {
+            constraint: <m-posture-mixed.cstr-frc-ee-z>,
+            Kp = 1.0, Ki = 0.0, Kd = 0.0
+        } as Force apply at <c1.link-ee>,
+        // Posture torque controller for equality setpoint (ACHD JointForce input)
+        ctrl-keep-j2: PID {
+            constraint: <m-posture-mixed.cstr-keep-j2>,
+            Kp = 10.0, Ki = 0.0, Kd = 0.5
+        } as Torque for Posture,
+        // Posture torque controller for bilateral joint-limit (ACHD JointForce input)
+        ctrl-limit-j4: PID {
+            constraint: <m-posture-mixed.cstr-limit-j4>,
+            Kp = 10.0, Ki = 0.0, Kd = 0.5
+        } as Torque for Posture
+    }
+
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}
