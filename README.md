@@ -123,18 +123,9 @@ textx generate models/ex.rob_mot --target jsonld --single -o output/
 
 ## Generator Algorithm
 
-The JSON-LD generator is handler-rooted and compiles the parsed model into an
-RDF dataset through cached analysis records plus ordered materialization
-passes.
-
-The main cached records are:
-
-- authored handlers
-- motions referenced by those handlers
-- one `MotionScope` per referenced motion
-- global indexes for world quantities and value variables
-- controlled, monitored, and shared constraint usage sets
-- one normalized `ConstraintData` record per assembled constraint
+The JSON-LD generator is handler-rooted and walks the parsed model directly.
+It keeps only small per-handler collections while emitting RDF triples, instead
+of building a second normalized analysis model.
 
 The current algorithm is:
 
@@ -145,53 +136,35 @@ Input: Parsed DSL model M
 Output: JSON-LD graph J
 
 1:  H <- all ConstraintHandler declarations in M
-2:  Mref <- motions referenced by H, deduplicated by entity identity
-3:  build MotionScope for each motion in Mref:
-4:      collect local world quantities
-5:      collect local value variables
-6:      collect resolved WHEN / WHILE / UNTIL constraints
-7:
-8:  build global indexes from the scopes and handlers:
-9:      world quantities
-10:     value variables
-11:     implicit structural entities
-12:     controlled constraint usage
-13:     monitored constraint usage
-14:     shared constraint reuse across motions
-15:
-16: C <- empty derived constraint list
-17: for each motion scope x do
-18:     for each constraint c in x do
-19:         resolve the viewed quantity and scalar property
-20:         classify c as equality / greater-than / less-than / bilateral
-21:         derive referenced threshold or reference variables
-22:         derive error-signal ids when c is controlled or monitored
-23:         mark whether c is reused across motions
-24:         append normalized ConstraintData record to C
-25:     end for
-26: end for
-27:
-28: G <- empty rdflib Dataset
-29: bind namespaces owned by handlers and referenced motions
-30:
-31: materialize authored entities into G:
-32:     structural entities
-33:     world quantities
-34:     value variables
-35:     constraints
-36:     motions
-37:     handlers, controllers, and monitors
-38:
-39: materialize derived entities into G:
-40:     scalar views
-41:     error signals and evaluators
-42:     solver interfaces, motion drivers, and solver nodes
-43:     map operations
-44:     transform operations
-45:
-46: J <- serialize G as JSON-LD with the same namespace bindings
-47: return J
+2:  S <- constraint specs reused by more than one referenced motion
+3:  G <- empty rdflib Dataset
+4:  bind ontology namespaces
+5:
+6:  for each handler h in H do
+7:      m <- motion referenced by h
+8:      bind h and m namespaces
+9:      collect world quantities from m and h
+10:     collect value variables from m, constraints, and solver gravity values
+11:     collect resolved WHEN / WHILE / UNTIL constraints from m
+12:
+13:     emit authored entities:
+14:         structural entities
+15:         world quantities
+16:         value variables
+17:         constraints
+18:         motion node
+19:
+20:     emit derived entities:
+21:         scalar views
+22:         map operations
+23:         controllers, monitors, error signals, and evaluators
+24:         solver drivers, interfaces, and solver nodes
+25:  end for
+26:
+27:  J <- serialize G as JSON-LD with the same namespace bindings
+28:  return J
 ```
 
-The generator is rooted at `ConstraintHandler` declarations and emits authored
-entities before derived solver and mapping structures.
+The generator is rooted at `ConstraintHandler` declarations and uses the RDF
+graph as the contract; intermediate Python objects are private implementation
+details.

@@ -52,7 +52,7 @@ MOTION_SPEC (ns=app) motion_rightarm {
         cstr-angvel-rightarm-shoulder-ee-lateral: <c1.twist-rightarm-shoulder-ee-shoulder>.angvel.y equal to <c2.angvel-rightarm-shoulder-ee-lateral-ref>,
         cstr-linvel-rightarm-world-ee-lateral: <c1.twist-world-platform-rightarm-ee>.linvel.y equal to <c2.linvel-rightarm-world-ee-lateral-ref>,
         cstr-ang-rightarm-shoulder-ee-vertical: <c1.pose-rightarm-shoulder-ee>.orientation.z equal to <c2.ang-rightarm-shoulder-ee-vertical-ref>,
-        cstr-dist-rightarm-shoulder-ee: <c1.pose-rightarm-shoulder-ee>.position between <c2.dist-rightarm-shoulder-ee-lower> and <c2.dist-rightarm-shoulder-ee-upper>
+        cstr-dist-rightarm-shoulder-ee: distance between <c1.pose-rightarm-platform-shoulder> and <c1.pose-rightarm-platform-ee> between <c2.dist-rightarm-shoulder-ee-lower> and <c2.dist-rightarm-shoulder-ee-upper>
 
     }
 
@@ -102,7 +102,7 @@ MOTION_SPEC (ns=app) motion_leftarm {
         cstr-angvel-leftarm-shoulder-ee-lateral: <c1.twist-leftarm-shoulder-ee-shoulder>.angvel.y equal to <c2.angvel-leftarm-shoulder-ee-lateral-ref>,
         cstr-linvel-leftarm-world-ee-lateral: <c1.twist-world-platform-leftarm-ee>.linvel.y equal to <c2.linvel-leftarm-world-ee-lateral-ref>,
         cstr-ang-leftarm-shoulder-ee-vertical: <c1.pose-leftarm-shoulder-ee>.orientation.z equal to <c2.ang-leftarm-shoulder-ee-vertical-ref>,
-        cstr-dist-leftarm-shoulder-ee: <c1.pose-leftarm-shoulder-ee>.position between <c2.dist-leftarm-shoulder-ee-lower> and <c2.dist-leftarm-shoulder-ee-upper>
+        cstr-dist-leftarm-shoulder-ee: distance between <c1.pose-leftarm-platform-shoulder> and <c1.pose-leftarm-platform-ee> between <c2.dist-leftarm-shoulder-ee-lower> and <c2.dist-leftarm-shoulder-ee-upper>
 
     }
 

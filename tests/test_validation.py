@@ -12,7 +12,7 @@ from motion_spec_dsl.generators.classes import (
     ConstraintReference,
     ControllerReference,
     SolverReference,
-    ValueVariableReference,
+    ContextQuantityReference,
     WorldQuantityReference,
 )
 from motion_spec_dsl.generators.registration import motion_spec_metamodel
@@ -95,7 +95,7 @@ def test_crf_model_supports_context_and_solver_references() -> None:
     handler_solver = handler_loosen.solvers[0]
 
     assert isinstance(loosen_world[0], WorldQuantityReference)
-    assert isinstance(loosen_spec[1], ValueVariableReference)
+    assert isinstance(loosen_spec[1], ContextQuantityReference)
     assert isinstance(loosen_constraints[1], ConstraintReference)
     assert isinstance(loosen_controllers[1], ControllerReference)
     assert isinstance(handler_solver, SolverReference)

@@ -73,15 +73,15 @@ WorldContextDecl:
 ;
 
 PreContextDecl:
-    name=IRI_TRUNK ":" "Pre" "{" declaration+=ValueVariableItem[","] "}"
+    name=IRI_TRUNK ":" "Pre" "{" declaration+=ContextQuantityItem[","] "}"
 ;
 
 SpecContextDecl:
-    name=IRI_TRUNK ":" "Spec" "{" declaration+=ValueVariableItem[","] "}"
+    name=IRI_TRUNK ":" "Spec" "{" declaration+=ContextQuantityItem[","] "}"
 ;
 
 PostContextDecl:
-    name=IRI_TRUNK ":" "Post" "{" declaration+=ValueVariableItem[","] "}"
+    name=IRI_TRUNK ":" "Post" "{" declaration+=ContextQuantityItem[","] "}"
 ;
 
 WorldQuantityItem:
@@ -96,16 +96,16 @@ WorldQuantityReference:
     "<" ref=[WorldQuantity|FQN] ">"
 ;
 
-ValueVariableItem:
-    ValueVariableAlias | ValueVariableReference | ValueVariable
+ContextQuantityItem:
+    ContextQuantityAlias | ContextQuantityReference | ContextQuantity
 ;
 
-ValueVariableAlias:
-    name=IRI_TRUNK ":" "<" ref=[ValueVariable|FQN] ">"
+ContextQuantityAlias:
+    name=IRI_TRUNK ":" "<" ref=[ContextQuantity|FQN] ">"
 ;
 
-ValueVariableReference:
-    "<" ref=[ValueVariable|FQN] ">"
+ContextQuantityReference:
+    "<" ref=[ContextQuantity|FQN] ">"
 ;
 
 WorldQuantity:
@@ -136,7 +136,7 @@ GeoPropKey:
     "of" | "wrt" | "ref-point" | "as-seen-by"
 ;
 
-ValueVariable:
+ContextQuantity:
     name=IRI_TRUNK ":" type=QuantityType value=QuantityValue?
 ;
 
@@ -177,8 +177,17 @@ ConstraintExpression:
 ;
 
 View:
-    "<" quantity=[WorldQuantity|FQN] ">"
-    ("." subspace=SubSpace ("." axis=Axis)?)?
+    (
+        "distance" "between"
+        "<" distance_from=[WorldQuantity|FQN] ">"
+        "and"
+        "<" distance_to=[WorldQuantity|FQN] ">"
+    )
+    |
+    (
+        "<" quantity=[WorldQuantity|FQN] ">"
+        ("." subspace=SubSpace ("." axis=Axis)?)?
+    )
 ;
 
 SubSpace:
@@ -195,9 +204,9 @@ Axis:
 ;
 
 ContextRef:
-    "[" valRef=[ValueVariable:FQN] quantityValue=QuantityValue? "]"
-  | "<" valRef=[ValueVariable|ScopedName] ">"
-  | context_scope=ContextScope "[" inline_value=ValueVariable "]"
+    "[" quantity=[ContextQuantity:FQN] literal_value=QuantityValue? "]"
+  | "<" quantity=[ContextQuantity|ScopedName] ">"
+  | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
 ;
 
 ContextScope:

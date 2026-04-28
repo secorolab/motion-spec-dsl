@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
 
 from rdflib.namespace import Namespace
 
@@ -194,37 +193,37 @@ class MotionSpec(IHasNamespaceDeclare):
 
 
 @dataclass
-class ValVarContextDecl(NamedNamespaceObject):
+class QuantityContextDecl(NamedNamespaceObject):
     kind = None
 
     parent: object
     name: str = ""
-    declaration: list[ValueVariable | WorldQuantity] = field(default_factory=list)
+    declaration: list[ContextQuantity | WorldQuantity] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
 
     @property
     def namespace(self):
-        assert self.kind is not None, "ValVarContextDecl must have 'kind' defined"
+        assert self.kind is not None, "QuantityContextDecl must have 'kind' defined"
         parent_namespace = getattr(self.parent, "namespace")
         parent_name = getattr(self.parent, "name")
         return Namespace(str(parent_namespace) + f"{parent_name}/{self.kind}/")
 
 
-class WorldContextDecl(ValVarContextDecl):
+class WorldContextDecl(QuantityContextDecl):
     kind = "World"
 
 
-class PreContextDecl(ValVarContextDecl):
+class PreContextDecl(QuantityContextDecl):
     kind = "Pre"
 
 
-class SpecContextDecl(ValVarContextDecl):
+class SpecContextDecl(QuantityContextDecl):
     kind = "Spec"
 
 
-class PostContextDecl(ValVarContextDecl):
+class PostContextDecl(QuantityContextDecl):
     kind = "Post"
 
 
@@ -342,7 +341,7 @@ class ControllerMode(StrEnum):
 
 
 @dataclass
-class ValueVariable(NamedNamespaceObject):
+class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
@@ -357,10 +356,10 @@ class ValueVariable(NamedNamespaceObject):
 
 
 @dataclass(kw_only=True)
-class ValueVariableAlias(ValueVariable):
+class ContextQuantityAlias(ContextQuantity):
     parent: object
     name: str
-    ref: ValueVariable
+    ref: ContextQuantity
     type: QuantityType = field(init=False)
     value: ScalarQuantity | VectorQuantity | None = field(init=False, default=None)
 
@@ -372,9 +371,9 @@ class ValueVariableAlias(ValueVariable):
 
 
 @dataclass
-class ValueVariableReference(ValueVariableAlias):
+class ContextQuantityReference(ContextQuantityAlias):
     parent: object
-    ref: ValueVariable
+    ref: ContextQuantity
     name: str = field(init=False)
 
     def __post_init__(self):
@@ -462,8 +461,8 @@ def _resolved_world_quantity(item: WorldQuantity | WorldQuantityAlias) -> WorldQ
     return item.ref if isinstance(item, WorldQuantityAlias) else item
 
 
-def _resolved_value_variable(item: ValueVariable | ValueVariableAlias) -> ValueVariable:
-    return item.ref if isinstance(item, ValueVariableAlias) else item
+def _resolved_context_quantity(item: ContextQuantity | ContextQuantityAlias) -> ContextQuantity:
+    return item.ref if isinstance(item, ContextQuantityAlias) else item
 
 
 class SubSpace(StrEnum):
@@ -486,9 +485,11 @@ class Axis(StrEnum):
 @dataclass
 class View:
     parent: object
-    quantity: WorldQuantity
+    quantity: WorldQuantity | None = None
     subspace: SubSpace | None = None
     axis: Axis | None = None
+    distance_from: WorldQuantity | None = None
+    distance_to: WorldQuantity | None = None
 
     def __post_init__(self):
         if isinstance(self.subspace, str):
@@ -499,15 +500,15 @@ class View:
 
 @dataclass
 class ContextRef:
-    valRef: ValueVariable | None = None
-    inline_value: ValueVariable | None = None
+    quantity: ContextQuantity | None = None
+    inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
-    quantityValue: ScalarQuantity | VectorQuantity | None = None
+    literal_value: ScalarQuantity | VectorQuantity | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
-        if self.valRef is None:
-            self.valRef = self.inline_value
+        if self.quantity is None:
+            self.quantity = self.inline_quantity
 
     @property
     def name(self) -> str:
@@ -525,9 +526,9 @@ class ContextRef:
         raise AttributeError("ContextRef namespace is not resolved yet")
 
     @property
-    def value(self) -> ValueVariable:
-        assert self.valRef is not None, "ContextRef value is not resolved yet"
-        return self.valRef
+    def value(self) -> ContextQuantity:
+        assert self.quantity is not None, "ContextRef quantity is not resolved yet"
+        return self.quantity
 
     @property
     def variable(self) -> str:

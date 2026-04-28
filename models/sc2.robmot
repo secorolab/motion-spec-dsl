@@ -94,7 +94,7 @@ MOTION_SPEC (ns=app) motion_rightarm {
             <c1.pose-rightarm-shoulder-ee>.orientation.z
             equal to <c2.ang-rightarm-shoulder-ee-vertical-ref>,
         cstr-dist-rightarm-shoulder-ee:
-            <c1.pose-rightarm-shoulder-ee>.position
+            distance between <c1.pose-rightarm-platform-shoulder> and <c1.pose-rightarm-platform-ee>
             between <c2.dist-rightarm-shoulder-ee-lower>
             and <c2.dist-rightarm-shoulder-ee-upper>
 
@@ -185,7 +185,7 @@ MOTION_SPEC (ns=app) motion_leftarm {
             <c1.pose-leftarm-shoulder-ee>.orientation.z
             equal to <c2.ang-leftarm-shoulder-ee-vertical-ref>,
         cstr-dist-leftarm-shoulder-ee:
-            <c1.pose-leftarm-shoulder-ee>.position
+            distance between <c1.pose-leftarm-platform-shoulder> and <c1.pose-leftarm-platform-ee>
             between <c2.dist-leftarm-shoulder-ee-lower>
             and <c2.dist-leftarm-shoulder-ee-upper>
 

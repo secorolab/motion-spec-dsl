@@ -26,19 +26,16 @@ from motion_spec_dsl.generators.classes import (
     QuantityType,
     RobotSpec,
     RobotType,
-    SolverAlias,
     SolverEntry,
     SolverRef,
     SubSpace,
-    ValueVariableAlias,
-    ValueVariable,
-    WorldQuantityAlias,
+    ContextQuantity,
     WorldQuantity,
     WorldQuantityType,
     _resolved_controller,
     _resolved_spec,
     _resolved_solver,
-    _resolved_value_variable,
+    _resolved_context_quantity,
     _resolved_world_quantity,
 )
 
@@ -196,12 +193,16 @@ def _decl_motion(obj: object) -> MotionSpec | None:
     return motion if isinstance(motion, MotionSpec) else None
 
 
-def _context_ref_value(ref: ContextRef) -> ValueVariable | None:
-    value = getattr(ref, "valRef", None) or getattr(ref, "value", None) or getattr(ref, "inline_value", None)
-    return value if isinstance(value, ValueVariable) else None
+def _context_ref_value(ref: ContextRef) -> ContextQuantity | None:
+    value = (
+        getattr(ref, "quantity", None)
+        or getattr(ref, "value", None)
+        or getattr(ref, "inline_quantity", None)
+    )
+    return value if isinstance(value, ContextQuantity) else None
 
 
-def _is_inline_context_value(value: ValueVariable) -> bool:
+def _is_inline_context_value(value: ContextQuantity) -> bool:
     return isinstance(getattr(value, "parent", None), ContextRef) and getattr(
         value.parent,
         "context_scope",
@@ -220,21 +221,34 @@ def _constraint_context_refs(constraint: ConstraintSpecification) -> list[Contex
     return []
 
 
+def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[object | None]:
+    if (
+        getattr(constraint.view, "distance_from", None) is not None
+        and getattr(constraint.view, "distance_to", None) is not None
+    ):
+        return [constraint.view.distance_from, constraint.view.distance_to]
+    return [constraint.view.quantity]
+
+
 def validate_constraint_context_refs(model: Model) -> None:
     for motion in _motion_specs(model):
         for constraint in motion_constraints(motion):
-            quantity = constraint.view.quantity
-            quantity = _resolved_world_quantity(quantity) if isinstance(quantity, WorldQuantity) else quantity
-            if not isinstance(quantity, WorldQuantity):
-                raise _semantic_error(
-                    f"Constraint '{constraint.name}' references world quantity "
-                    f"'{quantity}', but it is not resolved.",
-                    constraint,
+            for quantity in _constraint_view_quantities(constraint):
+                quantity = (
+                    _resolved_world_quantity(quantity)
+                    if isinstance(quantity, WorldQuantity)
+                    else quantity
                 )
+                if not isinstance(quantity, WorldQuantity):
+                    raise _semantic_error(
+                        f"Constraint '{constraint.name}' references world quantity "
+                        f"'{quantity}', but it is not resolved.",
+                        constraint,
+                    )
 
             for ref in _constraint_context_refs(constraint):
                 value = _context_ref_value(ref)
-                value = _resolved_value_variable(value) if isinstance(value, ValueVariable) else value
+                value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
                 if value is None:
                     raise _semantic_error(
                         f"Constraint '{constraint.name}' has an unresolved context reference.",
