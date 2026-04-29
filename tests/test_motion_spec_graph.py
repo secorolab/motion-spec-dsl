@@ -20,11 +20,14 @@ from motion_spec.namespace import (
     QUDT_QKIND,
     QUDT_SCHEMA,
     QUDT_UNIT,
+    RBDYN_COORD,
+    RBDYN_OP,
     SLV,
 )
 from motion_spec_dsl.generators.motion_spec_graph import (
     MotionSpecDatasetBuilder,
     _evaluator_id,
+    _scalar_id,
 )
 from motion_spec_dsl.generators.classes import _resolved_spec
 from motion_spec_dsl.generators.registration import motion_spec_metamodel
@@ -77,13 +80,22 @@ def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> 
     scalar_id = f"{force_quantity.name}.force.z"
     scalar_node = builder.root_uri(scalar_id, owner=force_quantity)
     view_node = builder.root_uri(f"view-{scalar_id}", owner=force_quantity)
-    spec_node = builder.root_uri(f"spec-{force_quantity.name}", owner=handler)
+    controller = handler.controllers[0]
+    spec_node = builder.root_uri(f"spec-{controller.name}", owner=handler)
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
+    signal_node = builder.root_uri(f"force-{controller.name}", owner=handler)
+    wrench_node = builder.root_uri(f"wrench-force-{controller.name}", owner=handler.motion)
+    wrench_op_node = builder.root_uri(f"compute-wrench-force-{controller.name}", owner=handler.motion)
 
     assert (scalar_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force) in graph
     assert (scalar_node, QUDT_SCHEMA.unit, QUDT_UNIT.N) in graph
     assert (view_node, MAP.subobject, scalar_node) in graph
-    assert (spec_node, SLV.force, builder.node(force_quantity)) in graph
+    assert (URIRef(controller.uri), CSTR_HDL["control-signal"], signal_node) in graph
+    assert (signal_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force) in graph
+    assert (wrench_node, RDF.type, RBDYN_COORD.WrenchCoordinate) in graph
+    assert (wrench_op_node, RDF.type, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude) in graph
+    assert (wrench_op_node, RBDYN_OP.magnitude, signal_node) in graph
+    assert (spec_node, SLV.force, wrench_node) in graph
     assert (driver_node, SLV["cartesian-force"], spec_node) in graph
 
 
@@ -154,7 +166,7 @@ def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_mo
     assert (solver_b_node, SLV["motion-drivers"], driver_b_node) in graph
 
     signal_a = builder.root_uri("eacc-twist-ee-base.linear.z-m_move", owner=motion)
-    signal_b = builder.root_uri("wrench-ee.force.z", owner=motion)
+    signal_b = builder.root_uri("force-ctrl-c2", owner=handler)
 
     assert (
         URIRef(controllers["ctrl-c1"].uri),
@@ -228,10 +240,18 @@ def test_pose_position_without_axis_emits_linear_distance_operation() -> None:
     builder, graph, _ = _build_model_dataset("sc1.robmot")
 
     motion = builder.authored_handlers[0].motion
-    pose_node = builder.root_uri("pose-rightarm-shoulder-ee", owner=motion)
-    distance_node = builder.root_uri("pose-rightarm-shoulder-ee.distance", owner=motion)
-    op_node = builder.root_uri("compute-pose-rightarm-shoulder-ee.distance", owner=motion)
     constraint = _resolved_spec(motion.while_.constraints[-1])
+    world_qtys = builder._collect_world_quantities(  # noqa: SLF001 - semantic graph fixture check.
+        motion, builder.authored_handlers[0]
+    )
+    pose_quantity = builder._resolve_constraint_quantity(  # noqa: SLF001 - semantic graph fixture check.
+        constraint, world_qtys
+    )
+    assert pose_quantity is not None
+    distance_id = _scalar_id(pose_quantity, "distance", None)
+    pose_node = URIRef(pose_quantity.uri)
+    distance_node = builder.root_uri(distance_id, owner=motion)
+    op_node = builder.root_uri(f"compute-{distance_id}", owner=motion)
 
     assert (distance_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Distance) in graph
     assert (distance_node, QUDT_SCHEMA.unit, QUDT_UNIT.M) in graph
