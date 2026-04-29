@@ -26,6 +26,7 @@ from motion_spec_dsl.generators.classes import (
     QuantityType,
     RobotSpec,
     RobotType,
+    SnapshotValue,
     SolverEntry,
     SolverRef,
     SubSpace,
@@ -126,10 +127,114 @@ def _infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
         return None
     return {
         SubSpace.LinVel: QuantityType.LinearVelocity,
+        SubSpace.Position: QuantityType.LinearVelocity,
         SubSpace.AngVel: QuantityType.AngularVelocity,
+        SubSpace.Orientation: QuantityType.AngularVelocity,
         SubSpace.Force: QuantityType.Force,
         SubSpace.Torque: QuantityType.Torque,
     }.get(subspace)
+
+
+def _axis_label(axis: object | None) -> str | None:
+    if axis is None:
+        return None
+    return str(getattr(axis, "value", axis))
+
+
+def _is_orientation_axis(axis: str | None) -> bool:
+    return axis in {"x", "y", "z", "roll", "pitch", "yaw"}
+
+
+def _view_shape(view) -> QuantityType | None:
+    if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
+        return QuantityType.Distance
+
+    quantity = getattr(view, "quantity", None)
+    if not isinstance(quantity, WorldQuantity):
+        return None
+    quantity = _resolved_world_quantity(quantity)
+    subspace = getattr(view, "subspace", None)
+    axis = _axis_label(getattr(view, "axis", None))
+
+    if quantity.type == WorldQuantityType.JointPosition:
+        return QuantityType.Angle
+    if quantity.type == WorldQuantityType.VelocityTwist:
+        if subspace == SubSpace.LinVel:
+            return QuantityType.LinearVelocity
+        if subspace == SubSpace.AngVel:
+            return QuantityType.AngularVelocity
+    if quantity.type == WorldQuantityType.Wrench:
+        if subspace == SubSpace.Force:
+            return QuantityType.Force
+        if subspace == SubSpace.Torque:
+            return QuantityType.Torque
+    if quantity.type == WorldQuantityType.Pose:
+        if subspace is None:
+            return QuantityType.Pose
+        if subspace == SubSpace.Position:
+            return QuantityType.Distance if axis is not None else QuantityType.Position
+        if subspace == SubSpace.Orientation:
+            return QuantityType.Angle if _is_orientation_axis(axis) else QuantityType.Orientation
+    return None
+
+
+def _context_quantity_shape(quantity: ContextQuantity) -> QuantityType:
+    quantity = _resolved_context_quantity(quantity)
+    return quantity.type
+
+
+def _constraint_reference_shapes(constraint: ConstraintSpecification) -> list[tuple[ContextRef, QuantityType]]:
+    refs = _constraint_context_refs(constraint)
+    pairs: list[tuple[ContextRef, QuantityType]] = []
+    for ref in refs:
+        value = _context_ref_value(ref)
+        if isinstance(value, ContextQuantity):
+            pairs.append((ref, _context_quantity_shape(value)))
+    return pairs
+
+
+def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
+    if left is None or right is None:
+        return True
+    compatible = {
+        QuantityType.Angle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
+        QuantityType.AngularDistance: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
+        QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
+        QuantityType.Distance: {QuantityType.Distance},
+    }
+    return right in compatible.get(left, {left})
+
+
+def validate_context_quantity_values(model: Model) -> None:
+    for motion in _motion_specs(model):
+        for ctx in motion.context:
+            for item in getattr(ctx, "declaration", []):
+                if not isinstance(item, ContextQuantity):
+                    continue
+                quantity = _resolved_context_quantity(item)
+                value = getattr(quantity, "value", None)
+                if not isinstance(value, SnapshotValue):
+                    continue
+                source_shape = _view_shape(value.source)
+                if not _types_match(quantity.type, source_shape):
+                    raise _semantic_error(
+                        f"Snapshot '{quantity.name}' is declared as {quantity.type}, "
+                        f"but its source has type {source_shape}.",
+                        quantity,
+                    )
+
+
+def validate_constraint_value_types(model: Model) -> None:
+    for motion in _motion_specs(model):
+        for constraint in motion_constraints(motion):
+            view_shape = _view_shape(constraint.view)
+            for ref, ref_shape in _constraint_reference_shapes(constraint):
+                if not _types_match(view_shape, ref_shape):
+                    raise _semantic_error(
+                        f"Constraint '{constraint.name}' compares {view_shape} "
+                        f"with {ref_shape}.",
+                        ref,
+                    )
 
 
 def validate_unique_constraint_names(model: Model) -> None:
@@ -445,13 +550,18 @@ def validate_controller_commands(model: Model) -> None:
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or _infer_command_type(subspace)
-            if command_type is None:
+            quantity = constraint_spec.view.quantity
+            whole_pose_command = (
+                isinstance(quantity, WorldQuantity)
+                and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
+                and subspace is None
+            )
+            if command_type is None and not whole_pose_command:
                 raise _semantic_error(
                     f"Controller '{controller.name}' requires explicit 'as' for "
                     f"constraint subspace '{subspace}'.",
                     controller,
                 )
-            quantity = constraint_spec.view.quantity
             if (
                 isinstance(quantity, WorldQuantity)
                 and quantity.type == WorldQuantityType.JointPosition
@@ -514,6 +624,8 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_constraint_aliases(model)
     validate_context_aliases(model)
     validate_constraint_context_refs(model)
+    validate_context_quantity_values(model)
+    validate_constraint_value_types(model)
     validate_handler_constraint_refs(model)
     validate_handler_constraint_assembly(model)
     validate_handler_aliases(model)

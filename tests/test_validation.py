@@ -45,10 +45,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
             "apply at target must be a Link",
         ),
         (
-            "ambiguous_controller_command.robmot",
-            "requires explicit 'as'",
-        ),
-        (
             "mixed_solver_same_domain.robmot",
             "uses RNE, but RNE is not modeled",
         ),
@@ -67,6 +63,12 @@ def test_invalid_models_fail_validation(fixture: str, message: str) -> None:
 
     with pytest.raises(TextXSemanticError, match=re.escape(message)):
         metamodel.model_from_file(FIXTURES / fixture)
+
+
+def test_pose_position_controller_command_is_inferred() -> None:
+    metamodel = motion_spec_metamodel()
+
+    metamodel.model_from_file(FIXTURES / "ambiguous_controller_command.robmot")
 
 
 def test_standalone_manipulator_solver_refs_use_robot_name() -> None:

@@ -9,6 +9,7 @@ from rdflib import URIRef
 from rdflib.namespace import RDF
 
 from motion_spec.namespace import (
+    APP,
     CSTR,
     CSTR_HDL,
     GEOM_OP,
@@ -102,6 +103,24 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
     assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
     assert len(driver_acc_specs) == 1
     assert (solver_node, SLV["motion-drivers"], driver_node) in graph
+
+
+def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
+    builder, graph, _ = _build_model_dataset("grc_no_traj-collab.robmot")
+
+    idle = next(
+        handler.motion for handler in builder.authored_handlers if handler.motion.name == "idle"
+    )
+    live_pose = idle.context[0].declaration[1]
+    snapshot = idle.context[1].declaration[0]
+    snapshot_node = URIRef(snapshot.uri)
+    live_pose_node = URIRef(live_pose.uri)
+    constraint_node = URIRef(idle.while_.constraints[0].uri)
+
+    assert (snapshot_node, RDF.type, URIRef(str(APP._NS) + "Snapshot")) in graph
+    assert (snapshot_node, URIRef(str(APP._NS) + "snapshot-of"), live_pose_node) in graph
+    assert (constraint_node, RDF.type, URIRef(str(CSTR._NS) + "PoseConstraint")) in graph
+    assert (constraint_node, CSTR["reference-value"], snapshot_node) in graph
 
 
 def test_reused_constraint_emits_shared_uri_and_error_signal() -> None:

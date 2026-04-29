@@ -15,9 +15,11 @@ MOTION_SPEC (ns=app) idle {
 
     CONTEXT {
         world: World {
-            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, ref-point: point-ee-origin, as-seen-by: frame-base }
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, ref-point: point-ee-origin, as-seen-by: frame-base },
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base, as-seen-by: frame-base }
         },
         spec: Spec {
+            pose-ee-start: Pose = Snapshot of <world.pose-ee-base>,
             zero-linvel: LinearVelocity = 0.0 m/s,
             zero-angvel: AngularVelocity = 0.0 rad/s
         }
@@ -26,12 +28,7 @@ MOTION_SPEC (ns=app) idle {
     WHEN {}
 
     WHILE {
-        hold-lin-x: <world.twist-ee-base>.linvel.x equal to <spec.zero-linvel>,
-        hold-lin-y: <world.twist-ee-base>.linvel.y equal to <spec.zero-linvel>,
-        hold-lin-z: <world.twist-ee-base>.linvel.z equal to <spec.zero-linvel>,
-        hold-ang-x: <world.twist-ee-base>.angvel.x equal to <spec.zero-angvel>,
-        hold-ang-y: <world.twist-ee-base>.angvel.y equal to <spec.zero-angvel>,
-        hold-ang-z: <world.twist-ee-base>.angvel.z equal to <spec.zero-angvel>
+        hold-pose: <world.pose-ee-base> equal to <spec.pose-ee-start>
     }
 
     UNTIL {}
@@ -41,29 +38,24 @@ MOTION_SPEC (ns=app) touch_down {
     MOVE: "Move down at constant linear z velocity until table contact stops z motion"
 
     CONTEXT {
-        world: World {
-            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, ref-point: point-ee-origin, as-seen-by: frame-base }
-        },
         spec: Spec {
-            down-vel: LinearVelocity = -0.03 m/s,
-            zero-linvel: LinearVelocity = 0.0 m/s,
-            zero-angvel: AngularVelocity = 0.0 rad/s
+            down-vel: LinearVelocity = -0.03 m/s
         }
     }
 
     WHEN {}
 
     WHILE {
-        move-down-z: <world.twist-ee-base>.linvel.z equal to <spec.down-vel>,
-        keep-x-zero: <world.twist-ee-base>.linvel.x equal to <spec.zero-linvel>,
-        keep-y-zero: <world.twist-ee-base>.linvel.y equal to <spec.zero-linvel>,
-        keep-ang-x-zero: <world.twist-ee-base>.angvel.x equal to <spec.zero-angvel>,
-        keep-ang-y-zero: <world.twist-ee-base>.angvel.y equal to <spec.zero-angvel>,
-        keep-ang-z-zero: <world.twist-ee-base>.angvel.z equal to <spec.zero-angvel>
+        move-down-z: <idle.world.twist-ee-base>.linvel.z equal to <spec.down-vel>,
+        keep-lin-x-zero: <idle.world.twist-ee-base>.linvel.x equal to <idle.spec.zero-linvel>,
+        keep-lin-y-zero: <idle.world.twist-ee-base>.linvel.y equal to <idle.spec.zero-linvel>,
+        keep-ang-x-zero: <idle.world.twist-ee-base>.angvel.x equal to <idle.spec.zero-angvel>,
+        keep-ang-y-zero: <idle.world.twist-ee-base>.angvel.y equal to <idle.spec.zero-angvel>,
+        keep-ang-z-zero: <idle.world.twist-ee-base>.angvel.z equal to <idle.spec.zero-angvel>
     }
 
     UNTIL {
-        contact-table: <world.twist-ee-base>.linvel.z equal to <spec.zero-linvel>
+        contact-table: <idle.world.twist-ee-base>.linvel.z equal to <idle.spec.zero-linvel>
     }
 }
 
@@ -72,13 +64,10 @@ MOTION_SPEC (ns=app) move_forward_15cm {
 
     CONTEXT {
         world: World {
-            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, ref-point: point-ee-origin, as-seen-by: frame-base },
             pose-start-ee: Pose { of: frame-ee, wrt: frame-ee-start }
         },
         spec: Spec {
             forward-vel: LinearVelocity = 0.05 m/s,
-            zero-linvel: LinearVelocity = 0.0 m/s,
-            zero-angvel: AngularVelocity = 0.0 rad/s,
             forward-distance: LinearDistance = 0.15 m
         }
     }
@@ -86,12 +75,12 @@ MOTION_SPEC (ns=app) move_forward_15cm {
     WHEN {}
 
     WHILE {
-        move-forward-x: <world.twist-ee-base>.linvel.x equal to <spec.forward-vel>,
-        keep-y-zero: <world.twist-ee-base>.linvel.y equal to <spec.zero-linvel>,
-        keep-z-zero: <world.twist-ee-base>.linvel.z equal to <spec.zero-linvel>,
-        keep-ang-x-zero: <world.twist-ee-base>.angvel.x equal to <spec.zero-angvel>,
-        keep-ang-y-zero: <world.twist-ee-base>.angvel.y equal to <spec.zero-angvel>,
-        keep-ang-z-zero: <world.twist-ee-base>.angvel.z equal to <spec.zero-angvel>
+        move-forward-x: <idle.world.twist-ee-base>.linvel.x equal to <spec.forward-vel>,
+        <touch_down.keep-lin-y-zero>,
+        keep-lin-z-zero: <idle.world.twist-ee-base>.linvel.z equal to <idle.spec.zero-linvel>,
+        <touch_down.keep-ang-x-zero>,
+        <touch_down.keep-ang-y-zero>,
+        <touch_down.keep-ang-z-zero>
     }
 
     UNTIL {
@@ -104,15 +93,12 @@ MOTION_SPEC (ns=app) move_up_30cm_from_table {
 
     CONTEXT {
         world: World {
-            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, ref-point: point-ee-origin, as-seen-by: frame-base },
             pose-world-table: Pose { of: frame-table, wrt: frame-world },
             pose-world-ee: Pose { of: frame-ee, wrt: frame-world },
             pose-table-ee: Pose { of: frame-ee, wrt: frame-table }
         },
         spec: Spec {
             up-vel: LinearVelocity = 0.03 m/s,
-            zero-linvel: LinearVelocity = 0.0 m/s,
-            zero-angvel: AngularVelocity = 0.0 rad/s,
             table-clearance: LinearDistance = 0.30 m
         }
     }
@@ -120,12 +106,12 @@ MOTION_SPEC (ns=app) move_up_30cm_from_table {
     WHEN {}
 
     WHILE {
-        move-up-z: <world.twist-ee-base>.linvel.z equal to <spec.up-vel>,
-        keep-x-zero: <world.twist-ee-base>.linvel.x equal to <spec.zero-linvel>,
-        keep-y-zero: <world.twist-ee-base>.linvel.y equal to <spec.zero-linvel>,
-        keep-ang-x-zero: <world.twist-ee-base>.angvel.x equal to <spec.zero-angvel>,
-        keep-ang-y-zero: <world.twist-ee-base>.angvel.y equal to <spec.zero-angvel>,
-        keep-ang-z-zero: <world.twist-ee-base>.angvel.z equal to <spec.zero-angvel>
+        move-up-z: <idle.world.twist-ee-base>.linvel.z equal to <spec.up-vel>,
+        <touch_down.keep-lin-x-zero>,
+        <touch_down.keep-lin-y-zero>,
+        <touch_down.keep-ang-x-zero>,
+        <touch_down.keep-ang-y-zero>,
+        <touch_down.keep-ang-z-zero>
     }
 
     UNTIL {
@@ -146,12 +132,7 @@ CONSTRAINT_HANDLER (ns=app) handler_idle {
     MOTION: <idle>
 
     CONTROLLERS {
-        ctrl-hold-lin-x: PID { constraint: <idle.hold-lin-x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-hold-lin-y: PID { constraint: <idle.hold-lin-y>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-hold-lin-z: PID { constraint: <idle.hold-lin-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-hold-ang-x: PID { constraint: <idle.hold-ang-x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-hold-ang-y: PID { constraint: <idle.hold-ang-y>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-hold-ang-z: PID { constraint: <idle.hold-ang-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+        ctrl-hold-pose: PID { constraint: <idle.hold-pose>, Kp = 4.0, Ki = 0.0, Kd = 0.4 }
     }
 
     SOLVERS {
@@ -166,14 +147,7 @@ CONSTRAINT_HANDLER (ns=app) handler_idle {
 }
 
 CONSTRAINT_HANDLER (ns=app) handler_touch_down {
-    CONTEXT {
-        world: World {
-            gravity: Gravity
-        },
-        spec: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
-        }
-    }
+    CONTEXT {}
 
     MOTION: <touch_down>
 
@@ -183,33 +157,20 @@ CONSTRAINT_HANDLER (ns=app) handler_touch_down {
 
     CONTROLLERS {
         ctrl-move-down-z: PID { constraint: <touch_down.move-down-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-x-zero: PID { constraint: <touch_down.keep-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-y-zero: PID { constraint: <touch_down.keep-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-keep-lin-x-zero: PID { constraint: <touch_down.keep-lin-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-keep-lin-y-zero: PID { constraint: <touch_down.keep-lin-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
         ctrl-keep-ang-x-zero: PID { constraint: <touch_down.keep-ang-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
         ctrl-keep-ang-y-zero: PID { constraint: <touch_down.keep-ang-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
         ctrl-keep-ang-z-zero: PID { constraint: <touch_down.keep-ang-z-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }
 
     SOLVERS {
-        arm_solver: Solver {
-            robot: <kinova>,
-            algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
-            gravity: <world.gravity> equal to <spec.gravity-vec>
-        }
+        <handler_idle.arm_solver>
     }
 }
 
 CONSTRAINT_HANDLER (ns=app) handler_move_forward_15cm {
-    CONTEXT {
-        world: World {
-            gravity: Gravity
-        },
-        spec: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
-        }
-    }
+    CONTEXT {}
 
     MOTION: <move_forward_15cm>
 
@@ -219,33 +180,20 @@ CONSTRAINT_HANDLER (ns=app) handler_move_forward_15cm {
 
     CONTROLLERS {
         ctrl-move-forward-x: PID { constraint: <move_forward_15cm.move-forward-x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-y-zero: PID { constraint: <move_forward_15cm.keep-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-z-zero: PID { constraint: <move_forward_15cm.keep-z-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-x-zero: PID { constraint: <move_forward_15cm.keep-ang-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-y-zero: PID { constraint: <move_forward_15cm.keep-ang-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-z-zero: PID { constraint: <move_forward_15cm.keep-ang-z-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+        ctrl-keep-lin-z-zero: PID { constraint: <move_forward_15cm.keep-lin-z-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        <handler_touch_down.ctrl-keep-lin-y-zero>,
+        <handler_touch_down.ctrl-keep-ang-x-zero>,
+        <handler_touch_down.ctrl-keep-ang-y-zero>,
+        <handler_touch_down.ctrl-keep-ang-z-zero>
     }
 
     SOLVERS {
-        arm_solver: Solver {
-            robot: <kinova>,
-            algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
-            gravity: <world.gravity> equal to <spec.gravity-vec>
-        }
+        <handler_idle.arm_solver>
     }
 }
 
 CONSTRAINT_HANDLER (ns=app) handler_move_up_30cm_from_table {
-    CONTEXT {
-        world: World {
-            gravity: Gravity
-        },
-        spec: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
-        }
-    }
+    CONTEXT {}
 
     MOTION: <move_up_30cm_from_table>
 
@@ -255,20 +203,14 @@ CONSTRAINT_HANDLER (ns=app) handler_move_up_30cm_from_table {
 
     CONTROLLERS {
         ctrl-move-up-z: PID { constraint: <move_up_30cm_from_table.move-up-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-x-zero: PID { constraint: <move_up_30cm_from_table.keep-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-y-zero: PID { constraint: <move_up_30cm_from_table.keep-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-x-zero: PID { constraint: <move_up_30cm_from_table.keep-ang-x-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-y-zero: PID { constraint: <move_up_30cm_from_table.keep-ang-y-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
-        ctrl-keep-ang-z-zero: PID { constraint: <move_up_30cm_from_table.keep-ang-z-zero>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+        <handler_touch_down.ctrl-keep-lin-x-zero>,
+        <handler_touch_down.ctrl-keep-lin-y-zero>,
+        <handler_touch_down.ctrl-keep-ang-x-zero>,
+        <handler_touch_down.ctrl-keep-ang-y-zero>,
+        <handler_touch_down.ctrl-keep-ang-z-zero>
     }
 
     SOLVERS {
-        arm_solver: Solver {
-            robot: <kinova>,
-            algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
-            gravity: <world.gravity> equal to <spec.gravity-vec>
-        }
+        <handler_idle.arm_solver>
     }
 }

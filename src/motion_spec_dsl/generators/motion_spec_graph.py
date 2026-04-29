@@ -20,7 +20,7 @@ from motion_spec_dsl.generators.classes import (
     ControllerEntry, ControllerMode, ContextRef, EqualityConstraint, GeoPropPair,
     GeometricProps, GreaterThanConstraint, LessThanConstraint, Model,
     MotionSpec, PostContextDecl, PreContextDecl, QuantityType, ScalarQuantity,
-    SpecContextDecl, ContextQuantity, WorldContextDecl, WorldQuantity, WorldQuantityType,
+    SnapshotValue, SpecContextDecl, ContextQuantity, WorldContextDecl, WorldQuantity, WorldQuantityType,
     _resolved_spec, _resolved_solver,
 )
 
@@ -70,6 +70,9 @@ WORLD_STRUCTURE_TYPES: dict[WorldQuantityType, Any] = {
 }
 
 SCALAR_UNIT: dict[Any, Any] = {
+    QuantityType.Pose:            QUDT_UNIT.UNITLESS,
+    QuantityType.Position:        QUDT_UNIT.M,
+    QuantityType.Orientation:     QUDT_UNIT.UNITLESS,
     QuantityType.AngularVelocity: QUDT_UNIT["RAD-PER-SEC"],
     QuantityType.LinearVelocity:  QUDT_UNIT["M-PER-SEC"],
     QuantityType.Torque:          QUDT_UNIT["N-M"],
@@ -120,6 +123,13 @@ CSTR_TYPE_NAME: dict[Any, str] = {
     QuantityType.PlaneAngle: QuantityType.Angle,
 }
 
+QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
+    QuantityType.Pose: GEOM_REL.Pose,
+    QuantityType.Position: QUDT_QKIND.Position,
+    QuantityType.Orientation: QUDT_QKIND.Direction,
+    QuantityType.Vector: QUDT_QKIND.Vector,
+}
+
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("kc",          KC),
     ("geom-ent",    GEOM_ENT),
@@ -137,6 +147,12 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("cstr-hdl",    CSTR_HDL),
     ("slv",         SLV),
 )
+
+
+def _ns_term(namespace: Any, name: str) -> URIRef:
+    return URIRef(str(namespace._NS) + name)
+
+
 def _node_name(value: Any) -> str:
     return value.name if hasattr(value, "name") else str(value)
 
@@ -165,8 +181,17 @@ def _view_subspace(constraint: ConstraintSpecification) -> str:
         qty = constraint.view.quantity
         if isinstance(qty, WorldQuantity) and qty.type == WorldQuantityType.JointPosition:
             return "joint-position"
+        if isinstance(qty, WorldQuantity) and qty.type == WorldQuantityType.Pose:
+            return "pose"
         raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
     raw = str(getattr(subspace, "value", subspace))
+    if (
+        isinstance(constraint.view.quantity, WorldQuantity)
+        and constraint.view.quantity.type == WorldQuantityType.Pose
+        and raw in {"position", "orientation"}
+        and constraint.view.axis is None
+    ):
+        return raw
     return SUBSPACE_ALIAS.get(raw, raw)
 
 
@@ -181,8 +206,17 @@ def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
-    if quantity.type == WorldQuantityType.Pose and subspace == "distance":
-        return "Position" if axis is not None else QuantityType.Distance
+    if quantity.type == WorldQuantityType.Pose:
+        if subspace == "pose":
+            return QuantityType.Pose
+        if subspace == "position":
+            return QuantityType.Position if axis is None else QuantityType.Distance
+        if subspace == "orientation":
+            return QuantityType.Orientation if axis is None else QuantityType.Angle
+        if subspace == "distance":
+            return QuantityType.Distance
+        if subspace == "rotation":
+            return QuantityType.PlaneAngle
     spec = WORLD_SPECS.get(quantity.type)
     if spec is None:
         return subspace
@@ -493,18 +527,50 @@ class MotionSpecDatasetBuilder:
             if qty.type in {WorldQuantityType.VelocityTwist, WorldQuantityType.Wrench} and not rp_v:
                 warnings.warn(f"'{qty.name}' has no explicit ref-point; not inferring one from its name.")
 
+    def _view_node(self, view: Any, owner: Any) -> URIRef:
+        if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
+            return self._owned_uri(
+                f"distance-{_node_name(view.distance_from)}-{_node_name(view.distance_to)}",
+                owner,
+            )
+
+        quantity = getattr(view, "quantity", None)
+        if isinstance(quantity, WorldQuantity):
+            subspace_raw = getattr(view, "subspace", None)
+            axis_raw = getattr(view, "axis", None)
+            if subspace_raw is None and quantity.type == WorldQuantityType.Pose:
+                return URIRef(quantity.uri)
+            if subspace_raw is None and quantity.type == WorldQuantityType.JointPosition:
+                return URIRef(quantity.uri)
+            subspace = str(getattr(subspace_raw, "value", subspace_raw))
+            if quantity.type == WorldQuantityType.Pose and subspace in {"position", "orientation"} and axis_raw is None:
+                mapped_subspace = subspace
+            else:
+                mapped_subspace = SUBSPACE_ALIAS.get(subspace, subspace)
+            axis = None if axis_raw is None else str(getattr(axis_raw, "value", axis_raw))
+            return self._owned_uri(_scalar_id(quantity, mapped_subspace, axis), owner)
+
+        return self._owned_uri(_node_name(quantity), owner)
+
     def _emit_context_quantities(self, context_quantities: dict[str, ContextQuantity]) -> None:
         for quantity in context_quantities.values():
             node = URIRef(quantity.uri)
-            qkind = (
-                QUDT_QKIND.Vector
-                if quantity.type == QuantityType.Vector
-                else QUDT_QKIND[quantity.type]
-            )
+            qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
+            if qkind is None:
+                qkind = QUDT_QKIND[quantity.type]
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((node, RDF.type, qkind))
             self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
             if quantity.value is None:
+                continue
+            if isinstance(quantity.value, SnapshotValue):
+                self.graph.add((node, RDF.type, _ns_term(APP, "Snapshot")))
+                self.graph.add((
+                    node,
+                    _ns_term(APP, "snapshot-of"),
+                    self._view_node(quantity.value.source, quantity),
+                ))
+                self.graph.add((node, _ns_term(APP, "snapshot-time"), Literal("motion-start")))
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, ScalarQuantity):
@@ -549,7 +615,7 @@ class MotionSpecDatasetBuilder:
             scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
             type_name = CSTR_TYPE_NAME.get(scalar_t, scalar_t)
             self.graph.add((node, RDF.type, CSTR.Constraint))
-            self.graph.add((node, RDF.type, CSTR[f"{type_name}Constraint"]))
+            self.graph.add((node, RDF.type, _ns_term(CSTR, f"{type_name}Constraint")))
             if qty_node is not None:
                 self.graph.add((node, CSTR.quantity, qty_node))
 
@@ -1132,7 +1198,9 @@ class MotionSpecDatasetBuilder:
         return solvers[0] if len(solvers) == 1 else None
 
     def _add_quantity(self, node: URIRef, scalar_type: Any) -> None:
-        qkind = QUDT_QKIND[scalar_type]
+        qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(scalar_type)
+        if qkind is None:
+            qkind = QUDT_QKIND[scalar_type]
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
         self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))

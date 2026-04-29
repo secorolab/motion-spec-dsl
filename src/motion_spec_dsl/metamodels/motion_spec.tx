@@ -137,7 +137,19 @@ GeoPropKey:
 ;
 
 ContextQuantity:
-    name=IRI_TRUNK ":" type=QuantityType value=QuantityValue?
+    name=IRI_TRUNK ":" type=ContextQuantityType value=ContextQuantityValue?
+;
+
+ContextQuantityType:
+    QuantityType | SnapshotQuantityType
+;
+
+SnapshotQuantityType:
+    "Pose" | "Position" | "Orientation"
+;
+
+ContextQuantityValue:
+    QuantityValue | SnapshotValue
 ;
 
 QuantityValue:
@@ -154,6 +166,10 @@ VectorQuantity:
     "y" "=" y=FLOAT ","
     "z" "=" z=FLOAT unit=Unit
     "}"
+;
+
+SnapshotValue:
+    "=" "Snapshot" "of" source=View
 ;
 
 QuantityType:
@@ -200,7 +216,7 @@ SubSpace:
 ;
 
 Axis:
-    "x" | "y" | "z"
+    "x" | "y" | "z" | "roll" | "pitch" | "yaw"
 ;
 
 ContextRef:
@@ -355,7 +371,7 @@ Unit:
 
 
 FQN: IRI_TRUNK+["."];
-ScopedName: IRI_TRUNK "." IRI_TRUNK;
+ScopedName: IRI_TRUNK+["."];
 Import: "import" importURI=STRING;
 Comment: /\/\/.*$/;
 NamespaceDeclare: "ns" name=IRI_TRUNK "=" uri=STRING ;

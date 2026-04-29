@@ -325,6 +325,9 @@ class GeoPropPair:
 
 
 class QuantityType(StrEnum):
+    Pose            = "Pose"
+    Position        = "Position"
+    Orientation     = "Orientation"
     Distance        = "Distance"
     Angle           = "Angle"
     PlaneAngle      = "PlaneAngle"
@@ -345,7 +348,7 @@ class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
-    value: ScalarQuantity | VectorQuantity | None = None
+    value: ScalarQuantity | VectorQuantity | SnapshotValue | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -361,7 +364,7 @@ class ContextQuantityAlias(ContextQuantity):
     name: str
     ref: ContextQuantity
     type: QuantityType = field(init=False)
-    value: ScalarQuantity | VectorQuantity | None = field(init=False, default=None)
+    value: ScalarQuantity | VectorQuantity | SnapshotValue | None = field(init=False, default=None)
 
     def __post_init__(self):
         NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
@@ -394,6 +397,12 @@ class VectorQuantity:
     y: float = 0.0
     z: float = 0.0
     unit: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class SnapshotValue:
+    source: View
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
@@ -480,6 +489,9 @@ class Axis(StrEnum):
     X = "x"
     Y = "y"
     Z = "z"
+    Roll = "roll"
+    Pitch = "pitch"
+    Yaw = "yaw"
 
 
 @dataclass
