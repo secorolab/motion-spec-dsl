@@ -78,7 +78,7 @@ def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> 
     scalar_node = builder.root_uri(scalar_id, owner=force_quantity)
     view_node = builder.root_uri(f"view-{scalar_id}", owner=force_quantity)
     spec_node = builder.root_uri(f"spec-{force_quantity.name}", owner=handler)
-    driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
+    driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
 
     assert (scalar_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force) in graph
     assert (scalar_node, QUDT_SCHEMA.unit, QUDT_UNIT.N) in graph
@@ -92,8 +92,8 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
 
     handler = builder.authored_handlers[0]
     motion = handler.motion
-    driver_node = builder.root_uri(f"drv-{motion.name}", owner=handler)
-    solver_node = builder.root_uri(f"slv-{motion.name}", owner=handler)
+    driver_node = builder.root_uri(f"driver-{motion.name}", owner=handler)
+    solver_node = builder.root_uri(handler.solvers[0].name, owner=handler)
     energy_node = builder.root_uri("eacc-twist-ee-base.linear.z-m_move", owner=motion)
     acc_node = builder.root_uri("acc-cstr-twist-ee-base.linear.z-m_move", owner=motion)
     driver_acc_specs = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
@@ -106,12 +106,12 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
 
 
 def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
-    builder, graph, _ = _build_model_dataset("grc_no_traj-collab.robmot")
+    builder, graph, _ = _build_dataset("snapshot_pose.robmot")
 
     idle = next(
         handler.motion for handler in builder.authored_handlers if handler.motion.name == "idle"
     )
-    live_pose = idle.context[0].declaration[1]
+    live_pose = idle.context[0].declaration[0]
     snapshot = idle.context[1].declaration[0]
     snapshot_node = URIRef(snapshot.uri)
     live_pose_node = URIRef(live_pose.uri)
@@ -145,10 +145,10 @@ def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_mo
     motion = handler.motion
     controllers = {controller.name: controller for controller in handler.controllers}
 
-    solver_a_node = builder.root_uri("slv-solver_a", owner=handler)
-    solver_b_node = builder.root_uri("slv-solver_b", owner=handler)
-    driver_a_node = builder.root_uri("drv-solver_a", owner=handler)
-    driver_b_node = builder.root_uri("drv-solver_b", owner=handler)
+    solver_a_node = builder.root_uri("solver_a", owner=handler)
+    solver_b_node = builder.root_uri("solver_b", owner=handler)
+    driver_a_node = builder.root_uri("driver-solver_a", owner=handler)
+    driver_b_node = builder.root_uri("driver-solver_b", owner=handler)
 
     assert (solver_a_node, SLV["motion-drivers"], driver_a_node) in graph
     assert (solver_b_node, SLV["motion-drivers"], driver_b_node) in graph
@@ -179,7 +179,7 @@ def test_joint_force_interfaces_are_materialized_when_present() -> None:
     dataset, _ = builder.build()
     graph = dataset.default_graph
 
-    driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
+    driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     joint_force_node = builder.root_uri("tau-j1", owner=handler)
 
     assert (driver_node, SLV["joint-force"], joint_force_node) in graph
@@ -191,7 +191,7 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
 
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
-    driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
+    driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     joint_force_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
     joint_position = handler.motion.context[0].declaration[0]
     joint_position_node = builder.node(joint_position)
@@ -214,7 +214,7 @@ def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() ->
     builder, graph, _ = _build_dataset("joint_limit_posture.robmot")
 
     handler = builder.authored_handlers[0]
-    driver_node = builder.root_uri(f"drv-{handler.motion.name}", owner=handler)
+    driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     joint_force_nodes = list(graph.objects(driver_node, SLV["joint-force"]))
     assert len(joint_force_nodes) == 2
 

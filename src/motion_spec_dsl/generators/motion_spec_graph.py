@@ -50,8 +50,8 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.PlaneAngle, QUDT_QKIND.Length),
         (QUDT_UNIT.UNITLESS, QUDT_UNIT.M),
         {
-            "rotation": ("rotation", None, None, QuantityType.PlaneAngle, MAP.PoseCoordinateView),
-            "distance": ("position",  None, None, QuantityType.Distance,  MAP.PoseCoordinateView),
+            "rotation": ("rotation", "angular-acceleration", "ang", QuantityType.PlaneAngle, MAP.PoseCoordinateView),
+            "distance": ("position",  "linear-acceleration",  "lin", QuantityType.Distance,  MAP.PoseCoordinateView),
         },
     ),
     WorldQuantityType.JointPosition: (
@@ -155,6 +155,13 @@ def _ns_term(namespace: Any, name: str) -> URIRef:
 
 def _node_name(value: Any) -> str:
     return value.name if hasattr(value, "name") else str(value)
+
+
+def _body_name(name: str) -> str:
+    for prefix in ("frame-", "link-"):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
 
 
 def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
@@ -571,6 +578,7 @@ class MotionSpecDatasetBuilder:
                     self._view_node(quantity.value.source, quantity),
                 ))
                 self.graph.add((node, _ns_term(APP, "snapshot-time"), Literal("motion-start")))
+                self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS)))
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, ScalarQuantity):
@@ -1003,12 +1011,13 @@ class MotionSpecDatasetBuilder:
             if not getattr(solver, "algorithm", ""):
                 continue
 
-            stem = solver.name if multi else (motion.name or handler.name)
+            solver_stem = solver.name
+            driver_stem = solver.name if multi else (motion.name or handler.name)
 
-            driver_node = self._owned_uri(f"drv-{stem}", handler)
+            driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
 
-            solver_node = self._owned_uri(f"slv-{stem}", handler)
+            solver_node = self._owned_uri(solver_stem, solver)
             self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
 
             alg = solver.algorithm
@@ -1036,6 +1045,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((solver_node, APP["robot-type"], Literal(str(robot_spec.type))))
 
             component_ref = solver.root.component
+            chain_root_name = None
             if component_ref is not None:
                 arm = next(
                     (m for m in robot_spec.manipulators if m.name == component_ref.component),
@@ -1045,6 +1055,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((solver_node, APP["chain-root"], Literal(arm.root)))
                     self.graph.add((solver_node, APP["chain-end"],  Literal(arm.end)))
                     self.graph.add((solver_node, APP["robot-model"], Literal(arm.model)))
+                    chain_root_name = arm.root
             else:
                 chain = robot_spec.chain
                 if chain is not None:
@@ -1052,9 +1063,20 @@ class MotionSpecDatasetBuilder:
                     if chain.end:
                         self.graph.add((solver_node, APP["chain-end"], Literal(chain.end)))
                     self.graph.add((solver_node, APP["robot-model"], Literal(robot_spec.model)))
+                    chain_root_name = chain.root
+
+            if chain_root_name:
+                root_body = _body_name(chain_root_name)
+                for qty in world_qtys.values():
+                    if qty.type not in (WorldQuantityType.Pose, WorldQuantityType.VelocityTwist):
+                        continue
+                    props = qty.props if isinstance(qty.props, GeometricProps) else None
+                    wrt = _geo_prop(props, "wrt")
+                    if wrt and _body_name(wrt) == root_body:
+                        self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(
-                handler, motion, solver, stem, driver_node, world_qtys, shared_spec_ids
+                handler, motion, solver, driver_stem, driver_node, world_qtys, shared_spec_ids
             )
 
     def _emit_solver_interfaces(
