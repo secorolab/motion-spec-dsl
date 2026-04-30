@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import shutil
 from typing import cast
 
+import pytest
 from rdflib import URIRef
 from rdflib.namespace import RDF
 
+from motion_spec.codegen import generate_code
+from motion_spec.ir_gen import JSONEncoder, generate_ir
 from motion_spec.namespace import (
     APP,
     CSTR,
@@ -30,7 +35,11 @@ from motion_spec_dsl.generators.motion_spec_graph import (
     _scalar_id,
 )
 from motion_spec_dsl.generators.classes import _resolved_spec
-from motion_spec_dsl.generators.registration import motion_spec_metamodel
+from motion_spec_dsl.generators.registration import (
+    _build_manifest,
+    _merged_context,
+    motion_spec_metamodel,
+)
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -132,6 +141,68 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
     assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
     assert len(driver_acc_specs) == 1
     assert (solver_node, SLV["motion-drivers"], driver_node) in graph
+
+
+def test_sliding_table_emits_only_five_acceleration_constraints() -> None:
+    builder, graph, _ = _build_dataset("sliding_table_5dof.robmot")
+
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    driver_node = builder.root_uri(f"driver-{motion.name}", owner=handler)
+    spec_nodes = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
+
+    assert len(spec_nodes) == 1
+    constraint_nodes = set(graph.objects(spec_nodes[0], SLV.constraints))
+    expected = {
+        ("distance.x", "linear-acceleration", "x"),
+        ("distance.y", "linear-acceleration", "y"),
+        ("rotation.x", "angular-acceleration", "x"),
+        ("rotation.y", "angular-acceleration", "y"),
+        ("rotation.z", "angular-acceleration", "z"),
+    }
+    for suffix, subspace, axis in expected:
+        acc_node = builder.root_uri(f"acc-cstr-pose-ee-base.{suffix}-m_slide", owner=motion)
+        energy_node = builder.root_uri(f"eacc-pose-ee-base.{suffix}-m_slide", owner=motion)
+        assert acc_node in constraint_nodes
+        assert (acc_node, SLV.subspace, SLV[subspace]) in graph
+        assert (acc_node, SLV.axis, SLV[axis]) in graph
+        assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
+
+    lin_z_node = builder.root_uri("acc-cstr-pose-ee-base.distance.z-m_slide", owner=motion)
+    assert lin_z_node not in constraint_nodes
+    assert len(constraint_nodes) == 5
+
+
+def test_sliding_table_codegen_initializes_five_solver_constraints(tmp_path: Path) -> None:
+    stst = shutil.which("stst")
+    if stst is None:
+        pytest.skip("stst executable is required for generated C++ verification")
+
+    builder, graph, context = _build_dataset("sliding_table_5dof.robmot")
+    graph_path = tmp_path / "sliding_table_5dof.json"
+    serialized = graph.serialize(
+        format="json-ld",
+        indent=2,
+        context=_merged_context(context),
+    )
+    graph_path.write_text(
+        serialized.decode() if isinstance(serialized, bytes) else serialized
+    )
+    manifest_path = tmp_path / "sliding_table_5dof-app.json"
+    manifest_path.write_text(json.dumps(_build_manifest(builder.dataset, [graph_path.name])))
+    ir_path = tmp_path / "ir.json"
+    ir_path.write_text(json.dumps(generate_ir(manifest_path), cls=JSONEncoder, indent=2))
+
+    generate_code(ir_path, tmp_path / "cpp", stst)
+
+    header = (tmp_path / "cpp" / "headers" / "motion_m_slide.hpp").read_text()
+    assert "state.arm_solver.num_constraints = 5;" in header
+    assert "Subspace::Linear, motion_spec::runtime::Axis::X" in header
+    assert "Subspace::Linear, motion_spec::runtime::Axis::Y" in header
+    assert "Subspace::Linear, motion_spec::runtime::Axis::Z" not in header
+    assert "Subspace::Angular, motion_spec::runtime::Axis::X" in header
+    assert "Subspace::Angular, motion_spec::runtime::Axis::Y" in header
+    assert "Subspace::Angular, motion_spec::runtime::Axis::Z" in header
 
 
 def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
@@ -254,7 +325,7 @@ def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() ->
 
 
 def test_pose_position_without_axis_emits_linear_distance_operation() -> None:
-    builder, graph, _ = _build_model_dataset("sc1.robmot")
+    builder, graph, _ = _build_dataset("pose_distance.robmot")
 
     motion = builder.authored_handlers[0].motion
     constraint = _resolved_spec(motion.while_.constraints[-1])

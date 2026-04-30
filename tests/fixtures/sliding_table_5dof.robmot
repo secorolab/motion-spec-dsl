@@ -1,0 +1,66 @@
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: { root: link-base, end: link-ee }
+}
+
+MOTION_SPEC (ns=app) m_slide {
+    CONTEXT {
+        cw: World {
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base, as-seen-by: frame-base }
+        },
+        cs: Spec {
+            lin-x-ref: LinearDistance = 0.0 m,
+            lin-y-ref: LinearDistance = 0.0 m,
+            ang-x-ref: Angle = 0.0 rad,
+            ang-y-ref: Angle = 0.0 rad,
+            ang-z-ref: Angle = 0.0 rad
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_lin_x: keeping <cw.pose-ee-base>.position.x equal to <cs.lin-x-ref>,
+        c_lin_y: keeping <cw.pose-ee-base>.position.y equal to <cs.lin-y-ref>,
+        c_ang_x: keeping <cw.pose-ee-base>.orientation.x equal to <cs.ang-x-ref>,
+        c_ang_y: keeping <cw.pose-ee-base>.orientation.y equal to <cs.ang-y-ref>,
+        c_ang_z: keeping <cw.pose-ee-base>.orientation.z equal to <cs.ang-z-ref>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_slide {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_slide>
+
+    CONTROLLERS {
+        ctrl-lin-x: PID { constraint: <m_slide.c_lin_x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-lin-y: PID { constraint: <m_slide.c_lin_y>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-ang-x: PID { constraint: <m_slide.c_ang_x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-ang-y: PID { constraint: <m_slide.c_ang_y>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-ang-z: PID { constraint: <m_slide.c_ang_z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

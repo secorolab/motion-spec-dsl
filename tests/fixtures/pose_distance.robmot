@@ -1,0 +1,58 @@
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: { root: link-base, end: link-ee }
+}
+
+MOTION_SPEC (ns=app) m_distance {
+    CONTEXT {
+        cw: World {
+            pose-shoulder-base: Pose { of: frame-shoulder, wrt: frame-base },
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base },
+            pose-shoulder-ee: Pose { of: frame-ee, wrt: frame-shoulder }
+        },
+        cs: Spec {
+            dist-lower: LinearDistance = 0.2 m,
+            dist-upper: LinearDistance = 0.8 m
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_dist: distance between <cw.pose-shoulder-base> and <cw.pose-ee-base> between <cs.dist-lower> and <cs.dist-upper>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_distance {
+    CONTEXT {
+        c1: World {
+            link-ee: Link,
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_distance>
+
+    CONTROLLERS {
+        ctrl-dist: PID { constraint: <m_distance.c_dist>, Kp = 1.0, Ki = 0.0, Kd = 0.1 } as Force apply at <c1.link-ee>
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

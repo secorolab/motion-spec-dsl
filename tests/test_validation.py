@@ -56,6 +56,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
             "missing_controller_solver.robmot",
             "must specify solver because handler 'handler_move' assembles 2 solvers",
         ),
+        (
+            "duplicate_achd_axis.robmot",
+            "Multiple constraints on the same Cartesian axis are not supported yet",
+        ),
     ],
 )
 def test_invalid_models_fail_validation(fixture: str, message: str) -> None:

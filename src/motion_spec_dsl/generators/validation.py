@@ -494,6 +494,17 @@ def _controller_solver(controller: ControllerEntry | ControllerAlias) -> SolverE
     return None
 
 
+def _handler_controller_solver(
+    handler: ConstraintHandler,
+    controller: ControllerEntry | ControllerAlias,
+) -> SolverEntry | None:
+    solver = _controller_solver(controller)
+    if solver is not None:
+        return solver
+    solvers = [_resolved_solver(item) for item in handler.solvers]
+    return solvers[0] if len(solvers) == 1 else None
+
+
 def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
     resolved_controller = _resolved_controller(controller)
     subspace = resolved_controller.params.constraint.constraint.view.subspace
@@ -504,6 +515,67 @@ def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
     }:
         return "force"
     return "pose"
+
+
+def _is_force_or_posture_command(controller: ControllerEntry | ControllerAlias) -> bool:
+    resolved_controller = _resolved_controller(controller)
+    constraint = resolved_controller.params.constraint.constraint
+    command_type = resolved_controller.command_type or _infer_command_type(constraint.view.subspace)
+    return (
+        command_type == QuantityType.Force
+        or (
+            command_type == QuantityType.Torque
+            and resolved_controller.control_mode == ControllerMode.Posture
+        )
+    )
+
+
+def _resolved_constraint_quantity(constraint: ConstraintSpecification) -> WorldQuantity | None:
+    quantity = getattr(constraint.view, "quantity", None)
+    if isinstance(quantity, WorldQuantity):
+        return _resolved_world_quantity(quantity)
+    return None
+
+
+def _achd_acceleration_axis_keys(
+    controller: ControllerEntry | ControllerAlias,
+) -> list[tuple[str, str]]:
+    if _is_force_or_posture_command(controller):
+        return []
+
+    resolved_controller = _resolved_controller(controller)
+    constraint = resolved_controller.params.constraint.constraint
+    quantity = _resolved_constraint_quantity(constraint)
+    if quantity is None:
+        return []
+
+    subspace = constraint.view.subspace
+    axis = _axis_label(getattr(constraint.view, "axis", None))
+    whole_pose_command = (
+        quantity.type == WorldQuantityType.Pose
+        and subspace is None
+        and isinstance(constraint.expr, EqualityConstraint)
+    )
+    if whole_pose_command:
+        return [
+            ("linear-acceleration", "x"),
+            ("linear-acceleration", "y"),
+            ("linear-acceleration", "z"),
+            ("angular-acceleration", "x"),
+            ("angular-acceleration", "y"),
+            ("angular-acceleration", "z"),
+        ]
+    if axis is not None and subspace in {
+        SubSpace.Position,
+        SubSpace.LinVel,
+    }:
+        return [("linear-acceleration", axis)]
+    if axis is not None and subspace in {
+        SubSpace.Orientation,
+        SubSpace.AngVel,
+    }:
+        return [("angular-acceleration", axis)]
+    return []
 
 
 def validate_supported_solver_algorithms(model: Model) -> None:
@@ -602,6 +674,50 @@ def validate_controller_commands(model: Model) -> None:
                 )
 
 
+def validate_achd_acceleration_constraints(model: Model) -> None:
+    for handler in _constraint_handlers(model):
+        axes_by_solver: dict[int, dict[tuple[str, str], list[str]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        solver_by_id: dict[int, SolverEntry] = {}
+        for controller in handler.controllers:
+            solver = _handler_controller_solver(handler, controller)
+            if solver is None or str(solver.algorithm) != "ACHD":
+                continue
+            sid = id(solver)
+            solver_by_id[sid] = solver
+            resolved_controller = _resolved_controller(controller)
+            for axis_key in _achd_acceleration_axis_keys(controller):
+                axes_by_solver[sid][axis_key].append(resolved_controller.name)
+
+        for sid, axes in axes_by_solver.items():
+            duplicate_axes = {
+                axis: controllers
+                for axis, controllers in axes.items()
+                if len(controllers) > 1
+            }
+            if duplicate_axes:
+                solver = solver_by_id[sid]
+                axis, controllers = next(iter(duplicate_axes.items()))
+                axis_label = ".".join(axis)
+                controller_names = ", ".join(controllers)
+                raise _semantic_error(
+                    f"ACHD solver '{solver.name}' in handler '{handler.name}' has multiple "
+                    f"acceleration constraints for Cartesian axis '{axis_label}': "
+                    f"{controller_names}. Multiple constraints on the same Cartesian axis "
+                    "are not supported yet.",
+                    handler,
+                )
+            if len(axes) > 6:
+                solver = solver_by_id[sid]
+                raise _semantic_error(
+                    f"ACHD solver '{solver.name}' in handler '{handler.name}' has "
+                    f"{len(axes)} unique acceleration constraints, but KDL "
+                    "ChainHdSolver_Vereshchagin supports at most 6.",
+                    handler,
+                )
+
+
 def validate_motion_spec_coverage(model: Model) -> None:
     referenced = {
         handler.motion.name
@@ -635,4 +751,5 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_supported_solver_algorithms(model)
     validate_mixed_solver_domains(model)
     validate_controller_commands(model)
+    validate_achd_acceleration_constraints(model)
     validate_motion_spec_coverage(model)
