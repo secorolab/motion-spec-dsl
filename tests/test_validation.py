@@ -26,6 +26,7 @@ AMBIGUOUS_CONTROLLER_COMMAND = "01_core_semantics/05_ambiguous_controller_comman
 STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
 POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
 JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
+IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
 
 
 @pytest.mark.parametrize(
@@ -66,10 +67,6 @@ JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
         (
             "02_controllers_and_solvers/04_duplicate_achd_axis.robmot",
             "Multiple constraints on the same Cartesian axis are not supported yet",
-        ),
-        (
-            "02_controllers_and_solvers/06_unsupported_impedance_controller.robmot",
-            "uses Impedance, but only PID controller graph emission is modeled yet",
         ),
         (
             "02_controllers_and_solvers/07_unsupported_abag_controller.robmot",
@@ -142,3 +139,15 @@ def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
 
     assert controller.solver is None
     assert controller.control_mode.value == "Posture"
+
+
+def test_impedance_controller_passes_validation() -> None:
+    metamodel = motion_spec_metamodel()
+
+    model = metamodel.model_from_file(VALID_FIXTURES / IMPEDANCE_CONTROLLER)
+    handler = model.specs[-1]
+    controller = handler.controllers[0]
+
+    assert controller.type.value == "Impedance"
+    assert controller.params.stiffness == 1.0
+    assert controller.params.damping == 0.1

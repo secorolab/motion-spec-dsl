@@ -1385,21 +1385,28 @@ class MotionSpecDatasetBuilder:
 
     def _emit_controller_base(self, ctrl_node: URIRef, ctrl: ControllerEntry) -> None:
         self.graph.add((ctrl_node, RDF.type, CSTR_HDL.Controller))
-        if ctrl.type != ControllerType.PID:
+        if ctrl.type == ControllerType.PID:
+            self.graph.add((ctrl_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative))
+            if ctrl.params.kp is not None:
+                self.graph.add((ctrl_node, CSTR_HDL["proportional-gain"], Literal(str(ctrl.params.kp))))
+            if ctrl.params.ki is not None:
+                self.graph.add((ctrl_node, CSTR_HDL["integral-gain"], Literal(str(ctrl.params.ki))))
+            if ctrl.params.kd is not None:
+                self.graph.add((ctrl_node, CSTR_HDL["derivative-gain"], Literal(str(ctrl.params.kd))))
+            if ctrl.params.decay is not None:
+                self.graph.add((ctrl_node, RDF.type, CSTR_HDL.DecayingIntegralTerm))
+                self.graph.add((ctrl_node, CSTR_HDL["decay-rate"], Literal(str(ctrl.params.decay))))
+        elif ctrl.type == ControllerType.Impedance:
+            self.graph.add((ctrl_node, RDF.type, CSTR_HDL.ImpedanceController))
+            if ctrl.params.stiffness is not None:
+                self.graph.add((ctrl_node, CSTR_HDL["stiffness"], Literal(str(ctrl.params.stiffness))))
+            if ctrl.params.damping is not None:
+                self.graph.add((ctrl_node, CSTR_HDL["damping"], Literal(str(ctrl.params.damping))))
+        else:
             raise ValueError(
                 f"Controller '{ctrl.name}' uses {ctrl.type.value}, "
-                "but only PID controller graph emission is modeled yet."
+                "which is not supported for graph emission."
             )
-        self.graph.add((ctrl_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative))
-        if ctrl.params.kp is not None:
-            self.graph.add((ctrl_node, CSTR_HDL["proportional-gain"], Literal(str(ctrl.params.kp))))
-        if ctrl.params.ki is not None:
-            self.graph.add((ctrl_node, CSTR_HDL["integral-gain"], Literal(str(ctrl.params.ki))))
-        if ctrl.params.kd is not None:
-            self.graph.add((ctrl_node, CSTR_HDL["derivative-gain"], Literal(str(ctrl.params.kd))))
-        if ctrl.params.decay is not None:
-            self.graph.add((ctrl_node, RDF.type, CSTR_HDL.DecayingIntegralTerm))
-            self.graph.add((ctrl_node, CSTR_HDL["decay-rate"], Literal(str(ctrl.params.decay))))
 
     def _emit_acceleration_energy_quantity(self, energy_node: URIRef) -> None:
         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -1891,6 +1898,11 @@ class MotionSpecDatasetBuilder:
                 jf_node = self._owned_uri(jf_id, handler)
                 self.graph.add((driver_node, SLV["joint-force"], jf_node))
                 self.graph.add((jf_node, RDF.type, SLV.JointForce))
+                joint_name = _geo_prop(
+                    qty.props if isinstance(qty.props, GeometricProps) else None, "of"
+                )
+                if joint_name:
+                    self.graph.add((jf_node, SLV["attached-to"], self._owned_uri(joint_name, qty)))
 
         for vel_solver in getattr(solver, "velocity_solvers", []):
             vs_node = self._owned_uri(vel_solver.name, handler)

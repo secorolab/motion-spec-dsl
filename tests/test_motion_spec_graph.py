@@ -376,6 +376,7 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     assert (joint_force_node, RDF.type, SLV.JointForce) in graph
     assert (joint_force_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque) in graph
     assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
+    assert (joint_force_node, SLV["attached-to"], joint_target_node) in graph
     assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
     assert (joint_target_node, RDF.type, KC.Joint) in graph
 

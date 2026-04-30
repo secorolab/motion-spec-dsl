@@ -71,12 +71,15 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
 
-            if resolved_controller.type != ControllerType.PID:
+            if resolved_controller.type not in (ControllerType.PID, ControllerType.Impedance):
                 raise semantic_error(
                     f"Controller '{controller.name}' uses {resolved_controller.type.value}, "
-                    "but only PID controller graph emission is modeled yet.",
+                    "which is not supported for graph emission.",
                     controller,
                 )
+            # Remaining validation (command_type inference, posture mode checks)
+            # applies equally to PID and Impedance: both map a scalar error to a
+            # scalar control signal and support 'for Posture' with JointPosition.
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)
