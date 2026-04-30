@@ -1,0 +1,70 @@
+// Valid: unilateral and bilateral posture joint limits; graph emission must produce joint-force and error signals for each limit.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: {
+        root: link-base,
+        end: link-ee
+    }
+}
+
+MOTION_SPEC (ns=app) m-joint-limits {
+    CONTEXT {
+        cw: World {
+            q-j2: JointPosition { of: joint-2 },
+            q-j4: JointPosition { of: joint-4 }
+        },
+        cs: Spec {
+            q-j2-lower: Angle = -1.5 rad,
+            q-j2-upper: Angle = 1.5 rad,
+            q-j4-max: Angle = 1.0 rad
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        cstr-bilateral-j2: keeping <cw.q-j2> between <cs.q-j2-lower> and <cs.q-j2-upper>,
+        cstr-less-than-j4: keeping <cw.q-j4> less than <cs.q-j4-max>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler-joint-limits {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m-joint-limits>
+
+    CONTROLLERS {
+        ctrl-bilateral-j2: PID {
+            constraint: <m-joint-limits.cstr-bilateral-j2>,
+            Kp = 10.0, Ki = 0.0, Kd = 0.5
+        } as Torque for Posture,
+        ctrl-less-than-j4: PID {
+            constraint: <m-joint-limits.cstr-less-than-j4>,
+            Kp = 10.0, Ki = 0.0, Kd = 0.5
+        } as Torque for Posture
+    }
+
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

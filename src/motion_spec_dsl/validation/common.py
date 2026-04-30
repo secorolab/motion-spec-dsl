@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: MPL-2.0
+"""Shared helpers for semantic validation phases."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+
+from textx import get_location
+from textx.exceptions import TextXSemanticError
+
+from motion_spec_dsl.domain import (
+    ConstraintAlias,
+    ConstraintHandler,
+    ConstraintSpecification,
+    ControllerAlias,
+    ControllerEntry,
+    Model,
+    MotionSpec,
+    RobotSpec,
+    SolverAlias,
+    SolverEntry,
+    _resolved_spec,
+)
+
+
+def semantic_error(message: str, obj: object | None = None) -> TextXSemanticError:
+    if obj is None:
+        return TextXSemanticError(message)
+    try:
+        return TextXSemanticError(message, **get_location(obj))
+    except Exception:
+        return TextXSemanticError(message)
+
+
+def motion_specs(model: Model) -> Iterable[MotionSpec]:
+    return (spec for spec in model.specs if isinstance(spec, MotionSpec))
+
+
+def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
+    return (spec for spec in model.specs if isinstance(spec, ConstraintHandler))
+
+
+def robot_specs(model: Model) -> Iterable[RobotSpec]:
+    return (spec for spec in model.specs if isinstance(spec, RobotSpec))
+
+
+def motion_constraint_items(spec: MotionSpec) -> list[ConstraintSpecification | ConstraintAlias]:
+    """All section items (inline specs and aliases) by their local name."""
+    return [item for section in spec.sections for item in section.constraints]
+
+
+def motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
+    """All resolved ConstraintSpecification objects for this motion."""
+    return [_resolved_spec(item) for item in motion_constraint_items(spec)]
+
+
+def handler_controller_items(handler: ConstraintHandler) -> list[ControllerEntry | ControllerAlias]:
+    return list(handler.controllers)
+
+
+def handler_solver_items(handler: ConstraintHandler) -> list[SolverEntry | SolverAlias]:
+    return list(handler.solvers)

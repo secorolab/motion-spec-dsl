@@ -1,0 +1,60 @@
+// Valid: acceleration constraint authored in a non-base frame; codegen must rotate the axis into the solver base.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: { root: link-base, end: link-ee }
+}
+
+MOTION_SPEC (ns=app) m_frame {
+    CONTEXT {
+        cw: World {
+            twist-ee-base-ee: VelocityTwist {
+                of: link-ee,
+                wrt: link-base,
+                as-seen-by: frame-ee
+            }
+        },
+        cs: Spec {
+            vel-x-ref: LinearVelocity = 0.0 m/s
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_lin_x: keeping <cw.twist-ee-base-ee>.linvel.x equal to <cs.vel-x-ref>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_frame {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_frame>
+
+    CONTROLLERS {
+        ctrl-lin-x: PID { constraint: <m_frame.c_lin_x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

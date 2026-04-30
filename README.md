@@ -31,6 +31,19 @@ The generator currently writes two files:
 
 The generator builds one RDF graph per input model. The old numbered multi-file JSON-LD output is not supported.
 
+## Package Layout
+
+```text
+motion_spec_dsl/
+  domain.py             textX classes for parsed DSL objects
+  namespaces.py         namespace-aware object base helpers
+  semantics.py          shared semantic classification records
+  validation/           semantic validation phases
+  rdf.py                RDF graph construction
+  registration.py       textX language and generator entrypoints
+  metamodels/           textX grammar
+```
+
 ## Minimal Example
 
 ```robmot

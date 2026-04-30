@@ -8,56 +8,63 @@ import re
 import pytest
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.generators.classes import (
+from motion_spec_dsl.domain import (
     ConstraintReference,
     ControllerReference,
     SolverReference,
     ContextQuantityReference,
     WorldQuantityReference,
 )
-from motion_spec_dsl.generators.registration import motion_spec_metamodel
+from motion_spec_dsl.registration import motion_spec_metamodel
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+VALID_FIXTURES = FIXTURES / "valid"
+INVALID_FIXTURES = FIXTURES / "invalid"
+
+AMBIGUOUS_CONTROLLER_COMMAND = "01_core_semantics/05_ambiguous_controller_command.robmot"
+STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
+POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
+JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
 
 
 @pytest.mark.parametrize(
     ("fixture", "message"),
     [
         (
-            "duplicate_constraint.robmot",
+            "01_constraints_and_handlers/01_duplicate_constraint.robmot",
             "duplicate constraint name(s): c1",
         ),
         (
-            "handler_motion_mismatch.robmot",
+            "01_constraints_and_handlers/02_handler_motion_mismatch.robmot",
             "primary motion 'm_a' does not assemble it",
         ),
         (
-            "missing_controller.robmot",
+            "01_constraints_and_handlers/03_missing_controller.robmot",
             "WHILE constraints must have at least one controller",
         ),
         (
-            "missing_monitor.robmot",
+            "01_constraints_and_handlers/04_missing_monitor.robmot",
             "WHEN or UNTIL constraints must have at least one monitor",
         ),
         (
-            "apply_at_non_link.robmot",
+            "02_controllers_and_solvers/01_apply_at_non_link.robmot",
             "apply at target must be a Link",
         ),
         (
-            "mixed_solver_same_domain.robmot",
+            "02_controllers_and_solvers/05_mixed_solver_same_domain.robmot",
             "uses RNE, but RNE is not modeled",
         ),
         (
-            "joint_position_missing_posture.robmot",
+            "02_controllers_and_solvers/02_joint_position_missing_posture.robmot",
             "must declare 'for Posture'",
         ),
         (
-            "missing_controller_solver.robmot",
+            "02_controllers_and_solvers/03_missing_controller_solver.robmot",
             "must specify solver because handler 'handler_move' assembles 2 solvers",
         ),
         (
-            "duplicate_achd_axis.robmot",
+            "02_controllers_and_solvers/04_duplicate_achd_axis.robmot",
             "Multiple constraints on the same Cartesian axis are not supported yet",
         ),
     ],
@@ -66,19 +73,19 @@ def test_invalid_models_fail_validation(fixture: str, message: str) -> None:
     metamodel = motion_spec_metamodel()
 
     with pytest.raises(TextXSemanticError, match=re.escape(message)):
-        metamodel.model_from_file(FIXTURES / fixture)
+        metamodel.model_from_file(INVALID_FIXTURES / fixture)
 
 
 def test_pose_position_controller_command_is_inferred() -> None:
     metamodel = motion_spec_metamodel()
 
-    metamodel.model_from_file(FIXTURES / "ambiguous_controller_command.robmot")
+    metamodel.model_from_file(VALID_FIXTURES / AMBIGUOUS_CONTROLLER_COMMAND)
 
 
 def test_standalone_manipulator_solver_refs_use_robot_name() -> None:
     metamodel = motion_spec_metamodel()
 
-    model = metamodel.model_from_file(FIXTURES / "standalone_manipulator.robmot")
+    model = metamodel.model_from_file(VALID_FIXTURES / STANDALONE_MANIPULATOR)
     handler = model.specs[-1]
     solver = handler.solvers[0]
 
@@ -110,7 +117,7 @@ def test_crf_model_supports_context_and_solver_references() -> None:
 
 def test_posture_controller_accepts_unilateral_and_bilateral_joint_limits() -> None:
     metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(FIXTURES / "joint_limit_posture.robmot")
+    model = metamodel.model_from_file(VALID_FIXTURES / JOINT_LIMIT_POSTURE)
     handler = model.specs[-1]
     controllers = {c.name: c for c in handler.controllers}
 
@@ -121,7 +128,7 @@ def test_posture_controller_accepts_unilateral_and_bilateral_joint_limits() -> N
 def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
     metamodel = motion_spec_metamodel()
 
-    model = metamodel.model_from_file(FIXTURES / "posture_controller.robmot")
+    model = metamodel.model_from_file(VALID_FIXTURES / POSTURE_CONTROLLER)
     handler = model.specs[-1]
     controller = handler.controllers[0]
 

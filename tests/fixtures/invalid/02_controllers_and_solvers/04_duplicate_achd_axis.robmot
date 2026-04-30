@@ -1,0 +1,60 @@
+// Invalid: two ACHD controllers drive the same Cartesian acceleration axis; validation must reject duplicate axis constraints.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: { root: link-base, end: link-ee }
+}
+
+MOTION_SPEC (ns=app) m_duplicate_axis {
+    CONTEXT {
+        cw: World {
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base, as-seen-by: frame-base },
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, as-seen-by: frame-base }
+        },
+        cs: Spec {
+            lin-z-ref: LinearDistance = 0.0 m,
+            vel-z-ref: LinearVelocity = 0.0 m/s
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_pos_z: keeping <cw.pose-ee-base>.position.z equal to <cs.lin-z-ref>,
+        c_vel_z: keeping <cw.twist-ee-base>.linvel.z equal to <cs.vel-z-ref>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_duplicate_axis {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_duplicate_axis>
+
+    CONTROLLERS {
+        ctrl-pos-z: PID { constraint: <m_duplicate_axis.c_pos_z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-vel-z: PID { constraint: <m_duplicate_axis.c_vel_z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

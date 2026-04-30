@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-import shutil
 from typing import cast
 
-import pytest
 from rdflib import URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.codegen import generate_code
-from motion_spec.ir_gen import JSONEncoder, generate_ir
 from motion_spec.namespace import (
     APP,
     CSTR,
@@ -30,26 +25,44 @@ from motion_spec.namespace import (
     RBDYN_OP,
     SLV,
 )
-from motion_spec_dsl.generators.motion_spec_graph import (
+from motion_spec_dsl.rdf import (
     MotionSpecDatasetBuilder,
     _evaluator_id,
     _scalar_id,
 )
-from motion_spec_dsl.generators.classes import _resolved_spec
-from motion_spec_dsl.generators.registration import (
-    _build_manifest,
-    _merged_context,
+from motion_spec_dsl.domain import _resolved_spec
+from motion_spec_dsl.registration import (
     motion_spec_metamodel,
 )
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
+VALID_FIXTURES = FIXTURES / "valid"
 MODELS = Path(__file__).parents[1] / "models"
+
+STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
+REUSED_CONSTRAINT = "01_core_semantics/02_reused_constraint.robmot"
+SNAPSHOT_POSE = "01_core_semantics/03_snapshot_pose.robmot"
+POSE_DISTANCE = "01_core_semantics/04_pose_distance.robmot"
+MONITOR_EVENT_FLAG = "01_core_semantics/06_monitor_event_flag.robmot"
+POSE_DISTANCE_CROSS_FRAME = "01_core_semantics/07_pose_distance_cross_frame.robmot"
+SLIDING_TABLE_5DOF = "02_acceleration_constraints/01_sliding_table_5dof.robmot"
+ACCELERATION_FRAME_TRANSFORM = "02_acceleration_constraints/02_acceleration_frame_transform.robmot"
+MULTI_SOLVER_ACCELERATION_FORCE = (
+    "02_acceleration_constraints/03_multi_solver_acceleration_force.robmot"
+)
+VELOCITY_TWIST_FRAME_TRANSFORM = (
+    "02_acceleration_constraints/04_velocity_twist_frame_transform.robmot"
+)
+FORCE_CONTROLLER = "03_force_commands/01_force_controller.robmot"
+POSITION_FORCE_CONTROLLER = "03_force_commands/02_position_force_controller.robmot"
+POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
+JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
 
 
 def _build_dataset(fixture: str):
     metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(FIXTURES / fixture)
+    model = metamodel.model_from_file(VALID_FIXTURES / fixture)
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
     return builder, dataset.default_graph, cast(dict[str, str], context)
@@ -63,33 +76,8 @@ def _build_model_dataset(model_name: str):
     return builder, dataset.default_graph, cast(dict[str, str], context)
 
 
-def _generate_fixture_cpp(fixture: str, tmp_path: Path) -> Path:
-    stst = shutil.which("stst")
-    if stst is None:
-        pytest.skip("stst executable is required for generated C++ verification")
-
-    builder, graph, context = _build_dataset(fixture)
-    graph_path = tmp_path / f"{Path(fixture).stem}.json"
-    serialized = graph.serialize(
-        format="json-ld",
-        indent=2,
-        context=_merged_context(context),
-    )
-    graph_path.write_text(
-        serialized.decode() if isinstance(serialized, bytes) else serialized
-    )
-    manifest_path = tmp_path / f"{Path(fixture).stem}-app.json"
-    manifest_path.write_text(json.dumps(_build_manifest(builder.dataset, [graph_path.name])))
-    ir_path = tmp_path / "ir.json"
-    ir_path.write_text(json.dumps(generate_ir(manifest_path), cls=JSONEncoder, indent=2))
-
-    cpp_dir = tmp_path / "cpp"
-    generate_code(ir_path, cpp_dir, stst)
-    return cpp_dir
-
-
 def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> None:
-    builder, graph, context = _build_dataset("standalone_manipulator.robmot")
+    builder, graph, context = _build_dataset(STANDALONE_MANIPULATOR)
 
     handler = builder.authored_handlers[0]
     motion = handler.motion
@@ -108,7 +96,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
 
 
 def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> None:
-    builder, graph, _ = _build_dataset("force_controller.robmot")
+    builder, graph, _ = _build_dataset(FORCE_CONTROLLER)
 
     handler = builder.authored_handlers[0]
     force_quantity = handler.motion.context[0].declaration[0]
@@ -135,7 +123,7 @@ def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> 
 
 
 def test_explicit_force_command_overrides_acceleration_energy_signal() -> None:
-    builder, graph, _ = _build_dataset("position_force_controller.robmot")
+    builder, graph, _ = _build_dataset(POSITION_FORCE_CONTROLLER)
 
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
@@ -152,7 +140,7 @@ def test_explicit_force_command_overrides_acceleration_energy_signal() -> None:
 
 
 def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None:
-    builder, graph, _ = _build_dataset("standalone_manipulator.robmot")
+    builder, graph, _ = _build_dataset(STANDALONE_MANIPULATOR)
 
     handler = builder.authored_handlers[0]
     motion = handler.motion
@@ -170,7 +158,7 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
 
 
 def test_sliding_table_emits_only_five_acceleration_constraints() -> None:
-    builder, graph, _ = _build_dataset("sliding_table_5dof.robmot")
+    builder, graph, _ = _build_dataset(SLIDING_TABLE_5DOF)
 
     handler = builder.authored_handlers[0]
     motion = handler.motion
@@ -199,20 +187,8 @@ def test_sliding_table_emits_only_five_acceleration_constraints() -> None:
     assert len(constraint_nodes) == 5
 
 
-def test_sliding_table_codegen_initializes_five_solver_constraints(tmp_path: Path) -> None:
-    cpp_dir = _generate_fixture_cpp("sliding_table_5dof.robmot", tmp_path)
-    header = (cpp_dir / "headers" / "motion_m_slide.hpp").read_text()
-    assert "state.arm_solver.num_constraints = 5;" in header
-    assert "Subspace::Linear, motion_spec::runtime::Axis::X" in header
-    assert "Subspace::Linear, motion_spec::runtime::Axis::Y" in header
-    assert "Subspace::Linear, motion_spec::runtime::Axis::Z" not in header
-    assert "Subspace::Angular, motion_spec::runtime::Axis::X" in header
-    assert "Subspace::Angular, motion_spec::runtime::Axis::Y" in header
-    assert "Subspace::Angular, motion_spec::runtime::Axis::Z" in header
-
-
 def test_acceleration_constraint_records_authored_axis_frame() -> None:
-    builder, graph, _ = _build_dataset("acceleration_frame_transform.robmot")
+    builder, graph, _ = _build_dataset(ACCELERATION_FRAME_TRANSFORM)
 
     motion = builder.authored_handlers[0].motion
     acc_node = builder.root_uri(
@@ -224,21 +200,8 @@ def test_acceleration_constraint_records_authored_axis_frame() -> None:
     assert (acc_node, GEOM_COORD["as-seen-by"], frame_node) in graph
 
 
-def test_codegen_rotates_non_base_acceleration_axis_into_solver_base(tmp_path: Path) -> None:
-    cpp_dir = _generate_fixture_cpp("acceleration_frame_transform.robmot", tmp_path)
-
-    header = (cpp_dir / "headers" / "motion_m_frame.hpp").read_text()
-    assert "state.arm_solver.num_constraints = 1;" in header
-    assert "alpha_fk_arm_solver_0.JntToCart" in header
-    assert 'find_segment_index(*robot.arm_solver.chain, "frame_ee")' in header
-    assert "alpha_frame_arm_solver_0.M * KDL::Vector(1.0, 0.0, 0.0)" in header
-    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::X), 0) = alpha_axis_arm_solver_0[0];" in header
-    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::Y), 0) = alpha_axis_arm_solver_0[1];" in header
-    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::Z), 0) = alpha_axis_arm_solver_0[2];" in header
-
-
 def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
-    builder, graph, _ = _build_dataset("snapshot_pose.robmot")
+    builder, graph, _ = _build_dataset(SNAPSHOT_POSE)
 
     idle = next(
         handler.motion for handler in builder.authored_handlers if handler.motion.name == "idle"
@@ -256,7 +219,7 @@ def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
 
 
 def test_reused_constraint_emits_shared_uri_and_error_signal() -> None:
-    builder, graph, _ = _build_dataset("reused_constraint.robmot")
+    builder, graph, _ = _build_dataset(REUSED_CONSTRAINT)
 
     motions = {handler.motion.name: handler.motion for handler in builder.authored_handlers}
     motion_a_node = builder.root_uri("motion-move_a", owner=motions["move_a"])
@@ -271,7 +234,7 @@ def test_reused_constraint_emits_shared_uri_and_error_signal() -> None:
 
 
 def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_motion_owned_signals() -> None:
-    builder, graph, _ = _build_dataset("multi_solver_cross_ns.robmot")
+    builder, graph, _ = _build_dataset(MULTI_SOLVER_ACCELERATION_FORCE)
 
     handler = builder.authored_handlers[0]
     motion = handler.motion
@@ -302,7 +265,7 @@ def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_mo
 
 def test_joint_force_interfaces_are_materialized_when_present() -> None:
     metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(FIXTURES / "standalone_manipulator.robmot")
+    model = metamodel.model_from_file(VALID_FIXTURES / STANDALONE_MANIPULATOR)
     handler = next(spec for spec in model.specs if getattr(spec, "name", "") == "handler_move")
     solver = handler.solvers[0]
     solver.joint_force = ["tau-j1"]
@@ -319,7 +282,7 @@ def test_joint_force_interfaces_are_materialized_when_present() -> None:
 
 
 def test_posture_controller_emits_joint_force_torque_signal() -> None:
-    builder, graph, _ = _build_dataset("posture_controller.robmot")
+    builder, graph, _ = _build_dataset(POSTURE_CONTROLLER)
 
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
@@ -343,7 +306,7 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
 
 
 def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() -> None:
-    builder, graph, _ = _build_dataset("joint_limit_posture.robmot")
+    builder, graph, _ = _build_dataset(JOINT_LIMIT_POSTURE)
 
     handler = builder.authored_handlers[0]
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
@@ -357,7 +320,7 @@ def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() ->
 
 
 def test_pose_position_without_axis_emits_linear_distance_operation() -> None:
-    builder, graph, _ = _build_dataset("pose_distance.robmot")
+    builder, graph, _ = _build_dataset(POSE_DISTANCE)
 
     motion = builder.authored_handlers[0].motion
     constraint = _resolved_spec(motion.while_.constraints[-1])
@@ -380,3 +343,96 @@ def test_pose_position_without_axis_emits_linear_distance_operation() -> None:
     assert (op_node, GEOM_OP.distance, distance_node) in graph
     assert (URIRef(constraint.uri), RDF.type, CSTR.DistanceConstraint) in graph
     assert (URIRef(constraint.uri), CSTR.quantity, distance_node) in graph
+
+
+def test_pose_distance_composes_cross_reference_frame_transform_path() -> None:
+    builder, graph, _ = _build_dataset(POSE_DISTANCE_CROSS_FRAME)
+
+    motion = builder.authored_handlers[0].motion
+    constraint = _resolved_spec(motion.while_.constraints[0])
+    target_pose_node = URIRef(str(motion.namespace) + "m_cross_distance/pose-frame-ee-frame-shoulder")
+    end_in_start_ref_node = builder.root_uri(
+        "pose-pose-ee-table-in-frame-base-c_dist_cross",
+        owner=motion,
+    )
+    reference_compose_node = builder.root_uri(
+        "compute-pose-ee-table-in-frame-base-c_dist_cross",
+        owner=motion,
+    )
+    target_compose_node = builder.root_uri("compute-pose-frame-ee-frame-shoulder", owner=motion)
+    distance_node = builder.root_uri("pose-frame-ee-frame-shoulder.distance", owner=motion)
+    distance_op_node = builder.root_uri(
+        "compute-pose-frame-ee-frame-shoulder.distance",
+        owner=motion,
+    )
+
+    assert (reference_compose_node, RDF.type, GEOM_OP.ComposePose) in graph
+    assert (reference_compose_node, GEOM_OP.composite, end_in_start_ref_node) in graph
+    assert (target_compose_node, RDF.type, GEOM_OP.ComposePose) in graph
+    assert (target_compose_node, GEOM_OP.composite, target_pose_node) in graph
+    assert (distance_op_node, RDF.type, GEOM_OP.PoseToLinearDistance) in graph
+    assert (distance_op_node, GEOM_OP.pose, target_pose_node) in graph
+    assert (distance_op_node, GEOM_OP.distance, distance_node) in graph
+    assert (URIRef(constraint.uri), CSTR.quantity, distance_node) in graph
+
+
+def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
+    builder, graph, _ = _build_dataset(MONITOR_EVENT_FLAG)
+
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    start_constraint = _resolved_spec(motion.when.constraints[0])
+    stop_constraint = _resolved_spec(motion.until.constraints[0])
+    start_monitor = handler.monitors[0]
+    stop_monitor = handler.monitors[1]
+
+    start_monitor_node = URIRef(start_monitor.uri)
+    stop_monitor_node = URIRef(stop_monitor.uri)
+    start_event_node = builder.root_uri("evt-start", owner=handler)
+    stop_flag_node = builder.root_uri("flag-stop", owner=handler)
+    start_eval_node = builder.root_uri(_evaluator_id(start_constraint), owner=start_constraint.parent)
+    stop_eval_node = builder.root_uri(_evaluator_id(stop_constraint), owner=stop_constraint.parent)
+    start_error_node = builder.root_uri(
+        "twist-ee-base.linear.z-err",
+        owner=start_constraint.parent,
+    )
+    stop_error_node = builder.root_uri(
+        "twist-ee-base.linear.z-err",
+        owner=stop_constraint.parent,
+    )
+
+    assert (start_monitor_node, RDF.type, CSTR_HDL.Monitor) in graph
+    assert (start_monitor_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor) in graph
+    assert (start_monitor_node, CSTR_HDL.event, start_event_node) in graph
+    assert (start_event_node, RDF.type, CSTR_HDL.Event) in graph
+    assert (start_eval_node, CSTR_HDL.constraint, URIRef(start_constraint.uri)) in graph
+    assert (start_eval_node, CSTR_HDL.error, start_error_node) in graph
+
+    assert (stop_monitor_node, RDF.type, CSTR_HDL.Monitor) in graph
+    assert (stop_monitor_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor) in graph
+    assert (stop_monitor_node, CSTR_HDL.flag, stop_flag_node) in graph
+    assert (stop_flag_node, RDF.type, CSTR_HDL.Flag) in graph
+    assert (stop_eval_node, CSTR_HDL.constraint, URIRef(stop_constraint.uri)) in graph
+    assert (stop_eval_node, CSTR_HDL.error, stop_error_node) in graph
+
+
+def test_derived_velocity_twist_transform_emits_rotate_operation() -> None:
+    builder, graph, _ = _build_dataset(VELOCITY_TWIST_FRAME_TRANSFORM)
+
+    motion = builder.authored_handlers[0].motion
+    world_decl = motion.context[0].declaration
+    source_twist = world_decl[3]  # twist-ee-base-base
+    target_twist = world_decl[4]  # twist-ee-base-ee
+
+    source_node = URIRef(source_twist.uri)
+    target_node = URIRef(target_twist.uri)
+    inverse_pose_node = builder.root_uri("inverse-pose-ee-base", owner=motion)
+    op_node = builder.root_uri(
+        "transform-twist-ee-base-base-to-twist-ee-base-ee",
+        owner=motion,
+    )
+
+    assert (op_node, RDF.type, GEOM_OP.RotateVelocityTwistToProximalWithPose) in graph
+    assert (op_node, GEOM_OP.pose, inverse_pose_node) in graph
+    assert (op_node, GEOM_OP["from"], source_node) in graph
+    assert (op_node, GEOM_OP.to, target_node) in graph

@@ -1,0 +1,59 @@
+// Invalid: JointPosition torque controller omits for Posture; validation must require explicit posture mode.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: {
+        root: link-base,
+        end: link-ee
+    }
+}
+
+MOTION_SPEC (ns=app) m_posture {
+    CONTEXT {
+        cw: World {
+            q-j2: JointPosition { of: joint-2 }
+        },
+        cs: Spec {
+            q-j2-safe: Angle = 2.4 rad
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        keep-j2-safe: <cw.q-j2> equal to <cs.q-j2-safe>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_posture {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_posture>
+
+    CONTROLLERS {
+        ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}
