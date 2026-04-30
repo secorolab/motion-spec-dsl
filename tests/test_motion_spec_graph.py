@@ -69,7 +69,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
     assert (motion_node, MOT["while"], URIRef(constraint.uri)) in graph
     assert (evaluator_node, CSTR_HDL.constraint, URIRef(constraint.uri)) in graph
     assert (evaluator_node, CSTR_HDL.error, error_node) in graph
-    assert (error_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.LinearVelocity) in graph
+    assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
 
 
 def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> None:
@@ -87,16 +87,33 @@ def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> 
     wrench_node = builder.root_uri(f"wrench-force-{controller.name}", owner=handler.motion)
     wrench_op_node = builder.root_uri(f"compute-wrench-force-{controller.name}", owner=handler.motion)
 
-    assert (scalar_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force) in graph
+    assert (scalar_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Force) in graph
     assert (scalar_node, QUDT_SCHEMA.unit, QUDT_UNIT.N) in graph
     assert (view_node, MAP.subobject, scalar_node) in graph
     assert (URIRef(controller.uri), CSTR_HDL["control-signal"], signal_node) in graph
-    assert (signal_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Force) in graph
+    assert (signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Force) in graph
     assert (wrench_node, RDF.type, RBDYN_COORD.WrenchCoordinate) in graph
     assert (wrench_op_node, RDF.type, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude) in graph
     assert (wrench_op_node, RBDYN_OP.magnitude, signal_node) in graph
     assert (spec_node, SLV.force, wrench_node) in graph
     assert (driver_node, SLV["cartesian-force"], spec_node) in graph
+
+
+def test_explicit_force_command_overrides_acceleration_energy_signal() -> None:
+    builder, graph, _ = _build_dataset("position_force_controller.robmot")
+
+    handler = builder.authored_handlers[0]
+    controller = handler.controllers[0]
+    motion = handler.motion
+    signal_node = builder.root_uri(f"force-{controller.name}", owner=handler)
+    acceleration_energy_node = builder.root_uri("eacc-pose-ee-base.distance.z-m_push", owner=motion)
+    spec_node = builder.root_uri(f"spec-{controller.name}", owner=handler)
+    wrench_node = builder.root_uri(f"wrench-force-{controller.name}", owner=motion)
+
+    assert (URIRef(controller.uri), CSTR_HDL["control-signal"], signal_node) in graph
+    assert (URIRef(controller.uri), CSTR_HDL["control-signal"], acceleration_energy_node) not in graph
+    assert (signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Force) in graph
+    assert (spec_node, SLV.force, wrench_node) in graph
 
 
 def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None:
@@ -110,7 +127,7 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
     acc_node = builder.root_uri("acc-cstr-twist-ee-base.linear.z-m_move", owner=motion)
     driver_acc_specs = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
 
-    assert (energy_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.AccelerationEnergy) in graph
+    assert (energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy) in graph
     assert (energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]) in graph
     assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
     assert len(driver_acc_specs) == 1
@@ -147,7 +164,7 @@ def test_reused_constraint_emits_shared_uri_and_error_signal() -> None:
 
     assert (motion_a_node, MOT["while"], constraint_uri) in graph
     assert (motion_b_node, MOT["while"], constraint_uri) in graph
-    assert (error_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.LinearVelocity) in graph
+    assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
 
 
 def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_motion_owned_signals() -> None:
@@ -216,7 +233,7 @@ def test_posture_controller_emits_joint_force_torque_signal() -> None:
     ) in graph
     assert (driver_node, SLV["joint-force"], joint_force_node) in graph
     assert (joint_force_node, RDF.type, SLV.JointForce) in graph
-    assert (joint_force_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque) in graph
+    assert (joint_force_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque) in graph
     assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
     assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
     assert (joint_target_node, RDF.type, KC.Joint) in graph
@@ -232,7 +249,7 @@ def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() ->
 
     for error_id in ("q-j2-err-m-joint-limits", "q-j4-err-m-joint-limits"):
         error_node = builder.root_uri(error_id, owner=handler.motion.while_)
-        assert (error_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND["Angle"]) in graph
+        assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND["Angle"]) in graph
         assert (error_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]) in graph
 
 
@@ -253,7 +270,7 @@ def test_pose_position_without_axis_emits_linear_distance_operation() -> None:
     distance_node = builder.root_uri(distance_id, owner=motion)
     op_node = builder.root_uri(f"compute-{distance_id}", owner=motion)
 
-    assert (distance_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Distance) in graph
+    assert (distance_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Distance) in graph
     assert (distance_node, QUDT_SCHEMA.unit, QUDT_UNIT.M) in graph
     assert (op_node, RDF.type, GEOM_OP.PoseToLinearDistance) in graph
     assert (op_node, GEOM_OP.pose, pose_node) in graph

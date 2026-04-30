@@ -470,8 +470,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.PlaneAngle))
-        self.graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Length))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self.graph.add((node, GEOM_REL.of, self._owned_uri(of_frame, owner)))
@@ -492,7 +492,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_REL.Direction))
         self.graph.add((node, RDF.type, GEOM_COORD.DirectionCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Direction))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
         self.graph.add((node, GEOM_COORD["as-seen-by"], as_seen_by))
         if vector is not None:
@@ -656,7 +656,7 @@ class MotionSpecDatasetBuilder:
             for t in rdf_types:
                 self.graph.add((node, RDF.type, t))
             for qk in qkinds:
-                self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qk))
+                self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qk))
             for u in units:
                 self.graph.add((node, QUDT_SCHEMA.unit, u))
 
@@ -730,7 +730,7 @@ class MotionSpecDatasetBuilder:
                 qkind = QUDT_QKIND[quantity.type]
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((node, RDF.type, qkind))
-            self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
             if quantity.value is None:
                 continue
             if isinstance(quantity.value, SnapshotValue):
@@ -1087,8 +1087,8 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((diff_node, RDF.type, GEOM_REL.AccelerationTwist))
                         self.graph.add((diff_node, RDF.type, GEOM_COORD.AccelerationTwistCoordinate))
                         self.graph.add((diff_node, RDF.type, GEOM_COORD.VectorXYZ))
-                        self.graph.add((diff_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.AngularAcceleration))
-                        self.graph.add((diff_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.LinearAcceleration))
+                        self.graph.add((diff_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AngularAcceleration))
+                        self.graph.add((diff_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearAcceleration))
                         self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD-PER-SEC2"]))
                         self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC2"]))
                         self.graph.add((diff_node, GEOM_REL["reference-point"], ref_point_node))
@@ -1129,7 +1129,7 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((comp_ctrl_node, CSTR_HDL["control-signal"], energy_node))
                         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
                         self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
-                        self.graph.add((energy_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.AccelerationEnergy))
+                        self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
                         self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
                         self.graph.add((handler_node, CSTR_HDL.controllers, comp_ctrl_node))
                     continue
@@ -1236,6 +1236,10 @@ class MotionSpecDatasetBuilder:
         accel_prefix = prop[2] if prop else None
         accel_subspace_label = prop[1] if prop else None
 
+        # Cartesian force command: controller output is a force magnitude.
+        if qty is not None and (subspace == "force" or command_type == QuantityType.Force):
+            return self._force_control_signal_node(ctrl, handler)
+
         # ACHD acceleration energy
         if (
             algorithm == "ACHD"
@@ -1250,13 +1254,9 @@ class MotionSpecDatasetBuilder:
             energy_node = self._owned_uri(energy_id, motion)
             self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
-            self.graph.add((energy_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.AccelerationEnergy))
+            self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
             self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
             return energy_node
-
-        # Cartesian force command: controller output is a force magnitude.
-        if qty is not None and (subspace == "force" or command_type == QuantityType.Force):
-            return self._force_control_signal_node(ctrl, handler)
 
         # Posture joint torque
         if (
@@ -1270,14 +1270,14 @@ class MotionSpecDatasetBuilder:
             signal_node = self._owned_uri(signal_id, handler)
             self.graph.add((signal_node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((signal_node, RDF.type, QUDT_QKIND.Torque))
-            self.graph.add((signal_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.Torque))
+            self.graph.add((signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque))
             self.graph.add((signal_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
             return signal_node
 
         energy_node = self._owned_uri(f"eacc-{ctrl.name}", motion)
         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
-        self.graph.add((energy_node, QUDT_SCHEMA["quantity-kind"], QUDT_QKIND.AccelerationEnergy))
+        self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
         self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
         return energy_node
 
@@ -1378,7 +1378,6 @@ class MotionSpecDatasetBuilder:
         shared_spec_ids: frozenset[int],
     ) -> None:
         acc_constraint_nodes: list[URIRef] = []
-        seen_force_scalars: set[tuple] = set()
 
         for ctrl_item in getattr(handler, "controllers", []):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
@@ -1403,11 +1402,15 @@ class MotionSpecDatasetBuilder:
             prop = ws_spec[3].get(subspace) if ws_spec else None
             accel_subspace_label = prop[1] if prop else None
             accel_prefix = prop[2] if prop else None
+            command_type = getattr(ctrl, "command_type", None)
+            control_mode = getattr(ctrl, "control_mode", None)
+            is_force_command = subspace == "force" or command_type == QuantityType.Force
 
             if (
                 solver.algorithm == "ACHD"
                 and qty.type == WorldQuantityType.Pose
                 and subspace == "pose"
+                and not is_force_command
             ):
                 for (suffix, accel_sub, axis_label, _, _) in POSE_DOF_SPECS:
                     energy_node = self._owned_uri(f"eacc-{ctrl.name}-{suffix}", motion)
@@ -1424,6 +1427,7 @@ class MotionSpecDatasetBuilder:
                 and axis is not None
                 and accel_prefix is not None
                 and accel_subspace_label is not None
+                and not is_force_command
             ):
                 sid = _scalar_id(qty, subspace, axis)
                 energy_stem = f"eacc-{sid}"
@@ -1440,10 +1444,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
                 acc_constraint_nodes.append(acc_node)
 
-            command_type = getattr(ctrl, "command_type", None)
-            control_mode = getattr(ctrl, "control_mode", None)
-
-            if subspace == "force" or command_type == QuantityType.Force:
+            if is_force_command:
                 force_signal_node = self._force_control_signal_node(ctrl, handler)
                 wrench_node = self._emit_force_command_wrench(
                     ctrl, spec, qty, axis, force_signal_node, motion
@@ -1455,22 +1456,6 @@ class MotionSpecDatasetBuilder:
                 if apply_at is not None and hasattr(apply_at, "uri"):
                     self.graph.add((spec_node, SLV["attached-to"], URIRef(apply_at.uri)))
                 self.graph.add((driver_node, SLV["cartesian-force"], spec_node))
-
-                if axis is not None:
-                    key = (qty.name, subspace, axis)
-                    if key not in seen_force_scalars:
-                        seen_force_scalars.add(key)
-                        sid = _scalar_id(qty, subspace, axis)
-                        scalar_node = self._owned_uri(sid, qty)
-                        self._add_quantity(scalar_node, QuantityType.Force)
-                        if prop and prop[4]:
-                            view_node = self._owned_uri(f"view-{sid}", qty)
-                            self.graph.add((view_node, RDF.type, MAP.View))
-                            self.graph.add((view_node, RDF.type, prop[4]))
-                            self.graph.add((view_node, MAP.superobject, URIRef(qty.uri)))
-                            self.graph.add((view_node, MAP.subobject, scalar_node))
-                            self.graph.add((view_node, MAP.subspace, MAP[prop[0]]))
-                            self.graph.add((view_node, MAP.axis, MAP[axis]))
 
             if (
                 solver.algorithm == "ACHD"
@@ -1524,5 +1509,5 @@ class MotionSpecDatasetBuilder:
             qkind = QUDT_QKIND[scalar_type]
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
-        self.graph.add((node, QUDT_SCHEMA["quantity-kind"], qkind))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))
