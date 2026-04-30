@@ -229,6 +229,11 @@ def _axis_vector(axis: str) -> tuple[float, float, float]:
     }[axis]
 
 
+def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
+    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+    return _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
+
+
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
@@ -1412,6 +1417,7 @@ class MotionSpecDatasetBuilder:
                 and subspace == "pose"
                 and not is_force_command
             ):
+                axis_frame = _quantity_axis_frame(qty)
                 for (suffix, accel_sub, axis_label, _, _) in POSE_DOF_SPECS:
                     energy_node = self._owned_uri(f"eacc-{ctrl.name}-{suffix}", motion)
                     acc_node = self._owned_uri(f"acc-cstr-{ctrl.name}-{suffix}", motion)
@@ -1420,6 +1426,10 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((acc_node, SLV.subspace, SLV[accel_sub]))
                     self.graph.add((acc_node, SLV.axis, SLV[axis_label]))
                     self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                    if axis_frame:
+                        self.graph.add(
+                            (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
+                        )
                     acc_constraint_nodes.append(acc_node)
 
             if (
@@ -1442,6 +1452,11 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((acc_node, SLV.subspace, SLV[accel_subspace_label]))
                 self.graph.add((acc_node, SLV.axis, SLV[axis]))
                 self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                axis_frame = _quantity_axis_frame(qty)
+                if axis_frame:
+                    self.graph.add(
+                        (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
+                    )
                 acc_constraint_nodes.append(acc_node)
 
             if is_force_command:

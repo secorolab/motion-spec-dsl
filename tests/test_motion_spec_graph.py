@@ -17,6 +17,7 @@ from motion_spec.namespace import (
     APP,
     CSTR,
     CSTR_HDL,
+    GEOM_COORD,
     GEOM_OP,
     GEOM_REL,
     KC,
@@ -60,6 +61,31 @@ def _build_model_dataset(model_name: str):
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
     return builder, dataset.default_graph, cast(dict[str, str], context)
+
+
+def _generate_fixture_cpp(fixture: str, tmp_path: Path) -> Path:
+    stst = shutil.which("stst")
+    if stst is None:
+        pytest.skip("stst executable is required for generated C++ verification")
+
+    builder, graph, context = _build_dataset(fixture)
+    graph_path = tmp_path / f"{Path(fixture).stem}.json"
+    serialized = graph.serialize(
+        format="json-ld",
+        indent=2,
+        context=_merged_context(context),
+    )
+    graph_path.write_text(
+        serialized.decode() if isinstance(serialized, bytes) else serialized
+    )
+    manifest_path = tmp_path / f"{Path(fixture).stem}-app.json"
+    manifest_path.write_text(json.dumps(_build_manifest(builder.dataset, [graph_path.name])))
+    ir_path = tmp_path / "ir.json"
+    ir_path.write_text(json.dumps(generate_ir(manifest_path), cls=JSONEncoder, indent=2))
+
+    cpp_dir = tmp_path / "cpp"
+    generate_code(ir_path, cpp_dir, stst)
+    return cpp_dir
 
 
 def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> None:
@@ -174,28 +200,8 @@ def test_sliding_table_emits_only_five_acceleration_constraints() -> None:
 
 
 def test_sliding_table_codegen_initializes_five_solver_constraints(tmp_path: Path) -> None:
-    stst = shutil.which("stst")
-    if stst is None:
-        pytest.skip("stst executable is required for generated C++ verification")
-
-    builder, graph, context = _build_dataset("sliding_table_5dof.robmot")
-    graph_path = tmp_path / "sliding_table_5dof.json"
-    serialized = graph.serialize(
-        format="json-ld",
-        indent=2,
-        context=_merged_context(context),
-    )
-    graph_path.write_text(
-        serialized.decode() if isinstance(serialized, bytes) else serialized
-    )
-    manifest_path = tmp_path / "sliding_table_5dof-app.json"
-    manifest_path.write_text(json.dumps(_build_manifest(builder.dataset, [graph_path.name])))
-    ir_path = tmp_path / "ir.json"
-    ir_path.write_text(json.dumps(generate_ir(manifest_path), cls=JSONEncoder, indent=2))
-
-    generate_code(ir_path, tmp_path / "cpp", stst)
-
-    header = (tmp_path / "cpp" / "headers" / "motion_m_slide.hpp").read_text()
+    cpp_dir = _generate_fixture_cpp("sliding_table_5dof.robmot", tmp_path)
+    header = (cpp_dir / "headers" / "motion_m_slide.hpp").read_text()
     assert "state.arm_solver.num_constraints = 5;" in header
     assert "Subspace::Linear, motion_spec::runtime::Axis::X" in header
     assert "Subspace::Linear, motion_spec::runtime::Axis::Y" in header
@@ -203,6 +209,32 @@ def test_sliding_table_codegen_initializes_five_solver_constraints(tmp_path: Pat
     assert "Subspace::Angular, motion_spec::runtime::Axis::X" in header
     assert "Subspace::Angular, motion_spec::runtime::Axis::Y" in header
     assert "Subspace::Angular, motion_spec::runtime::Axis::Z" in header
+
+
+def test_acceleration_constraint_records_authored_axis_frame() -> None:
+    builder, graph, _ = _build_dataset("acceleration_frame_transform.robmot")
+
+    motion = builder.authored_handlers[0].motion
+    acc_node = builder.root_uri(
+        "acc-cstr-twist-ee-base-ee.linear.x-m_frame",
+        owner=motion,
+    )
+    frame_node = builder.root_uri("frame-ee", owner=motion.context[0].declaration[0])
+
+    assert (acc_node, GEOM_COORD["as-seen-by"], frame_node) in graph
+
+
+def test_codegen_rotates_non_base_acceleration_axis_into_solver_base(tmp_path: Path) -> None:
+    cpp_dir = _generate_fixture_cpp("acceleration_frame_transform.robmot", tmp_path)
+
+    header = (cpp_dir / "headers" / "motion_m_frame.hpp").read_text()
+    assert "state.arm_solver.num_constraints = 1;" in header
+    assert "alpha_fk_arm_solver_0.JntToCart" in header
+    assert 'find_segment_index(*robot.arm_solver.chain, "frame_ee")' in header
+    assert "alpha_frame_arm_solver_0.M * KDL::Vector(1.0, 0.0, 0.0)" in header
+    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::X), 0) = alpha_axis_arm_solver_0[0];" in header
+    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::Y), 0) = alpha_axis_arm_solver_0[1];" in header
+    assert "state.arm_solver.f_cstr(motion_spec::runtime::constraint_row(motion_spec::runtime::Subspace::Linear, motion_spec::runtime::Axis::Z), 0) = alpha_axis_arm_solver_0[2];" in header
 
 
 def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
