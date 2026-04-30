@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from motion_spec_dsl.controller_semantics import axis_label
 from motion_spec_dsl.domain import (
     BilateralConstraint,
     ConstraintSpecification,
@@ -23,7 +24,6 @@ from motion_spec_dsl.domain import (
     _resolved_context_quantity,
     _resolved_world_quantity,
 )
-from motion_spec_dsl.semantics import axis_label
 from motion_spec_dsl.validation.common import (
     motion_constraint_items,
     motion_constraints,
@@ -92,6 +92,8 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
         QuantityType.AngularDistance: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.Distance: {QuantityType.Distance},
+        QuantityType.Position: {QuantityType.Position, QuantityType.Pose},
+        QuantityType.Orientation: {QuantityType.Orientation, QuantityType.Pose},
     }
     return right in compatible.get(left, {left})
 

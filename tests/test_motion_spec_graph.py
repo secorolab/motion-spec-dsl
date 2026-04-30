@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from rdflib import URIRef
+from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
 
 from motion_spec.namespace import (
@@ -13,6 +13,7 @@ from motion_spec.namespace import (
     CSTR,
     CSTR_HDL,
     GEOM_COORD,
+    GEOM_ENT,
     GEOM_OP,
     GEOM_REL,
     KC,
@@ -54,6 +55,8 @@ MULTI_SOLVER_ACCELERATION_FORCE = (
 VELOCITY_TWIST_FRAME_TRANSFORM = (
     "02_acceleration_constraints/04_velocity_twist_frame_transform.robmot"
 )
+POSE_COMPONENT_SUBSETS = "02_acceleration_constraints/05_pose_component_subsets.robmot"
+PID_GAIN_VARIANTS = "02_acceleration_constraints/06_pid_gain_variants.robmot"
 FORCE_CONTROLLER = "03_force_commands/01_force_controller.robmot"
 POSITION_FORCE_CONTROLLER = "03_force_commands/02_position_force_controller.robmot"
 POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
@@ -87,12 +90,37 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
         _evaluator_id(constraint), owner=constraint.parent
     )
     error_node = builder.root_uri("twist-ee-base.linear.z-err-m_move", owner=constraint.parent)
+    twist_node = URIRef(motion.context[0].declaration[0].uri)
+    base_node = builder.root_uri("link-base", owner=motion.context[0].declaration[0])
 
     assert context["app"] == motion.ns.uri
     assert (motion_node, MOT["while"], URIRef(constraint.uri)) in graph
     assert (evaluator_node, CSTR_HDL.constraint, URIRef(constraint.uri)) in graph
     assert (evaluator_node, CSTR_HDL.error, error_node) in graph
     assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
+    assert (twist_node, GEOM_COORD["as-seen-by"], base_node) in graph
+    assert (base_node, RDF.type, GEOM_ENT.Frame) in graph
+
+
+def test_pid_gain_variants_only_emit_authored_gain_terms() -> None:
+    builder, graph, _ = _build_dataset(PID_GAIN_VARIANTS)
+
+    controllers = {
+        controller.name: controller for controller in builder.authored_handlers[0].controllers
+    }
+
+    expected = {
+        "ctrl-p": {"proportional-gain": "1.0"},
+        "ctrl-pi": {"proportional-gain": "1.0", "integral-gain": "0.2"},
+        "ctrl-pd": {"proportional-gain": "1.0", "derivative-gain": "0.3"},
+    }
+    for name, gains in expected.items():
+        controller_node = URIRef(controllers[name].uri)
+        assert (controller_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative) in graph
+        for predicate, value in gains.items():
+            assert (controller_node, CSTR_HDL[predicate], Literal(value)) in graph
+        for predicate in {"proportional-gain", "integral-gain", "derivative-gain"} - set(gains):
+            assert not list(graph.objects(controller_node, CSTR_HDL[predicate]))
 
 
 def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> None:
@@ -198,6 +226,53 @@ def test_acceleration_constraint_records_authored_axis_frame() -> None:
     frame_node = builder.root_uri("frame-ee", owner=motion.context[0].declaration[0])
 
     assert (acc_node, GEOM_COORD["as-seen-by"], frame_node) in graph
+
+
+def test_pose_diff_supports_position_and_orientation_component_subsets() -> None:
+    builder, graph, _ = _build_dataset(POSE_COMPONENT_SUBSETS)
+
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    driver_node = builder.root_uri(f"driver-{motion.name}", owner=handler)
+    spec_nodes = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
+
+    assert len(spec_nodes) == 1
+    constraint_nodes = set(graph.objects(spec_nodes[0], SLV.constraints))
+
+    expected = {
+        "ctrl-position": {
+            ("lin-x", "linear-acceleration", "x"),
+            ("lin-y", "linear-acceleration", "y"),
+            ("lin-z", "linear-acceleration", "z"),
+        },
+        "ctrl-orientation": {
+            ("ang-x", "angular-acceleration", "x"),
+            ("ang-y", "angular-acceleration", "y"),
+            ("ang-z", "angular-acceleration", "z"),
+        },
+    }
+    position_node = builder.root_uri("pose-ee-base.position", owner=motion)
+    orientation_node = builder.root_uri("pose-ee-base.orientation", owner=motion)
+    assert (position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position) in graph
+    assert (orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction) in graph
+
+    for controller_name, components in expected.items():
+        diff_node = builder.root_uri(f"pose-diff-{controller_name}", owner=motion.while_)
+        eval_node = builder.root_uri(f"eval-pose-diff-{controller_name}", owner=motion.while_)
+        assert (eval_node, GEOM_OP.out, diff_node) in graph
+        for suffix, subspace, axis in components:
+            err_node = builder.root_uri(f"{controller_name}-err-{suffix}", owner=motion.while_)
+            view_node = builder.root_uri(f"view-{controller_name}-err-{suffix}", owner=motion.while_)
+            energy_node = builder.root_uri(f"eacc-{controller_name}-{suffix}", owner=motion)
+            acc_node = builder.root_uri(f"acc-cstr-{controller_name}-{suffix}", owner=motion)
+            assert (view_node, MAP.superobject, diff_node) in graph
+            assert (view_node, MAP.subobject, err_node) in graph
+            assert (view_node, MAP.subspace, MAP[subspace]) in graph
+            assert (view_node, MAP.axis, MAP[axis]) in graph
+            assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
+            assert acc_node in constraint_nodes
+
+    assert len(constraint_nodes) == 6
 
 
 def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:

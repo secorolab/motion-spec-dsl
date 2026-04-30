@@ -5,10 +5,15 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from motion_spec_dsl.controller_semantics import (
+    controller_command_record,
+    infer_command_type,
+)
 from motion_spec_dsl.domain import (
     ControllerAlias,
     ControllerEntry,
     ControllerMode,
+    ControllerType,
     Model,
     QuantityType,
     WorldQuantity,
@@ -16,7 +21,6 @@ from motion_spec_dsl.domain import (
     _resolved_controller,
     _resolved_world_quantity,
 )
-from motion_spec_dsl.semantics import controller_command_record, infer_command_type
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
 from motion_spec_dsl.validation.solvers import handler_controller_solver
 
@@ -32,6 +36,47 @@ def validate_controller_commands(model: Model) -> None:
     for handler in constraint_handlers(model):
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
+            params = resolved_controller.params
+            if params.duplicate_terms:
+                duplicates = ", ".join(params.duplicate_terms)
+                raise semantic_error(
+                    f"Controller '{controller.name}' repeats parameter term(s): {duplicates}.",
+                    controller,
+                )
+            if resolved_controller.type == ControllerType.ABAG:
+                raise semantic_error(
+                    f"Controller '{controller.name}' uses ABAG, but ABAG is not implemented yet.",
+                    controller,
+                )
+            if resolved_controller.type == ControllerType.PID:
+                if not params.has_pid_gains:
+                    raise semantic_error(
+                        f"PID controller '{controller.name}' must author at least one of Kp, Ki, or Kd.",
+                        controller,
+                    )
+                if params.has_impedance_terms:
+                    raise semantic_error(
+                        f"PID controller '{controller.name}' cannot use Stiffness or Damping terms.",
+                        controller,
+                    )
+            elif resolved_controller.type == ControllerType.Impedance:
+                if not params.has_impedance_terms:
+                    raise semantic_error(
+                        f"Impedance controller '{controller.name}' must author Stiffness, Damping, or both.",
+                        controller,
+                    )
+                if params.has_pid_gains:
+                    raise semantic_error(
+                        f"Impedance controller '{controller.name}' cannot use Kp, Ki, or Kd terms.",
+                        controller,
+                    )
+
+            if resolved_controller.type != ControllerType.PID:
+                raise semantic_error(
+                    f"Controller '{controller.name}' uses {resolved_controller.type.value}, "
+                    "but only PID controller graph emission is modeled yet.",
+                    controller,
+                )
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)

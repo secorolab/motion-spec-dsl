@@ -1,4 +1,10 @@
-# Pending Motion-Spec DSL Work
+# TODO
+
+## Immediate
+
+- Impedance is parsed and semantically validated, but intentionally blocked before RDF/codegen until ontology and IR support are implemented.
+- ABAG is reserved and immediately rejected as not implemented.
+
 
 ## Later
 

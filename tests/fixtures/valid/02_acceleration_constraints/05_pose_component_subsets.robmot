@@ -1,0 +1,58 @@
+// Valid: pose-diff based acceleration constraints can target position-only and orientation-only subsets.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ROBOT (ns=app) kinova {
+    type: Manipulator,
+    model: KinovaGen3,
+    urdf: "../robots/kg3.urdf",
+    chain: { root: link-base, end: link-ee }
+}
+
+MOTION_SPEC (ns=app) m_pose_parts {
+    CONTEXT {
+        cw: World {
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base, as-seen-by: frame-base }
+        },
+        cs: Spec {
+            pose-start: Pose = Snapshot of <cw.pose-ee-base>
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        c_position: keeping <cw.pose-ee-base>.position equal to <cs.pose-start>,
+        c_orientation: keeping <cw.pose-ee-base>.orientation equal to <cs.pose-start>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_pose_parts {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_pose_parts>
+
+    CONTROLLERS {
+        ctrl-position: PID { constraint: <m_pose_parts.c_position>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },
+        ctrl-orientation: PID { constraint: <m_pose_parts.c_orientation>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+
+    SOLVERS {
+        arm_solver: Solver {
+            robot: <kinova>,
+            algorithm: ACHD,
+            root: <kinova.chain.root>,
+            end: <kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

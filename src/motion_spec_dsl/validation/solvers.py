@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from motion_spec_dsl.controller_semantics import controller_command_record
 from motion_spec_dsl.domain import (
     ConstraintHandler,
     ControllerAlias,
@@ -15,7 +16,6 @@ from motion_spec_dsl.domain import (
     _resolved_controller,
     _resolved_solver,
 )
-from motion_spec_dsl.semantics import controller_command_record
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
 from motion_spec_dsl.validation.robots import robot_component, robot_component_anchor
 

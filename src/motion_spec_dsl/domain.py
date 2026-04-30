@@ -325,22 +325,39 @@ class GeoPropPair:
 
 
 class QuantityType(StrEnum):
-    Pose            = "Pose"
-    Position        = "Position"
-    Orientation     = "Orientation"
-    Distance        = "Distance"
-    Angle           = "Angle"
-    PlaneAngle      = "PlaneAngle"
-    AngularDistance = "AngularDistance"
-    LinearVelocity  = "LinearVelocity"
-    AngularVelocity = "AngularVelocity"
-    Force           = "Force"
-    Torque          = "Torque"
-    Vector          = "Vector"
+    Pose                = "Pose"
+    Position            = "Position"
+    Orientation         = "Orientation"
+    Distance            = "Distance"
+    Angle               = "Angle"
+    PlaneAngle          = "PlaneAngle"
+    AngularDistance     = "AngularDistance"
+    LinearVelocity      = "LinearVelocity"
+    AngularVelocity     = "AngularVelocity"
+    LinearAcceleration  = "LinearAcceleration"
+    AngularAcceleration = "AngularAcceleration"
+    Force               = "Force"
+    Torque              = "Torque"
+    Vector              = "Vector"
 
 
 class ControllerMode(StrEnum):
     Posture = "Posture"
+
+
+class ControllerType(StrEnum):
+    PID = "PID"
+    Impedance = "Impedance"
+    ABAG = "ABAG"
+
+
+class ControllerParamName(StrEnum):
+    Kp = "Kp"
+    Ki = "Ki"
+    Kd = "Kd"
+    Stiffness = "Stiffness"
+    Damping = "Damping"
+    Decay = "decay"
 
 
 @dataclass
@@ -542,10 +559,6 @@ class ContextRef:
         assert self.quantity is not None, "ContextRef quantity is not resolved yet"
         return self.quantity
 
-    @property
-    def variable(self) -> str:
-        return self.value.name
-
 
 @dataclass
 class EqualityConstraint:
@@ -620,7 +633,7 @@ class MonitorEntry(NamedNamespaceObject):
 class ControllerEntry(NamedNamespaceObject):
     parent: object
     name: str
-    type: str
+    type: ControllerType
     params: ControllerParams
     solver: SolverRef | None = None
     command_type: QuantityType | None = None
@@ -629,6 +642,7 @@ class ControllerEntry(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        self.type = ControllerType(self.type)
         if self.command_type is not None and isinstance(self.command_type, str):
             self.command_type = QuantityType(self.command_type)
         if self.control_mode is not None and isinstance(self.control_mode, str):
@@ -654,7 +668,7 @@ class ControllerAlias(ControllerEntry):
     parent: object
     name: str
     ref: ControllerRef
-    type: str = field(init=False)
+    type: ControllerType = field(init=False)
     params: ControllerParams = field(init=False)
     solver: SolverRef | None = field(init=False, default=None)
     command_type: QuantityType | None = field(init=False, default=None)
@@ -684,17 +698,64 @@ class ControllerReference(ControllerAlias):
 
 
 @dataclass
+class ControllerParam:
+    name: ControllerParamName
+    value: float
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        self.name = ControllerParamName(self.name)
+
+
+@dataclass
 class ControllerParams:
     constraint: ConstraintRef
-    kp: float = 0.0
-    ki: float = 0.0
-    kd: float = 0.0
-    decay: float | None = None
+    terms: list[ControllerParam] = field(default_factory=list)
+    kp: float | None = field(init=False, default=None)
+    ki: float | None = field(init=False, default=None)
+    kd: float | None = field(init=False, default=None)
+    stiffness: float | None = field(init=False, default=None)
+    damping: float | None = field(init=False, default=None)
+    decay: float | None = field(init=False, default=None)
+    duplicate_terms: list[str] = field(init=False, default_factory=list)
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        seen: set[str] = set()
+        for term in self.terms:
+            name = term.name
+            if name in seen:
+                self.duplicate_terms.append(name.value)
+                continue
+            seen.add(name)
+            if name == ControllerParamName.Kp:
+                self.kp = term.value
+            elif name == ControllerParamName.Ki:
+                self.ki = term.value
+            elif name == ControllerParamName.Kd:
+                self.kd = term.value
+            elif name == ControllerParamName.Stiffness:
+                self.stiffness = term.value
+            elif name == ControllerParamName.Damping:
+                self.damping = term.value
+            elif name == ControllerParamName.Decay:
+                self.decay = term.value
 
     @property
     def constraint_name(self) -> str:
         return self.constraint.name
+
+    @property
+    def pid_gains(self) -> tuple[float | None, float | None, float | None]:
+        return (self.kp, self.ki, self.kd)
+
+    @property
+    def has_pid_gains(self) -> bool:
+        return any(gain is not None for gain in self.pid_gains)
+
+    @property
+    def has_impedance_terms(self) -> bool:
+        return self.stiffness is not None or self.damping is not None
 
 
 @dataclass
@@ -768,63 +829,3 @@ def _resolved_controller(item: ControllerEntry | ControllerAlias) -> ControllerE
 
 def _resolved_solver(item: SolverEntry | SolverAlias) -> SolverEntry:
     return item.ref.solver if isinstance(item, SolverAlias) else item
-
-
-class DerivedEntity(NamedNamespaceObject):
-    """Base class for entities derived during graph generation (not from DSL)."""
-    pass
-
-
-@dataclass
-class ScalarView(DerivedEntity):
-    parent: object
-    name: str
-    quantity_name: str
-    prop: str
-    axis: str | None
-    scalar_type: str
-    view_type: object
-    subspace: str | None
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class ErrorSignal(DerivedEntity):
-    parent: object
-    name: str
-    scalar_type: str
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class AccelerationEnergy(DerivedEntity):
-    parent: object
-    name: str
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class Motion(DerivedEntity):
-    parent: object
-    name: str
-    motion_spec_block: object
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class Evaluator(DerivedEntity):
-    parent: object
-    name: str
-    constraint: object
-    error_signal: object
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)

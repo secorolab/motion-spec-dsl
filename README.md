@@ -36,8 +36,8 @@ The generator builds one RDF graph per input model. The old numbered multi-file 
 ```text
 motion_spec_dsl/
   domain.py             textX classes for parsed DSL objects
+  controller_semantics.py derived controller command semantics
   namespaces.py         namespace-aware object base helpers
-  semantics.py          shared semantic classification records
   validation/           semantic validation phases
   rdf.py                RDF graph construction
   registration.py       textX language and generator entrypoints
@@ -167,6 +167,15 @@ A `CONSTRAINT_HANDLER` binds a motion to controllers, monitors, and solvers.
 
 Controller options:
 
+- Controller families are parsed as `PID`, `Impedance`, or `ABAG`; only `PID`
+  has RDF graph emission semantics today, so the others fail validation instead
+  of being silently treated as PID.
+- `PID` accepts authored `Kp`, `Ki`, and `Kd` terms sparsely, so P, PI, PD, I,
+  D, and full PID controllers emit only the gain predicates that are present.
+- `Impedance` accepts `Stiffness`, `Damping`, or both at the DSL level, but is
+  blocked before RDF emission until the controller ontology and IR mapping exist.
+- `ABAG` is reserved as a controller family and fails validation because it is
+  not implemented yet.
 - `as <QuantityType>` selects the command type when it cannot be inferred
 - `for Posture` marks posture control for `JointPosition` constraints
 - `apply at <world.link>` selects a link target for commands that need one

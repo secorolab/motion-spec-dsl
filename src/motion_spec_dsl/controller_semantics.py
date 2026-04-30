@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Shared semantic records for controller and constraint classification."""
+"""Derived controller semantics shared by RDF generation and validation."""
 
 from __future__ import annotations
 
@@ -35,6 +35,21 @@ class AccelerationConstraintRecord:
     subspace: str
     axis: str
 
+    @property
+    def suffix(self) -> str:
+        prefix = {
+            "linear-acceleration": "lin",
+            "angular-acceleration": "ang",
+        }[self.subspace]
+        return f"{prefix}-{self.axis}"
+
+    @property
+    def quantity_type(self) -> QuantityType:
+        return {
+            "linear-acceleration": QuantityType.LinearAcceleration,
+            "angular-acceleration": QuantityType.AngularAcceleration,
+        }[self.subspace]
+
 
 @dataclass(frozen=True)
 class ControllerCommandRecord:
@@ -60,18 +75,22 @@ class ControllerCommandRecord:
             and self.quantity.type == WorldQuantityType.JointPosition
         )
 
-    @property
-    def is_force_or_posture_command(self) -> bool:
-        return self.is_force_command or self.is_posture_torque_command
 
-
-POSE_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
+LINEAR_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
     AccelerationConstraintRecord("linear-acceleration", "x"),
     AccelerationConstraintRecord("linear-acceleration", "y"),
     AccelerationConstraintRecord("linear-acceleration", "z"),
+)
+
+ANGULAR_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
     AccelerationConstraintRecord("angular-acceleration", "x"),
     AccelerationConstraintRecord("angular-acceleration", "y"),
     AccelerationConstraintRecord("angular-acceleration", "z"),
+)
+
+POSE_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
+    *LINEAR_ACCELERATION_AXES,
+    *ANGULAR_ACCELERATION_AXES,
 )
 
 
@@ -161,13 +180,17 @@ def controller_command_record(
     if not (force_command or posture_torque):
         if whole_pose_command:
             acceleration_constraints = POSE_ACCELERATION_AXES
-        elif axis is not None and raw_subspace in {SubSpace.Position, SubSpace.LinVel}:
+        elif raw_subspace in {SubSpace.Position, SubSpace.LinVel}:
             acceleration_constraints = (
-                AccelerationConstraintRecord("linear-acceleration", axis),
+                (AccelerationConstraintRecord("linear-acceleration", axis),)
+                if axis is not None
+                else LINEAR_ACCELERATION_AXES
             )
-        elif axis is not None and raw_subspace in {SubSpace.Orientation, SubSpace.AngVel}:
+        elif raw_subspace in {SubSpace.Orientation, SubSpace.AngVel}:
             acceleration_constraints = (
-                AccelerationConstraintRecord("angular-acceleration", axis),
+                (AccelerationConstraintRecord("angular-acceleration", axis),)
+                if axis is not None
+                else ANGULAR_ACCELERATION_AXES
             )
 
     return ControllerCommandRecord(

@@ -67,6 +67,14 @@ JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
             "02_controllers_and_solvers/04_duplicate_achd_axis.robmot",
             "Multiple constraints on the same Cartesian axis are not supported yet",
         ),
+        (
+            "02_controllers_and_solvers/06_unsupported_impedance_controller.robmot",
+            "uses Impedance, but only PID controller graph emission is modeled yet",
+        ),
+        (
+            "02_controllers_and_solvers/07_unsupported_abag_controller.robmot",
+            "uses ABAG, but ABAG is not implemented yet",
+        ),
     ],
 )
 def test_invalid_models_fail_validation(fixture: str, message: str) -> None:

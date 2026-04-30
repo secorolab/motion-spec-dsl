@@ -295,7 +295,7 @@ MonitorEntry:
 ;
 
 ControllerEntry:
-    name=IRI_TRUNK ":" type="PID" "{"
+    name=IRI_TRUNK ":" type=ControllerType "{"
         params=ControllerParams
     "}"
     ("as" command_type=QuantityType)?
@@ -304,12 +304,21 @@ ControllerEntry:
     ("via" "<" solver=SolverRef ">")?
 ;
 
+ControllerType:
+    "PID" | "Impedance" | "ABAG"
+;
+
 ControllerParams:
-    "constraint" ":" "<" constraint=ConstraintRef ">" ","
-    "Kp" "=" kp=FLOAT ","
-    "Ki" "=" ki=FLOAT ","
-    "Kd" "=" kd=FLOAT
-    ("," "decay" ":" decay=FLOAT)?
+    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("," terms*=ControllerParam[","])?
+;
+
+ControllerParam:
+    name=ControllerParamName (("=" | ":") value=FLOAT)
+;
+
+ControllerParamName:
+    "Kp" | "Ki" | "Kd" | "Stiffness" | "Damping" | "decay"
 ;
 
 ControllerMode:
