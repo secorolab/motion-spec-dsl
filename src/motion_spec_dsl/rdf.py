@@ -14,7 +14,7 @@ from textx.scoping import get_included_models
 
 from motion_spec.namespace import (
     APP, CSTR, CSTR_HDL, GEOM_COORD, GEOM_ENT, GEOM_OP, GEOM_REL,
-    KC, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, RBDYN_COORD, RBDYN_ENT, RBDYN_OP, SLV,
+    KC, KC_STAT, MAP, MOT, QUDT_QKIND, QUDT_SCHEMA, QUDT_UNIT, RBDYN_COORD, RBDYN_ENT, RBDYN_OP, SLV,
 )
 from motion_spec_dsl.controller_semantics import (
     AccelerationConstraintRecord,
@@ -80,7 +80,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         },
     ),
     WorldQuantityType.JointPosition: (
-        (QUDT_SCHEMA.Quantity,),
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointPositionCoordinate),
         (QUDT_QKIND.PlaneAngle,),
         (QUDT_UNIT.RAD,),
         {},
@@ -127,6 +127,7 @@ CONSTRAINT_PATH_BY_PREFIX = {
     "geom-rel": "geometry/spatial-relations.ttl",
     "geom-coord": "geometry/coordinates.ttl",
     "geom-ent": "geometry/structural-entities.ttl",
+    "kc-stat": "kinematic-chain/state.ttl",
     "rbdyn-ent": "newtonian-rigid-body-dynamics/structural-entities.ttl",
     "rbdyn-coord": "newtonian-rigid-body-dynamics/coordinates.ttl",
     "map": "task/map.ttl",
@@ -149,6 +150,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("kc",          KC),
+    ("kc-stat",     KC_STAT),
     ("geom-ent",    GEOM_ENT),
     ("geom-rel",    GEOM_REL),
     ("geom-coord",  GEOM_COORD),
@@ -1787,7 +1789,8 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(
-                handler, motion, solver, driver_stem, driver_node, world_qtys, shared_spec_ids
+                handler, motion, solver, solver_node, driver_stem, driver_node, world_qtys,
+                shared_spec_ids,
             )
 
     def _emit_solver_interfaces(
@@ -1795,6 +1798,7 @@ class MotionSpecDatasetBuilder:
         handler: ConstraintHandler,
         motion: MotionSpec,
         solver: Any,
+        solver_node: URIRef,
         stem: str,
         driver_node: URIRef,
         world_qtys: dict[str, WorldQuantity],
@@ -1894,15 +1898,20 @@ class MotionSpecDatasetBuilder:
                 and command.is_posture_torque_command
                 and qty.type == WorldQuantityType.JointPosition
             ):
-                jf_id = f"tau-{ctrl.name}"
-                jf_node = self._owned_uri(jf_id, handler)
-                self.graph.add((driver_node, SLV["joint-force"], jf_node))
-                self.graph.add((jf_node, RDF.type, SLV.JointForce))
+                torque_id = f"tau-{ctrl.name}"
+                torque_node = self._owned_uri(torque_id, handler)
+                self.graph.add((torque_node, RDF.type, KC_STAT.JointForceCoordinate))
+
+                spec_node = self._owned_uri(f"jf-spec-{ctrl.name}", handler)
+                self.graph.add((spec_node, RDF.type, SLV.JointForceSpecification))
+                self.graph.add((spec_node, SLV.force, torque_node))
+                self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                 joint_name = _geo_prop(
                     qty.props if isinstance(qty.props, GeometricProps) else None, "of"
                 )
                 if joint_name:
-                    self.graph.add((jf_node, SLV["attached-to"], self._owned_uri(joint_name, qty)))
+                    self.graph.add((spec_node, SLV["attached-to"], self._owned_uri(joint_name, qty)))
+                self.graph.add((driver_node, SLV["joint-force"], spec_node))
 
         for vel_solver in getattr(solver, "velocity_solvers", []):
             vs_node = self._owned_uri(vel_solver.name, handler)
@@ -1919,11 +1928,6 @@ class MotionSpecDatasetBuilder:
             f_qty = self._resolve_qty(force_solver.force, world_qtys)
             if f_qty:
                 self.graph.add((fs_node, SLV.force, URIRef(f_qty.uri)))
-
-        for jf_name in getattr(solver, "joint_force", []):
-            jf_node = self._owned_uri(jf_name, handler)
-            self.graph.add((jf_node, RDF.type, SLV.JointForce))
-            self.graph.add((driver_node, SLV["joint-force"], jf_node))
 
         if acc_constraint_nodes:
             spec_acc_node = self._owned_uri(f"spec-acc-{stem}", motion)

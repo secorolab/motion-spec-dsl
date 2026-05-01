@@ -8,6 +8,7 @@ from typing import cast
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
 
+from motion_spec.ir_gen import Parser
 from motion_spec.namespace import (
     APP,
     CSTR,
@@ -17,6 +18,7 @@ from motion_spec.namespace import (
     GEOM_OP,
     GEOM_REL,
     KC,
+    KC_STAT,
     MAP,
     MOT,
     QUDT_QKIND,
@@ -338,47 +340,41 @@ def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_mo
     ) in graph
 
 
-def test_joint_force_interfaces_are_materialized_when_present() -> None:
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(VALID_FIXTURES / STANDALONE_MANIPULATOR)
-    handler = next(spec for spec in model.specs if getattr(spec, "name", "") == "handler_move")
-    solver = handler.solvers[0]
-    solver.joint_force = ["tau-j1"]
-
-    builder = MotionSpecDatasetBuilder(model)
-    dataset, _ = builder.build()
-    graph = dataset.default_graph
-
-    driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
-    joint_force_node = builder.root_uri("tau-j1", owner=handler)
-
-    assert (driver_node, SLV["joint-force"], joint_force_node) in graph
-    assert (joint_force_node, RDF.type, SLV.JointForce) in graph
-
-
-def test_posture_controller_emits_joint_force_torque_signal() -> None:
+def test_posture_controller_emits_joint_force_specification() -> None:
     builder, graph, _ = _build_dataset(POSTURE_CONTROLLER)
 
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
+    solver_node = builder.root_uri(handler.solvers[0].name, owner=handler.solvers[0])
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
-    joint_force_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
+    torque_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
+    spec_node = builder.root_uri("jf-spec-ctrl-j2-posture", owner=handler)
     joint_position = handler.motion.context[0].declaration[0]
     joint_position_node = builder.node(joint_position)
     joint_target_node = builder.root_uri("joint-2", owner=handler.motion)
 
-    assert (
-        URIRef(controller.uri),
-        CSTR_HDL["control-signal"],
-        joint_force_node,
-    ) in graph
-    assert (driver_node, SLV["joint-force"], joint_force_node) in graph
-    assert (joint_force_node, RDF.type, SLV.JointForce) in graph
-    assert (joint_force_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque) in graph
-    assert (joint_force_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
-    assert (joint_force_node, SLV["attached-to"], joint_target_node) in graph
+    # Torque quantity: control signal for the controller, typed as JointForceCoordinate
+    assert (URIRef(controller.uri), CSTR_HDL["control-signal"], torque_node) in graph
+    assert (torque_node, RDF.type, QUDT_SCHEMA.Quantity) in graph
+    assert (torque_node, RDF.type, KC_STAT.JointForceCoordinate) in graph
+    assert (torque_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque) in graph
+    assert (torque_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]) in graph
+
+    # JointForceSpecification: first-class motion driver linking force to joint
+    assert (spec_node, RDF.type, SLV.JointForceSpecification) in graph
+    assert (spec_node, SLV.force, torque_node) in graph
+    assert (spec_node, SLV["attached-to"], joint_target_node) in graph
+    assert (driver_node, SLV["joint-force"], spec_node) in graph
+
+    # JointPosition world quantity still carries its own joint reference
+    assert (solver_node, SLV["output"], joint_position_node) in graph
+    assert (joint_position_node, RDF.type, KC_STAT.JointPositionCoordinate) in graph
     assert (joint_position_node, GEOM_REL.of, joint_target_node) in graph
     assert (joint_target_node, RDF.type, KC.Joint) in graph
+
+    parsed_solver = Parser(graph).solver_with_input_and_output(solver_node)
+    assert parsed_solver.output[0].joint_name == "joint-2"
+    assert parsed_solver.motion_drivers[0].joint_force[0].joint_name == "joint-2"
 
 
 def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() -> None:
