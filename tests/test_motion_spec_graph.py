@@ -88,9 +88,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
     motion = handler.motion
     constraint = _resolved_spec(motion.while_.constraints[0])
     motion_node = builder.root_uri(f"motion-{motion.name}", owner=motion)
-    evaluator_node = builder.root_uri(
-        _evaluator_id(constraint), owner=constraint.parent
-    )
+    evaluator_node = builder.root_uri(_evaluator_id(constraint), owner=constraint.parent)
     error_node = builder.root_uri("twist-ee-base.linear.z-err-m_move", owner=constraint.parent)
     twist_node = URIRef(motion.context[0].declaration[0].uri)
     base_node = builder.root_uri("link-base", owner=motion.context[0].declaration[0])
@@ -138,7 +136,9 @@ def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> 
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     signal_node = builder.root_uri(f"force-{controller.name}", owner=handler)
     wrench_node = builder.root_uri(f"wrench-force-{controller.name}", owner=handler.motion)
-    wrench_op_node = builder.root_uri(f"compute-wrench-force-{controller.name}", owner=handler.motion)
+    wrench_op_node = builder.root_uri(
+        f"compute-wrench-force-{controller.name}", owner=handler.motion
+    )
 
     assert (scalar_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Force) in graph
     assert (scalar_node, QUDT_SCHEMA.unit, QUDT_UNIT.N) in graph
@@ -164,7 +164,11 @@ def test_explicit_force_command_overrides_acceleration_energy_signal() -> None:
     wrench_node = builder.root_uri(f"wrench-force-{controller.name}", owner=motion)
 
     assert (URIRef(controller.uri), CSTR_HDL["control-signal"], signal_node) in graph
-    assert (URIRef(controller.uri), CSTR_HDL["control-signal"], acceleration_energy_node) not in graph
+    assert (
+        URIRef(controller.uri),
+        CSTR_HDL["control-signal"],
+        acceleration_energy_node,
+    ) not in graph
     assert (signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Force) in graph
     assert (spec_node, SLV.force, wrench_node) in graph
 
@@ -264,7 +268,9 @@ def test_pose_diff_supports_position_and_orientation_component_subsets() -> None
         assert (eval_node, GEOM_OP.out, diff_node) in graph
         for suffix, subspace, axis in components:
             err_node = builder.root_uri(f"{controller_name}-err-{suffix}", owner=motion.while_)
-            view_node = builder.root_uri(f"view-{controller_name}-err-{suffix}", owner=motion.while_)
+            view_node = builder.root_uri(
+                f"view-{controller_name}-err-{suffix}", owner=motion.while_
+            )
             energy_node = builder.root_uri(f"eacc-{controller_name}-{suffix}", owner=motion)
             acc_node = builder.root_uri(f"acc-cstr-{controller_name}-{suffix}", owner=motion)
             assert (view_node, MAP.superobject, diff_node) in graph
@@ -310,7 +316,9 @@ def test_reused_constraint_emits_shared_uri_and_error_signal() -> None:
     assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
 
 
-def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_motion_owned_signals() -> None:
+def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_motion_owned_signals() -> (
+    None
+):
     builder, graph, _ = _build_dataset(MULTI_SOLVER_ACCELERATION_FORCE)
 
     handler = builder.authored_handlers[0]
@@ -345,6 +353,7 @@ def test_posture_controller_emits_joint_force_specification() -> None:
 
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
+    handler_node = URIRef(handler.uri)
     solver_node = builder.root_uri(handler.solvers[0].name, owner=handler.solvers[0])
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     torque_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
@@ -352,6 +361,8 @@ def test_posture_controller_emits_joint_force_specification() -> None:
     joint_position = handler.motion.context[0].declaration[0]
     joint_position_node = builder.node(joint_position)
     joint_target_node = builder.root_uri("joint-2", owner=handler.motion)
+
+    assert (handler_node, CSTR_HDL["control-mode"], CSTR_HDL.JointTorque) in graph
 
     # Torque quantity: control signal for the controller, typed as JointForceCoordinate
     assert (URIRef(controller.uri), CSTR_HDL["control-signal"], torque_node) in graph
@@ -375,6 +386,9 @@ def test_posture_controller_emits_joint_force_specification() -> None:
     parsed_solver = Parser(graph).solver_with_input_and_output(solver_node)
     assert parsed_solver.output[0].joint_name == "joint-2"
     assert parsed_solver.motion_drivers[0].joint_force[0].joint_name == "joint-2"
+
+    parsed_handler = Parser(graph).constraint_handler(handler_node)
+    assert parsed_handler.control_mode == "JointTorque"
 
 
 def test_posture_joint_limit_constraints_emit_joint_force_and_error_signals() -> None:
@@ -422,7 +436,9 @@ def test_pose_distance_composes_cross_reference_frame_transform_path() -> None:
 
     motion = builder.authored_handlers[0].motion
     constraint = _resolved_spec(motion.while_.constraints[0])
-    target_pose_node = URIRef(str(motion.namespace) + "m_cross_distance/pose-frame-ee-frame-shoulder")
+    target_pose_node = URIRef(
+        str(motion.namespace) + "m_cross_distance/pose-frame-ee-frame-shoulder"
+    )
     end_in_start_ref_node = builder.root_uri(
         "pose-pose-ee-table-in-frame-base-c_dist_cross",
         owner=motion,
@@ -462,7 +478,9 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
     stop_monitor_node = URIRef(stop_monitor.uri)
     start_event_node = builder.root_uri("evt-start", owner=handler)
     stop_flag_node = builder.root_uri("flag-stop", owner=handler)
-    start_eval_node = builder.root_uri(_evaluator_id(start_constraint), owner=start_constraint.parent)
+    start_eval_node = builder.root_uri(
+        _evaluator_id(start_constraint), owner=start_constraint.parent
+    )
     stop_eval_node = builder.root_uri(_evaluator_id(stop_constraint), owner=stop_constraint.parent)
     start_error_node = builder.root_uri(
         "twist-ee-base.linear.z-err",
