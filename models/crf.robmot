@@ -70,6 +70,7 @@ CONSTRAINT_HANDLER (ns=app) handler-find {
     }
 
     MOTION: <m-find>
+    CONTROL_MODE: JointTorque
 
     MONITORS {
         mon-torque-find-shutoff:
@@ -177,6 +178,7 @@ CONSTRAINT_HANDLER (ns=app) handler-loosen {
     CONTEXT {}
 
     MOTION: <m-loosen>
+    CONTROL_MODE: JointTorque
 
     MONITORS {
         mon-torque-loosen-contact:

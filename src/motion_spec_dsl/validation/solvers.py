@@ -8,6 +8,7 @@ from motion_spec_dsl.domain import (
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
+    HandlerControlMode,
     Model,
     QuantityType,
     SolverEntry,
@@ -18,6 +19,12 @@ from motion_spec_dsl.domain import (
 )
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
 from motion_spec_dsl.validation.robots import robot_component, robot_component_anchor
+
+
+SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
+    "ACHD": {HandlerControlMode.JointTorque},
+    "RNE": {HandlerControlMode.JointTorque},
+}
 
 
 def _solver_component(solver: SolverEntry):
@@ -159,6 +166,22 @@ def validate_supported_solver_algorithms(model: Model) -> None:
                 raise semantic_error(
                     f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
                     "but RNE is not modeled in the DSL generator yet.",
+                    solver,
+                )
+
+
+def validate_handler_control_mode_solver_compatibility(model: Model) -> None:
+    for handler in constraint_handlers(model):
+        for solver in handler.solvers:
+            resolved_solver = _resolved_solver(solver)
+            supported_modes = SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM.get(
+                str(resolved_solver.algorithm), set()
+            )
+            if handler.control_mode not in supported_modes:
+                raise semantic_error(
+                    f"Handler '{handler.name}' control mode {handler.control_mode.value} "
+                    f"is not supported by solver '{resolved_solver.name}' with algorithm "
+                    f"{resolved_solver.algorithm}.",
                     solver,
                 )
 

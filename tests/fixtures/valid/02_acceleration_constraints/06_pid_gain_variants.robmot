@@ -46,6 +46,7 @@ CONSTRAINT_HANDLER (ns=app) handler_pid_variants {
     }
 
     MOTION: <m_pid_variants>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-p: PID { constraint: <m_pid_variants.c_x>, Kp = 1.0 },

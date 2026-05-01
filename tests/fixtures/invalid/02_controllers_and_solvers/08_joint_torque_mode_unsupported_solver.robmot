@@ -1,4 +1,4 @@
-// Invalid: JointPosition torque controller omits for Posture; validation must require explicit posture mode.
+// Invalid: JointTorque handler control mode is only supported by torque-output arm solvers.
 
 ns app = "https://secorolab.github.io/models/tests/"
 
@@ -12,26 +12,26 @@ ROBOT (ns=app) kinova {
     }
 }
 
-MOTION_SPEC (ns=app) m_posture {
+MOTION_SPEC (ns=app) m_move {
     CONTEXT {
-        cw: World {
-            q-j2: JointPosition { of: joint-2 }
+        c1: World {
+            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base }
         },
-        cs: Spec {
-            q-j2-safe: Angle = 2.4 rad
+        c2: Spec {
+            vel-z-ref: LinearVelocity = 0.1 m/s
         }
     }
 
     WHEN {}
 
     WHILE {
-        keep-j2-safe: <cw.q-j2> equal to <cs.q-j2-safe>
+        c1: <c1.twist-ee-base>.linvel.z equal to <c2.vel-z-ref>
     }
 
     UNTIL {}
 }
 
-CONSTRAINT_HANDLER (ns=app) handler_posture {
+CONSTRAINT_HANDLER (ns=app) handler_move {
     CONTEXT {
         c1: World {
             gravity: Gravity
@@ -41,16 +41,17 @@ CONSTRAINT_HANDLER (ns=app) handler_posture {
         }
     }
 
-    MOTION: <m_posture>
+    MOTION: <m_move>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
-        ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
+        ctrl-c1: PID { constraint: <m_move.c1>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }
 
     SOLVERS {
-        arm_solver: Solver {
+        kinova_solver: Solver {
             robot: <kinova>,
-            algorithm: ACHD,
+            algorithm: ForceDistribution,
             root: <kinova.chain.root>,
             end: <kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>

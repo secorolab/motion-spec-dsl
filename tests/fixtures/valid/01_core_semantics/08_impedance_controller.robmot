@@ -42,6 +42,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     }
 
     MOTION: <m_move>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-c1: Impedance { constraint: <m_move.c1>, Stiffness = 1.0, Damping = 0.1 }

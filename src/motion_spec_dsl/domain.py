@@ -341,8 +341,8 @@ class QuantityType(StrEnum):
     Vector              = "Vector"
 
 
-class ControllerMode(StrEnum):
-    Posture = "Posture"
+class HandlerControlMode(StrEnum):
+    JointTorque = "JointTorque"
 
 
 class ControllerType(StrEnum):
@@ -605,12 +605,14 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     context: list[WorldContextDecl | SpecContextDecl]
     motion: MotionSpec
+    control_mode: HandlerControlMode
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        self.control_mode = HandlerControlMode(self.control_mode)
 
 
 @dataclass
@@ -637,7 +639,6 @@ class ControllerEntry(NamedNamespaceObject):
     params: ControllerParams
     solver: SolverRef | None = None
     command_type: QuantityType | None = None
-    control_mode: ControllerMode | None = None
     apply_at: WorldQuantity | None = None
 
     def __post_init__(self):
@@ -645,8 +646,6 @@ class ControllerEntry(NamedNamespaceObject):
         self.type = ControllerType(self.type)
         if self.command_type is not None and isinstance(self.command_type, str):
             self.command_type = QuantityType(self.command_type)
-        if self.control_mode is not None and isinstance(self.control_mode, str):
-            self.control_mode = ControllerMode(self.control_mode)
 
 
 @dataclass
@@ -672,7 +671,6 @@ class ControllerAlias(ControllerEntry):
     params: ControllerParams = field(init=False)
     solver: SolverRef | None = field(init=False, default=None)
     command_type: QuantityType | None = field(init=False, default=None)
-    control_mode: ControllerMode | None = field(init=False, default=None)
     apply_at: WorldQuantity | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -682,7 +680,6 @@ class ControllerAlias(ControllerEntry):
         self.params = self.ref.controller.params
         self.solver = self.ref.controller.solver
         self.command_type = self.ref.controller.command_type
-        self.control_mode = self.ref.controller.control_mode
         self.apply_at = self.ref.controller.apply_at
 
 

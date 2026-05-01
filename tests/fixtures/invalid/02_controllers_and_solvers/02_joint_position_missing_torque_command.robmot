@@ -1,4 +1,4 @@
-// Valid: posture JointPosition torque controller; graph and codegen must emit joint torque control signals.
+// Invalid: JointPosition controllers must explicitly produce joint torque.
 
 ns app = "https://secorolab.github.io/models/tests/"
 
@@ -13,8 +13,6 @@ ROBOT (ns=app) kinova {
 }
 
 MOTION_SPEC (ns=app) m_posture {
-    MOVE: "Keep joint 2 away from its upper limit"
-
     CONTEXT {
         cw: World {
             q-j2: JointPosition { of: joint-2 }
@@ -27,7 +25,7 @@ MOTION_SPEC (ns=app) m_posture {
     WHEN {}
 
     WHILE {
-        keep-j2-safe: keeping <cw.q-j2> equal to <cs.q-j2-safe>
+        keep-j2-safe: <cw.q-j2> equal to <cs.q-j2-safe>
     }
 
     UNTIL {}
@@ -47,7 +45,7 @@ CONSTRAINT_HANDLER (ns=app) handler_posture {
     CONTROL_MODE: JointTorque
 
     CONTROLLERS {
-        ctrl-j2-posture: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
+        ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 }
     }
 
     SOLVERS {

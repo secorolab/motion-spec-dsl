@@ -49,6 +49,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     }
 
     MOTION: <m_move>
+    CONTROL_MODE: JointTorque
 
     MONITORS {}
 

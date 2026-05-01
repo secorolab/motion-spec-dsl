@@ -43,6 +43,7 @@ CONSTRAINT_HANDLER (ns=app) handler_cross_distance {
     }
 
     MOTION: <m_cross_distance>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-dist: PID { constraint: <m_cross_distance.c_dist_cross>, Kp = 1.0, Ki = 0.0, Kd = 0.1 } as Force apply at <c1.link-ee>

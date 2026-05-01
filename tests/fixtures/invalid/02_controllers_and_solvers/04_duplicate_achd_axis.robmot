@@ -42,6 +42,7 @@ CONSTRAINT_HANDLER (ns=app) handler_duplicate_axis {
     }
 
     MOTION: <m_duplicate_axis>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-pos-z: PID { constraint: <m_duplicate_axis.c_pos_z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },

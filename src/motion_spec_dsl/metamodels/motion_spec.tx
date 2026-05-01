@@ -252,6 +252,7 @@ ConstraintHandler:
     "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "CONTEXT"      "{" context*=HandlerContextDecl[","] "}"
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
+        "CONTROL_MODE" ":" control_mode=HandlerControlMode
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
         "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
         "SOLVERS"      "{" solvers+=SolverItem[","] "}"
@@ -299,7 +300,6 @@ ControllerEntry:
         params=ControllerParams
     "}"
     ("as" command_type=QuantityType)?
-    ("for" control_mode=ControllerMode)?
     ("apply" "at" "<" apply_at=[WorldQuantity|ScopedName] ">")?
     ("via" "<" solver=SolverRef ">")?
 ;
@@ -321,8 +321,8 @@ ControllerParamName:
     "Kp" | "Ki" | "Kd" | "Stiffness" | "Damping" | "decay"
 ;
 
-ControllerMode:
-    "Posture"
+HandlerControlMode:
+    "JointTorque"
 ;
 
 ConstraintRef:

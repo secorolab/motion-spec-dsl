@@ -40,6 +40,7 @@ CONSTRAINT_HANDLER (ns=app) handler_pose_parts {
     }
 
     MOTION: <m_pose_parts>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-position: PID { constraint: <m_pose_parts.c_position>, Kp = 1.0, Ki = 0.0, Kd = 0.1 },

@@ -64,6 +64,7 @@ CONSTRAINT_HANDLER (ns=app) handler_a {
     }
 
     MOTION: <m_a>
+    CONTROL_MODE: JointTorque
 
     CONTROLLERS {
         ctrl-wrong-motion: PID { constraint: <m_b.c_b>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }

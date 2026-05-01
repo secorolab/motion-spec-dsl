@@ -124,6 +124,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
     }
 
     MOTION: <motion_rightarm>
+    CONTROL_MODE: JointTorque
 
 
     MONITORS {
@@ -167,6 +168,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
     }
 
     MOTION: <motion_leftarm>
+    CONTROL_MODE: JointTorque
 
 
     MONITORS {

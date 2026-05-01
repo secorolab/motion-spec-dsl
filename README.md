@@ -164,6 +164,10 @@ Use `.position.<axis>` for one coordinate of a pose position. Do not use bare `.
 ### Constraint Handlers
 
 A `CONSTRAINT_HANDLER` binds a motion to controllers, monitors, and solvers.
+`CONTROL_MODE: JointTorque` declares the robot actuator command mode for the
+handler. This is currently the only supported mode: ACHD translates Cartesian
+acceleration constraints, force/wrench commands, and direct `JointPosition`
+constraints into joint torques.
 
 Controller options:
 
@@ -177,7 +181,8 @@ Controller options:
 - `ABAG` is reserved as a controller family and fails validation because it is
   not implemented yet.
 - `as <QuantityType>` selects the command type when it cannot be inferred
-- `for Posture` marks posture control for `JointPosition` constraints
+- `JointPosition` constraints are direct joint-space constraints and must be
+  commanded `as Torque`.
 - `apply at <world.link>` selects a link target for commands that need one
 - `via <handler.solver>` selects a solver when a handler assembles multiple solvers
 
