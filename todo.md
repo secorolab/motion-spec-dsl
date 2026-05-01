@@ -7,6 +7,7 @@
 
 ## Later
 
+- Decide whether non-posture joint-torque controllers should be supported as a separate dispatch family from `for Posture`.
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
 
 ## Validation

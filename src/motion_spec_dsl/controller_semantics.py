@@ -9,6 +9,7 @@ from motion_spec_dsl.domain import (
     ConstraintSpecification,
     ControllerAlias,
     ControllerEntry,
+    ControllerMode,
     EqualityConstraint,
     QuantityType,
     SubSpace,
@@ -58,6 +59,7 @@ class ControllerCommandRecord:
     view_subspace: str | None
     axis: str | None
     command_type: QuantityType | None
+    control_mode: ControllerMode | None
     acceleration_constraints: tuple[AccelerationConstraintRecord, ...]
 
     @property
@@ -68,6 +70,7 @@ class ControllerCommandRecord:
     def is_posture_torque_command(self) -> bool:
         return (
             self.command_type == QuantityType.Torque
+            and self.control_mode == ControllerMode.Posture
             and self.quantity is not None
             and self.quantity.type == WorldQuantityType.JointPosition
         )
@@ -170,6 +173,7 @@ def controller_command_record(
     force_command = command_type == QuantityType.Force or view_subspace == "force"
     posture_torque = (
         command_type == QuantityType.Torque
+        and resolved_controller.control_mode == ControllerMode.Posture
         and quantity is not None
         and quantity.type == WorldQuantityType.JointPosition
     )
@@ -196,5 +200,6 @@ def controller_command_record(
         view_subspace=view_subspace,
         axis=axis,
         command_type=command_type,
+        control_mode=resolved_controller.control_mode,
         acceleration_constraints=acceleration_constraints,
     )

@@ -12,6 +12,7 @@ from motion_spec_dsl.controller_semantics import (
 from motion_spec_dsl.domain import (
     ControllerAlias,
     ControllerEntry,
+    ControllerMode,
     ControllerType,
     Model,
     QuantityType,
@@ -76,8 +77,9 @@ def validate_controller_commands(model: Model) -> None:
                     "which is not supported for graph emission.",
                     controller,
                 )
-            # Remaining validation applies equally to PID and Impedance:
-            # both map a scalar error to a scalar control signal.
+            # Remaining validation (command_type inference, posture mode checks)
+            # applies equally to PID and Impedance: both map a scalar error to a
+            # scalar control signal and support 'for Posture' with JointPosition.
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)
@@ -87,10 +89,31 @@ def validate_controller_commands(model: Model) -> None:
                 and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
                 and subspace is None
             )
-            if isinstance(quantity, WorldQuantity) and quantity.type == WorldQuantityType.JointPosition:
+            if command_type is None and not whole_pose_command:
+                raise semantic_error(
+                    f"Controller '{controller.name}' requires explicit 'as' for "
+                    f"constraint subspace '{subspace}'.",
+                    controller,
+                )
+            if (
+                isinstance(quantity, WorldQuantity)
+                and quantity.type == WorldQuantityType.JointPosition
+                and resolved_controller.control_mode != ControllerMode.Posture
+            ):
+                raise semantic_error(
+                    f"Controller '{controller.name}' targets JointPosition and must declare "
+                    "'for Posture'.",
+                    controller,
+                )
+            if resolved_controller.control_mode == ControllerMode.Posture:
                 if command_type != QuantityType.Torque:
                     raise semantic_error(
-                        f"Controller '{controller.name}' targets JointPosition and must use 'as Torque'.",
+                        f"Controller '{controller.name}' with 'for Posture' must use 'as Torque'.",
+                        controller,
+                    )
+                if not isinstance(quantity, WorldQuantity) or quantity.type != WorldQuantityType.JointPosition:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' with 'for Posture' must target a JointPosition constraint.",
                         controller,
                     )
                 quantity_props = getattr(quantity, "props", None)
@@ -99,15 +122,9 @@ def validate_controller_commands(model: Model) -> None:
                     for pair in getattr(quantity_props, "pairs", [])
                 ):
                     raise semantic_error(
-                        f"Controller '{controller.name}' targets JointPosition and needs explicit 'of'.",
+                        f"Controller '{controller.name}' with 'for Posture' must target a JointPosition with explicit 'of'.",
                         controller,
                     )
-            if command_type is None and not whole_pose_command:
-                raise semantic_error(
-                    f"Controller '{controller.name}' requires explicit 'as' for "
-                    f"constraint subspace '{subspace}'.",
-                    controller,
-                )
             if (
                 resolved_controller.apply_at is not None
                 and resolved_controller.apply_at.type != WorldQuantityType.Link
