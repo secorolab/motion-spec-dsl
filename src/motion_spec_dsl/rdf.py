@@ -1684,7 +1684,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
             return energy_node
 
-        # Posture joint torque
+        # Joint-space torque
         if (
             algorithm == "ACHD"
             and command.is_posture_torque_command

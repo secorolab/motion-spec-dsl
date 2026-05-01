@@ -1,4 +1,4 @@
-// Invalid: JointPosition torque controller omits for Posture; validation must require explicit posture mode.
+// Invalid: JointPosition controllers must explicitly produce joint torque.
 
 ns app = "https://secorolab.github.io/models/tests/"
 
@@ -44,7 +44,7 @@ CONSTRAINT_HANDLER (ns=app) handler_posture {
     MOTION: <m_posture>
 
     CONTROLLERS {
-        ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
+        ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 }
     }
 
     SOLVERS {

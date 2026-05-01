@@ -109,8 +109,8 @@ CONSTRAINT_HANDLER (ns=app) handler-approach {
         ctrl-linvel-z: PID { constraint: <m-approach.cstr-linvel-z>, Kp = 5.0, Ki = 1.0, Kd = 1.0 },
         ctrl-linvel-x: PID { constraint: <m-approach.cstr-linvel-x>, Kp = 5.0, Ki = 1.0, Kd = 1.0 },
         ctrl-linvel-y: PID { constraint: <m-approach.cstr-linvel-y>, Kp = 5.0, Ki = 1.0, Kd = 1.0 },
-        ctrl-keep-j2:  PID { constraint: <m-approach.cstr-keep-j2>,  Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque for Posture,
-        ctrl-limit-j4: PID { constraint: <m-approach.cstr-limit-j4>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque for Posture
+        ctrl-keep-j2:  PID { constraint: <m-approach.cstr-keep-j2>,  Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque,
+        ctrl-limit-j4: PID { constraint: <m-approach.cstr-limit-j4>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
     }
 
     SOLVERS {

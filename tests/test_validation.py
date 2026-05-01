@@ -11,6 +11,7 @@ from textx.exceptions import TextXSemanticError
 from motion_spec_dsl.domain import (
     ConstraintReference,
     ControllerReference,
+    QuantityType,
     SolverReference,
     ContextQuantityReference,
     WorldQuantityReference,
@@ -57,8 +58,8 @@ IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
             "uses RNE, but RNE is not modeled",
         ),
         (
-            "02_controllers_and_solvers/02_joint_position_missing_posture.robmot",
-            "must declare 'for Posture'",
+            "02_controllers_and_solvers/02_joint_position_missing_torque_command.robmot",
+            "targets JointPosition and must use 'as Torque'",
         ),
         (
             "02_controllers_and_solvers/03_missing_controller_solver.robmot",
@@ -126,8 +127,8 @@ def test_posture_controller_accepts_unilateral_and_bilateral_joint_limits() -> N
     handler = model.specs[-1]
     controllers = {c.name: c for c in handler.controllers}
 
-    assert controllers["ctrl-bilateral-j2"].control_mode.value == "Posture"
-    assert controllers["ctrl-less-than-j4"].control_mode.value == "Posture"
+    assert controllers["ctrl-bilateral-j2"].command_type == QuantityType.Torque
+    assert controllers["ctrl-less-than-j4"].command_type == QuantityType.Torque
 
 
 def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
@@ -138,7 +139,7 @@ def test_posture_controller_uses_single_handler_solver_implicitly() -> None:
     controller = handler.controllers[0]
 
     assert controller.solver is None
-    assert controller.control_mode.value == "Posture"
+    assert controller.command_type == QuantityType.Torque
 
 
 def test_impedance_controller_passes_validation() -> None:

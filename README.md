@@ -177,7 +177,8 @@ Controller options:
 - `ABAG` is reserved as a controller family and fails validation because it is
   not implemented yet.
 - `as <QuantityType>` selects the command type when it cannot be inferred
-- `for Posture` marks posture control for `JointPosition` constraints
+- `JointPosition` constraints are joint-space posture constraints; today they
+  must be controlled `as Torque`.
 - `apply at <world.link>` selects a link target for commands that need one
 - `via <handler.solver>` selects a solver when a handler assembles multiple solvers
 

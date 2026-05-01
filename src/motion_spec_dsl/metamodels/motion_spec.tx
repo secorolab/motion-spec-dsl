@@ -299,7 +299,6 @@ ControllerEntry:
         params=ControllerParams
     "}"
     ("as" command_type=QuantityType)?
-    ("for" control_mode=ControllerMode)?
     ("apply" "at" "<" apply_at=[WorldQuantity|ScopedName] ">")?
     ("via" "<" solver=SolverRef ">")?
 ;
@@ -319,10 +318,6 @@ ControllerParam:
 
 ControllerParamName:
     "Kp" | "Ki" | "Kd" | "Stiffness" | "Damping" | "decay"
-;
-
-ControllerMode:
-    "Posture"
 ;
 
 ConstraintRef:
