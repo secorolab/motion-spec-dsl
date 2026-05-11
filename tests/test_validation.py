@@ -71,6 +71,10 @@ IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
             "Multiple constraints on the same Cartesian axis are not supported yet",
         ),
         (
+            "02_controllers_and_solvers/09_unsupported_explicit_command_type.robmot",
+            "Only 'as Force' is supported",
+        ),
+        (
             "02_controllers_and_solvers/07_unsupported_abag_controller.robmot",
             "uses ABAG, but ABAG is not implemented yet",
         ),

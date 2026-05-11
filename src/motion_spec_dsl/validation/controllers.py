@@ -82,11 +82,25 @@ def validate_controller_commands(model: Model) -> None:
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)
             quantity = constraint_spec.view.quantity
+            explicit_command_type = resolved_controller.command_type
             whole_pose_command = (
                 isinstance(quantity, WorldQuantity)
                 and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
                 and subspace is None
             )
+            if explicit_command_type is not None and explicit_command_type != QuantityType.Force:
+                explicit_torque_joint = (
+                    explicit_command_type == QuantityType.Torque
+                    and isinstance(quantity, WorldQuantity)
+                    and quantity.type == WorldQuantityType.JointPosition
+                )
+                if not explicit_torque_joint:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' uses unsupported explicit command "
+                        f"'as {explicit_command_type.value}'. Only 'as Force' is supported; "
+                        "'as Torque' is only supported for JointPosition controllers.",
+                        controller,
+                    )
             if isinstance(quantity, WorldQuantity) and quantity.type == WorldQuantityType.JointPosition:
                 if command_type != QuantityType.Torque:
                     raise semantic_error(

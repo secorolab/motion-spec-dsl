@@ -60,7 +60,7 @@ MOTION_SPEC (ns=app) motion_rightarm {
             angvel-rightarm-shoulder-ee-anteroposterior-ref: AngularVelocity = 0.0 rad/s,
             angvel-rightarm-shoulder-ee-lateral-ref: AngularVelocity = 0.0 rad/s,
             linvel-rightarm-world-ee-lateral-ref: LinearVelocity = 0.0 m/s,
-            ang-rightarm-shoulder-ee-vertical-ref: AngularDistance = 0.0 rad,
+            angvel-rightarm-shoulder-ee-vertical-ref: AngularVelocity = 0.0 rad/s,
             dist-rightarm-shoulder-ee-lower: LinearDistance = 0.68 m,
             dist-rightarm-shoulder-ee-upper: LinearDistance = 0.72 m
         }
@@ -90,9 +90,9 @@ MOTION_SPEC (ns=app) motion_rightarm {
         cstr-linvel-rightarm-world-ee-lateral:
             <c1.twist-world-platform-rightarm-ee>.linvel.y
             equal to <c2.linvel-rightarm-world-ee-lateral-ref>,
-        cstr-ang-rightarm-shoulder-ee-vertical:
-            <c1.pose-rightarm-shoulder-ee>.orientation.z
-            equal to <c2.ang-rightarm-shoulder-ee-vertical-ref>,
+        cstr-angvel-rightarm-shoulder-ee-vertical:
+            <c1.twist-rightarm-shoulder-ee-shoulder>.angvel.z
+            equal to <c2.angvel-rightarm-shoulder-ee-vertical-ref>,
         cstr-dist-rightarm-shoulder-ee:
             distance between <c1.pose-rightarm-platform-shoulder> and <c1.pose-rightarm-platform-ee>
             between <c2.dist-rightarm-shoulder-ee-lower>
@@ -151,7 +151,7 @@ MOTION_SPEC (ns=app) motion_leftarm {
             angvel-leftarm-shoulder-ee-anteroposterior-ref: AngularVelocity = 0.0 rad/s,
             angvel-leftarm-shoulder-ee-lateral-ref: AngularVelocity = 0.0 rad/s,
             linvel-leftarm-world-ee-lateral-ref: LinearVelocity = 0.0 m/s,
-            ang-leftarm-shoulder-ee-vertical-ref: AngularDistance = 0.0 rad,
+            angvel-leftarm-shoulder-ee-vertical-ref: AngularVelocity = 0.0 rad/s,
             dist-leftarm-shoulder-ee-lower: LinearDistance = 0.68 m,
             dist-leftarm-shoulder-ee-upper: LinearDistance = 0.72 m
         }
@@ -181,9 +181,9 @@ MOTION_SPEC (ns=app) motion_leftarm {
         cstr-linvel-leftarm-world-ee-lateral:
             <c1.twist-world-platform-leftarm-ee>.linvel.y
             equal to <c2.linvel-leftarm-world-ee-lateral-ref>,
-        cstr-ang-leftarm-shoulder-ee-vertical:
-            <c1.pose-leftarm-shoulder-ee>.orientation.z
-            equal to <c2.ang-leftarm-shoulder-ee-vertical-ref>,
+        cstr-angvel-leftarm-shoulder-ee-vertical:
+            <c1.twist-leftarm-shoulder-ee-shoulder>.angvel.z
+            equal to <c2.angvel-leftarm-shoulder-ee-vertical-ref>,
         cstr-dist-leftarm-shoulder-ee:
             distance between <c1.pose-leftarm-platform-shoulder> and <c1.pose-leftarm-platform-ee>
             between <c2.dist-leftarm-shoulder-ee-lower>
@@ -199,6 +199,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
     CONTEXT {
         c1: World {
             link-rightarm-ee: Link,
+            link-rightarm-elbow: Link,
             gravity-rightarm: Gravity,
             wrench-rightarm-ee-anteroposterior-platform: Wrench {
                 as-seen-by: frame-platform,
@@ -234,7 +235,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
         ctrl-pos-rightarm-platform-elbow-height: PID {
             constraint: <motion_rightarm.cstr-pos-rightarm-platform-elbow-height>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
-        } as LinearVelocity apply at <c1.link-rightarm-ee>,
+        } as Force apply at <c1.link-rightarm-elbow>,
         ctrl-angvel-rightarm-shoulder-ee-anteroposterior: PID {
             constraint: <motion_rightarm.cstr-angvel-rightarm-shoulder-ee-anteroposterior>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
@@ -247,10 +248,10 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
             constraint: <motion_rightarm.cstr-linvel-rightarm-world-ee-lateral>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
-        ctrl-ang-rightarm-shoulder-ee-vertical: PID {
-            constraint: <motion_rightarm.cstr-ang-rightarm-shoulder-ee-vertical>,
+        ctrl-angvel-rightarm-shoulder-ee-vertical: PID {
+            constraint: <motion_rightarm.cstr-angvel-rightarm-shoulder-ee-vertical>,
             Kp = 200.0, Ki = 2.9, Kd = 80.5
-        } as AngularVelocity apply at <c1.link-rightarm-ee>,
+        },
         ctrl-dist-rightarm-shoulder-ee: PID {
             constraint: <motion_rightarm.cstr-dist-rightarm-shoulder-ee>,
             Kp = 450.0, Ki = 65.5, Kd = 80.0,
@@ -275,6 +276,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
     CONTEXT {
         c1: World {
             link-leftarm-ee: Link,
+            link-leftarm-elbow: Link,
             gravity-leftarm: Gravity,
             wrench-leftarm-ee-anteroposterior-platform: Wrench {
                 as-seen-by: frame-platform,
@@ -310,7 +312,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
         ctrl-pos-leftarm-platform-elbow-height: PID {
             constraint: <motion_leftarm.cstr-pos-leftarm-platform-elbow-height>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
-        } as LinearVelocity apply at <c1.link-leftarm-ee>,
+        } as Force apply at <c1.link-leftarm-elbow>,
         ctrl-angvel-leftarm-shoulder-ee-anteroposterior: PID {
             constraint: <motion_leftarm.cstr-angvel-leftarm-shoulder-ee-anteroposterior>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
@@ -323,10 +325,10 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
             constraint: <motion_leftarm.cstr-linvel-leftarm-world-ee-lateral>,
             Kp = 5.0, Ki = 1.0, Kd = 3.0
         },
-        ctrl-ang-leftarm-shoulder-ee-vertical: PID {
-            constraint: <motion_leftarm.cstr-ang-leftarm-shoulder-ee-vertical>,
+        ctrl-angvel-leftarm-shoulder-ee-vertical: PID {
+            constraint: <motion_leftarm.cstr-angvel-leftarm-shoulder-ee-vertical>,
             Kp = 200.0, Ki = 2.9, Kd = 80.5
-        } as AngularVelocity apply at <c1.link-leftarm-ee>,
+        },
         ctrl-dist-leftarm-shoulder-ee: PID {
             constraint: <motion_leftarm.cstr-dist-leftarm-shoulder-ee>,
             Kp = 450.0, Ki = 65.5, Kd = 80.0,
