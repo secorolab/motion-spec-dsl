@@ -65,6 +65,7 @@ from motion_spec_dsl.domain import (
     WorldContextDecl,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_context_quantity,
     _resolved_spec,
     _resolved_solver,
 )
@@ -1179,6 +1180,33 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, GEOM_COORD.y, Literal(str(quantity.value.y))))
                 self.graph.add((node, GEOM_COORD.z, Literal(str(quantity.value.z))))
 
+    def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
+        quantity = _context_quantity(ref)
+        if not isinstance(quantity, ContextQuantity):
+            return self._owned_uri(_node_name(quantity), owner)
+
+        if ref.literal_value is None:
+            return URIRef(quantity.uri)
+
+        quantity = _resolved_context_quantity(quantity)
+        node = self._owned_uri(f"{quantity.name}-{suffix}", owner)
+        qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
+        if qkind is None:
+            qkind = QUDT_QKIND[quantity.type]
+
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, qkind))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+        self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
+        if isinstance(ref.literal_value, ScalarQuantity):
+            self.graph.add((node, QUDT_SCHEMA.value, Literal(str(ref.literal_value.value))))
+        elif isinstance(ref.literal_value, VectorQuantity):
+            self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+            self.graph.add((node, GEOM_COORD.x, Literal(str(ref.literal_value.x))))
+            self.graph.add((node, GEOM_COORD.y, Literal(str(ref.literal_value.y))))
+            self.graph.add((node, GEOM_COORD.z, Literal(str(ref.literal_value.z))))
+        return node
+
     def _emit_constraints(
         self,
         motion: MotionSpec,
@@ -1225,47 +1253,26 @@ class MotionSpecDatasetBuilder:
             expr = spec.expr
             if isinstance(expr, EqualityConstraint):
                 self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
-                reference_quantity = _context_quantity(expr.reference)
-                ref_node = (
-                    URIRef(reference_quantity.uri)
-                    if isinstance(reference_quantity, ContextQuantity)
-                    else self._owned_uri(_node_name(reference_quantity), motion)
-                )
+                ref_node = self._emit_context_ref_node(expr.reference, motion, f"{spec.name}-ref")
                 self.graph.add((node, CSTR["reference-value"], ref_node))
             elif isinstance(expr, GreaterThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
-                threshold_quantity = _context_quantity(expr.threshold)
-                thr_node = (
-                    URIRef(threshold_quantity.uri)
-                    if isinstance(threshold_quantity, ContextQuantity)
-                    else self._owned_uri(_node_name(threshold_quantity), motion)
+                thr_node = self._emit_context_ref_node(
+                    expr.threshold, motion, f"{spec.name}-threshold"
                 )
                 self.graph.add((node, CSTR.threshold, thr_node))
             elif isinstance(expr, LessThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.LessThanConstraint))
-                threshold_quantity = _context_quantity(expr.threshold)
-                thr_node = (
-                    URIRef(threshold_quantity.uri)
-                    if isinstance(threshold_quantity, ContextQuantity)
-                    else self._owned_uri(_node_name(threshold_quantity), motion)
+                thr_node = self._emit_context_ref_node(
+                    expr.threshold, motion, f"{spec.name}-threshold"
                 )
                 self.graph.add((node, CSTR.threshold, thr_node))
             elif isinstance(expr, BilateralConstraint):
                 self.graph.add((node, RDF.type, CSTR.BilateralConstraint))
-                lower_quantity = _context_quantity(expr.lower)
-                upper_quantity = _context_quantity(expr.upper)
-                lo_node = (
-                    URIRef(lower_quantity.uri)
-                    if isinstance(lower_quantity, ContextQuantity)
-                    else self._owned_uri(_node_name(lower_quantity), motion)
-                )
-                up_node = (
-                    URIRef(upper_quantity.uri)
-                    if isinstance(upper_quantity, ContextQuantity)
-                    else self._owned_uri(_node_name(upper_quantity), motion)
-                )
+                lo_node = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
+                up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
 
@@ -1534,8 +1541,8 @@ class MotionSpecDatasetBuilder:
 
             self.graph.add((eval_node, RDF.type, GEOM_OP["PoseDiffEvaluator"]))
             self.graph.add((eval_node, CSTR_HDL.constraint, URIRef(spec.uri)))
-            self.graph.add((eval_node, GEOM_OP.in1, ref_uri))
-            self.graph.add((eval_node, GEOM_OP.in2, URIRef(qty.uri)))
+            self.graph.add((eval_node, GEOM_OP.in1, URIRef(qty.uri)))
+            self.graph.add((eval_node, GEOM_OP.in2, ref_uri))
             self.graph.add((eval_node, GEOM_OP.out, diff_node))
             self.graph.add((diff_node, RDF.type, GEOM_REL.AccelerationTwist))
             self.graph.add((diff_node, RDF.type, GEOM_COORD.AccelerationTwistCoordinate))
@@ -1573,7 +1580,22 @@ class MotionSpecDatasetBuilder:
         spec: ConstraintSpecification,
         motion: MotionSpec,
         components: tuple[AccelerationConstraintRecord, ...],
+        pose_qty: WorldQuantity | None = None,
+        world_qtys: dict | None = None,
     ) -> None:
+        vel_twist_qty: WorldQuantity | None = None
+        if pose_qty is not None and world_qtys is not None and isinstance(
+            pose_qty.props, GeometricProps
+        ):
+            of_body = _geo_prop(pose_qty.props, "of")
+            if of_body is not None:
+                for q in world_qtys.values():
+                    if q.type == WorldQuantityType.VelocityTwist and isinstance(
+                        q.props, GeometricProps
+                    ) and _geo_prop(q.props, "of") == of_body:
+                        vel_twist_qty = q
+                        break
+
         for component in components:
             err_id = _pose_diff_error_id(ctrl, component)
             comp_ctrl_node = self._owned_uri(_pose_diff_controller_id(ctrl, component), handler)
@@ -1585,6 +1607,21 @@ class MotionSpecDatasetBuilder:
             self.graph.add((comp_ctrl_node, CSTR_HDL["control-signal"], energy_node))
             self._emit_acceleration_energy_quantity(energy_node)
             self.graph.add((handler_node, CSTR_HDL.controllers, comp_ctrl_node))
+
+            if component.subspace == "angular-acceleration" and vel_twist_qty is not None:
+                vel_qty_id = f"vel-ang-{ctrl.name}-{component.axis}"
+                vel_qty_node = self._owned_uri(vel_qty_id, spec.parent)
+                vel_view_node = self._owned_uri(f"view-{vel_qty_id}", spec.parent)
+                self._add_quantity(vel_qty_node, QuantityType.AngularVelocity)
+                self.graph.add((vel_view_node, RDF.type, MAP.View))
+                self.graph.add((vel_view_node, RDF.type, MAP.VelocityTwistCoordinateView))
+                self.graph.add((vel_view_node, MAP.superobject, URIRef(vel_twist_qty.uri)))
+                self.graph.add((vel_view_node, MAP.subobject, vel_qty_node))
+                self.graph.add((vel_view_node, MAP.subspace, MAP["angular-velocity"]))
+                self.graph.add((vel_view_node, MAP.axis, MAP[component.axis]))
+                self.graph.add(
+                    (comp_ctrl_node, CSTR_HDL["velocity-signal"], vel_qty_node)
+                )
 
     def _emit_constraint_handler(
         self,
@@ -1656,6 +1693,8 @@ class MotionSpecDatasetBuilder:
                         spec,
                         motion,
                         command.acceleration_constraints,
+                        pose_qty=qty,
+                        world_qtys=world_qtys,
                     )
                     continue
 
