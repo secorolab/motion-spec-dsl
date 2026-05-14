@@ -55,7 +55,7 @@ CONSTRAINT_HANDLER (ns=app) handler-fall-down {
     MONITORS {}
 
     CONTROLLERS {
-        ctrl-linvel-z: PID { constraint: <fall-down.cstr-linvel-z>, Kp = 50, Ki = 0, Kd = 5},
+        ctrl-linvel-z: PID { constraint: <fall-down.cstr-linvel-z>, Kp = 50, Ki = 0, Kd = 0},
         ctrl-orientation: PID { constraint: <fall-down.cstr-orientation>, Kp = 50, Ki = 0, Kd = 5}
     }
 
