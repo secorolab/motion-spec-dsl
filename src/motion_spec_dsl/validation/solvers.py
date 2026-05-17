@@ -18,7 +18,6 @@ from motion_spec_dsl.domain import (
     _resolved_solver,
 )
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
-from motion_spec_dsl.validation.robots import robot_component, robot_component_anchor
 
 
 SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
@@ -28,25 +27,19 @@ SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] 
 
 
 def _solver_component(solver: SolverEntry):
-    if solver.robot.component_name is None:
-        return solver.robot.robot_spec.chain
-    return robot_component(solver.robot.robot_spec, solver.robot.component_name)
+    assembly = solver.robot.environment_robot.assembly_spec
+    return assembly.chain if assembly is not None else None
 
 
 def _solver_component_anchor(solver: SolverEntry, anchor: str) -> str:
-    if solver.robot.component_name is None:
-        return getattr(solver.robot.robot_spec.chain, anchor, "")
-    return robot_component_anchor(
-        solver.robot.robot_spec,
-        solver.robot.component_name,
-        anchor,
-    )
+    assembly = solver.robot.environment_robot.assembly_spec
+    return getattr(assembly, anchor, "") if assembly is not None else ""
 
 
 def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) -> bool:
     return (
-        anchor.robot_spec is solver.robot.robot_spec
-        and anchor.component_name == solver.robot.component_name
+        anchor.environment_robot is not None
+        and anchor.environment_robot.assembly_spec is solver.robot.environment_robot.assembly_spec
         and anchor.anchor == expected_anchor
     )
 
@@ -63,20 +56,18 @@ def validate_solver_refs(model: Model) -> None:
 
             expected_root = _solver_component_anchor(solver, "root")
             if not _anchor_matches_solver(solver.root, solver, "root"):
-                expected = (
-                    f"{solver.robot}.chain.root"
-                    if solver.robot.component_name is None
-                    else f"{solver.robot}.root"
-                )
+                expected = f"{solver.robot}.chain.root"
                 raise semantic_error(
                     f"Solver '{solver.name}' root must reference '{expected}'.",
                     solver,
                 )
-            if expected_root and expected_root != robot_component_anchor(
-                solver.root.robot_spec,
-                solver.root.component_name or solver.root.robot_spec.name,
-                solver.root.anchor,
-            ):
+            root_assembly = (
+                solver.root.environment_robot.assembly_spec
+                if solver.root.environment_robot is not None
+                else None
+            )
+            actual_root = getattr(root_assembly, solver.root.anchor, "")
+            if expected_root and expected_root != actual_root:
                 raise semantic_error(
                     f"Solver '{solver.name}' root does not match robot '{solver.robot}'.",
                     solver,
@@ -94,11 +85,7 @@ def validate_solver_refs(model: Model) -> None:
                     solver,
                 )
             if solver.end is not None and not _anchor_matches_solver(solver.end, solver, "end"):
-                expected = (
-                    f"{solver.robot}.chain.end"
-                    if solver.robot.component_name is None
-                    else f"{solver.robot}.end"
-                )
+                expected = f"{solver.robot}.chain.end"
                 raise semantic_error(
                     f"Solver '{solver.name}' end must reference '{expected}'.",
                     solver,

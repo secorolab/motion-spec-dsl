@@ -59,6 +59,10 @@ IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
             "uses RNE, but RNE is not modeled",
         ),
         (
+            "02_controllers_and_solvers/06_unsupported_impedance_controller.robmot",
+            "produces Force and must specify 'apply at <link>'",
+        ),
+        (
             "02_controllers_and_solvers/02_joint_position_missing_torque_command.robmot",
             "targets JointPosition and must use 'as Torque'",
         ),

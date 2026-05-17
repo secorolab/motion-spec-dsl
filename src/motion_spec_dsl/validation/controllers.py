@@ -81,6 +81,8 @@ def validate_controller_commands(model: Model) -> None:
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)
+            if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
+                command_type = QuantityType.Force
             quantity = constraint_spec.view.quantity
             explicit_command_type = resolved_controller.command_type
             whole_pose_command = (
@@ -120,6 +122,11 @@ def validate_controller_commands(model: Model) -> None:
                 raise semantic_error(
                     f"Controller '{controller.name}' requires explicit 'as' for "
                     f"constraint subspace '{subspace}'.",
+                    controller,
+                )
+            if command_type == QuantityType.Force and resolved_controller.apply_at is None:
+                raise semantic_error(
+                    f"Controller '{controller.name}' produces Force and must specify 'apply at <link>'.",
                     controller,
                 )
             if (

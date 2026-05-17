@@ -16,7 +16,6 @@ from motion_spec_dsl.domain import (
     ControllerEntry,
     Model,
     MotionSpec,
-    RobotSpec,
     SolverAlias,
     SolverEntry,
     _resolved_spec,
@@ -38,10 +37,6 @@ def motion_specs(model: Model) -> Iterable[MotionSpec]:
 
 def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
     return (spec for spec in model.specs if isinstance(spec, ConstraintHandler))
-
-
-def robot_specs(model: Model) -> Iterable[RobotSpec]:
-    return (spec for spec in model.specs if isinstance(spec, RobotSpec))
 
 
 def motion_constraint_items(spec: MotionSpec) -> list[ConstraintSpecification | ConstraintAlias]:

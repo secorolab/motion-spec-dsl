@@ -31,7 +31,7 @@ class Model:
         self,
         imports: list[Import] | None = None,
         namespaces: list[NamespaceDeclare] | None = None,
-        specs: list[RobotSpec | MotionSpec | ConstraintHandler] | None = None,
+        specs: list[EnvironmentSpec | ContextSpec | MotionSpec | ConstraintHandler] | None = None,
         **_,
     ):
         self.imports = imports or []
@@ -39,100 +39,200 @@ class Model:
         self.specs = specs or []
 
 
-class RobotType(StrEnum):
-    Manipulator = "Manipulator"
-    MobileBase = "MobileBase"
-    MobileManipulator = "MobileManipulator"
+class EnvironmentRuntime(StrEnum):
+    MuJoCo = "MuJoCo"
+    RealRobot = "RealRobot"
+
+
+class EnvironmentAssetType(StrEnum):
+    RobotAsset = "RobotAsset"
+    AttachmentAsset = "AttachmentAsset"
+    SceneObject = "SceneObject"
 
 
 @dataclass
-class RobotSpec(IHasNamespaceDeclare):
+class PositionTerm:
     parent: object
-    ns: NamespaceDeclLike
+    axis: str
+    value: float = 0.0
+    unit: str = "m"
+
+
+@dataclass
+class PositionValue:
+    parent: object
+    terms: list[PositionTerm] = field(default_factory=list)
+
+
+@dataclass
+class OrientationTerm:
+    parent: object
+    axis: str
+    value: float = 0.0
+    unit: str = "rad"
+
+
+@dataclass
+class OrientationValue:
+    parent: object
+    terms: list[OrientationTerm] = field(default_factory=list)
+
+
+@dataclass
+class EnvironmentAsset(NamedNamespaceObject):
+    parent: object
     name: str
-    type: RobotType
-    urdf: str
+    type: EnvironmentAssetType
     model: str = ""
-    base: RobotBaseComponent | None = None
-    chain: RobotChainComponent | None = None
-    manipulators: list[RobotManipulatorComponent] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        self.type = RobotType(self.type)
-
-
-@dataclass
-class RobotBaseComponent(NamedNamespaceObject):
-    parent: object
-    model: str
-    root: str
-    name: str = "base"
+    xml: str = ""
+    urdf: str = ""
+    body: str = ""
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        self.type = EnvironmentAssetType(self.type)
 
 
 @dataclass
-class RobotChainComponent(NamedNamespaceObject):
+class EnvironmentAttachEntry:
     parent: object
-    root: str
-    end: str = ""
-    name: str = "chain"
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    attachment: EnvironmentAsset
+    attach_to: str
 
 
 @dataclass
-class RobotManipulatorComponent(NamedNamespaceObject):
+class EnvironmentPositionEntry:
     parent: object
-    name: str
-    model: str
+    value: PositionValue
+
+
+@dataclass
+class EnvironmentOrientationEntry:
+    parent: object
+    value: OrientationValue
+
+
+@dataclass
+class EnvironmentFreeEntry:
+    parent: object
+    value: bool = False
+
+
+@dataclass
+class EnvironmentToolBodyEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentTcpSiteEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentBodyEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentChainEntry:
+    parent: object
     root: str
     end: str
 
+
+@dataclass
+class EnvironmentAssembly(NamedNamespaceObject):
+    parent: object
+    name: str
+    asset: EnvironmentAsset
+    entries: list = field(default_factory=list)
+
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
 
+    @property
+    def chain(self) -> EnvironmentChainEntry | None:
+        return next((entry for entry in self.entries if isinstance(entry, EnvironmentChainEntry)), None)
+
+    @property
+    def root(self) -> str:
+        return self.chain.root if self.chain is not None else ""
+
+    @property
+    def end(self) -> str:
+        return self.chain.end if self.chain is not None else ""
+
+    @property
+    def model(self) -> str:
+        return self.asset.model
+
+    @property
+    def urdf(self) -> str:
+        return self.asset.urdf
+
 
 @dataclass
-class RobotRef:
-    component: RobotComponentRef | None = None
-    robot: RobotSpec | None = None
-    parent: object | None = field(default=None, repr=False, compare=False)
+class EnvironmentSpec(IHasNamespaceDeclare):
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    runtime: EnvironmentRuntime
+    assets: list[EnvironmentAsset] = field(default_factory=list)
+    assembly: list[EnvironmentAssembly] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        self.runtime = EnvironmentRuntime(self.runtime)
+
+
+@dataclass
+class EnvironmentRobotRef:
+    parent: object
+    environment: EnvironmentSpec
+    assembly: str
 
     @property
-    def robot_spec(self) -> RobotSpec:
-        if self.component is not None:
-            return self.component.robot
-        if self.robot is None:
-            raise AttributeError("RobotRef is not resolved yet")
-        return self.robot
-
-    @property
-    def component_name(self) -> str | None:
-        return self.component.component if self.component is not None else None
+    def assembly_spec(self) -> EnvironmentAssembly | None:
+        return next((entry for entry in self.environment.assembly if entry.name == self.assembly), None)
 
     @property
     def name(self) -> str:
-        if self.component is not None:
-            return str(self.component)
-        return self.robot.name if self.robot is not None else ""
+        return f"{self.environment.name}.{self.assembly}"
 
     def __str__(self) -> str:
         return self.name
 
 
 @dataclass
-class RobotComponentRef:
-    robot: RobotSpec
-    component: str
+class ContextSpec(IHasNamespaceDeclare):
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    context: list[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+
+
+@dataclass
+class RobotRef:
+    environment_robot: EnvironmentRobotRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
+    def component_name(self) -> str | None:
+        if self.environment_robot is not None:
+            return self.environment_robot.assembly
+        return None
+
+    @property
     def name(self) -> str:
-        return f"{self.robot.name}.{self.component}"
+        if self.environment_robot is not None:
+            return self.environment_robot.name
+        return ""
 
     def __str__(self) -> str:
         return self.name
@@ -141,29 +241,20 @@ class RobotComponentRef:
 @dataclass
 class RobotAnchorRef:
     anchor: str
-    component: RobotComponentRef | None = None
-    robot: RobotSpec | None = None
+    environment_robot: EnvironmentRobotRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
     def name(self) -> str:
-        if self.component is not None:
-            return f"{self.component}.{self.anchor}"
-        if self.robot is None:
-            return ""
-        return f"{self.robot.name}.chain.{self.anchor}"
-
-    @property
-    def robot_spec(self) -> RobotSpec:
-        if self.component is not None:
-            return self.component.robot
-        if self.robot is None:
-            raise AttributeError("RobotAnchorRef is not resolved yet")
-        return self.robot
+        if self.environment_robot is not None:
+            return f"{self.environment_robot.name}.chain.{self.anchor}"
+        return ""
 
     @property
     def component_name(self) -> str | None:
-        return self.component.component if self.component is not None else None
+        if self.environment_robot is not None:
+            return self.environment_robot.assembly
+        return None
 
     def __str__(self) -> str:
         return self.name
@@ -175,7 +266,13 @@ class MotionSpec(IHasNamespaceDeclare):
     ns: NamespaceDeclLike
     name: str
     move: str | None
-    context: list[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
+    context: list[
+        WorldContextDecl
+        | PreContextDecl
+        | SpecContextDecl
+        | PostContextDecl
+        | ContextDeclReference
+    ]
     sections: list[WhenSection | WhileSection | UntilSection]
 
     def __post_init__(self):
@@ -228,6 +325,12 @@ class PostContextDecl(QuantityContextDecl):
 
 
 @dataclass
+class ContextDeclReference:
+    parent: object
+    ref: QuantityContextDecl
+
+
+@dataclass
 class ConstraintSection(NamedNamespaceObject):
     kind = ""
 
@@ -260,6 +363,7 @@ class WorldQuantityType(StrEnum):
     JointPosition  = "JointPosition"
     KinematicChain = "KinematicChain"
     Link           = "Link"
+    SceneObject    = "SceneObject"
     Gravity        = "Gravity"
 
 
@@ -603,7 +707,7 @@ class ConstraintHandler(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
-    context: list[WorldContextDecl | SpecContextDecl]
+    context: list[WorldContextDecl | SpecContextDecl | ContextDeclReference]
     motion: MotionSpec
     control_mode: HandlerControlMode
     solvers: list[SolverEntry | SolverAlias]

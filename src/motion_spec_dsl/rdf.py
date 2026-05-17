@@ -13,9 +13,11 @@ from rdflib.term import Literal, URIRef
 from textx.scoping import get_included_models
 
 from motion_spec.namespace import (
+    EL,
     APP,
     CSTR,
     CSTR_HDL,
+    ENV,
     GEOM_COORD,
     GEOM_ENT,
     GEOM_OP,
@@ -23,13 +25,19 @@ from motion_spec.namespace import (
     KC,
     KC_STAT,
     MAP,
+    MJ,
     MOT,
+    MOT_EXT,
+
     QUDT_QKIND,
     QUDT_SCHEMA,
     QUDT_UNIT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
+    RT,
+    SIM,
+    SNAP,
     SLV,
 )
 from motion_spec_dsl.controller_semantics import (
@@ -43,10 +51,17 @@ from motion_spec_dsl.domain import (
     BilateralConstraint,
     ConstraintHandler,
     ConstraintSpecification,
+    ContextDeclReference,
     ControllerEntry,
     ControllerType,
     ContextRef,
+    ContextSpec,
     EqualityConstraint,
+    EnvironmentAssembly,
+    EnvironmentAsset,
+    EnvironmentAssetType,
+    EnvironmentRuntime,
+    EnvironmentSpec,
     GeoPropPair,
     GeometricPropKey,
     GeometricProps,
@@ -151,6 +166,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
 WORLD_STRUCTURE_TYPES: dict[WorldQuantityType, Any] = {
     WorldQuantityType.Frame: GEOM_ENT.Frame,
     WorldQuantityType.Link: GEOM_ENT.SimplicialComplex,
+    WorldQuantityType.SceneObject: ENV.RigidObject,
     WorldQuantityType.KinematicChain: GEOM_ENT.KinematicChain,
     WorldQuantityType.Gravity: GEOM_ENT.UniformGravitationalField,
 }
@@ -216,6 +232,13 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("geom-rel", GEOM_REL),
     ("geom-coord", GEOM_COORD),
     ("geom-op", GEOM_OP),
+    ("env", ENV),
+    ("sim", SIM),
+
+    ("el", EL),
+    ("rt", RT),
+    ("mj", MJ),
+    ("snap", SNAP),
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
     ("qudt", QUDT_SCHEMA),
@@ -224,6 +247,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("map", MAP),
     ("cstr", CSTR),
     ("mot", MOT),
+    ("mot-ext", MOT_EXT),
     ("cstr-hdl", CSTR_HDL),
     ("slv", SLV),
 )
@@ -347,6 +371,7 @@ def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
     return getattr(ref, "quantity", None) or getattr(ref, "value", None)
 
 
+
 def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecification]:
     out = []
     for section in (motion.when, motion.while_, motion.until):
@@ -392,6 +417,16 @@ class MotionSpecDatasetBuilder:
         for prefix, ns in GRAPH_BINDINGS:
             context[prefix] = str(ns._NS)
 
+        for model in self.models:
+            for spec in model.specs:
+                if isinstance(spec, EnvironmentSpec):
+                    self._emit_environment(spec)
+                    self.dataset.bind(spec.ns_prefix, spec.ns.uri)
+                    context[spec.ns_prefix] = spec.ns.uri
+                elif isinstance(spec, ContextSpec):
+                    self.dataset.bind(spec.ns_prefix, spec.ns.uri)
+                    context[spec.ns_prefix] = spec.ns.uri
+
         for handler_order, handler in enumerate(handlers):
             motion = handler.motion
             if not isinstance(motion, MotionSpec):
@@ -420,6 +455,145 @@ class MotionSpecDatasetBuilder:
             self._emit_solvers(handler, motion, world_qtys, shared_spec_ids)
 
         return self.dataset, context
+
+    @staticmethod
+    def _model_uri(owner: Any, model: str) -> URIRef:
+        return URIRef(f"{owner.ns.uri}{model}") if model else URIRef(f"{owner.uri}.model")
+
+    def _emit_object_model(
+        self, model_node: URIRef, *, resource_path: str = "", model_type: Any | None = None
+    ) -> None:
+        self.graph.add((model_node, RDF.type, ENV.ObjectModel))
+        if model_type is not None:
+            self.graph.add((model_node, RDF.type, model_type))
+        if resource_path:
+            self.graph.add((model_node, RDF.type, SIM.ResourceWithPath))
+            self.graph.add((model_node, SIM.path, Literal(resource_path)))
+
+    def _emit_runtime_chain_binding(
+        self,
+        object_node: URIRef,
+        *,
+        root_name: str,
+        end_name: str,
+        tool_body: str = "",
+        tcp_site: str = "",
+    ) -> None:
+        chain_node = URIRef(f"{object_node}.chain")
+        root_node = URIRef(f"{object_node}.chain.root")
+        end_node = URIRef(f"{object_node}.chain.end")
+        self.graph.add((chain_node, RDF.type, GEOM_ENT.KinematicChain))
+        self.graph.add((root_node, RDF.type, GEOM_ENT.Frame))
+        self.graph.add((end_node, RDF.type, GEOM_ENT.Frame))
+        self.graph.add((object_node, GEOM_ENT["kinematic-chain"], chain_node))
+        self.graph.add((chain_node, GEOM_ENT.start, root_node))
+        self.graph.add((chain_node, GEOM_ENT.end, end_node))
+        self.graph.add((root_node, MJ["body-name"], Literal(root_name)))
+        self.graph.add((end_node, MJ["body-name"], Literal(end_name)))
+        if tool_body:
+            body_node = URIRef(f"{object_node}.tool-body")
+            self.graph.add((body_node, RDF.type, MJ.MuJoCoBody))
+            self.graph.add((body_node, MJ["body-name"], Literal(tool_body)))
+            self.graph.add((object_node, MJ["tool-body"], body_node))
+        if tcp_site:
+            site_node = URIRef(f"{object_node}.tcp-site")
+            self.graph.add((site_node, RDF.type, MJ.MuJoCoSite))
+            self.graph.add((site_node, MJ["site-name"], Literal(tcp_site)))
+            self.graph.add((object_node, MJ["tcp-site"], site_node))
+
+    def _emit_environment(self, env: EnvironmentSpec) -> None:
+        env_node = URIRef(env.uri)
+        world_node = URIRef(f"{env.uri}.world")
+        self.graph.add((env_node, RDF.type, ENV.Workspace))
+        self.graph.add((world_node, RDF.type, GEOM_ENT.Frame))
+        if env.runtime == EnvironmentRuntime.MuJoCo:
+            self.graph.add((env_node, RT["uses-runtime"], RT.MuJoCoRuntime))
+        elif env.runtime == EnvironmentRuntime.RealRobot:
+            self.graph.add((env_node, RT["uses-runtime"], RT.RealRobotRuntime))
+
+        for asset in env.assets:
+            asset_node = URIRef(asset.uri)
+            self.graph.add((env_node, ENV["has-object"], asset_node))
+            if asset.model:
+                self._emit_object_model(
+                    self._model_uri(env, asset.model),
+                    resource_path=asset.xml,
+                    model_type=MJ.MjcfModel if asset.xml else None,
+                )
+            self._emit_object_model(asset_node)
+            if asset.xml:
+                self.graph.add((asset_node, RDF.type, MJ.MjcfModel))
+                self.graph.add((asset_node, SIM.path, Literal(asset.xml)))
+            if asset.body:
+                self.graph.add((asset_node, RDF.type, MJ.MuJoCoBody))
+                self.graph.add((asset_node, MJ["body-name"], Literal(asset.body)))
+
+        for instance in env.assembly:
+            instance_node = URIRef(instance.uri)
+            model_node = (
+                self._model_uri(env, instance.asset.model)
+                if instance.asset.model
+                else URIRef(instance.asset.uri)
+            )
+            self.graph.add((env_node, ENV["has-object"], instance_node))
+            self.graph.add((instance_node, RDF.type, ENV.ModelledObject))
+            self.graph.add((instance_node, RDF.type, ENV.RigidObject))
+            self.graph.add((instance_node, ENV["has-object-model"], model_node))
+            if instance.asset.type == EnvironmentAssetType.SceneObject:
+                self.graph.add((instance_node, RDF.type, ENV.Object))
+            if instance.asset.body:
+                self.graph.add((instance_node, RDF.type, MJ.MuJoCoBody))
+                self.graph.add((instance_node, MJ["body-name"], Literal(instance.asset.body)))
+            for entry in instance.entries:
+                entry_type = entry.__class__.__name__
+                if entry_type == "EnvironmentPositionEntry":
+                    values = {term.axis: term.value for term in entry.value.terms}
+                    pos_node = URIRef(f"{instance.uri}.position")
+                    self.graph.add((pos_node, RDF.type, GEOM_REL.Position))
+                    self.graph.add((pos_node, RDF.type, GEOM_COORD.PositionCoordinate))
+                    self.graph.add((pos_node, RDF.type, GEOM_COORD.VectorXYZ))
+                    self.graph.add((pos_node, GEOM_REL.of, instance_node))
+                    self.graph.add((pos_node, GEOM_REL["with-respect-to"], world_node))
+                    self.graph.add((pos_node, GEOM_COORD["as-seen-by"], world_node))
+                    self.graph.add((pos_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+                    self.graph.add((pos_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+                    self.graph.add((pos_node, GEOM_COORD.x, Literal(values.get("x", 0.0))))
+                    self.graph.add((pos_node, GEOM_COORD.y, Literal(values.get("y", 0.0))))
+                    self.graph.add((pos_node, GEOM_COORD.z, Literal(values.get("z", 0.0))))
+                elif entry_type == "EnvironmentOrientationEntry":
+                    orient_node = URIRef(f"{instance.uri}.orientation")
+                    self.graph.add((orient_node, RDF.type, GEOM_REL.Orientation))
+                    self.graph.add((orient_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+                    self.graph.add((orient_node, GEOM_REL.of, instance_node))
+                    self.graph.add((orient_node, GEOM_REL["with-respect-to"], world_node))
+                elif entry_type == "EnvironmentFreeEntry":
+                    if bool(entry.value):
+                        self.graph.add((instance_node, RDF.type, GEOM_ENT.RigidBody))
+                elif entry_type == "EnvironmentBodyEntry":
+                    self.graph.add((instance_node, RDF.type, MJ.MuJoCoBody))
+                    self.graph.add((instance_node, MJ["body-name"], Literal(entry.value)))
+                elif entry_type == "EnvironmentToolBodyEntry":
+                    self._emit_runtime_chain_binding(
+                        instance_node,
+                        root_name=instance.root,
+                        end_name=instance.end,
+                        tool_body=entry.value,
+                    )
+                elif entry_type == "EnvironmentTcpSiteEntry":
+                    self._emit_runtime_chain_binding(
+                        instance_node,
+                        root_name=instance.root,
+                        end_name=instance.end,
+                        tcp_site=entry.value,
+                    )
+                elif entry_type == "EnvironmentAttachEntry":
+                    self.graph.add((URIRef(entry.attachment.uri), SLV["attached-to"], instance_node))
+                elif entry_type == "EnvironmentChainEntry":
+                    self._emit_runtime_chain_binding(
+                        instance_node,
+                        root_name=entry.root,
+                        end_name=entry.end,
+                    )
 
     def _namespace_owner(self, obj: Any | None) -> Any:
         """Return the namespace declaration that should own a generated node."""
@@ -451,26 +625,41 @@ class MotionSpecDatasetBuilder:
     ) -> dict[str, WorldQuantity]:
         qtys: dict[str, WorldQuantity] = {}
         for ctx in motion.context:
+            ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, WorldContextDecl):
                 for item in ctx.declaration:
                     if isinstance(item, WorldQuantity):
                         qtys[item.name] = item
         for ctx in getattr(handler, "context", []):
+            ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, WorldContextDecl):
                 for item in ctx.declaration:
                     if isinstance(item, WorldQuantity):
                         qtys.setdefault(item.name, item)
         return qtys
 
+    @staticmethod
+    def _resolved_context_decl(ctx: Any) -> Any:
+        if isinstance(ctx, ContextDeclReference):
+            return ctx.ref
+        return ctx
+
     def _collect_context_quantities(
         self, motion: MotionSpec, handler: ConstraintHandler
     ) -> dict[str, ContextQuantity]:
         quantities: dict[str, ContextQuantity] = {}
         for ctx in motion.context:
+            ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
                 for item in ctx.declaration:
                     if isinstance(item, ContextQuantity):
                         quantities[item.name] = item
+        for ctx in getattr(handler, "context", []):
+            ctx = self._resolved_context_decl(ctx)
+            if isinstance(ctx, SpecContextDecl):
+                for item in ctx.declaration:
+                    if isinstance(item, ContextQuantity):
+                        quantities.setdefault(item.name, item)
         for constraint in _resolved_constraint_items(motion):
             expr = constraint.expr
             refs: list[ContextRef] = []
@@ -933,20 +1122,27 @@ class MotionSpecDatasetBuilder:
         return frozenset(sid for sid, motions in usage.items() if len(motions) > 1)
 
     def _emit_structural_entities(self, world_qtys: dict[str, WorldQuantity]) -> None:
+        explicit_structural_nodes: set[URIRef] = set()
         for qty in world_qtys.values():
             rdf_type = WORLD_STRUCTURE_TYPES.get(qty.type)
             if rdf_type is not None and WORLD_SPECS.get(qty.type) is None:
-                self.graph.add((URIRef(qty.uri), RDF.type, rdf_type))
+                for node in {URIRef(qty.uri), self._owned_uri(qty.name, None)}:
+                    explicit_structural_nodes.add(node)
+                    self.graph.add((node, RDF.type, rdf_type))
 
         # Implicit entities inferred from geo props. Emit them both where prop
-        # references resolve and in the legacy handler-root namespace.
+        # references resolve and in the handler-root namespace.
         implicit: dict[tuple[URIRef, Any], None] = {}
 
         def add_implicit(name: str | None, rdf_type: Any, owner: Any) -> None:
             if not name:
                 return
-            implicit.setdefault((self._owned_uri(name, owner), rdf_type), None)
-            implicit.setdefault((self._owned_uri(name, None), rdf_type), None)
+            owned_node = self._owned_uri(name, owner)
+            default_node = self._owned_uri(name, None)
+            if owned_node not in explicit_structural_nodes:
+                implicit.setdefault((owned_node, rdf_type), None)
+            if default_node not in explicit_structural_nodes:
+                implicit.setdefault((default_node, rdf_type), None)
 
         for qty in world_qtys.values():
             props = qty.props if isinstance(qty.props, GeometricProps) else None
@@ -1158,15 +1354,14 @@ class MotionSpecDatasetBuilder:
             if quantity.value is None:
                 continue
             if isinstance(quantity.value, SnapshotValue):
-                self.graph.add((node, RDF.type, _ns_term(APP, "Snapshot")))
+                self.graph.add((node, RDF.type, SNAP.Snapshot))
                 self.graph.add(
                     (
                         node,
-                        _ns_term(APP, "snapshot-of"),
+                        SNAP["snapshot-of"],
                         self._view_node(quantity.value.source, quantity),
                     )
                 )
-                self.graph.add((node, _ns_term(APP, "snapshot-time"), Literal("motion-start")))
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
@@ -1283,11 +1478,17 @@ class MotionSpecDatasetBuilder:
             self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(item).uri)))
         for item in motion.while_.constraints:
             self.graph.add((motion_node, MOT["while"], URIRef(_resolved_spec(item).uri)))
-        for item in motion.until.constraints:
-            self.graph.add((motion_node, MOT.until, URIRef(_resolved_spec(item).uri)))
         raw_logic = getattr(motion.until, "logic", None)
-        if raw_logic in ("any", "all"):
-            self.graph.add((motion_node, MOT.untilLogic, Literal(raw_logic)))
+        until_constraints = motion.until.constraints
+        if raw_logic == "any" and len(until_constraints) > 1:
+            disjunction_node = self._owned_uri(f"motion-{motion.name}-until-disjunction", motion)
+            self.graph.add((disjunction_node, RDF.type, MOT_EXT.ConstraintDisjunction))
+            self.graph.add((motion_node, MOT.until, disjunction_node))
+            for item in until_constraints:
+                self.graph.add((disjunction_node, MOT_EXT["has-constraint"], URIRef(_resolved_spec(item).uri)))
+        else:
+            for item in until_constraints:
+                self.graph.add((motion_node, MOT.until, URIRef(_resolved_spec(item).uri)))
 
     def _emit_scalar_views(
         self,
@@ -1580,22 +1781,7 @@ class MotionSpecDatasetBuilder:
         spec: ConstraintSpecification,
         motion: MotionSpec,
         components: tuple[AccelerationConstraintRecord, ...],
-        pose_qty: WorldQuantity | None = None,
-        world_qtys: dict | None = None,
     ) -> None:
-        vel_twist_qty: WorldQuantity | None = None
-        if pose_qty is not None and world_qtys is not None and isinstance(
-            pose_qty.props, GeometricProps
-        ):
-            of_body = _geo_prop(pose_qty.props, "of")
-            if of_body is not None:
-                for q in world_qtys.values():
-                    if q.type == WorldQuantityType.VelocityTwist and isinstance(
-                        q.props, GeometricProps
-                    ) and _geo_prop(q.props, "of") == of_body:
-                        vel_twist_qty = q
-                        break
-
         for component in components:
             err_id = _pose_diff_error_id(ctrl, component)
             comp_ctrl_node = self._owned_uri(_pose_diff_controller_id(ctrl, component), handler)
@@ -1607,21 +1793,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((comp_ctrl_node, CSTR_HDL["control-signal"], energy_node))
             self._emit_acceleration_energy_quantity(energy_node)
             self.graph.add((handler_node, CSTR_HDL.controllers, comp_ctrl_node))
-
-            if component.subspace == "angular-acceleration" and vel_twist_qty is not None:
-                vel_qty_id = f"vel-ang-{ctrl.name}-{component.axis}"
-                vel_qty_node = self._owned_uri(vel_qty_id, spec.parent)
-                vel_view_node = self._owned_uri(f"view-{vel_qty_id}", spec.parent)
-                self._add_quantity(vel_qty_node, QuantityType.AngularVelocity)
-                self.graph.add((vel_view_node, RDF.type, MAP.View))
-                self.graph.add((vel_view_node, RDF.type, MAP.VelocityTwistCoordinateView))
-                self.graph.add((vel_view_node, MAP.superobject, URIRef(vel_twist_qty.uri)))
-                self.graph.add((vel_view_node, MAP.subobject, vel_qty_node))
-                self.graph.add((vel_view_node, MAP.subspace, MAP["angular-velocity"]))
-                self.graph.add((vel_view_node, MAP.axis, MAP[component.axis]))
-                self.graph.add(
-                    (comp_ctrl_node, CSTR_HDL["velocity-signal"], vel_qty_node)
-                )
 
     def _emit_constraint_handler(
         self,
@@ -1693,8 +1864,6 @@ class MotionSpecDatasetBuilder:
                         spec,
                         motion,
                         command.acceleration_constraints,
-                        pose_qty=qty,
-                        world_qtys=world_qtys,
                     )
                     continue
 
@@ -1754,7 +1923,7 @@ class MotionSpecDatasetBuilder:
             signal_node = self._owned_uri(signal_name, handler)
             mon_node = URIRef(mon.uri)
             self.graph.add(
-                (signal_node, RDF.type, CSTR_HDL.Event if signal_kind == "event" else CSTR_HDL.Flag)
+                (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
             )
             self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
@@ -1869,14 +2038,6 @@ class MotionSpecDatasetBuilder:
             root_node = self._owned_uri(_node_name(solver.root), handler)
             self.graph.add((root_node, RDF.type, GEOM_ENT.Frame))
             self.graph.add((solver_node, SLV.root, root_node))
-            self.graph.add(
-                (
-                    solver_node,
-                    SLV["kinematic-chain"],
-                    self._owned_uri(_node_name(solver.robot), handler),
-                )
-            )
-
             gravity_qty = self._resolve_qty(solver.gravity, world_qtys)
             if gravity_qty is not None:
                 self.graph.add((solver_node, SLV.gravity, URIRef(gravity_qty.uri)))
@@ -1885,32 +2046,11 @@ class MotionSpecDatasetBuilder:
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV["gravity-value"], URIRef(gravity_value.uri)))
 
+            chain_root_name = getattr(
+                getattr(getattr(solver.robot, "environment_robot", None), "assembly_spec", None),
+                "root", ""
+            )
             self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
-
-            robot_spec = solver.root.robot_spec
-            self.graph.add((solver_node, APP["urdf"], Literal(robot_spec.urdf)))
-            self.graph.add((solver_node, APP["robot-type"], Literal(str(robot_spec.type))))
-
-            component_ref = solver.root.component
-            chain_root_name = None
-            if component_ref is not None:
-                arm = next(
-                    (m for m in robot_spec.manipulators if m.name == component_ref.component),
-                    None,
-                )
-                if arm is not None:
-                    self.graph.add((solver_node, APP["chain-root"], Literal(arm.root)))
-                    self.graph.add((solver_node, APP["chain-end"], Literal(arm.end)))
-                    self.graph.add((solver_node, APP["robot-model"], Literal(arm.model)))
-                    chain_root_name = arm.root
-            else:
-                chain = robot_spec.chain
-                if chain is not None:
-                    self.graph.add((solver_node, APP["chain-root"], Literal(chain.root)))
-                    if chain.end:
-                        self.graph.add((solver_node, APP["chain-end"], Literal(chain.end)))
-                    self.graph.add((solver_node, APP["robot-model"], Literal(robot_spec.model)))
-                    chain_root_name = chain.root
 
             if chain_root_name:
                 root_body = _body_name(chain_root_name)

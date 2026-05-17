@@ -7,46 +7,122 @@ Model:
 ;
 
 Specification:
-    RobotSpec | MotionSpec | ConstraintHandler
+    EnvironmentSpec | ContextSpec | MotionSpec | ConstraintHandler
 ;
 
-RobotSpec:
-    "ROBOT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        "type" ":" type=RobotType ","
-        (
-            "model" ":" model=RobotModel ","
-            "urdf" ":" urdf=STRING ","
-            chain=RobotChainComponent
-            |
-            "urdf" ":" urdf=STRING ","
-            base=RobotBaseComponent
-            ("," "manipulators" ":" "{" manipulators+=RobotManipulatorComponent[","] "}")?
-        )
+EnvironmentSpec:
+    "ENVIRONMENT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        "runtime" ":" runtime=EnvironmentRuntime
+        ("," "ASSETS" "{" assets+=EnvironmentAsset[","] "}")?
+        ("," "ASSEMBLY" "{" assembly+=EnvironmentAssembly[","] "}")?
     "}"
 ;
 
-RobotType:
-    "Manipulator" | "MobileBase" | "MobileManipulator"
+EnvironmentRuntime:
+    "MuJoCo" | "RealRobot"
+;
+
+EnvironmentAsset:
+    name=IRI_TRUNK ":" type=EnvironmentAssetType "{"
+        ("model" ":" model=RobotModel ",")?
+        ("xml" ":" xml=STRING)?
+        (","? "urdf" ":" urdf=STRING)?
+        (","? "body" ":" body=IRI_TRUNK)?
+    "}"
+;
+
+EnvironmentAssetType:
+    "RobotAsset" | "AttachmentAsset" | "SceneObject"
+;
+
+EnvironmentAssembly:
+    name=IRI_TRUNK ":" "<" asset=[EnvironmentAsset|FQN] ">" "{"
+        entries*=EnvironmentAssemblyEntry[","]
+    "}"
+;
+
+EnvironmentAssemblyEntry:
+    EnvironmentAttachEntry | EnvironmentPositionEntry | EnvironmentOrientationEntry |
+    EnvironmentFreeEntry | EnvironmentToolBodyEntry | EnvironmentTcpSiteEntry |
+    EnvironmentChainEntry | EnvironmentBodyEntry
+;
+
+EnvironmentAttachEntry:
+    "attach" "<" attachment=[EnvironmentAsset|FQN] ">" "to" attach_to=IRI_TRUNK
+;
+
+EnvironmentPositionEntry:
+    "position" ":" value=PositionValue
+;
+
+EnvironmentOrientationEntry:
+    "orientation" ":" value=OrientationValue
+;
+
+EnvironmentFreeEntry:
+    "free" ":" value=BOOL
+;
+
+EnvironmentToolBodyEntry:
+    "tool-body" ":" value=IRI_TRUNK
+;
+
+EnvironmentTcpSiteEntry:
+    "tcp-site" ":" value=IRI_TRUNK
+;
+
+EnvironmentBodyEntry:
+    "body" ":" value=IRI_TRUNK
+;
+
+EnvironmentChainEntry:
+    "chain" ":" "{" "root" ":" root=IRI_TRUNK "," "end" ":" end=IRI_TRUNK "}"
+;
+
+ContextSpec:
+    "CONTEXT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        context*=MotionContextDecl[","]
+    "}"
+;
+
+PositionValue:
+    "{" (terms*=PositionTerm[","])? "}"
+;
+
+PositionTerm:
+    axis=LinearAxis ":" value=FLOAT unit=LinearDistanceUnit
+;
+
+LinearAxis:
+    "x" | "y" | "z"
+;
+
+LinearDistanceUnit:
+    "m"
+;
+
+OrientationValue:
+    "{" (terms*=OrientationTerm[","])? "}"
+;
+
+OrientationTerm:
+    axis=AngularAxis ":" value=FLOAT unit=AngleUnit
+;
+
+AngularAxis:
+    "roll" | "pitch" | "yaw"
+;
+
+AngleUnit:
+    "rad"
 ;
 
 RobotModel: "KinovaGen3" | "Kelo";
 
-RobotBaseComponent:
-    "base" ":" "{" "model" ":" model=RobotModel "," "chain" ":" "{" "root" ":" root=IRI_TRUNK "}" "}"
-;
-
-RobotChainComponent:
-    "chain" ":" "{" "root" ":" root=IRI_TRUNK ("," "end" ":" end=IRI_TRUNK)? "}"
-;
-
-RobotManipulatorComponent:
-    name=IRI_TRUNK ":" "{" "model" ":" model=RobotModel "," "chain" ":" "{" "root" ":" root=IRI_TRUNK "," "end" ":" end=IRI_TRUNK "}" "}"
-;
-
 MotionSpec:
     "MOTION_SPEC" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("MOVE"    ":" move=STRING)?
-        "CONTEXT"  "{" context*=MotionContextDecl[","] "}"
+        "CONTEXT"  "{" context*=MotionContextItem[","] "}"
         sections+=ConstraintSection
     "}"
 ;
@@ -65,6 +141,18 @@ ConstraintAlias: name=IRI_TRUNK ":" "<" ref=ConstraintRef ">" ;
 ConstraintReference: "<" ref=ConstraintRef ">" ;
 
 MotionContextDecl:
+    QuantityContextDecl
+;
+
+MotionContextItem:
+    MotionContextDecl | ContextDeclReference
+;
+
+ContextDeclReference:
+    "<" ref=[QuantityContextDecl|FQN] ">"
+;
+
+QuantityContextDecl:
     WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
 ;
 
@@ -120,6 +208,7 @@ WorldQuantityType:
     "JointPosition"              |
     "KinematicChain"             |
     "Frame"                      |
+    "SceneObject"                |
     "Link"                       |
     "Gravity"
 ;
@@ -250,7 +339,7 @@ BilateralConstraint:
 
 ConstraintHandler:
     "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        "CONTEXT"      "{" context*=HandlerContextDecl[","] "}"
+        "CONTEXT"      "{" context*=HandlerContextItem[","] "}"
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         "CONTROL_MODE" ":" control_mode=HandlerControlMode
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
@@ -285,6 +374,10 @@ SolverReference:
 
 HandlerContextDecl:
     WorldContextDecl | SpecContextDecl
+;
+
+HandlerContextItem:
+    HandlerContextDecl | ContextDeclReference
 ;
 
 MonitorEntry:
@@ -348,18 +441,15 @@ SolverEntry:
 ;
 
 RobotRef:
-    "<" (component=RobotComponentRef | robot=[RobotSpec|IRI_TRUNK]) ">"
+    "<" environment_robot=EnvironmentRobotRef ">"
 ;
 
-RobotComponentRef:
-    robot=[RobotSpec|IRI_TRUNK] "." component=IRI_TRUNK
+EnvironmentRobotRef:
+    environment=[EnvironmentSpec|IRI_TRUNK] "." assembly=IRI_TRUNK
 ;
 
 RobotAnchorRef:
-    "<" (
-        robot=[RobotSpec|IRI_TRUNK] "." "chain" "." anchor=RobotAnchor
-      | component=RobotComponentRef "." anchor=RobotAnchor
-    ) ">"
+    "<" environment_robot=EnvironmentRobotRef "." "chain" "." anchor=RobotAnchor ">"
 ;
 
 RobotAnchor:

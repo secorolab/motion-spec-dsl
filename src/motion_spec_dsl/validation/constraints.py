@@ -10,6 +10,8 @@ from motion_spec_dsl.domain import (
     BilateralConstraint,
     ConstraintSpecification,
     ContextQuantity,
+    ContextDeclReference,
+    ContextSpec,
     ContextRef,
     EqualityConstraint,
     GreaterThanConstraint,
@@ -101,6 +103,7 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
 def validate_context_quantity_values(model: Model) -> None:
     for motion in motion_specs(model):
         for ctx in motion.context:
+            ctx = _resolved_context_decl(ctx)
             for item in getattr(ctx, "declaration", []):
                 if not isinstance(item, ContextQuantity):
                     continue
@@ -159,6 +162,16 @@ def _decl_motion(obj: object) -> MotionSpec | None:
     context = getattr(obj, "parent", None)
     motion = getattr(context, "parent", None)
     return motion if isinstance(motion, MotionSpec) else None
+
+
+def _decl_context_spec(obj: object) -> ContextSpec | None:
+    context = getattr(obj, "parent", None)
+    spec = getattr(context, "parent", None)
+    return spec if isinstance(spec, ContextSpec) else None
+
+
+def _resolved_context_decl(ctx: object) -> object:
+    return ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
@@ -222,9 +235,9 @@ def validate_constraint_context_refs(model: Model) -> None:
                         f"Constraint '{constraint.name}' has an unresolved context reference.",
                         constraint,
                     )
-                if _decl_motion(value) is None and _is_inline_context_value(value):
+                if _decl_motion(value) is None and _decl_context_spec(value) is None and _is_inline_context_value(value):
                     continue
-                if _decl_motion(value) is None:
+                if _decl_motion(value) is None and _decl_context_spec(value) is None:
                     raise semantic_error(
                         f"Constraint '{constraint.name}' references value '{value.name}', "
                         "but it is not resolved.",

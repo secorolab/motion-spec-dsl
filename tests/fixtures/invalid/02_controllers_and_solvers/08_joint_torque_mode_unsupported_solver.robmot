@@ -2,13 +2,15 @@
 
 ns app = "https://secorolab.github.io/models/tests/"
 
-ROBOT (ns=app) kinova {
-    type: Manipulator,
-    model: KinovaGen3,
-    urdf: "../robots/kg3.urdf",
-    chain: {
-        root: link-base,
-        end: link-ee
+ENVIRONMENT (ns=app) world {
+    runtime: MuJoCo,
+    ASSETS {
+        kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+    },
+    ASSEMBLY {
+        kinova: <kinova-mjcf> {
+            chain: { root: link-base, end: link-ee }
+        }
     }
 }
 
@@ -50,10 +52,10 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
 
     SOLVERS {
         kinova_solver: Solver {
-            robot: <kinova>,
+            robot: <world.kinova>,
             algorithm: ForceDistribution,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }

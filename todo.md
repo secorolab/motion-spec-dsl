@@ -11,6 +11,10 @@
 - Add upstream `control-mode` support to the comp-rob2b constraint-handler context
   so legacy JSON can use the compact `"control-mode": "JointTorque"` form
   without a local context override.
+- Add PID output clamp support as an authored controller parameter propagated
+  through DSL, RDF/JSON-LD, IR, and C++ codegen. This is not required for the
+  current pick/place behavior, but should be modeled explicitly if clamps are
+  needed later.
 - Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
   Current known debt: no tests under `src/motion-spec`, unused symbols in
   `count.py` / `ir_gen.py`, bare `except` handlers in `ir_gen.py`, and rdflib

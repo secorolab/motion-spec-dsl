@@ -2,12 +2,17 @@
 
 ns app = "https://secorolab.github.io/models/tests/"
 
-ROBOT (ns=app) eddie {
-    type: MobileManipulator,
-    urdf: "../robots/eddie.urdf",
-    base: { model: Kelo, chain: { root: link-base } },
-    manipulators: {
-        right_arm: { model: KinovaGen3, chain: { root: link-base, end: link-ee } }
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kelo-urdf: RobotAsset { model: Kelo, urdf: "../robots/eddie.urdf" },
+        kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        base: <kelo-urdf> {},
+        right-arm: <kinova-urdf> {
+            chain: { root: link-base, end: link-ee }
+        }
     }
 }
 
@@ -52,10 +57,10 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: <eddie.right_arm>,
+            robot: <world.right-arm>,
             algorithm: ACHD,
-            root: <eddie.right_arm.root>,
-            end: <eddie.right_arm.end>,
+            root: <world.right-arm.chain.root>,
+            end: <world.right-arm.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }

@@ -29,7 +29,6 @@ from motion_spec_dsl.validation.handlers import (
     validate_handler_requirements,
     validate_motion_spec_coverage,
 )
-from motion_spec_dsl.validation.robots import validate_robot_specs
 from motion_spec_dsl.validation.solvers import (
     validate_controller_solver_refs,
     validate_handler_control_mode_solver_compatibility,
@@ -49,7 +48,6 @@ __all__ = [
 
 def validate_model(model: Model, metamodel=None) -> None:
     del metamodel
-    validate_robot_specs(model)
     validate_unique_constraint_names(model)
     validate_constraint_aliases(model)
     validate_context_aliases(model)

@@ -2,11 +2,16 @@
 
 ns app = "https://secorolab.github.io/models/crf/"
 
-ROBOT (ns=app) kinova {
-    type: Manipulator,
-    model: KinovaGen3,
-    urdf: "../robots/kg3.urdf",
-    chain: { root: base_link, end: Bracelet_Link }
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        kinova: <kinova-urdf> {
+            chain: { root: base_link, end: Bracelet_Link }
+        }
+    }
 }
 
 MOTION_SPEC (ns=app) m-find {
@@ -113,10 +118,10 @@ CONSTRAINT_HANDLER (ns=app) handler-find {
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: <kinova>,
+            robot: <world.kinova>,
             algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
             gravity: <c1.earth-uniform-gravitational-field> equal to <c2.gravity-vec>
         }
     }

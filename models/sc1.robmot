@@ -1,12 +1,20 @@
 ns app = "https://secorolab.github.io/models/demo/"
 
-ROBOT (ns=app) eddie {
-    type: MobileManipulator,
-    urdf: "../robots/eddie.urdf",
-    base: { model: Kelo, chain: { root: link-platform } },
-    manipulators: {
-        right_arm: { model: KinovaGen3, chain: { root: link-rightarm-shoulder, end: link-rightarm-ee } },
-        left_arm:  { model: KinovaGen3, chain: { root: link-leftarm-shoulder,  end: link-leftarm-ee  } }
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kelo-urdf: RobotAsset { model: Kelo, urdf: "../robots/eddie.urdf" },
+        kinova-right-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" },
+        kinova-left-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        base: <kelo-urdf> {},
+        right-arm: <kinova-right-urdf> {
+            chain: { root: link-rightarm-shoulder, end: link-rightarm-ee }
+        },
+        left-arm: <kinova-left-urdf> {
+            chain: { root: link-leftarm-shoulder, end: link-leftarm-ee }
+        }
     }
 }
 
@@ -146,10 +154,10 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
 
     SOLVERS {
         right_arm_solver: Solver {
-            robot: <eddie.right_arm>,
+            robot: <world.right-arm>,
             algorithm: ACHD,
-            root: <eddie.right_arm.root>,
-            end: <eddie.right_arm.end>,
+            root: <world.right-arm.chain.root>,
+            end: <world.right-arm.chain.end>,
             gravity: <c1.gravity-rightarm> equal to <c2.gravity-vec>
         }
     }
@@ -191,10 +199,10 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
 
     SOLVERS {
         left_arm_solver: Solver {
-            robot: <eddie.left_arm>,
+            robot: <world.left-arm>,
             algorithm: ACHD,
-            root: <eddie.left_arm.root>,
-            end: <eddie.left_arm.end>,
+            root: <world.left-arm.chain.root>,
+            end: <world.left-arm.chain.end>,
             gravity: <c1.gravity-leftarm> equal to <c2.gravity-vec>
         }
     }

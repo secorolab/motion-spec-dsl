@@ -2,13 +2,15 @@
 
 ns app = "https://secorolab.github.io/models/test/"
 
-ROBOT (ns=app) kinova {
-    type: Manipulator,
-    model: KinovaGen3,
-    urdf: "../robots/kg3.urdf",
-    chain: {
-        root: link-base,
-        end: link-ee
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        kinova: <kinova-urdf> {
+            chain: { root: link-base, end: link-ee }
+        }
     }
 }
 
@@ -34,6 +36,7 @@ MOTION_SPEC (ns=app) m_move {
 CONSTRAINT_HANDLER (ns=app) handler_move {
     CONTEXT {
         c1: World {
+            link-ee: Link,
             gravity: Gravity
         },
         c2: Spec {
@@ -46,14 +49,15 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
 
     CONTROLLERS {
         ctrl-c1: Impedance { constraint: <m_move.c1>, Stiffness = 1.0, Damping = 0.1 }
+            apply at <c1.link-ee>
     }
 
     SOLVERS {
         kinova_solver: Solver {
-            robot: <kinova>,
+            robot: <world.kinova>,
             algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }

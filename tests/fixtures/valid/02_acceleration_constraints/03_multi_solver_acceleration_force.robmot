@@ -3,13 +3,15 @@
 ns motion = "https://secorolab.github.io/models/test/motion/"
 ns handler = "https://secorolab.github.io/models/test/handler/"
 
-ROBOT (ns=motion) kinova {
-    type: Manipulator,
-    model: KinovaGen3,
-    urdf: "../robots/kg3.urdf",
-    chain: {
-        root: link-base,
-        end: link-ee
+ENVIRONMENT (ns=motion) world {
+    runtime: MuJoCo,
+    ASSETS {
+        kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+    },
+    ASSEMBLY {
+        kinova: <kinova-mjcf> {
+            chain: { root: link-base, end: link-ee }
+        }
     }
 }
 
@@ -58,17 +60,17 @@ CONSTRAINT_HANDLER (ns=handler) handler_move {
 
     SOLVERS {
         solver_a: Solver {
-            robot: <kinova>,
+            robot: <world.kinova>,
             algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
         },
         solver_b: Solver {
-            robot: <kinova>,
+            robot: <world.kinova>,
             algorithm: ACHD,
-            root: <kinova.chain.root>,
-            end: <kinova.chain.end>,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
             gravity: <c1.gravity> equal to <c2.gravity-vec>
         }
     }

@@ -9,6 +9,7 @@ from motion_spec_dsl.domain import (
     ConstraintSpecification,
     ControllerAlias,
     ControllerEntry,
+    ControllerType,
     EqualityConstraint,
     QuantityType,
     SubSpace,
@@ -94,7 +95,12 @@ POSE_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
 def axis_label(axis: object | None) -> str | None:
     if axis is None:
         return None
-    return str(getattr(axis, "value", axis))
+    raw = str(getattr(axis, "value", axis))
+    return {
+        "roll": "x",
+        "pitch": "y",
+        "yaw": "z",
+    }.get(raw, raw)
 
 
 def infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
@@ -159,6 +165,8 @@ def controller_command_record(
     axis = axis_label(getattr(constraint.view, "axis", None))
     view_subspace = constraint_view_subspace(constraint)
     command_type = resolved_controller.command_type or infer_command_type(raw_subspace)
+    if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
+        command_type = QuantityType.Force
 
     acceleration_constraints: tuple[AccelerationConstraintRecord, ...] = ()
     whole_pose_command = (
