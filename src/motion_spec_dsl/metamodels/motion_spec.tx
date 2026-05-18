@@ -44,11 +44,43 @@ EnvironmentAssembly:
 EnvironmentAssemblyEntry:
     EnvironmentAttachEntry | EnvironmentPositionEntry | EnvironmentOrientationEntry |
     EnvironmentFreeEntry | EnvironmentToolBodyEntry | EnvironmentTcpSiteEntry |
-    EnvironmentChainEntry | EnvironmentBodyEntry
+    EnvironmentChainEntry | EnvironmentBodyEntry | EnvironmentShapeEntry |
+    EnvironmentSizeEntry | EnvironmentMassEntry | EnvironmentFrictionEntry
 ;
 
 EnvironmentAttachEntry:
     "attach" "<" attachment=[EnvironmentAsset|FQN] ">" "to" attach_to=IRI_TRUNK
+    ("{" entries*=EnvironmentAttachmentEntry[","] "}")?
+;
+
+EnvironmentAttachmentEntry:
+    EnvironmentAttachmentPrefixEntry | EnvironmentAttachmentPositionEntry |
+    EnvironmentAttachmentOrientationEntry | EnvironmentAttachmentActuatorEntry |
+    EnvironmentAttachmentOpenCommandEntry | EnvironmentAttachmentCloseCommandEntry
+;
+
+EnvironmentAttachmentPrefixEntry:
+    "prefix" ":" value=IRI_TRUNK
+;
+
+EnvironmentAttachmentPositionEntry:
+    "position" ":" value=PositionValue
+;
+
+EnvironmentAttachmentOrientationEntry:
+    "orientation" ":" value=OrientationValue
+;
+
+EnvironmentAttachmentActuatorEntry:
+    "actuator" ":" value=IRI_TRUNK
+;
+
+EnvironmentAttachmentOpenCommandEntry:
+    "open" ":" value=FLOAT
+;
+
+EnvironmentAttachmentCloseCommandEntry:
+    "closed" ":" value=FLOAT
 ;
 
 EnvironmentPositionEntry:
@@ -73,6 +105,38 @@ EnvironmentTcpSiteEntry:
 
 EnvironmentBodyEntry:
     "body" ":" value=IRI_TRUNK
+;
+
+EnvironmentShapeEntry:
+    "shape" ":" value=SceneObjectShape
+;
+
+SceneObjectShape:
+    "box" | "sphere" | "cylinder"
+;
+
+EnvironmentSizeEntry:
+    "size" ":" value=PositionValue
+;
+
+EnvironmentMassEntry:
+    "mass" ":" value=FLOAT
+;
+
+EnvironmentFrictionEntry:
+    "friction" ":" value=FrictionValue
+;
+
+FrictionValue:
+    "{" (terms*=FrictionTerm[","])? "}"
+;
+
+FrictionTerm:
+    axis=FrictionAxis ":" value=FLOAT
+;
+
+FrictionAxis:
+    "slide" | "torsion" | "roll"
 ;
 
 EnvironmentChainEntry:
@@ -114,7 +178,7 @@ AngularAxis:
 ;
 
 AngleUnit:
-    "rad"
+    "rad" | "deg"
 ;
 
 RobotModel: "KinovaGen3" | "Kelo";
@@ -343,9 +407,22 @@ ConstraintHandler:
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         "CONTROL_MODE" ":" control_mode=HandlerControlMode
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
+        ("ACTIONS"     "{" actions*=HandlerAction[","]? "}")?
         "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
         "SOLVERS"      "{" solvers+=SolverItem[","] "}"
     "}"
+;
+
+HandlerAction:
+    GripperAction
+;
+
+GripperAction:
+    name=IRI_TRUNK ":" "gripper" "<" attachment=[EnvironmentAsset|FQN] ">" command=GripperCommand
+;
+
+GripperCommand:
+    "open" | "close"
 ;
 
 ControllerItem:

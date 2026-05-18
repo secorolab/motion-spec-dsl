@@ -98,6 +98,43 @@ class EnvironmentAttachEntry:
     parent: object
     attachment: EnvironmentAsset
     attach_to: str
+    entries: list = field(default_factory=list)
+
+
+@dataclass
+class EnvironmentAttachmentPrefixEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentAttachmentPositionEntry:
+    parent: object
+    value: PositionValue
+
+
+@dataclass
+class EnvironmentAttachmentOrientationEntry:
+    parent: object
+    value: OrientationValue
+
+
+@dataclass
+class EnvironmentAttachmentActuatorEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentAttachmentOpenCommandEntry:
+    parent: object
+    value: float
+
+
+@dataclass
+class EnvironmentAttachmentCloseCommandEntry:
+    parent: object
+    value: float
 
 
 @dataclass
@@ -134,6 +171,43 @@ class EnvironmentTcpSiteEntry:
 class EnvironmentBodyEntry:
     parent: object
     value: str
+
+
+@dataclass
+class EnvironmentShapeEntry:
+    parent: object
+    value: str
+
+
+@dataclass
+class EnvironmentSizeEntry:
+    parent: object
+    value: PositionValue
+
+
+@dataclass
+class EnvironmentMassEntry:
+    parent: object
+    value: float
+
+
+@dataclass
+class FrictionTerm:
+    parent: object
+    axis: str
+    value: float = 0.0
+
+
+@dataclass
+class FrictionValue:
+    parent: object
+    terms: list[FrictionTerm] = field(default_factory=list)
+
+
+@dataclass
+class EnvironmentFrictionEntry:
+    parent: object
+    value: FrictionValue
 
 
 @dataclass
@@ -712,11 +786,20 @@ class ConstraintHandler(IHasNamespaceDeclare):
     control_mode: HandlerControlMode
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
+    actions: list = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
         self.control_mode = HandlerControlMode(self.control_mode)
+
+
+@dataclass
+class GripperAction:
+    parent: object
+    name: str
+    attachment: EnvironmentAsset
+    command: str
 
 
 @dataclass

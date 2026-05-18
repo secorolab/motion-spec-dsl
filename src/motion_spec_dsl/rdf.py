@@ -501,6 +501,22 @@ class MotionSpecDatasetBuilder:
             self.graph.add((site_node, MJ["site-name"], Literal(tcp_site)))
             self.graph.add((object_node, MJ["tcp-site"], site_node))
 
+    def _emit_position_xyz(self, node: URIRef, value) -> None:
+        values = {term.axis: term.value for term in value.terms}
+        self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((node, GEOM_COORD.x, Literal(values.get("x", 0.0))))
+        self.graph.add((node, GEOM_COORD.y, Literal(values.get("y", 0.0))))
+        self.graph.add((node, GEOM_COORD.z, Literal(values.get("z", 0.0))))
+
+    def _emit_orientation_rpy(self, node: URIRef, value) -> None:
+        for term in value.terms:
+            term_node = URIRef(f"{node}.{term.axis}")
+            self.graph.add((term_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+            self.graph.add((term_node, GEOM_COORD["angle-axis"], Literal(term.axis)))
+            self.graph.add((term_node, QUDT_SCHEMA.value, Literal(term.value)))
+            self.graph.add((term_node, QUDT_SCHEMA.unit, URIRef(str(QUDT_UNIT._NS) + term.unit.upper())))
+            self.graph.add((node, GEOM_COORD["has-coordinate"], term_node))
+
     def _emit_environment(self, env: EnvironmentSpec) -> None:
         env_node = URIRef(env.uri)
         world_node = URIRef(f"{env.uri}.world")
@@ -587,13 +603,49 @@ class MotionSpecDatasetBuilder:
                         tcp_site=entry.value,
                     )
                 elif entry_type == "EnvironmentAttachEntry":
-                    self.graph.add((URIRef(entry.attachment.uri), SLV["attached-to"], instance_node))
+                    attachment_node = URIRef(entry.attachment.uri)
+                    attach_body_node = URIRef(f"{entry.attachment.uri}.attach-to")
+                    self.graph.add((attachment_node, SLV["attached-to"], instance_node))
+                    self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoBody))
+                    self.graph.add((attach_body_node, MJ["body-name"], Literal(entry.attach_to)))
+                    self.graph.add((attachment_node, MJ["attach-to-body"], attach_body_node))
+                    for option in entry.entries:
+                        option_type = option.__class__.__name__
+                        if option_type == "EnvironmentAttachmentPrefixEntry":
+                            self.graph.add((attachment_node, MJ["attach-prefix"], Literal(option.value)))
+                        elif option_type == "EnvironmentAttachmentPositionEntry":
+                            pos_node = URIRef(f"{entry.attachment.uri}.attach-position")
+                            self._emit_position_xyz(pos_node, option.value)
+                            self.graph.add((attachment_node, MJ["attach-position"], pos_node))
+                        elif option_type == "EnvironmentAttachmentOrientationEntry":
+                            orient_node = URIRef(f"{entry.attachment.uri}.attach-orientation")
+                            self._emit_orientation_rpy(orient_node, option.value)
+                            self.graph.add((attachment_node, MJ["attach-orientation"], orient_node))
+                        elif option_type == "EnvironmentAttachmentActuatorEntry":
+                            self.graph.add((attachment_node, MJ["actuator-name"], Literal(option.value)))
+                        elif option_type == "EnvironmentAttachmentOpenCommandEntry":
+                            self.graph.add((attachment_node, MJ["open-command"], Literal(option.value)))
+                        elif option_type == "EnvironmentAttachmentCloseCommandEntry":
+                            self.graph.add((attachment_node, MJ["closed-command"], Literal(option.value)))
                 elif entry_type == "EnvironmentChainEntry":
                     self._emit_runtime_chain_binding(
                         instance_node,
                         root_name=entry.root,
                         end_name=entry.end,
                     )
+                elif entry_type == "EnvironmentShapeEntry":
+                    self.graph.add((instance_node, MJ["shape"], Literal(entry.value)))
+                elif entry_type == "EnvironmentSizeEntry":
+                    size_node = URIRef(f"{instance.uri}.size")
+                    self._emit_position_xyz(size_node, entry.value)
+                    self.graph.add((instance_node, MJ["size"], size_node))
+                elif entry_type == "EnvironmentMassEntry":
+                    self.graph.add((instance_node, MJ["mass"], Literal(entry.value)))
+                elif entry_type == "EnvironmentFrictionEntry":
+                    values = {term.axis: term.value for term in entry.value.terms}
+                    self.graph.add((instance_node, MJ["friction-slide"], Literal(values.get("slide", 0.5))))
+                    self.graph.add((instance_node, MJ["friction-torsion"], Literal(values.get("torsion", 0.005))))
+                    self.graph.add((instance_node, MJ["friction-roll"], Literal(values.get("roll", 0.0001))))
 
     def _namespace_owner(self, obj: Any | None) -> Any:
         """Return the namespace declaration that should own a generated node."""
@@ -1545,9 +1597,6 @@ class MotionSpecDatasetBuilder:
             if axis is None or prop is None or prop[4] is None:
                 continue
 
-            if qty.type == WorldQuantityType.Pose and subspace == "rotation":
-                continue
-
             key = (qty.name, subspace, axis)
             if key in seen:
                 continue
@@ -1935,6 +1984,13 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
             self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
+
+        for action in getattr(handler, "actions", []):
+            action_node = URIRef(f"{handler.uri}/{action.name}")
+            self.graph.add((action_node, RDF.type, CSTR_HDL["GripperAction"]))
+            self.graph.add((action_node, CSTR_HDL["target-attachment"], URIRef(action.attachment.uri)))
+            self.graph.add((action_node, CSTR_HDL["command"], Literal(action.command)))
+            self.graph.add((handler_node, CSTR_HDL["actions"], action_node))
 
     def _decode_control_signal(
         self,
