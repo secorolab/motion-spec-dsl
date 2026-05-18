@@ -3,6 +3,9 @@
 ## Immediate
 
 - ABAG is reserved and immediately rejected as not implemented.
+- Fix the code-generation pipeline (`codegen`) to handle initialization and constraint evaluations for standalone, non-trajectory target variables (e.g., standalone `Pose` spec variables) so direct feedback/coordinate constraints do not require a dummy/lightweight trajectory.
+- Generalize `robmot` DSL and compiler/codegen support for snapshot offsets and guard conditions (e.g., specifying `support-z = Snapshot of ... + 0.08 m` and guards like `once` or `if uninitialized` directly in the specification) rather than having hardcoded exceptions in `ir_gen.py`/`codegen`.
+
 
 
 ## Later

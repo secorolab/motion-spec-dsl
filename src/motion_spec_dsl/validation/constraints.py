@@ -94,8 +94,9 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
         QuantityType.AngularDistance: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.Distance: {QuantityType.Distance},
-        QuantityType.Position: {QuantityType.Position, QuantityType.Pose},
-        QuantityType.Orientation: {QuantityType.Orientation, QuantityType.Pose},
+        QuantityType.Position: {QuantityType.Position, QuantityType.Pose, QuantityType.Trajectory},
+        QuantityType.Orientation: {QuantityType.Orientation, QuantityType.Pose, QuantityType.Trajectory},
+        QuantityType.Pose: {QuantityType.Pose, QuantityType.Trajectory},
     }
     return right in compatible.get(left, {left})
 

@@ -73,10 +73,12 @@ from motion_spec_dsl.domain import (
     PostContextDecl,
     PreContextDecl,
     QuantityType,
+    PoseValue,
     ScalarQuantity,
     SnapshotValue,
     SpecContextDecl,
     ContextQuantity,
+    TrajectoryValue,
     VectorQuantity,
     WorldContextDecl,
     WorldQuantity,
@@ -185,6 +187,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.AngularAcceleration: QUDT_UNIT["RAD-PER-SEC2"],
     QuantityType.Force: QUDT_UNIT.N,
     QuantityType.Torque: QUDT_UNIT["N-M"],
+    QuantityType.TrajectoryProgress: QUDT_UNIT.UNITLESS,
 }
 
 DSL_UNIT: dict[str, Any] = {
@@ -224,6 +227,8 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Position: QUDT_QKIND.Position,
     QuantityType.Orientation: QUDT_QKIND.Direction,
     QuantityType.Vector: QUDT_QKIND.Vector,
+    QuantityType.Trajectory: TRAJ.Trajectory,
+    QuantityType.TrajectoryProgress: TRAJ.Progress,
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
@@ -1130,7 +1135,7 @@ class MotionSpecDatasetBuilder:
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
         direction_node = self._owned_uri(f"direction-{ctrl.name}", motion)
-        if qty.type == WorldQuantityType.Pose and _view_subspace(spec) == "distance":
+        if qty.type == WorldQuantityType.Pose and _view_subspace(spec) == "distance" and axis is None:
             self._emit_direction_coordinate(direction_node, as_seen_by_node)
             op_node = self._owned_uri(f"compute-direction-{ctrl.name}", motion)
             self.graph.add((op_node, RDF.type, GEOM_OP.PoseToDirection))
@@ -1391,13 +1396,51 @@ class MotionSpecDatasetBuilder:
             else:
                 mapped_subspace = SUBSPACE_ALIAS.get(subspace, subspace)
             axis = semantic_axis_label(axis_raw)
-            return self._owned_uri(_scalar_id(quantity, mapped_subspace, axis), owner)
+            scalar_uri = self._owned_uri(_scalar_id(quantity, mapped_subspace, axis), owner)
+            if (
+                quantity.type == WorldQuantityType.Pose
+                and mapped_subspace in {"distance", "rotation"}
+                and axis is not None
+            ):
+                self._register_pose_component_view(scalar_uri, quantity, mapped_subspace, axis, owner)
+            return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
+
+    def _register_pose_component_view(
+        self,
+        scalar_uri: "URIRef",
+        quantity: "WorldQuantity",
+        mapped_subspace: str,
+        axis: str,
+        owner: Any,
+    ) -> None:
+        sid = _scalar_id(quantity, mapped_subspace, axis)
+        view_uri = self._owned_uri(f"view-{sid}", owner)
+        if (view_uri, RDF.type, MAP.View) in self.graph:
+            return
+        pose_specs = WORLD_SPECS[WorldQuantityType.Pose][3]
+        props = pose_specs.get(mapped_subspace)
+        if props is None:
+            return
+        view_subspace_uri, _, _, scalar_t, view_type = props
+        self._add_quantity(scalar_uri, scalar_t)
+        self.graph.add((view_uri, RDF.type, MAP.View))
+        self.graph.add((view_uri, RDF.type, view_type))
+        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+        self.graph.add((view_uri, MAP.subobject, scalar_uri))
+        self.graph.add((view_uri, MAP.subspace, MAP[view_subspace_uri]))
+        self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
     def _emit_context_quantities(self, context_quantities: dict[str, ContextQuantity]) -> None:
         for quantity in context_quantities.values():
             node = URIRef(quantity.uri)
+            if quantity.type == QuantityType.Trajectory:
+                self._emit_trajectory_quantity(node, quantity)
+                continue
+            if isinstance(quantity.value, PoseValue):
+                self._emit_pose_value_quantity(node, quantity)
+                continue
             qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
             if qkind is None:
                 qkind = QUDT_QKIND[quantity.type]
@@ -1427,6 +1470,87 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, GEOM_COORD.x, Literal(str(quantity.value.x))))
                 self.graph.add((node, GEOM_COORD.y, Literal(str(quantity.value.y))))
                 self.graph.add((node, GEOM_COORD.z, Literal(str(quantity.value.z))))
+
+    def _emit_pose_value_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        assert isinstance(quantity.value, PoseValue)
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, GEOM_REL.Pose))
+        self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
+        self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+
+        position_node = self._owned_uri(f"{quantity.name}.position", quantity)
+        orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
+        self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((position_node, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+        self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+        self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((orientation_node, RDF.type, GEOM_REL.Orientation))
+        self.graph.add((orientation_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+        self.graph.add((orientation_node, RDF.type, GEOM_COORD["EulerAngles"]))
+        self.graph.add((orientation_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+        self.graph.add((orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+        self.graph.add((orientation_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+        self.graph.add((node, GEOM_COORD["has-coordinate"], position_node))
+        self.graph.add((node, GEOM_COORD["has-coordinate"], orientation_node))
+
+        for term in quantity.value.position.terms:
+            component_node = self._owned_uri(f"{quantity.name}.position.{term.axis}", quantity)
+            view_node = self._owned_uri(f"view-{quantity.name}.position.{term.axis}", quantity)
+            self._add_quantity(component_node, QuantityType.Distance)
+            self.graph.add((position_node, GEOM_COORD["has-coordinate"], component_node))
+            self.graph.add((view_node, RDF.type, MAP.View))
+            self.graph.add((view_node, RDF.type, MAP.PoseCoordinateView))
+            self.graph.add((view_node, MAP.superobject, node))
+            self.graph.add((view_node, MAP.subobject, component_node))
+            self.graph.add((view_node, MAP.subspace, MAP.position))
+            self.graph.add((view_node, MAP.axis, MAP[term.axis]))
+            if term.ref is not None:
+                ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
+                self.graph.add((component_node, CSTR["reference-value"], ref_node))
+            else:
+                self.graph.add((component_node, QUDT_SCHEMA.value, Literal(str(term.value))))
+                self.graph.add((component_node, QUDT_SCHEMA.unit, _dsl_unit(term.unit)))
+
+        for term in quantity.value.orientation.terms:
+            axis = {
+                "roll": "x",
+                "pitch": "y",
+                "yaw": "z",
+            }[term.axis]
+            component_node = self._owned_uri(f"{quantity.name}.orientation.{axis}", quantity)
+            view_node = self._owned_uri(f"view-{quantity.name}.orientation.{axis}", quantity)
+            self._add_quantity(component_node, QuantityType.Angle)
+            self.graph.add((orientation_node, GEOM_COORD["has-coordinate"], component_node))
+            self.graph.add((view_node, RDF.type, MAP.View))
+            self.graph.add((view_node, RDF.type, MAP.PoseCoordinateView))
+            self.graph.add((view_node, MAP.superobject, node))
+            self.graph.add((view_node, MAP.subobject, component_node))
+            self.graph.add((view_node, MAP.subspace, MAP.rotation))
+            self.graph.add((view_node, MAP.axis, MAP[axis]))
+            if term.ref is not None:
+                ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
+                self.graph.add((component_node, CSTR["reference-value"], ref_node))
+            else:
+                self.graph.add((component_node, QUDT_SCHEMA.value, Literal(str(term.value))))
+                self.graph.add((component_node, QUDT_SCHEMA.unit, _dsl_unit(term.unit)))
+
+    def _emit_trajectory_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        assert isinstance(quantity.value, TrajectoryValue)
+        lerp = quantity.value.lerp
+        lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, TRAJ.Trajectory))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], TRAJ.Trajectory))
+        self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
+        self.graph.add((lerp_node, TRAJ.start, self._emit_context_ref_node(lerp.start, quantity, "start")))
+        self.graph.add((lerp_node, TRAJ.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal")))
+        self.graph.add((lerp_node, TRAJ.alpha, self._emit_context_ref_node(lerp.alpha, quantity, "alpha")))
+        self.graph.add((lerp_node, TRAJ.trajectory, node))
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         quantity = _context_quantity(ref)
@@ -1486,8 +1610,15 @@ class MotionSpecDatasetBuilder:
                 )
 
             if qty is not None:
-                sid = _scalar_id(qty, subspace, axis)
-                qty_node = self._owned_uri(sid, motion)
+                if (
+                    subspace == "pose"
+                    and axis is None
+                    and qty.type == WorldQuantityType.Pose
+                ):
+                    qty_node = URIRef(qty.uri)
+                else:
+                    sid = _scalar_id(qty, subspace, axis)
+                    qty_node = self._owned_uri(sid, motion)
             else:
                 qty_node = None
 

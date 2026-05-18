@@ -154,7 +154,7 @@ PositionValue:
 ;
 
 PositionTerm:
-    axis=LinearAxis ":" value=FLOAT unit=LinearDistanceUnit
+    axis=LinearAxis ":" (ref=ContextRef | value=FLOAT unit=LinearDistanceUnit)
 ;
 
 LinearAxis:
@@ -170,7 +170,7 @@ OrientationValue:
 ;
 
 OrientationTerm:
-    axis=AngularAxis ":" value=FLOAT unit=AngleUnit
+    axis=AngularAxis ":" (ref=ContextRef | value=FLOAT unit=AngleUnit)
 ;
 
 AngularAxis:
@@ -301,7 +301,7 @@ ContextQuantity:
 ;
 
 ContextQuantityType:
-    QuantityType | SnapshotQuantityType | "Trajectory"
+    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress"
 ;
 
 SnapshotQuantityType:
@@ -309,7 +309,7 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    QuantityValue | SnapshotValue | TrajectoryValue | PoseConstructValue
+    QuantityValue | SnapshotValue | TrajectoryValue | PoseValue
 ;
 
 QuantityValue:
@@ -341,7 +341,6 @@ QuantityType:
     "LinearDistance"  |
     "Angle"           |
     "AngularDistance" |
-    "Scalar"          |
     "Vector"
 ;
 
@@ -357,16 +356,11 @@ LerpSpec:
     "}"
 ;
 
-PoseConstructValue:
-    "{" terms+=PoseConstructTerm[","] "}"
-;
-
-PoseConstructTerm:
-    axis=PoseConstructAxis ":" value=ContextRef
-;
-
-PoseConstructAxis:
-    "x" | "y" | "z" | "roll" | "pitch" | "yaw"
+PoseValue:
+    "{"
+        "position" ":" position=PositionValue ","
+        "orientation" ":" orientation=OrientationValue
+    "}"
 ;
 
 ConstraintSpecification:

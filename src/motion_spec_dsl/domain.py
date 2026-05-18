@@ -56,6 +56,7 @@ class PositionTerm:
     axis: str
     value: float = 0.0
     unit: str = "m"
+    ref: object | None = None
 
 
 @dataclass
@@ -70,6 +71,7 @@ class OrientationTerm:
     axis: str
     value: float = 0.0
     unit: str = "rad"
+    ref: object | None = None
 
 
 @dataclass
@@ -349,16 +351,10 @@ class TrajectoryValue:
 
 
 @dataclass
-class PoseConstructTerm:
+class PoseValue:
     parent: object
-    axis: str
-    value: object  # ContextRef
-
-
-@dataclass
-class PoseConstructValue:
-    parent: object
-    terms: list  # list[PoseConstructTerm]
+    position: PositionValue
+    orientation: OrientationValue
 
 
 @dataclass
@@ -367,6 +363,7 @@ class TrajectorySpec:
     type: str
 
 
+@dataclass
 class MotionSpec(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
@@ -550,6 +547,8 @@ class QuantityType(StrEnum):
     Force               = "Force"
     Torque              = "Torque"
     Vector              = "Vector"
+    Trajectory          = "Trajectory"
+    TrajectoryProgress  = "TrajectoryProgress"
 
 
 class HandlerControlMode(StrEnum):
@@ -576,12 +575,18 @@ class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
-    value: ScalarQuantity | VectorQuantity | SnapshotValue | None = None
+    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | PoseValue | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         if self.type == "LinearDistance":
             self.type = QuantityType.Distance
+            return
+        if self.type == "Trajectory":
+            self.type = QuantityType.Trajectory
+            return
+        if self.type == "TrajectoryProgress":
+            self.type = QuantityType.TrajectoryProgress
             return
         self.type = QuantityType(self.type)
 
