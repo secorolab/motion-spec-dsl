@@ -185,11 +185,18 @@ RobotModel: "KinovaGen3" | "Kelo";
 
 MotionSpec:
     "MOTION_SPEC" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        ("MOVE"    ":" move=STRING)?
+        ("MOVE"       ":" move=STRING)?
+        ("TRAJECTORY" ":" trajectory=TrajectorySpec)?
         "CONTEXT"  "{" context*=MotionContextItem[","] "}"
         sections+=ConstraintSection
     "}"
 ;
+
+TrajectorySpec:
+    type=TrajectoryType
+;
+
+TrajectoryType: "Lerp" ;
 
 ConstraintSection:
     WhenSection | WhileSection | UntilSection
@@ -294,7 +301,7 @@ ContextQuantity:
 ;
 
 ContextQuantityType:
-    QuantityType | SnapshotQuantityType
+    QuantityType | SnapshotQuantityType | "Trajectory"
 ;
 
 SnapshotQuantityType:
@@ -302,7 +309,7 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    QuantityValue | SnapshotValue
+    QuantityValue | SnapshotValue | TrajectoryValue | PoseConstructValue
 ;
 
 QuantityValue:
@@ -334,7 +341,32 @@ QuantityType:
     "LinearDistance"  |
     "Angle"           |
     "AngularDistance" |
+    "Scalar"          |
     "Vector"
+;
+
+TrajectoryValue:
+    "=" lerp=LerpSpec
+;
+
+LerpSpec:
+    "Lerp" "{"
+        "start" ":" start=ContextRef ","
+        "goal"  ":" goal=ContextRef  ","
+        "alpha" ":" alpha=ContextRef
+    "}"
+;
+
+PoseConstructValue:
+    "{" terms+=PoseConstructTerm[","] "}"
+;
+
+PoseConstructTerm:
+    axis=PoseConstructAxis ":" value=ContextRef
+;
+
+PoseConstructAxis:
+    "x" | "y" | "z" | "roll" | "pitch" | "yaw"
 ;
 
 ConstraintSpecification:
@@ -374,7 +406,7 @@ Axis:
 
 ContextRef:
     "[" quantity=[ContextQuantity:FQN] literal_value=QuantityValue? "]"
-  | "<" quantity=[ContextQuantity|ScopedName] ">"
+  | "<" quantity=[ContextQuantity|ScopedName] ">" ("." subspace=SubSpace ("." axis=Axis)?)?
   | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
 ;
 

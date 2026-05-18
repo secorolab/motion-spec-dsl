@@ -335,11 +335,44 @@ class RobotAnchorRef:
 
 
 @dataclass
+class LerpSpec:
+    parent: object
+    start: object  # ContextRef
+    goal: object   # ContextRef
+    alpha: object  # ContextRef
+
+
+@dataclass
+class TrajectoryValue:
+    parent: object
+    lerp: LerpSpec
+
+
+@dataclass
+class PoseConstructTerm:
+    parent: object
+    axis: str
+    value: object  # ContextRef
+
+
+@dataclass
+class PoseConstructValue:
+    parent: object
+    terms: list  # list[PoseConstructTerm]
+
+
+@dataclass
+class TrajectorySpec:
+    parent: object
+    type: str
+
+
 class MotionSpec(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
     move: str | None
+    trajectory: TrajectorySpec | None
     context: list[
         WorldContextDecl
         | PreContextDecl
@@ -711,6 +744,8 @@ class ContextRef:
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
     literal_value: ScalarQuantity | VectorQuantity | None = None
+    subspace: str | None = None
+    axis: str | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):

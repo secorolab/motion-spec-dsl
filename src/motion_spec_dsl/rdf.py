@@ -28,6 +28,7 @@ from motion_spec.namespace import (
     MJ,
     MOT,
     MOT_EXT,
+    TRAJ,
 
     QUDT_QKIND,
     QUDT_SCHEMA,
@@ -1526,6 +1527,10 @@ class MotionSpecDatasetBuilder:
     def _emit_motion_spec(self, motion: MotionSpec) -> None:
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
+        if getattr(motion, "trajectory", None) is not None:
+            lerp_node = self._owned_uri(f"motion-{motion.name}-lerp", motion)
+            self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
+            self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
         for item in motion.when.constraints:
             self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(item).uri)))
         for item in motion.while_.constraints:
