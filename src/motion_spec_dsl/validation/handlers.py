@@ -53,11 +53,25 @@ def validate_handler_requirements(model: Model) -> None:
                 "ConstraintHandler with WHILE constraints must have at least one controller or monitor.",
                 handler,
             )
-        if (handler.motion.when.constraints or handler.motion.until.constraints) and not handler.monitors:
+
+        guard_constraints = [
+            _resolved_spec(item)
+            for item in [*handler.motion.when.constraints, *handler.motion.until.constraints]
+        ]
+        if guard_constraints and not handler.monitors:
             raise semantic_error(
                 "ConstraintHandler with WHEN or UNTIL constraints must have at least one monitor.",
                 handler,
             )
+
+        monitored = {id(mon.constraint.constraint) for mon in handler.monitors}
+        for constraint in guard_constraints:
+            if id(constraint) not in monitored:
+                raise semantic_error(
+                    f"ConstraintHandler '{handler.name}' has WHEN or UNTIL constraint "
+                    f"'{constraint.name}' without a monitor.",
+                    constraint,
+                )
 
 
 def validate_motion_spec_coverage(model: Model) -> None:

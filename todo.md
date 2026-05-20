@@ -1,5 +1,14 @@
 # TODO
 
+## Immediate
+
+- fix this: I found the concrete failure: grasp_goal_pose is never assigned in the generated motion_pick.hpp, so KDL::diff(shared.pose_ee_base, shared.grasp_goal_pose) drives against  a default KDL::Frame target near the robot base.
+
+        lower-z:    keeping <shared.world.pose-ee-base>.position  equal to <spec.grasp-position> 
+
+this should work as long as both are of same types.
+
+
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
