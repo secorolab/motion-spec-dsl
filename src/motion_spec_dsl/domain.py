@@ -636,6 +636,7 @@ class VectorQuantity:
 @dataclass
 class SnapshotValue:
     source: View
+    offset: ContextRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
 

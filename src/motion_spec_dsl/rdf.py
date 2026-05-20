@@ -40,6 +40,7 @@ from motion_spec.namespace import (
     SIM,
     SNAP,
     SLV,
+    VALUE_ROLE,
 )
 from motion_spec_dsl.controller_semantics import (
     AccelerationConstraintRecord,
@@ -1042,6 +1043,7 @@ class MotionSpecDatasetBuilder:
         self, node: URIRef, of_frame: str, wrt_frame: str, owner: Any
     ) -> None:
         self.graph.add((node, RDF.type, GEOM_REL.Pose))
+        self.graph.add((node, RDF.type, VALUE_ROLE.Computed))
         self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
@@ -1234,6 +1236,7 @@ class MotionSpecDatasetBuilder:
             node = URIRef(qty.uri)
             for t in rdf_types:
                 self.graph.add((node, RDF.type, t))
+            self.graph.add((node, RDF.type, VALUE_ROLE.Measured))
             for qk in qkinds:
                 self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qk))
             for u in units:
@@ -1435,6 +1438,7 @@ class MotionSpecDatasetBuilder:
     def _emit_context_quantities(self, context_quantities: dict[str, ContextQuantity]) -> None:
         for quantity in context_quantities.values():
             node = URIRef(quantity.uri)
+            self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
             if quantity.type == QuantityType.Trajectory:
                 self._emit_trajectory_quantity(node, quantity)
                 continue
@@ -1451,13 +1455,28 @@ class MotionSpecDatasetBuilder:
                 continue
             if isinstance(quantity.value, SnapshotValue):
                 self.graph.add((node, RDF.type, SNAP.Snapshot))
-                self.graph.add(
-                    (
-                        node,
-                        SNAP["snapshot-of"],
-                        self._view_node(quantity.value.source, quantity),
+                self.graph.add((node, RDF.type, VALUE_ROLE.Snapshot))
+                view_node = self._view_node(quantity.value.source, quantity)
+                if quantity.value.offset is not None:
+                    offset_ref_node = self._emit_context_ref_node(
+                        quantity.value.offset, quantity, "add-offset"
                     )
-                )
+                    add_node = self._owned_uri(f"{quantity.name}-add", quantity)
+                    out_node = self._owned_uri(f"{quantity.name}-add-out", quantity)
+                    qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
+                    self.graph.add((add_node, RDF.type, RBDYN_OP["AddQuantity"]))
+                    self.graph.add((add_node, RBDYN_OP["in1"], view_node))
+                    self.graph.add((add_node, RBDYN_OP["in2"], offset_ref_node))
+                    self.graph.add((add_node, RBDYN_OP["out"], out_node))
+                    self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
+                    self.graph.add((out_node, RDF.type, VALUE_ROLE.Computed))
+                    self.graph.add((out_node, RDF.type, qkind))
+                    self.graph.add((out_node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+                    self.graph.add((out_node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS)))
+                    snap_source = out_node
+                else:
+                    snap_source = view_node
+                self.graph.add((node, SNAP["snapshot-of"], snap_source))
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
@@ -1474,6 +1493,7 @@ class MotionSpecDatasetBuilder:
     def _emit_pose_value_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
         assert isinstance(quantity.value, PoseValue)
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
         self.graph.add((node, RDF.type, GEOM_REL.Pose))
         self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
@@ -1511,6 +1531,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_node, MAP.axis, MAP[term.axis]))
             if term.ref is not None:
                 ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
+                self.graph.add((ref_node, RDF.type, VALUE_ROLE.Reference))
                 self.graph.add((component_node, CSTR["reference-value"], ref_node))
             else:
                 self.graph.add((component_node, QUDT_SCHEMA.value, Literal(str(term.value))))
@@ -1534,6 +1555,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_node, MAP.axis, MAP[axis]))
             if term.ref is not None:
                 ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
+                self.graph.add((ref_node, RDF.type, VALUE_ROLE.Reference))
                 self.graph.add((component_node, CSTR["reference-value"], ref_node))
             else:
                 self.graph.add((component_node, QUDT_SCHEMA.value, Literal(str(term.value))))
@@ -1544,6 +1566,7 @@ class MotionSpecDatasetBuilder:
         lerp = quantity.value.lerp
         lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
         self.graph.add((node, RDF.type, TRAJ.Trajectory))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], TRAJ.Trajectory))
         self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))

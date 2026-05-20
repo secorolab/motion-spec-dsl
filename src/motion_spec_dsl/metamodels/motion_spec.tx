@@ -329,7 +329,7 @@ VectorQuantity:
 ;
 
 SnapshotValue:
-    "=" "Snapshot" "of" source=View
+    "=" "Snapshot" "of" source=View ("+" offset=ContextRef)?
 ;
 
 QuantityType:

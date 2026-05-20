@@ -1,13 +1,5 @@
 # TODO
 
-## Immediate
-
-- ABAG is reserved and immediately rejected as not implemented.
-- Fix the code-generation pipeline (`codegen`) to handle initialization and constraint evaluations for standalone, non-trajectory target variables (e.g., standalone `Pose` spec variables) so direct feedback/coordinate constraints do not require a dummy/lightweight trajectory.
-- Generalize `robmot` DSL and compiler/codegen support for snapshot offsets and guard conditions (e.g., specifying `support-z = Snapshot of ... + 0.08 m` and guards like `once` or `if uninitialized` directly in the specification) rather than having hardcoded exceptions in `ir_gen.py`/`codegen`.
-
-
-
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
@@ -18,6 +10,14 @@
   through DSL, RDF/JSON-LD, IR, and C++ codegen. This is not required for the
   current pick/place behavior, but should be modeled explicitly if clamps are
   needed later.
+- Generalize pose-axis error grouping to all vector-valued superobjects. The generator
+  currently groups multi-axis pose subobject equality constraints into one
+  `KDL::diff(parent_pose, target_pose)` and projects the requested components. The
+  same semantic grouping should extend to velocity twists, acceleration twists, and
+  wrenches where applicable.
+- Avoid emitting unused component locals. Grouped pose-diff blocks declare all six
+  component values even when only position or only orientation is consumed. Emit only
+  the components referenced by the group to eliminate compiler warnings.
 - Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
   Current known debt: no tests under `src/motion-spec`, unused symbols in
   `count.py` / `ir_gen.py`, bare `except` handlers in `ir_gen.py`, and rdflib
