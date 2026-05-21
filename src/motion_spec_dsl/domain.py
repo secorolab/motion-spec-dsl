@@ -647,6 +647,7 @@ class ConstraintSpecification(NamedNamespaceObject):
     name: str
     view: View
     expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint
+    disabled: bool = False
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)

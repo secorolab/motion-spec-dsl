@@ -384,7 +384,9 @@ def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecificati
     out = []
     for section in (motion.when, motion.while_, motion.until):
         for item in section.constraints:
-            out.append(_resolved_spec(item))
+            spec = _resolved_spec(item)
+            if not spec.disabled:
+                out.append(spec)
     return out
 
 
@@ -1687,11 +1689,15 @@ class MotionSpecDatasetBuilder:
             self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
             self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
         for item in motion.when.constraints:
-            self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(item).uri)))
+            spec = _resolved_spec(item)
+            if not spec.disabled:
+                self.graph.add((motion_node, MOT.when, URIRef(spec.uri)))
         for item in motion.while_.constraints:
-            self.graph.add((motion_node, MOT["while"], URIRef(_resolved_spec(item).uri)))
+            spec = _resolved_spec(item)
+            if not spec.disabled:
+                self.graph.add((motion_node, MOT["while"], URIRef(spec.uri)))
         raw_logic = getattr(motion.until, "logic", None)
-        until_constraints = motion.until.constraints
+        until_constraints = [i for i in motion.until.constraints if not _resolved_spec(i).disabled]
         if raw_logic == "any" and len(until_constraints) > 1:
             disjunction_node = self._owned_uri(f"motion-{motion.name}-until-disjunction", motion)
             self.graph.add((disjunction_node, RDF.type, MOT_EXT.ConstraintDisjunction))
@@ -2032,6 +2038,8 @@ class MotionSpecDatasetBuilder:
             spec = cref.constraint if hasattr(cref, "constraint") else None
             if spec is None:
                 continue
+            if spec.disabled:
+                continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             subspace = _view_subspace(spec)
@@ -2155,6 +2163,8 @@ class MotionSpecDatasetBuilder:
 
             spec = cref.constraint if hasattr(cref, "constraint") else None
             if spec is None:
+                continue
+            if spec.disabled:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)

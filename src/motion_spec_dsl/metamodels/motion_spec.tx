@@ -364,7 +364,7 @@ PoseValue:
 ;
 
 ConstraintSpecification:
-    name=IRI_TRUNK ":" ("keeping")? view=View expr=ConstraintExpression
+    disabled?='@disable' name=IRI_TRUNK ":" ("keeping")? view=View expr=ConstraintExpression
 ;
 
 ConstraintExpression:
