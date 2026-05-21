@@ -433,22 +433,9 @@ ConstraintHandler:
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         "CONTROL_MODE" ":" control_mode=HandlerControlMode
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
-        ("ACTIONS"     "{" actions*=HandlerAction[","]? "}")?
         "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
         "SOLVERS"      "{" solvers+=SolverItem[","] "}"
     "}"
-;
-
-HandlerAction:
-    GripperAction
-;
-
-GripperAction:
-    name=IRI_TRUNK ":" "gripper" "<" attachment=[EnvironmentAsset|FQN] ">" command=GripperCommand
-;
-
-GripperCommand:
-    "open" | "close"
 ;
 
 ControllerItem:
@@ -484,7 +471,7 @@ HandlerContextItem:
 ;
 
 MonitorEntry:
-    name=IRI_TRUNK ":" "monitor" "<" constraint=ConstraintRef ">" "and"
+    name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "and"
     (
         ("trigger" "event" event=IRI_TRUNK "when" "active") |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
@@ -501,7 +488,7 @@ ControllerEntry:
 ;
 
 ControllerType:
-    "PID" | "Impedance" | "ABAG"
+    "PID" | "Impedance" | "ABAG" | "FeedForward"
 ;
 
 ControllerParams:
@@ -521,6 +508,14 @@ HandlerControlMode:
     "JointTorque"
 ;
 
+MonitorTarget:
+    UntilMonitorRef | ConstraintRef
+;
+
+UntilMonitorRef:
+    motion=[MotionSpec|IRI_TRUNK] "." "until"
+;
+
 ConstraintRef:
     motion=[MotionSpec|IRI_TRUNK] "." constraint=[ConstraintSpecification|IRI_TRUNK]
 ;
@@ -536,10 +531,11 @@ SolverRef:
 SolverEntry:
     name=IRI_TRUNK ":" "Solver" "{"
         "robot"     ":" robot=RobotRef ","
-        "algorithm" ":" algorithm=SolverAlgorithm ","
-        "root"      ":" root=RobotAnchorRef
-        ("," "end"  ":" end=RobotAnchorRef)?
-        "," "gravity" ":" "<" gravity=[WorldQuantity|ScopedName] ">" "equal to" gravity_value=ContextRef
+        "algorithm" ":" algorithm=SolverAlgorithm
+        ("," "root"      ":" root=RobotAnchorRef
+            ("," "end"  ":" end=RobotAnchorRef)?
+            "," "gravity" ":" "<" gravity=[WorldQuantity|ScopedName] ">" "equal to" gravity_value=ContextRef
+        )?
     "}"
 ;
 
@@ -560,7 +556,7 @@ RobotAnchor:
 ;
 
 SolverAlgorithm:
-    "ACHD" | "RNE" | "VelocityDistribution" | "ForceDistribution"
+    "ACHD" | "RNE" | "CommandForwarding" | "VelocityDistribution" | "ForceDistribution"
 ;
 
 

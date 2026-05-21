@@ -13,6 +13,7 @@ from motion_spec_dsl.domain import (
     ControllerAlias,
     ControllerEntry,
     ControllerType,
+    EqualityConstraint,
     Model,
     QuantityType,
     WorldQuantity,
@@ -69,21 +70,53 @@ def validate_controller_commands(model: Model) -> None:
                         f"Impedance controller '{controller.name}' cannot use Kp, Ki, or Kd terms.",
                         controller,
                     )
+            elif resolved_controller.type == ControllerType.FeedForward:
+                if params.has_pid_gains or params.has_impedance_terms:
+                    raise semantic_error(
+                        f"FeedForward controller '{controller.name}' cannot use PID or impedance terms.",
+                        controller,
+                    )
+                if not isinstance(params.constraint.constraint.expr, EqualityConstraint):
+                    raise semantic_error(
+                        f"FeedForward controller '{controller.name}' must reference an equality constraint.",
+                        controller,
+                    )
 
-            if resolved_controller.type not in (ControllerType.PID, ControllerType.Impedance):
+            if resolved_controller.type not in (
+                ControllerType.PID,
+                ControllerType.Impedance,
+                ControllerType.FeedForward,
+            ):
                 raise semantic_error(
                     f"Controller '{controller.name}' uses {resolved_controller.type.value}, "
                     "which is not supported for graph emission.",
                     controller,
                 )
-            # Remaining validation applies equally to PID and Impedance:
-            # both map a scalar error to a scalar control signal.
+            # Remaining validation applies to controllers that map a scalar error to a scalar control signal.
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
             command_type = resolved_controller.command_type or infer_command_type(subspace)
             if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
                 command_type = QuantityType.Force
             quantity = constraint_spec.view.quantity
+            solver = handler_controller_solver(handler, controller)
+            if resolved_controller.type == ControllerType.FeedForward:
+                if solver is None:
+                    raise semantic_error(
+                        f"FeedForward controller '{controller.name}' must resolve to a solver.",
+                        controller,
+                    )
+                if str(solver.algorithm) == "CommandForwarding":
+                    quantity_props = getattr(quantity, "props", None)
+                    if quantity_props is None or not any(
+                        getattr(pair, "key", None) == "of" and getattr(pair, "value", "")
+                        for pair in getattr(quantity_props, "pairs", [])
+                    ):
+                        raise semantic_error(
+                            f"FeedForward controller '{controller.name}' via CommandForwarding needs target 'of'.",
+                            controller,
+                        )
+                    continue
             explicit_command_type = resolved_controller.command_type
             whole_pose_command = (
                 isinstance(quantity, WorldQuantity)

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from motion_spec_dsl.domain import Model, _resolved_controller, _resolved_spec
+from motion_spec_dsl.domain import Model, UntilMonitorRef, _resolved_controller, _resolved_spec
 from motion_spec_dsl.validation.common import (
     constraint_handlers,
     motion_constraint_items,
@@ -23,6 +23,15 @@ def validate_handler_constraint_assembly(model: Model) -> None:
         }
 
         for monitor in handler.monitors:
+            if isinstance(monitor.constraint, UntilMonitorRef):
+                if monitor.constraint.motion is not handler.motion:
+                    raise semantic_error(
+                        f"Monitor '{monitor.name}' references UNTIL guard "
+                        f"'{monitor.constraint}', but handler '{handler.name}' primary motion "
+                        f"is '{handler.motion.name}'.",
+                        monitor,
+                    )
+                continue
             if id(monitor.constraint.constraint) not in assembled_specs:
                 raise semantic_error(
                     f"Monitor '{monitor.name}' references constraint "
@@ -64,11 +73,43 @@ def validate_handler_requirements(model: Model) -> None:
                 handler,
             )
 
-        monitored = {id(mon.constraint.constraint) for mon in handler.monitors}
-        for constraint in guard_constraints:
+        until_items = [_resolved_spec(item) for item in handler.motion.until.constraints]
+        until_monitor_refs = [mon for mon in handler.monitors if isinstance(mon.constraint, UntilMonitorRef)]
+        if until_items:
+            if len(until_monitor_refs) != 1:
+                raise semantic_error(
+                    f"ConstraintHandler '{handler.name}' must monitor the UNTIL guard with exactly one "
+                    f"aggregate monitor like <{handler.motion.name}.until>.",
+                    handler,
+                )
+            individual_until_monitors = [
+                mon
+                for mon in handler.monitors
+                if not isinstance(mon.constraint, UntilMonitorRef)
+                and id(mon.constraint.constraint) in {id(c) for c in until_items}
+            ]
+            if individual_until_monitors:
+                raise semantic_error(
+                    f"ConstraintHandler '{handler.name}' monitors individual UNTIL constraints; "
+                    f"use one aggregate monitor <{handler.motion.name}.until> instead.",
+                    individual_until_monitors[0],
+                )
+        elif until_monitor_refs:
+            raise semantic_error(
+                f"ConstraintHandler '{handler.name}' monitors <{handler.motion.name}.until>, "
+                "but the motion has no UNTIL constraints.",
+                until_monitor_refs[0],
+            )
+
+        monitored = {
+            id(mon.constraint.constraint)
+            for mon in handler.monitors
+            if not isinstance(mon.constraint, UntilMonitorRef)
+        }
+        for constraint in [_resolved_spec(item) for item in handler.motion.when.constraints]:
             if id(constraint) not in monitored:
                 raise semantic_error(
-                    f"ConstraintHandler '{handler.name}' has WHEN or UNTIL constraint "
+                    f"ConstraintHandler '{handler.name}' has WHEN constraint "
                     f"'{constraint.name}' without a monitor.",
                     constraint,
                 )

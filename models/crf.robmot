@@ -78,15 +78,9 @@ CONSTRAINT_HANDLER (ns=app) handler-find {
     CONTROL_MODE: JointTorque
 
     MONITORS {
-        mon-torque-find-shutoff:
-            monitor <m-find.cstr-torque-find-shutoff> and
-            trigger event evt-torque-find-shutoff when active,
-        mon-rotation-find-limit:
-            monitor <m-find.cstr-rotation-find-limit> and
-            trigger event evt-rotation-find-limit when active,
-        mon-torque-find-upper-limit:
-            monitor <m-find.cstr-torque-find-upper-limit> and
-            trigger event evt-torque-find-upper-limit when active
+        mon-find-until:
+            monitor <m-find.until> and
+            trigger event evt-find-until when active
     }
 
     CONTROLLERS {
@@ -189,12 +183,9 @@ CONSTRAINT_HANDLER (ns=app) handler-loosen {
         mon-torque-loosen-contact:
             monitor <m-loosen.cstr-torque-loosen-contact> and
             set flag flg-torque-loosen-contact while active,
-        mon-rotation-loosen-bilateral:
-            monitor <m-loosen.cstr-rotation-loosen-bilateral> and
-            trigger event evt-rotation-loosen when active,
-        mon-torque-loosen-bilateral:
-            monitor <m-loosen.cstr-torque-loosen-bilateral> and
-            trigger event evt-torque-loosen when active
+        mon-loosen-until:
+            monitor <m-loosen.until> and
+            trigger event evt-loosen-until when active
     }
 
     CONTROLLERS {

@@ -80,6 +80,7 @@ from motion_spec_dsl.domain import (
     SpecContextDecl,
     ContextQuantity,
     TrajectoryValue,
+    UntilMonitorRef,
     VectorQuantity,
     WorldContextDecl,
     WorldQuantity,
@@ -1895,6 +1896,8 @@ class MotionSpecDatasetBuilder:
                 )
             if ctrl.params.damping is not None:
                 self.graph.add((ctrl_node, CSTR_HDL["damping"], Literal(str(ctrl.params.damping))))
+        elif ctrl.type == ControllerType.FeedForward:
+            self.graph.add((ctrl_node, RDF.type, CSTR_HDL.FeedForwardController))
         else:
             raise ValueError(
                 f"Controller '{ctrl.name}' uses {ctrl.type.value}, "
@@ -2039,7 +2042,7 @@ class MotionSpecDatasetBuilder:
             command = controller_command_record(ctrl)
 
             error_id: str | None = None
-            if qty is not None:
+            if qty is not None and ctrl.type != ControllerType.FeedForward:
                 sid = _scalar_id(qty, subspace, axis)
                 error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
 
@@ -2077,11 +2080,17 @@ class MotionSpecDatasetBuilder:
 
             ctrl_node = URIRef(ctrl.uri)
             self._emit_controller_base(ctrl_node, ctrl)
+            self.graph.add((ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
 
             if error_id:
                 self.graph.add(
                     (ctrl_node, CSTR_HDL["error-signal"], self._owned_uri(error_id, spec.parent))
                 )
+
+            if ctrl.type == ControllerType.FeedForward and isinstance(spec.expr, EqualityConstraint):
+                ref_qty = _context_quantity(spec.expr.reference)
+                if ref_qty is not None:
+                    self.graph.add((ctrl_node, CSTR_HDL["reference-signal"], URIRef(ref_qty.uri)))
 
             control_signal_node = self._decode_control_signal(
                 ctrl, qty, subspace, axis, motion, handler, shared
@@ -2103,6 +2112,47 @@ class MotionSpecDatasetBuilder:
 
         for mon in getattr(handler, "monitors", []):
             cref = mon.constraint
+            signal_name = mon.event or mon.flag
+            signal_kind = "event" if mon.event else "flag"
+            signal_node = self._owned_uri(signal_name, handler)
+            mon_node = URIRef(mon.uri)
+
+            if isinstance(cref, UntilMonitorRef):
+                for item in cref.motion.until.constraints:
+                    spec = _resolved_spec(item)
+                    qty = self._resolve_constraint_quantity(spec, world_qtys)
+                    subspace = _view_subspace(spec)
+                    axis_raw = spec.view.axis
+                    axis = semantic_axis_label(axis_raw)
+                    scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
+                    qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
+                    error_id = f"{qty_node_id}-err"
+
+                    if error_id not in seen_error_ids:
+                        seen_error_ids.add(error_id)
+                        self._add_quantity(self._owned_uri(error_id, spec.parent), scalar_t)
+
+                    self._emit_error_evaluator(
+                        handler_node,
+                        spec,
+                        self._owned_uri(error_id, spec.parent),
+                        seen_eval_ids,
+                    )
+
+                self.graph.add(
+                    (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
+                )
+                self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
+                self.graph.add((mon_node, CSTR_HDL["monitors-until"], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
+                if signal_kind == "event":
+                    self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
+                    self.graph.add((mon_node, CSTR_HDL.event, signal_node))
+                else:
+                    self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
+                    self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
+                self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
+                continue
+
             spec = cref.constraint if hasattr(cref, "constraint") else None
             if spec is None:
                 continue
@@ -2126,10 +2176,6 @@ class MotionSpecDatasetBuilder:
                 seen_eval_ids,
             )
 
-            signal_name = mon.event or mon.flag
-            signal_kind = "event" if mon.event else "flag"
-            signal_node = self._owned_uri(signal_name, handler)
-            mon_node = URIRef(mon.uri)
             self.graph.add(
                 (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
             )
@@ -2144,12 +2190,6 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
             self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
 
-        for action in getattr(handler, "actions", []):
-            action_node = URIRef(f"{handler.uri}/{action.name}")
-            self.graph.add((action_node, RDF.type, CSTR_HDL["GripperAction"]))
-            self.graph.add((action_node, CSTR_HDL["target-attachment"], URIRef(action.attachment.uri)))
-            self.graph.add((action_node, CSTR_HDL["command"], Literal(action.command)))
-            self.graph.add((handler_node, CSTR_HDL["actions"], action_node))
 
     def _decode_control_signal(
         self,
@@ -2164,6 +2204,12 @@ class MotionSpecDatasetBuilder:
         solver = self._controller_solver(handler, ctrl)
         algorithm = getattr(solver, "algorithm", None)
         command = controller_command_record(ctrl)
+
+        if ctrl.type == ControllerType.FeedForward:
+            signal_node = self._owned_uri(f"cmd-{ctrl.name}", handler)
+            signal_type = _scalar_type(qty, subspace, axis) if qty is not None else QuantityType.Vector
+            self._add_quantity(signal_node, signal_type)
+            return signal_node
 
         ws_spec = WORLD_SPECS.get(qty.type) if qty else None
         prop = ws_spec[3].get(subspace) if ws_spec else None
@@ -2238,9 +2284,25 @@ class MotionSpecDatasetBuilder:
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
 
             solver_node = self._owned_uri(solver_stem, solver)
-            self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
 
             alg = solver.algorithm
+            if alg == "CommandForwarding":
+                self.graph.add((solver_node, RDF.type, SLV.CommandForwardingSolver))
+                self.graph.add((solver_node, SLV.solver, SLV.CommandForwardingAlgorithm))
+                self._emit_solver_interfaces(
+                    handler,
+                    motion,
+                    solver,
+                    solver_node,
+                    driver_stem,
+                    driver_node,
+                    world_qtys,
+                    shared_spec_ids,
+                )
+                continue
+
+            self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
+
             alg_node = (
                 SLV.AccelerationConstrainedHybridDynamicsAlgorithm
                 if alg == "ACHD"
@@ -2325,6 +2387,19 @@ class MotionSpecDatasetBuilder:
                 if axis is not None and command.acceleration_constraints
                 else None
             )
+
+            if solver.algorithm == "CommandForwarding" and ctrl.type == ControllerType.FeedForward:
+                target_name = _geo_prop(qty.props if isinstance(qty.props, GeometricProps) else None, "of")
+                if target_name:
+                    control_signal_node = self._decode_control_signal(
+                        ctrl, qty, subspace, axis, motion, handler, shared
+                    )
+                    spec_node = self._owned_uri(f"cmd-fwd-{ctrl.name}", handler)
+                    self.graph.add((spec_node, RDF.type, SLV.CommandForwardingSpecification))
+                    self.graph.add((spec_node, SLV["control-signal"], control_signal_node))
+                    self.graph.add((spec_node, SLV["attached-to"], self._owned_uri(target_name, qty)))
+                    self.graph.add((solver_node, SLV["command-forwarding"], spec_node))
+                continue
 
             if (
                 solver.algorithm == "ACHD"
@@ -2432,7 +2507,13 @@ class MotionSpecDatasetBuilder:
         if explicit is not None:
             return explicit
         solvers = [_resolved_solver(s) for s in getattr(handler, "solvers", [])]
-        return solvers[0] if len(solvers) == 1 else None
+        if len(solvers) == 1:
+            return solvers[0]
+        if ctrl.type == ControllerType.FeedForward:
+            candidates = [solver for solver in solvers if str(solver.algorithm) == "CommandForwarding"]
+        else:
+            candidates = [solver for solver in solvers if str(solver.algorithm) != "CommandForwarding"]
+        return candidates[0] if len(candidates) == 1 else None
 
     def _add_quantity(self, node: URIRef, scalar_type: Any) -> None:
         qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(scalar_type)

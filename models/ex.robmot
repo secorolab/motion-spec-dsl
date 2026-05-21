@@ -107,8 +107,7 @@ CONSTRAINT_HANDLER (ns=app) handler-approach {
     CONTROL_MODE: JointTorque
 
     MONITORS {
-        mon-contact:  monitor <m-approach.cstr-contact>  and trigger event evt-contact  when active,
-        mon-overload: monitor <m-approach.cstr-overload> and trigger event evt-overload when active
+        mon-approach-until: monitor <m-approach.until> and trigger event evt-approach-until when active
     }
 
     CONTROLLERS {
@@ -142,7 +141,7 @@ CONSTRAINT_HANDLER (ns=app) handler-contact {
 
     MONITORS {
         mon-in-contact: monitor <m-contact.cstr-in-contact> and set flag flg-in-contact while active,
-        mon-overload:   monitor <m-contact.cstr-overload>   and trigger event evt-overload when active
+        mon-overload:   monitor <m-contact.until> and trigger event evt-overload when active
     }
 
     CONTROLLERS {

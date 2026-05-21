@@ -8,6 +8,7 @@ from motion_spec_dsl.domain import (
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
+    ControllerType,
     HandlerControlMode,
     Model,
     QuantityType,
@@ -23,6 +24,7 @@ from motion_spec_dsl.validation.common import constraint_handlers, semantic_erro
 SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
     "ACHD": {HandlerControlMode.JointTorque},
     "RNE": {HandlerControlMode.JointTorque},
+    "CommandForwarding": {HandlerControlMode.JointTorque},
 }
 
 
@@ -47,6 +49,8 @@ def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) ->
 def validate_solver_refs(model: Model) -> None:
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
+            if str(_resolved_solver(solver).algorithm) == "CommandForwarding":
+                continue
             component = _solver_component(solver)
             if component is None:
                 raise semantic_error(
@@ -92,6 +96,19 @@ def validate_solver_refs(model: Model) -> None:
                 )
 
 
+def _implicit_solver_for_controller(
+    handler: ConstraintHandler,
+    controller: ControllerEntry | ControllerAlias,
+) -> SolverEntry | None:
+    solvers = [_resolved_solver(item) for item in handler.solvers]
+    resolved_controller = _resolved_controller(controller)
+    if resolved_controller.type == ControllerType.FeedForward:
+        candidates = [solver for solver in solvers if str(solver.algorithm) == "CommandForwarding"]
+    else:
+        candidates = [solver for solver in solvers if str(solver.algorithm) != "CommandForwarding"]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def validate_controller_solver_refs(model: Model) -> None:
     for handler in constraint_handlers(model):
         resolved_handler_solvers = [_resolved_solver(solver) for solver in handler.solvers]
@@ -99,7 +116,7 @@ def validate_controller_solver_refs(model: Model) -> None:
             resolved_controller = _resolved_controller(controller)
             explicit_solver = getattr(resolved_controller.solver, "solver", None)
             if explicit_solver is None:
-                if len(resolved_handler_solvers) == 1:
+                if _implicit_solver_for_controller(handler, controller) is not None:
                     continue
                 raise semantic_error(
                     f"Controller '{controller.name}' must specify solver because handler "
@@ -130,7 +147,9 @@ def handler_controller_solver(
     if solver is not None:
         return solver
     solvers = [_resolved_solver(item) for item in handler.solvers]
-    return solvers[0] if len(solvers) == 1 else None
+    if len(solvers) == 1:
+        return solvers[0]
+    return _implicit_solver_for_controller(handler, controller)
 
 
 def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
@@ -149,6 +168,8 @@ def validate_supported_solver_algorithms(model: Model) -> None:
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
             resolved_solver = _resolved_solver(solver)
+            if str(resolved_solver.algorithm) == "CommandForwarding":
+                continue
             if str(resolved_solver.algorithm) == "RNE":
                 raise semantic_error(
                     f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
@@ -178,7 +199,7 @@ def validate_mixed_solver_domains(model: Model) -> None:
         domains_by_algorithm: dict[str, set[str]] = {}
         for controller in handler.controllers:
             solver = controller_solver(controller)
-            if solver is None:
+            if solver is None or str(solver.algorithm) == "CommandForwarding":
                 continue
             domains_by_algorithm.setdefault(str(solver.algorithm), set()).add(
                 _controller_domain(controller)

@@ -13,6 +13,7 @@ from motion_spec.namespace import (
     APP,
     CSTR,
     CSTR_HDL,
+    EL,
     GEOM_COORD,
     GEOM_ENT,
     GEOM_OP,
@@ -482,6 +483,7 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
         _evaluator_id(start_constraint), owner=start_constraint.parent
     )
     stop_eval_node = builder.root_uri(_evaluator_id(stop_constraint), owner=stop_constraint.parent)
+    motion_node = builder.root_uri("motion-m_guarded", owner=motion)
     start_error_node = builder.root_uri(
         "twist-ee-base.linear.z-err",
         owner=start_constraint.parent,
@@ -494,14 +496,15 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
     assert (start_monitor_node, RDF.type, CSTR_HDL.Monitor) in graph
     assert (start_monitor_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor) in graph
     assert (start_monitor_node, CSTR_HDL.event, start_event_node) in graph
-    assert (start_event_node, RDF.type, CSTR_HDL.Event) in graph
+    assert (start_event_node, RDF.type, EL.Event) in graph
     assert (start_eval_node, CSTR_HDL.constraint, URIRef(start_constraint.uri)) in graph
     assert (start_eval_node, CSTR_HDL.error, start_error_node) in graph
 
     assert (stop_monitor_node, RDF.type, CSTR_HDL.Monitor) in graph
     assert (stop_monitor_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor) in graph
+    assert (stop_monitor_node, CSTR_HDL["monitors-until"], motion_node) in graph
     assert (stop_monitor_node, CSTR_HDL.flag, stop_flag_node) in graph
-    assert (stop_flag_node, RDF.type, CSTR_HDL.Flag) in graph
+    assert (stop_flag_node, RDF.type, EL.Flag) in graph
     assert (stop_eval_node, CSTR_HDL.constraint, URIRef(stop_constraint.uri)) in graph
     assert (stop_eval_node, CSTR_HDL.error, stop_error_node) in graph
 

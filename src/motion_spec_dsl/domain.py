@@ -559,6 +559,7 @@ class ControllerType(StrEnum):
     PID = "PID"
     Impedance = "Impedance"
     ABAG = "ABAG"
+    FeedForward = "FeedForward"
 
 
 class ControllerParamName(StrEnum):
@@ -667,6 +668,23 @@ class ConstraintRef:
 
     def __str__(self) -> str:
         return f"{self.motion.name}.{self.constraint.name}"
+
+
+@dataclass
+class UntilMonitorRef:
+    motion: MotionSpec
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def motion_name(self) -> str:
+        return self.motion.name
+
+    @property
+    def name(self) -> str:
+        return "until"
+
+    def __str__(self) -> str:
+        return f"{self.motion.name}.until"
 
 
 @dataclass
@@ -827,7 +845,6 @@ class ConstraintHandler(IHasNamespaceDeclare):
     control_mode: HandlerControlMode
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
-    actions: list = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
 
     def __post_init__(self):
@@ -835,19 +852,12 @@ class ConstraintHandler(IHasNamespaceDeclare):
         self.control_mode = HandlerControlMode(self.control_mode)
 
 
-@dataclass
-class GripperAction:
-    parent: object
-    name: str
-    attachment: EnvironmentAsset
-    command: str
-
 
 @dataclass
 class MonitorEntry(NamedNamespaceObject):
     parent: object
     name: str
-    constraint: ConstraintRef
+    constraint: ConstraintRef | UntilMonitorRef
     event: str = ""
     flag: str = ""
 
@@ -857,6 +867,10 @@ class MonitorEntry(NamedNamespaceObject):
     @property
     def constraint_name(self) -> str:
         return self.constraint.name
+
+    @property
+    def is_until_monitor(self) -> bool:
+        return isinstance(self.constraint, UntilMonitorRef)
 
 
 @dataclass
@@ -989,9 +1003,9 @@ class SolverEntry(NamedNamespaceObject):
     name: str
     robot: RobotRef
     algorithm: str
-    root: RobotAnchorRef
-    gravity: WorldQuantity
-    gravity_value: ContextRef
+    root: RobotAnchorRef | None = None
+    gravity: WorldQuantity | None = None
+    gravity_value: ContextRef | None = None
     end: RobotAnchorRef | None = None
 
     def __post_init__(self):
@@ -1021,9 +1035,9 @@ class SolverAlias(SolverEntry):
     ref: SolverRef
     robot: RobotRef = field(init=False)
     algorithm: str = field(init=False)
-    root: RobotAnchorRef = field(init=False)
-    gravity: WorldQuantity = field(init=False)
-    gravity_value: ContextRef = field(init=False)
+    root: RobotAnchorRef | None = field(init=False, default=None)
+    gravity: WorldQuantity | None = field(init=False, default=None)
+    gravity_value: ContextRef | None = field(init=False, default=None)
     end: RobotAnchorRef | None = field(init=False, default=None)
 
     def __post_init__(self):
