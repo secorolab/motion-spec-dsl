@@ -76,13 +76,30 @@ def _context_quantity_shape(quantity: ContextQuantity) -> QuantityType:
     return quantity.type
 
 
+def _context_ref_shape(ref: ContextRef) -> QuantityType | None:
+    value = context_ref_value(ref)
+    if not isinstance(value, ContextQuantity):
+        return None
+    base_shape = _context_quantity_shape(value)
+    subspace = getattr(ref, "subspace", None)
+    axis = axis_label(getattr(ref, "axis", None))
+    if base_shape in {QuantityType.Pose, QuantityType.Trajectory}:
+        if subspace is None:
+            return base_shape
+        if subspace == SubSpace.Position:
+            return QuantityType.Distance if axis is not None else QuantityType.Position
+        if subspace == SubSpace.Orientation:
+            return QuantityType.Angle if _is_orientation_axis(axis) else QuantityType.Orientation
+    return base_shape
+
+
 def _constraint_reference_shapes(constraint: ConstraintSpecification) -> list[tuple[ContextRef, QuantityType]]:
     refs = constraint_context_refs(constraint)
     pairs: list[tuple[ContextRef, QuantityType]] = []
     for ref in refs:
-        value = context_ref_value(ref)
-        if isinstance(value, ContextQuantity):
-            pairs.append((ref, _context_quantity_shape(value)))
+        ref_shape = _context_ref_shape(ref)
+        if ref_shape is not None:
+            pairs.append((ref, ref_shape))
     return pairs
 
 
@@ -94,8 +111,8 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
         QuantityType.AngularDistance: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
         QuantityType.Distance: {QuantityType.Distance},
-        QuantityType.Position: {QuantityType.Position, QuantityType.Pose, QuantityType.Trajectory},
-        QuantityType.Orientation: {QuantityType.Orientation, QuantityType.Pose, QuantityType.Trajectory},
+        QuantityType.Position: {QuantityType.Position},
+        QuantityType.Orientation: {QuantityType.Orientation},
         QuantityType.Pose: {QuantityType.Pose, QuantityType.Trajectory},
     }
     return right in compatible.get(left, {left})

@@ -27,8 +27,8 @@ MOTION_SPEC (ns=app) m_pose_parts {
     WHEN {}
 
     WHILE {
-        c_position: keeping <cw.pose-ee-base>.position equal to <cs.pose-start>,
-        c_orientation: keeping <cw.pose-ee-base>.orientation equal to <cs.pose-start>
+        c_position: keeping <cw.pose-ee-base>.position equal to <cs.pose-start>.position,
+        c_orientation: keeping <cw.pose-ee-base>.orientation equal to <cs.pose-start>.orientation
     }
 
     UNTIL {}

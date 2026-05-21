@@ -168,3 +168,58 @@ def test_impedance_controller_passes_validation() -> None:
     assert controller.type.value == "Impedance"
     assert controller.params.stiffness == 1.0
     assert controller.params.damping == 0.1
+
+
+@pytest.mark.parametrize(
+    ("constraint", "message"),
+    [
+        (
+            "keeping <w.pose-ee-base>.position equal to <s.pose-start>",
+            "Constraint 'c' compares Position with Pose.",
+        ),
+        (
+            "keeping <w.pose-ee-base>.orientation equal to <s.pose-start>",
+            "Constraint 'c' compares Orientation with Pose.",
+        ),
+        (
+            "keeping <w.pose-ee-base>.position equal to <s.traj>",
+            "Constraint 'c' compares Position with Trajectory.",
+        ),
+        (
+            "keeping <w.pose-ee-base>.orientation equal to <s.traj>",
+            "Constraint 'c' compares Orientation with Trajectory.",
+        ),
+    ],
+)
+def test_pose_subspace_constraints_require_matching_reference_subspace(
+    constraint: str, message: str
+) -> None:
+    metamodel = motion_spec_metamodel()
+    model = f"""ns app = \"https://secorolab.github.io/models/tests/\"
+
+MOTION_SPEC (ns=app) bad_pose_subspace {{
+    CONTEXT {{
+        w: World {{
+            pose-ee-base: Pose {{ of: ee, wrt: base, as-seen-by: base }}
+        }},
+        s: Spec {{
+            alpha: TrajectoryProgress,
+            pose-start: Pose = Snapshot of <w.pose-ee-base>,
+            traj: Trajectory = Lerp {{
+                start: <s.pose-start>,
+                goal:  <s.pose-start>,
+                alpha: <s.alpha>
+            }}
+        }}
+    }}
+
+    WHEN {{}}
+    WHILE {{
+        c: {constraint}
+    }}
+    UNTIL {{}}
+}}
+"""
+
+    with pytest.raises(TextXSemanticError, match=re.escape(message)):
+        metamodel.model_from_str(model)
