@@ -82,6 +82,14 @@ def _build_model_dataset(model_name: str):
     return builder, dataset.default_graph, cast(dict[str, str], context)
 
 
+def _build_string_dataset(source: str):
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_str(source)
+    builder = MotionSpecDatasetBuilder(model)
+    dataset, context = builder.build()
+    return builder, dataset.default_graph, cast(dict[str, str], context)
+
+
 def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> None:
     builder, graph, context = _build_dataset(STANDALONE_MANIPULATOR)
 
@@ -529,3 +537,153 @@ def test_derived_velocity_twist_transform_emits_rotate_operation() -> None:
     assert (op_node, GEOM_OP.pose, inverse_pose_node) in graph
     assert (op_node, GEOM_OP["from"], source_node) in graph
     assert (op_node, GEOM_OP.to, target_node) in graph
+
+
+def _frame_trajectory_model(*, lhs: str, traj_wrt: str, start_pose: str, goal_name: str = "goal-pose") -> str:
+    return f"""ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {{
+    runtime: RealRobot,
+    ASSETS {{
+        kinova-urdf: RobotAsset {{ model: KinovaGen3, urdf: "../robots/kg3.urdf" }}
+    }},
+    ASSEMBLY {{
+        kinova: <kinova-urdf> {{
+            chain: {{ root: frame-base, end: frame-ee }}
+        }}
+    }}
+}}
+
+MOTION_SPEC (ns=app) m_frame_traj {{
+    CONTEXT {{
+        w: World {{
+            pose-ee-base: Pose {{ of: frame-ee, wrt: frame-base, as-seen-by: frame-base }},
+            pose-cube-base: Pose {{ of: frame-cube, wrt: frame-base, as-seen-by: frame-base }},
+            pose-ee-cube: Pose {{ of: frame-ee, wrt: frame-cube, as-seen-by: frame-base }}
+        }},
+        s: Spec {{
+            alpha: TrajectoryProgress,
+            start-pose: Pose {{ of: frame-ee, wrt: {traj_wrt}, as-seen-by: frame-base }} = Snapshot of <w.{start_pose}>,
+            {goal_name}: Pose {{ of: frame-ee, wrt: {traj_wrt}, as-seen-by: frame-base }} {{
+                position: {{ x: 0.0 m, y: 0.0 m, z: 0.20 m }},
+                orientation: {{ roll: 3.14159 rad, pitch: 0.0 rad, yaw: 1.5708 rad }}
+            }},
+            traj: Trajectory {{ of: frame-ee, wrt: {traj_wrt}, as-seen-by: frame-base }} = Lerp {{
+                start: <s.start-pose>,
+                goal:  <s.{goal_name}>,
+                alpha: <s.alpha>
+            }}
+        }}
+    }}
+
+    WHEN {{}}
+
+    WHILE {{
+        follow: keeping <w.{lhs}> equal to <s.traj>
+    }}
+
+    UNTIL {{}}
+}}
+
+CONSTRAINT_HANDLER (ns=app) handler_frame_traj {{
+    CONTEXT {{
+        hw: World {{ gravity: Gravity }},
+        hs: Spec {{ gravity-vec: Vector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }} }}
+    }}
+
+    MOTION: <m_frame_traj>
+    CONTROL_MODE: JointTorque
+
+    CONTROLLERS {{
+        ctrl-follow: PID {{ constraint: <m_frame_traj.follow>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }}
+    }}
+
+    SOLVERS {{
+        arm-solver: Solver {{
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <hw.gravity> equal to <hs.gravity-vec>
+        }}
+    }}
+}}
+"""
+
+
+def test_frame_aware_trajectory_reference_composes_cube_trajectory_into_base_frame() -> None:
+    builder, graph, _ = _build_string_dataset(
+        _frame_trajectory_model(
+            lhs="pose-ee-base",
+            traj_wrt="frame-cube",
+            start_pose="pose-ee-cube",
+        )
+    )
+
+    motion = builder.authored_handlers[0].motion
+    constraint = _resolved_spec(motion.while_.constraints[0])
+    constraint_node = URIRef(constraint.uri)
+    traj_quantity = next(
+        item
+        for ctx in motion.context
+        for item in getattr(ctx, "declaration", [])
+        if getattr(item, "name", None) == "traj"
+    )
+    cube_pose_quantity = next(
+        item
+        for ctx in motion.context
+        for item in getattr(ctx, "declaration", [])
+        if getattr(item, "name", None) == "pose-cube-base"
+    )
+    traj_node = URIRef(traj_quantity.uri)
+    cube_pose_node = URIRef(cube_pose_quantity.uri)
+    transformed_node = builder.root_uri("traj-in-frame-base-follow", owner=motion)
+    compose_node = builder.root_uri("compute-traj-in-frame-base-follow", owner=motion)
+
+    assert (compose_node, RDF.type, GEOM_OP.ComposePose) in graph
+    assert (compose_node, GEOM_OP.in1, cube_pose_node) in graph
+    assert (compose_node, GEOM_OP.in2, traj_node) in graph
+    assert (compose_node, GEOM_OP.composite, transformed_node) in graph
+    assert (constraint_node, CSTR["reference-value"], transformed_node) in graph
+
+
+def test_frame_aware_trajectory_reference_inverts_path_when_target_is_cube_frame() -> None:
+    builder, graph, _ = _build_string_dataset(
+        _frame_trajectory_model(
+            lhs="pose-ee-cube",
+            traj_wrt="frame-base",
+            start_pose="pose-ee-base",
+            goal_name="goal-pose-base",
+        )
+    )
+
+    motion = builder.authored_handlers[0].motion
+    constraint = _resolved_spec(motion.while_.constraints[0])
+    constraint_node = URIRef(constraint.uri)
+    traj_quantity = next(
+        item
+        for ctx in motion.context
+        for item in getattr(ctx, "declaration", [])
+        if getattr(item, "name", None) == "traj"
+    )
+    cube_pose_quantity = next(
+        item
+        for ctx in motion.context
+        for item in getattr(ctx, "declaration", [])
+        if getattr(item, "name", None) == "pose-cube-base"
+    )
+    traj_node = URIRef(traj_quantity.uri)
+    cube_pose_node = URIRef(cube_pose_quantity.uri)
+    inverse_node = builder.root_uri("inverse-pose-cube-base", owner=motion)
+    invert_node = builder.root_uri("compute-inverse-pose-cube-base", owner=motion)
+    transformed_node = builder.root_uri("traj-in-frame-cube-follow", owner=motion)
+    compose_node = builder.root_uri("compute-traj-in-frame-cube-follow", owner=motion)
+
+    assert (invert_node, RDF.type, GEOM_OP.InvertPose) in graph
+    assert (invert_node, GEOM_OP.pose, cube_pose_node) in graph
+    assert (invert_node, GEOM_OP.out, inverse_node) in graph
+    assert (compose_node, RDF.type, GEOM_OP.ComposePose) in graph
+    assert (compose_node, GEOM_OP.in1, inverse_node) in graph
+    assert (compose_node, GEOM_OP.in2, traj_node) in graph
+    assert (compose_node, GEOM_OP.composite, transformed_node) in graph
+    assert (constraint_node, CSTR["reference-value"], transformed_node) in graph

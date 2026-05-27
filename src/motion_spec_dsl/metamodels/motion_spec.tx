@@ -297,7 +297,7 @@ GeoPropKey:
 ;
 
 ContextQuantity:
-    name=IRI_TRUNK ":" type=ContextQuantityType value=ContextQuantityValue?
+    name=IRI_TRUNK ":" type=ContextQuantityType ("{" props=GeometricProps "}")? value=ContextQuantityValue?
 ;
 
 ContextQuantityType:
@@ -390,6 +390,7 @@ SubSpace:
     "linvel"      |
     "torque"      |
     "force"       |
+    "pose"        |
     "orientation" |
     "position"
 ;

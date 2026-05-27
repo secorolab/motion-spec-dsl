@@ -9,6 +9,34 @@
 this should work as long as both are of same types.
 
 
+## RDF/Geometry Semantic Gaps (found during SHACL audit)
+
+- **Scene objects (`cube`, `table`) lack `geom:Frame` type** — `geom-rel:Pose` requires `of`/`wrt` to be
+  `geom:Frame`, but scene objects emitted via `_emit_structural_entities` only get `ENV.RigidObject`.
+  Fix: emit a body-fixed frame node (e.g. `cube.frame`) for each SceneObject, point Pose `of`/`wrt` to it,
+  and update IR routing to key on `ENV.RigidObject` instead of absence of `GEOM_ENT.Frame`.
+
+- **Assembly `EnvironmentPositionEntry` uses rigid body as `of`/`wrt`** — `geom-rel:PositionShape` requires
+  `geom:Point`, not a body instance. Each assembly object needs an origin `Point` node, and `world_node`
+  needs a corresponding `Point` node for the `wrt`.
+
+- **Assembly `EnvironmentOrientationEntry` missing `as-seen-by` and coordinate values** — `of`/`wrt` points
+  to the rigid body instance (needs `geom:Frame`); no `GEOM_COORD["as-seen-by"]` triple is emitted
+  (unlike position which has it); `_emit_orientation_rpy` is not called so angle values are not stored
+  (works by accident today since all assembly orientations are `{}`).
+
+- **`half_arm_2_link` naming mismatch in robmot files** — declared as `half-arm-2-link` (hyphens) in World
+  context but referenced as `of: half_arm_2_link` (underscores) in pose props. Produces two separate
+  URI nodes; the Pose quantity's `geom-rel:of` lands on a `Frame`-only node instead of the declared
+  `SimplicialComplex` node. Fix: change prop references to `half-arm-2-link` in all three pick_place
+  robmot files.
+
+- **`check.py` was not loading constraints or imports** — `rdflib.Dataset.triples()` in this rdflib fork
+  only searches the default graph; DSL-generated manifests use named graphs. Fixed by switching to
+  `g.quads()` throughout. `geometry.shacl.ttl` added to the secorolab `metamodels/` repo; manifests
+  should reference it via `https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl` with
+  a `metamodels/` IRI mapping once the generator is updated.
+
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.

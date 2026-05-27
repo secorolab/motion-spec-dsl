@@ -476,7 +476,7 @@ class WorldQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: WorldQuantityType
-    props: GeometricProps | None = None
+    props: GeometricProps | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -519,7 +519,7 @@ class GeometricPropKey(StrEnum):
     Of        = "of"
     Wrt       = "wrt"
     RefPoint  = "ref-point"
-    AsSeenBy    = "as-seen-by"
+    AsSeenBy  = "as-seen-by"
 
 
 @dataclass
@@ -577,19 +577,27 @@ class ContextQuantity(NamedNamespaceObject):
     name: str
     type: QuantityType
     value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | PoseValue | None = None
+    props: GeometricProps | None = field(default=None, kw_only=True)
+
+    _SCALAR_TYPES = frozenset({
+        "Distance", "LinearDistance", "Angle", "PlaneAngle",
+        "AngularDistance", "TrajectoryProgress",
+    })
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         if self.type == "LinearDistance":
             self.type = QuantityType.Distance
-            return
-        if self.type == "Trajectory":
+        elif self.type == "Trajectory":
             self.type = QuantityType.Trajectory
-            return
-        if self.type == "TrajectoryProgress":
+        elif self.type == "TrajectoryProgress":
             self.type = QuantityType.TrajectoryProgress
-            return
-        self.type = QuantityType(self.type)
+        else:
+            self.type = QuantityType(self.type)
+        if self.props is not None and str(self.type) in self._SCALAR_TYPES:
+            raise ValueError(
+                f"geometric props block is not valid for scalar quantity type '{self.type}'"
+            )
 
 
 @dataclass(kw_only=True)
