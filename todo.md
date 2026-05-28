@@ -9,47 +9,60 @@
 
 ## Generator SHACL Violations (found by running `check.py` on `pick_place*`)
 
-All three variants (`pick_place`, `pick_place_setpoints`, `pick_place_relative`) fail SHACL
-validation. Violations are grouped by root cause in `rdf.py`:
+All four original root causes are now **fixed**. Remaining violations are structural/semantic gaps
+(see below).
 
-- **Numeric literals emitted without `xsd:double` datatype (216 violations each variant)** —
-  `cstr_hdl:decay-rate`, `cstr_hdl:proportional-gain`, `cstr_hdl:integral-gain`,
-  `cstr_hdl:derivative-gain`, and `geom-coord:x/y/z` values are all emitted as plain string
-  literals (`Literal(str(v))`). The constraint-handler metamodel requires `sh:datatype xsd:double`
-  for all gain/decay scalars; the geometry metamodel requires it for coordinate values via
-  `sh:xone`. Fix: import `XSD` from `rdflib.namespace` and use `Literal(float(v), datatype=XSD.double)`
-  everywhere numeric scalars are added to the graph (controller gains lines ~2005–2015, coordinate
-  emission lines ~517–519, ~586–588, ~1167, ~1186–1188, ~1577, ~1708).
+**Fixed:**
+- ✅ Numeric literals without `xsd:double` (216 violations each) — all gains, decays, coordinates
+  now use `Literal(float(v), datatype=XSD.double)`.
+- ✅ Position nodes missing `rdf:type QUDT_QKIND.Position` (46 violations) — added to all
+  position sub-nodes including PoseCoordinateView subobjects and snapshot sources.
+- ✅ `PoseCoordinateView` misused for orientation axes (18 violations) — orientation component views
+  now typed as `map:View` only.
+- ✅ Declared Pose nodes missing `of`/`wrt`/`as-seen-by` — `_emit_declared_pose_frame_metadata`
+  propagates frames from direct constraints (Case 2), Lerp-goal/start trajectories (Case 3),
+  and snapshot sources (Case 1). Orientation sub-nodes also inherit parent frames.
+- ✅ Impedance controller `stiffness`/`damping` emitted as literals (BlankNodeOrIRI violations) —
+  now emitted as named IRI nodes with `qudt:value`.
+- ✅ Monitor event signals typed with secorolab `EL.Event` but SHACL requires comp-rob2b `ev:Event`
+  — both types now emitted.
+- ✅ Pose-diff evaluator output nodes (`pose-diff-ctrl-*`) missing `of`/`wrt` — added from world
+  quantity's frame props.
+- ✅ Pose error nodes in constraint handler missing `of`/`wrt`/`as-seen-by` for Pose-subspace
+  constraints — added in `_emit_constraint_handler`.
 
-- **Position nodes missing `rdf:type QUDT_QKIND.Position` (46 violations)** —
-  `PositionConstraint.quantity`/`.reference-value` and `PoseCoordinateView.subobject` shapes require
-  `sh:class qudt_quant:Position` (i.e., the node must carry `rdf:type qudt_quant:Position`). The
-  generator emits `hasQuantityKind: Position` but not `rdf:type: Position`. Fix: add
-  `self.graph.add((position_node, RDF.type, QUDT_QKIND.Position))` wherever position sub-nodes are
-  created (e.g., lines ~1178–1181, ~1596–1598 in `rdf.py`).
+**Remaining violations (structural/semantic gaps, not generator bugs):**
 
-- **`PoseCoordinateView` misused for orientation axes (18 violations)** —
-  `map:PoseCoordinateView` in the metamodel (`map.ttl`) restricts `map:subspace` to `map:position`
-  only. The generator types orientation component views as `map:PoseCoordinateView` with
-  `map:subspace: map:rotation`, violating the shape. Fix: do not add `map:PoseCoordinateView` to
-  orientation view nodes — type them as `map:View` only (no orientation-specific coordinate view
-  type exists in the current metamodel).
+- **`qudt_quant:Position` (4/2/2 per variant)** — Trajectory nodes or full Pose nodes used as
+  `cstr:reference-value` for `PositionConstraint`. The constraint `follow-pos: keeping
+  <world.pose-ee-base>.position equal to <spec.pick-traj>.position` emits the trajectory node URI
+  as the reference, but SHACL requires the reference-value to have `rdf:type qudt_quant:Position`.
+  Fix: in `_emit_context_ref_node`, when `ref.subspace == "position"` and the quantity is a
+  trajectory or pose, resolve to the `.position` sub-node instead of the parent URI. Requires
+  creating a position sub-node for trajectory quantities.
 
-- **Declared Pose nodes missing `of`, `wrt`, `as-seen-by` (minCount 1 violations per
-  goal-pose/trajectory node)** — Goal poses (`grasp-goal-pose`, `goal-pose-above`, etc.) and
-  Trajectory nodes (`pick-traj`, `lift-traj`, etc.) are typed as `geom-rel:Pose` and
-  `geom-coord:PoseCoordinate`, both requiring `of`/`wrt` (`geom:Frame`) and `as-seen-by`
-  (`geom:Frame`) at minCount 1. The generator emits these without frame context because the DSL does
-  not require it on declared setpoint poses. Fix: propagate the EE/base frame pair from the motion
-  spec's world context to declared Pose quantities (e.g., `of: g_pinch, wrt: base_link,
-  as-seen-by: base_link`), or extend the DSL to allow authors to specify frame context on declared
-  poses explicitly.
+- **`geom-ent:Frame` (7/7/23 per variant)** — Scene object instances (`cube`, `robot`, `table`)
+  are used as `geom-rel:of` on Pose/Orientation nodes. SHACL requires `sh:class geom-ent:Frame`.
+  The 23 in pick_place_relative comes from many cube-relative constraints. Fix: same as the Semantic
+  Gaps item below — emit a body-fixed frame node for each SceneObject and use that as `of`/`wrt`.
 
-- **`direction`/`position-force` controller nodes have untyped x/y/z (pick_place_relative only,
-  `sh:xone` violations)** — Impedance controller direction and force application nodes have
-  `geom-coord:x/y/z: "0.0"` (plain string). The geometry coordinate shape uses `sh:xone` between
-  "values present typed as `xsd:double`" and "values absent", so a plain string fails both
-  branches. Same root cause and fix as the first item above.
+- **`geom-ent:Point` (6 each)** — Same root cause: rigid body instances used as `of` for Position
+  nodes, but `PositionShape` requires `sh:class geom-ent:Point`. Fix: same frame/point node
+  emission structural fix.
+
+- **`All constraints must be evaluated` (6 each)** — Open-gripper and close-gripper constraints
+  use `FeedForward` controllers which don't produce error signals, so no evaluator is created. The
+  constraint-handler SPARQL shape requires every motion constraint to have an evaluator entry.
+
+- **Monitor `event-queue`, `error`, `error-signal` (per handler)** — Until-section monitor nodes
+  don't have `cstr_hdl:event-queue` (needs an `ev:EventQueue` node) or `cstr_hdl:error`. FeedForward
+  monitors have no `error-signal` on the controller.
+
+- **`dyn_coord:UniformGravitationalFieldCoordinate` (1 each)** — Gravity world quantity emitted
+  without the coordinate type.
+
+- **`slv:motion-drivers` more than 1 (1 each)** and **`slv:attached-to` (4 each)** — solver spec
+  structural issues.
 
 ## RDF/Geometry Semantic Gaps (found during SHACL audit)
 

@@ -307,9 +307,12 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "@graph": [
             {
                 "import": imported_files,
-                "constraints": sorted(constraint_paths),
+                "constraints": sorted(constraint_paths) + [
+                    "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl"
+                ],
                 "iri-map": {
                     "https://comp-rob2b.github.io/": {"path": "comp-rob2b/"},
+                    "https://secorolab.github.io/metamodels/": {"path": "../metamodels/"},
                     "https://secorolab.github.io/": {"path": "models/"},
                 },
             }
