@@ -100,6 +100,7 @@ class EnvironmentAttachEntry:
     parent: object
     attachment: EnvironmentAsset
     attach_to: str
+    attach_kind: str = "body"
     entries: list = field(default_factory=list)
 
 
@@ -158,6 +159,13 @@ class EnvironmentFreeEntry:
 
 
 @dataclass
+class EnvironmentAttachTargetEntry:
+    parent: object
+    kind: str
+    name: str
+
+
+@dataclass
 class EnvironmentToolBodyEntry:
     parent: object
     value: str
@@ -191,6 +199,25 @@ class EnvironmentSizeEntry:
 class EnvironmentMassEntry:
     parent: object
     value: float
+
+
+@dataclass
+class ColorTerm:
+    parent: object
+    channel: str
+    value: float = 0.0
+
+
+@dataclass
+class ColorValue:
+    parent: object
+    terms: list[ColorTerm] = field(default_factory=list)
+
+
+@dataclass
+class EnvironmentColorEntry:
+    parent: object
+    value: ColorValue
 
 
 @dataclass

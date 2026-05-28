@@ -45,11 +45,22 @@ EnvironmentAssemblyEntry:
     EnvironmentAttachEntry | EnvironmentPositionEntry | EnvironmentOrientationEntry |
     EnvironmentFreeEntry | EnvironmentToolBodyEntry | EnvironmentTcpSiteEntry |
     EnvironmentChainEntry | EnvironmentBodyEntry | EnvironmentShapeEntry |
-    EnvironmentSizeEntry | EnvironmentMassEntry | EnvironmentFrictionEntry
+    EnvironmentSizeEntry | EnvironmentMassEntry | EnvironmentFrictionEntry |
+    EnvironmentColorEntry | EnvironmentAttachTargetEntry | EnvironmentAttachmentPrefixEntry |
+    EnvironmentAttachmentActuatorEntry | EnvironmentAttachmentOpenCommandEntry |
+    EnvironmentAttachmentCloseCommandEntry
+;
+
+EnvironmentAttachTargetEntry:
+    "attach-to" ":" kind=AttachTargetKind name=IRI_TRUNK
+;
+
+AttachTargetKind:
+    "body" | "site" | "frame"
 ;
 
 EnvironmentAttachEntry:
-    "attach" "<" attachment=[EnvironmentAsset|FQN] ">" "to" attach_to=IRI_TRUNK
+    "attach" "<" attachment=[EnvironmentAsset|FQN] ">" "to" (attach_kind=AttachTargetKind)? attach_to=IRI_TRUNK
     ("{" entries*=EnvironmentAttachmentEntry[","] "}")?
 ;
 
@@ -121,6 +132,22 @@ EnvironmentSizeEntry:
 
 EnvironmentMassEntry:
     "mass" ":" value=FLOAT
+;
+
+EnvironmentColorEntry:
+    "color" ":" value=ColorValue
+;
+
+ColorValue:
+    "{" (terms*=ColorTerm[","])? "}"
+;
+
+ColorTerm:
+    channel=ColorChannel ":" value=FLOAT
+;
+
+ColorChannel:
+    "r" | "g" | "b" | "a"
 ;
 
 EnvironmentFrictionEntry:

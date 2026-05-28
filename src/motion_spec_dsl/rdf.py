@@ -560,7 +560,14 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((asset_node, RDF.type, MJ.MuJoCoBody))
                 self.graph.add((asset_node, MJ["body-name"], Literal(asset.body)))
 
+        robot_instances = [
+            instance
+            for instance in env.assembly
+            if instance.asset.type == EnvironmentAssetType.RobotAsset
+        ]
+
         for instance in env.assembly:
+            is_attachment_instance = instance.asset.type == EnvironmentAssetType.AttachmentAsset
             instance_node = URIRef(instance.uri)
             model_node = (
                 self._model_uri(env, instance.asset.model)
@@ -569,12 +576,15 @@ class MotionSpecDatasetBuilder:
             )
             self.graph.add((env_node, ENV["has-object"], instance_node))
             self.graph.add((instance_node, RDF.type, ENV.ModelledObject))
-            self.graph.add((instance_node, RDF.type, ENV.RigidObject))
-            self.graph.add((instance_node, RDF.type, GEOM_ENT.Frame))
-            self.graph.add((instance_node, RDF.type, GEOM_ENT.Point))
-            self.graph.add((instance_node, RDF.type, GEOM_ENT.SimplicialComplex))
+            if not is_attachment_instance:
+                self.graph.add((instance_node, RDF.type, ENV.RigidObject))
+                self.graph.add((instance_node, RDF.type, GEOM_ENT.Frame))
+                self.graph.add((instance_node, RDF.type, GEOM_ENT.Point))
+                self.graph.add((instance_node, RDF.type, GEOM_ENT.SimplicialComplex))
             self.graph.add((instance_node, ENV["of-object"], URIRef(instance.asset.uri)))
             self.graph.add((instance_node, ENV["has-object-model"], model_node))
+            if is_attachment_instance and len(robot_instances) == 1:
+                self.graph.add((instance_node, SLV["attached-to"], URIRef(robot_instances[0].uri)))
             if instance.asset.type == EnvironmentAssetType.SceneObject:
                 self.graph.add((instance_node, RDF.type, ENV.Object))
             if instance.asset.body:
@@ -583,6 +593,11 @@ class MotionSpecDatasetBuilder:
             for entry in instance.entries:
                 entry_type = entry.__class__.__name__
                 if entry_type == "EnvironmentPositionEntry":
+                    if is_attachment_instance:
+                        pos_node = URIRef(f"{instance.uri}.attach-position")
+                        self._emit_position_xyz(pos_node, entry.value)
+                        self.graph.add((instance_node, MJ["attach-position"], pos_node))
+                        continue
                     values = {term.axis: term.value for term in entry.value.terms}
                     pos_node = URIRef(f"{instance.uri}.position")
                     self.graph.add((pos_node, RDF.type, GEOM_REL.Position))
@@ -597,6 +612,11 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((pos_node, GEOM_COORD.y, Literal(float(values.get("y", 0.0)), datatype=XSD.double)))
                     self.graph.add((pos_node, GEOM_COORD.z, Literal(float(values.get("z", 0.0)), datatype=XSD.double)))
                 elif entry_type == "EnvironmentOrientationEntry":
+                    if is_attachment_instance:
+                        orient_node = URIRef(f"{instance.uri}.attach-orientation")
+                        self._emit_orientation_rpy(orient_node, entry.value, world_node)
+                        self.graph.add((instance_node, MJ["attach-orientation"], orient_node))
+                        continue
                     orient_node = URIRef(f"{instance.uri}.orientation")
                     self.graph.add((orient_node, RDF.type, GEOM_REL.Orientation))
                     self.graph.add((orient_node, RDF.type, GEOM_COORD.OrientationCoordinate))
@@ -606,10 +626,28 @@ class MotionSpecDatasetBuilder:
                 elif entry_type == "EnvironmentFreeEntry":
                     if bool(entry.value):
                         self.graph.add((instance_node, RDF.type, GEOM_ENT.RigidBody))
+                elif entry_type == "EnvironmentAttachTargetEntry":
+                    attach_target_node = URIRef(f"{instance.uri}.attach-to")
+                    if entry.kind == "site":
+                        self.graph.add((attach_target_node, RDF.type, MJ.MuJoCoSite))
+                        self.graph.add((attach_target_node, MJ["site-name"], Literal(entry.name)))
+                    else:
+                        self.graph.add((attach_target_node, RDF.type, MJ.MuJoCoBody))
+                        self.graph.add((attach_target_node, MJ["body-name"], Literal(entry.name)))
+                    self.graph.add((instance_node, MJ["attach-kind"], Literal(entry.kind)))
+                    self.graph.add((instance_node, MJ["attach-name"], Literal(entry.name)))
+                    if is_attachment_instance:
+                        self.graph.add((instance_node, MJ["attach-to-body"], attach_target_node))
                 elif entry_type == "EnvironmentBodyEntry":
                     self.graph.add((instance_node, RDF.type, MJ.MuJoCoBody))
                     self.graph.add((instance_node, MJ["body-name"], Literal(entry.value)))
                 elif entry_type == "EnvironmentToolBodyEntry":
+                    if is_attachment_instance:
+                        body_node = URIRef(f"{instance.uri}.tool-body")
+                        self.graph.add((body_node, RDF.type, MJ.MuJoCoBody))
+                        self.graph.add((body_node, MJ["body-name"], Literal(entry.value)))
+                        self.graph.add((instance_node, MJ["tool-body"], body_node))
+                        continue
                     self._emit_runtime_chain_binding(
                         instance_node,
                         root_name=instance.root,
@@ -617,6 +655,12 @@ class MotionSpecDatasetBuilder:
                         tool_body=entry.value,
                     )
                 elif entry_type == "EnvironmentTcpSiteEntry":
+                    if is_attachment_instance:
+                        site_node = URIRef(f"{instance.uri}.tcp-site")
+                        self.graph.add((site_node, RDF.type, MJ.MuJoCoSite))
+                        self.graph.add((site_node, MJ["site-name"], Literal(entry.value)))
+                        self.graph.add((instance_node, MJ["tcp-site"], site_node))
+                        continue
                     self._emit_runtime_chain_binding(
                         instance_node,
                         root_name=instance.root,
@@ -627,8 +671,14 @@ class MotionSpecDatasetBuilder:
                     attachment_node = URIRef(entry.attachment.uri)
                     attach_body_node = URIRef(f"{entry.attachment.uri}.attach-to")
                     self.graph.add((attachment_node, SLV["attached-to"], instance_node))
-                    self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoBody))
-                    self.graph.add((attach_body_node, MJ["body-name"], Literal(entry.attach_to)))
+                    if entry.attach_kind == "site":
+                        self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoSite))
+                        self.graph.add((attach_body_node, MJ["site-name"], Literal(entry.attach_to)))
+                    else:
+                        self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoBody))
+                        self.graph.add((attach_body_node, MJ["body-name"], Literal(entry.attach_to)))
+                    self.graph.add((attachment_node, MJ["attach-kind"], Literal(entry.attach_kind)))
+                    self.graph.add((attachment_node, MJ["attach-name"], Literal(entry.attach_to)))
                     self.graph.add((attachment_node, MJ["attach-to-body"], attach_body_node))
                     for option in entry.entries:
                         option_type = option.__class__.__name__
@@ -648,6 +698,17 @@ class MotionSpecDatasetBuilder:
                             self.graph.add((attachment_node, MJ["open-command"], Literal(option.value)))
                         elif option_type == "EnvironmentAttachmentCloseCommandEntry":
                             self.graph.add((attachment_node, MJ["closed-command"], Literal(option.value)))
+                elif entry_type == "EnvironmentAttachmentPrefixEntry":
+                    if is_attachment_instance:
+                        self.graph.add((instance_node, MJ["attach-prefix"], Literal(entry.value)))
+                    else:
+                        self.graph.add((instance_node, MJ["prefix"], Literal(entry.value)))
+                elif entry_type == "EnvironmentAttachmentActuatorEntry":
+                    self.graph.add((instance_node, MJ["actuator-name"], Literal(entry.value)))
+                elif entry_type == "EnvironmentAttachmentOpenCommandEntry":
+                    self.graph.add((instance_node, MJ["open-command"], Literal(entry.value)))
+                elif entry_type == "EnvironmentAttachmentCloseCommandEntry":
+                    self.graph.add((instance_node, MJ["closed-command"], Literal(entry.value)))
                 elif entry_type == "EnvironmentChainEntry":
                     self._emit_runtime_chain_binding(
                         instance_node,
@@ -662,6 +723,12 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((instance_node, MJ["size"], size_node))
                 elif entry_type == "EnvironmentMassEntry":
                     self.graph.add((instance_node, MJ["mass"], Literal(entry.value)))
+                elif entry_type == "EnvironmentColorEntry":
+                    values = {term.channel: term.value for term in entry.value.terms}
+                    self.graph.add((instance_node, MJ["color-r"], Literal(values.get("r", 0.1))))
+                    self.graph.add((instance_node, MJ["color-g"], Literal(values.get("g", 0.35))))
+                    self.graph.add((instance_node, MJ["color-b"], Literal(values.get("b", 1.0))))
+                    self.graph.add((instance_node, MJ["color-a"], Literal(values.get("a", 1.0))))
                 elif entry_type == "EnvironmentFrictionEntry":
                     values = {term.axis: term.value for term in entry.value.terms}
                     self.graph.add((instance_node, MJ["friction-slide"], Literal(values.get("slide", 0.5))))
