@@ -1753,6 +1753,7 @@ class MotionSpecDatasetBuilder:
             self._add_quantity(component_node, QuantityType.Angle)
             self.graph.add((orientation_node, GEOM_COORD["has-coordinate"], component_node))
             self.graph.add((view_node, RDF.type, MAP.View))
+            self.graph.add((view_node, RDF.type, MAP.PoseCoordinateView))
             self.graph.add((view_node, MAP.superobject, node))
             self.graph.add((view_node, MAP.subobject, component_node))
             self.graph.add((view_node, MAP.subspace, MAP.rotation))
@@ -1864,7 +1865,24 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
                 return position_node
             if subspace == "orientation":
-                return self._owned_uri(f"{quantity.name}.orientation", quantity)
+                orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
+                self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
+                self.graph.add((orientation_node, RDF.type, GEOM_REL.Orientation))
+                self.graph.add((orientation_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+                self.graph.add((orientation_node, RDF.type, GEOM_COORD["EulerAngles"]))
+                self.graph.add((orientation_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+                self.graph.add((orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+                self.graph.add((orientation_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+                pose_node = URIRef(quantity.uri)
+                self.graph.add((pose_node, GEOM_COORD["has-coordinate"], orientation_node))
+                pose_of = self.graph.value(pose_node, GEOM_REL.of)
+                pose_wrt = self.graph.value(pose_node, GEOM_REL["with-respect-to"])
+                pose_asb = self.graph.value(pose_node, GEOM_COORD["as-seen-by"])
+                if pose_of and pose_wrt:
+                    self.graph.add((orientation_node, GEOM_REL.of, pose_of))
+                    self.graph.add((orientation_node, GEOM_REL["with-respect-to"], pose_wrt))
+                    self.graph.add((orientation_node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
+                return orientation_node
         if quantity.type == QuantityType.Trajectory:
             if subspace == "position":
                 self.graph.add((ref_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -2371,9 +2389,11 @@ class MotionSpecDatasetBuilder:
                 and isinstance(spec.expr, EqualityConstraint)
             ):
                 ref_qty = _context_quantity(spec.expr.reference)
-                ref_uri = self.graph.value(URIRef(spec.uri), CSTR["reference-value"])
-                if ref_uri is None and ref_qty is not None:
+                ref_uri = None
+                if ref_qty is not None and getattr(ref_qty, "type", None) in {QuantityType.Pose, QuantityType.Trajectory}:
                     ref_uri = URIRef(ref_qty.uri)
+                if ref_uri is None:
+                    ref_uri = self.graph.value(URIRef(spec.uri), CSTR["reference-value"])
                 if ref_uri is not None:
                     self._emit_pose_diff_evaluator(
                         handler_node,
@@ -2631,7 +2651,11 @@ class MotionSpecDatasetBuilder:
                 continue
 
             solver_stem = solver.name
-            driver_stem = solver.name if multi else (motion.name or handler.name)
+            driver_stem = (
+                f"{solver.name}-{motion.name or handler.name}"
+                if multi
+                else (motion.name or handler.name)
+            )
 
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
