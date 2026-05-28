@@ -11,7 +11,6 @@ from rdflib.graph import Dataset
 from rdflib.namespace import Namespace, RDF, XSD
 from rdflib.term import Literal, URIRef
 
-_EV = Namespace("https://comp-rob2b.github.io/metamodels/coordination/event#")
 from textx.scoping import get_included_models
 
 from motion_spec.namespace import (
@@ -209,17 +208,15 @@ DSL_UNIT: dict[str, Any] = {
 }
 
 CONSTRAINT_PATH_BY_PREFIX = {
-    "geom-rel": "geometry/spatial-relations.ttl",
-    "geom-coord": "geometry/coordinates.ttl",
-    "geom-ent": "geometry/structural-entities.ttl",
-    "kc-stat": "kinematic-chain/state.ttl",
-    "rbdyn-ent": "newtonian-rigid-body-dynamics/structural-entities.ttl",
-    "rbdyn-coord": "newtonian-rigid-body-dynamics/coordinates.ttl",
-    "map": "task/map.ttl",
-    "cstr": "task/constraint.ttl",
-    "mot": "task/motion-specification.ttl",
-    "cstr-hdl": "task/constraint-handler.ttl",
-    "slv": "task/solver-specification.ttl",
+    "geom-rel": "https://comp-rob2b.github.io/metamodels/geometry/spatial-relations.ttl",
+    "geom-coord": "https://comp-rob2b.github.io/metamodels/geometry/coordinates.ttl",
+    "geom-op": "https://comp-rob2b.github.io/metamodels/geometry/spatial-operators.ttl",
+    "rbdyn-op": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/operators.ttl",
+    "map": "https://comp-rob2b.github.io/metamodels/task/map.ttl",
+    "cstr": "https://comp-rob2b.github.io/metamodels/task/constraint.ttl",
+    "mot": "https://comp-rob2b.github.io/metamodels/task/motion-specification.ttl",
+    "cstr-hdl": "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
+    "slv": "https://comp-rob2b.github.io/metamodels/task/solver-specification.ttl",
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
@@ -251,6 +248,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("snap", SNAP),
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
+    ("rbdyn-op", RBDYN_OP),
     ("qudt", QUDT_SCHEMA),
     ("qkind", QUDT_QKIND),
     ("unit", QUDT_UNIT),
@@ -534,6 +532,7 @@ class MotionSpecDatasetBuilder:
         world_node = URIRef(f"{env.uri}.world")
         self.graph.add((env_node, RDF.type, ENV.Workspace))
         self.graph.add((world_node, RDF.type, GEOM_ENT.Frame))
+        self.graph.add((world_node, RDF.type, GEOM_ENT.Point))
         if env.runtime == EnvironmentRuntime.MuJoCo:
             self.graph.add((env_node, RT["uses-runtime"], RT.MuJoCoRuntime))
         elif env.runtime == EnvironmentRuntime.RealRobot:
@@ -542,6 +541,7 @@ class MotionSpecDatasetBuilder:
         for asset in env.assets:
             asset_node = URIRef(asset.uri)
             self.graph.add((env_node, ENV["has-object"], asset_node))
+            self.graph.add((asset_node, RDF.type, ENV.Object))
             if asset.model:
                 self._emit_object_model(
                     self._model_uri(env, asset.model),
@@ -566,6 +566,10 @@ class MotionSpecDatasetBuilder:
             self.graph.add((env_node, ENV["has-object"], instance_node))
             self.graph.add((instance_node, RDF.type, ENV.ModelledObject))
             self.graph.add((instance_node, RDF.type, ENV.RigidObject))
+            self.graph.add((instance_node, RDF.type, GEOM_ENT.Frame))
+            self.graph.add((instance_node, RDF.type, GEOM_ENT.Point))
+            self.graph.add((instance_node, RDF.type, GEOM_ENT.SimplicialComplex))
+            self.graph.add((instance_node, ENV["of-object"], URIRef(instance.asset.uri)))
             self.graph.add((instance_node, ENV["has-object-model"], model_node))
             if instance.asset.type == EnvironmentAssetType.SceneObject:
                 self.graph.add((instance_node, RDF.type, ENV.Object))
@@ -594,6 +598,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((orient_node, RDF.type, GEOM_COORD.OrientationCoordinate))
                     self.graph.add((orient_node, GEOM_REL.of, instance_node))
                     self.graph.add((orient_node, GEOM_REL["with-respect-to"], world_node))
+                    self.graph.add((orient_node, GEOM_COORD["as-seen-by"], world_node))
                 elif entry_type == "EnvironmentFreeEntry":
                     if bool(entry.value):
                         self.graph.add((instance_node, RDF.type, GEOM_ENT.RigidBody))
@@ -1346,6 +1351,10 @@ class MotionSpecDatasetBuilder:
                 for node in {URIRef(qty.uri), self._owned_uri(qty.name, None)}:
                     explicit_structural_nodes.add(node)
                     self.graph.add((node, RDF.type, rdf_type))
+                    if qty.type == WorldQuantityType.SceneObject:
+                        self.graph.add((node, RDF.type, GEOM_ENT.Frame))
+                        self.graph.add((node, RDF.type, GEOM_ENT.Point))
+                        self.graph.add((node, RDF.type, GEOM_ENT.SimplicialComplex))
 
         # Implicit entities inferred from geo props. Emit them both where prop
         # references resolve and in the handler-root namespace.
@@ -1386,6 +1395,16 @@ class MotionSpecDatasetBuilder:
 
     def _emit_world_quantities(self, world_qtys: dict[str, WorldQuantity]) -> None:
         for qty in world_qtys.values():
+            if qty.type == WorldQuantityType.Gravity:
+                node = URIRef(qty.uri)
+                self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+                self.graph.add((node, RDF.type, GEOM_ENT.UniformGravitationalField))
+                self.graph.add((node, RDF.type, RBDYN_COORD.UniformGravitationalFieldCoordinate))
+                props = qty.props if isinstance(qty.props, GeometricProps) else None
+                asb_v = _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
+                if asb_v:
+                    self.graph.add((node, RBDYN_COORD["as-seen-by"], self._owned_uri(asb_v, qty)))
+                continue
             spec = WORLD_SPECS.get(qty.type)
             if spec is None:
                 continue
@@ -1798,6 +1817,9 @@ class MotionSpecDatasetBuilder:
 
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
+        if quantity.type == QuantityType.Distance:
+            self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
+            self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
         if isinstance(ref.literal_value, ScalarQuantity):
@@ -1808,6 +1830,33 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, GEOM_COORD.y, Literal(float(ref.literal_value.y), datatype=XSD.double)))
             self.graph.add((node, GEOM_COORD.z, Literal(float(ref.literal_value.z), datatype=XSD.double)))
         return node
+
+    def _constraint_reference_node(
+        self,
+        ref: ContextRef,
+        owner: Any,
+        suffix: str,
+        subspace: str,
+        axis: str | None,
+    ) -> URIRef:
+        ref_node = self._emit_context_ref_node(ref, owner, suffix)
+        quantity = _context_quantity(ref)
+        if not isinstance(quantity, ContextQuantity) or axis is not None:
+            return ref_node
+        quantity = _resolved_context_quantity(quantity)
+        if quantity.type == QuantityType.Pose:
+            if subspace == "position":
+                return self._owned_uri(f"{quantity.name}.position", quantity)
+            if subspace == "orientation":
+                return self._owned_uri(f"{quantity.name}.orientation", quantity)
+        if quantity.type == QuantityType.Trajectory:
+            if subspace == "position":
+                self.graph.add((ref_node, RDF.type, QUDT_QKIND.Position))
+                self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+            elif subspace == "orientation":
+                self.graph.add((ref_node, RDF.type, GEOM_REL.Orientation))
+                self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction))
+        return ref_node
 
     def _emit_constraints(
         self,
@@ -1862,7 +1911,7 @@ class MotionSpecDatasetBuilder:
             expr = spec.expr
             if isinstance(expr, EqualityConstraint):
                 self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
-                ref_node = self._emit_context_ref_node(expr.reference, motion, f"{spec.name}-ref")
+                ref_node = self._constraint_reference_node(expr.reference, motion, f"{spec.name}-ref", subspace, axis)
                 if (
                     qty is not None
                     and qty.type == WorldQuantityType.Pose
@@ -2187,6 +2236,7 @@ class MotionSpecDatasetBuilder:
                     f"Pose equality constraint '{spec.name}' needs an as-seen-by or wrt frame."
                 )
 
+            self.graph.add((eval_node, RDF.type, CSTR_HDL.ConstraintEvaluator))
             self.graph.add((eval_node, RDF.type, GEOM_OP["PoseDiffEvaluator"]))
             self.graph.add((eval_node, CSTR_HDL.constraint, URIRef(spec.uri)))
             self.graph.add((eval_node, GEOM_OP.in1, URIRef(qty.uri)))
@@ -2264,6 +2314,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (handler_node, CSTR_HDL["control-mode"], CSTR_HDL[handler.control_mode.value])
         )
+        event_loop_node = URIRef(f"{handler.uri}.event-loop")
+        self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
 
         seen_error_ids: set[str] = set()
         seen_eval_ids: set[str] = set()
@@ -2368,7 +2420,7 @@ class MotionSpecDatasetBuilder:
             cref = mon.constraint
             signal_name = mon.event or mon.flag
             signal_kind = "event" if mon.event else "flag"
-            signal_node = self._owned_uri(signal_name, handler)
+            signal_node = URIRef(f"{mon.uri}.{signal_name}")
             mon_node = URIRef(mon.uri)
 
             if isinstance(cref, UntilMonitorRef):
@@ -2405,13 +2457,14 @@ class MotionSpecDatasetBuilder:
                     (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
                 )
                 self.graph.add(
-                    (signal_node, RDF.type, _EV.Event if signal_kind == "event" else _EV.Flag)
+                    (event_loop_node, EL["has-event"] if signal_kind == "event" else EL["has-flag"], signal_node)
                 )
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
                 self.graph.add((mon_node, CSTR_HDL["monitors-until"], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
                 if signal_kind == "event":
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
+                    self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
                 else:
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
@@ -2447,7 +2500,7 @@ class MotionSpecDatasetBuilder:
                 (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
             )
             self.graph.add(
-                (signal_node, RDF.type, _EV.Event if signal_kind == "event" else _EV.Flag)
+                (event_loop_node, EL["has-event"] if signal_kind == "event" else EL["has-flag"], signal_node)
             )
             self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
@@ -2455,6 +2508,7 @@ class MotionSpecDatasetBuilder:
             if signal_kind == "event":
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
+                self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
             else:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
@@ -2553,7 +2607,7 @@ class MotionSpecDatasetBuilder:
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
 
-            solver_node = self._owned_uri(solver_stem, solver)
+            solver_node = self._owned_uri(f"{solver_stem}-{motion.name}", handler)
 
             alg = solver.algorithm
             if alg == "CommandForwarding":
@@ -2768,6 +2822,24 @@ class MotionSpecDatasetBuilder:
         if acc_constraint_nodes:
             spec_acc_node = self._owned_uri(f"spec-acc-{stem}", motion)
             self.graph.add((spec_acc_node, RDF.type, SLV.AccelerationConstraintSpecification))
+            attached_to: URIRef | None = None
+            for ctrl_item in getattr(handler, "controllers", []):
+                ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+                if self._controller_solver(handler, ctrl) is not solver:
+                    continue
+                cref = ctrl.params.constraint
+                spec = cref.constraint if hasattr(cref, "constraint") else None
+                if spec is None:
+                    continue
+                qty = self._resolve_constraint_quantity(spec, world_qtys)
+                props = qty.props if qty is not None and isinstance(qty.props, GeometricProps) else None
+                target_name = _geo_prop(props, "of")
+                if target_name:
+                    attached_to = self._owned_uri(target_name, qty)
+                    self.graph.add((attached_to, RDF.type, GEOM_ENT.SimplicialComplex))
+                    break
+            if attached_to is not None:
+                self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
             for acc_node in acc_constraint_nodes:
                 self.graph.add((spec_acc_node, SLV.constraints, acc_node))
             self.graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
@@ -2791,5 +2863,8 @@ class MotionSpecDatasetBuilder:
             qkind = QUDT_QKIND[scalar_type]
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
+        if scalar_type == QuantityType.Distance:
+            self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
+            self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))

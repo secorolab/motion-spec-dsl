@@ -283,6 +283,21 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         if path:
             constraint_paths.add(path)
 
+    local_constraint_paths = {
+        "https://secorolab.github.io/metamodels/behaviour/event_loop.shacl.ttl",
+        "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/environment.shacl.ttl",
+        "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl",
+        "https://secorolab.github.io/metamodels/runtime/runtime.shacl.ttl",
+        "https://secorolab.github.io/metamodels/simulation/mujoco.shacl.ttl",
+        "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/simulation.shacl.ttl",
+        "https://secorolab.github.io/metamodels/snapshot.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/motion-specification-extension.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/value-role.shacl.ttl",
+    }
+    metamodels_root = Path(__file__).resolve().parents[3] / "metamodels"
+
     return {
         "license": "https://github.com/aws/mit-0",
         "@context": {
@@ -307,12 +322,9 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "@graph": [
             {
                 "import": imported_files,
-                "constraints": sorted(constraint_paths) + [
-                    "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl"
-                ],
+                "constraints": sorted(constraint_paths | local_constraint_paths),
                 "iri-map": {
-                    "https://comp-rob2b.github.io/": {"path": "comp-rob2b/"},
-                    "https://secorolab.github.io/metamodels/": {"path": "../metamodels/"},
+                    "https://secorolab.github.io/metamodels/": {"path": str(metamodels_root)},
                     "https://secorolab.github.io/": {"path": "models/"},
                 },
             }
