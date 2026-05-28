@@ -518,10 +518,14 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, GEOM_COORD.y, Literal(float(values.get("y", 0.0)), datatype=XSD.double)))
         self.graph.add((node, GEOM_COORD.z, Literal(float(values.get("z", 0.0)), datatype=XSD.double)))
 
-    def _emit_orientation_rpy(self, node: URIRef, value) -> None:
+    def _emit_orientation_rpy(
+        self, node: URIRef, value, as_seen_by: URIRef | None = None
+    ) -> None:
         for term in value.terms:
             term_node = URIRef(f"{node}.{term.axis}")
             self.graph.add((term_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+            if as_seen_by is not None:
+                self.graph.add((term_node, GEOM_COORD["as-seen-by"], as_seen_by))
             self.graph.add((term_node, GEOM_COORD["angle-axis"], Literal(term.axis)))
             self.graph.add((term_node, QUDT_SCHEMA.value, Literal(term.value)))
             self.graph.add((term_node, QUDT_SCHEMA.unit, URIRef(str(QUDT_UNIT._NS) + term.unit.upper())))
@@ -636,7 +640,7 @@ class MotionSpecDatasetBuilder:
                             self.graph.add((attachment_node, MJ["attach-position"], pos_node))
                         elif option_type == "EnvironmentAttachmentOrientationEntry":
                             orient_node = URIRef(f"{entry.attachment.uri}.attach-orientation")
-                            self._emit_orientation_rpy(orient_node, option.value)
+                            self._emit_orientation_rpy(orient_node, option.value, world_node)
                             self.graph.add((attachment_node, MJ["attach-orientation"], orient_node))
                         elif option_type == "EnvironmentAttachmentActuatorEntry":
                             self.graph.add((attachment_node, MJ["actuator-name"], Literal(option.value)))
@@ -1818,7 +1822,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
         if quantity.type == QuantityType.Distance:
-            self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
@@ -1846,13 +1849,20 @@ class MotionSpecDatasetBuilder:
         quantity = _resolved_context_quantity(quantity)
         if quantity.type == QuantityType.Pose:
             if subspace == "position":
-                return self._owned_uri(f"{quantity.name}.position", quantity)
+                position_node = self._owned_uri(f"{quantity.name}.position", quantity)
+                self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
+                self.graph.add((position_node, RDF.type, QUDT_QKIND.Position))
+                self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+                self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+                return position_node
             if subspace == "orientation":
                 return self._owned_uri(f"{quantity.name}.orientation", quantity)
         if quantity.type == QuantityType.Trajectory:
             if subspace == "position":
+                self.graph.add((ref_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((ref_node, RDF.type, QUDT_QKIND.Position))
                 self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+                self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
             elif subspace == "orientation":
                 self.graph.add((ref_node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction))
@@ -2424,6 +2434,8 @@ class MotionSpecDatasetBuilder:
             mon_node = URIRef(mon.uri)
 
             if isinstance(cref, UntilMonitorRef):
+                aggregate_error_node = URIRef(f"{mon.uri}.error")
+                self._add_quantity(aggregate_error_node, QuantityType.Vector)
                 for item in cref.motion.until.constraints:
                     spec = _resolved_spec(item)
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
@@ -2460,6 +2472,7 @@ class MotionSpecDatasetBuilder:
                     (event_loop_node, EL["has-event"] if signal_kind == "event" else EL["has-flag"], signal_node)
                 )
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
+                self.graph.add((mon_node, CSTR_HDL.error, aggregate_error_node))
                 self.graph.add((mon_node, CSTR_HDL["monitors-until"], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
                 if signal_kind == "event":
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
@@ -2864,7 +2877,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, qkind))
         if scalar_type == QuantityType.Distance:
-            self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))

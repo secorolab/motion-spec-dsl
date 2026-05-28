@@ -5,13 +5,9 @@
 Checked against all three pick_place variants. The original four root causes (xsd:double, Position
 rdf:type, PoseCoordinateView orientation, declared Pose frame context) are fixed; see commit log.
 
-- **`qudt_quant:Position` (4/2/2 per variant)** — Trajectory nodes or full Pose nodes used as
-  `cstr:reference-value` for `PositionConstraint`. The constraint `follow-pos: keeping
-  <world.pose-ee-base>.position equal to <spec.pick-traj>.position` emits the trajectory node URI
-  as the reference, but SHACL requires the reference-value to have `rdf:type qudt_quant:Position`.
-  Fix: in `_emit_context_ref_node`, when `ref.subspace == "position"` and the quantity is a
-  trajectory or pose, resolve to the `.position` sub-node instead of the parent URI. Requires
-  creating a position sub-node for trajectory quantities.
+- **`qudt_quant:Position` reference typing** — Fixed for Pose/Trajectory `.position` references by
+  typing the referenced node as `qudt_quant:Position` when it is used as a position constraint
+  reference. Keep this covered in regression tests.
 
 - **`geom-ent:Frame` (7/7/23 per variant)** — Scene object instances (`cube`, `robot`, `table`)
   are used as `geom-rel:of` on Pose/Orientation nodes. SHACL requires `sh:class geom-ent:Frame`.
@@ -26,9 +22,9 @@ rdf:type, PoseCoordinateView orientation, declared Pose frame context) are fixed
   use `FeedForward` controllers which don't produce error signals, so no evaluator is created. The
   constraint-handler SPARQL shape requires every motion constraint to have an evaluator entry.
 
-- **Monitor `event-queue`, `error`, `error-signal` (per handler)** — Until-section monitor nodes
-  don't have `cstr_hdl:event-queue` (needs an `ev:EventQueue` node) or `cstr_hdl:error`. FeedForward
-  monitors have no `error-signal` on the controller.
+- **Monitor `event-queue` / monitor-level `error`** — Fixed for generated monitors: edge monitors
+  reference the handler `el:EventLoop`, and until monitors now have an aggregate monitor error
+  quantity. Remaining controller/evaluator gaps are tracked under FeedForward/gripper constraints.
 
 - **`dyn_coord:UniformGravitationalFieldCoordinate` (1 each)** — Gravity world quantity emitted
   without the coordinate type.
@@ -47,10 +43,9 @@ rdf:type, PoseCoordinateView orientation, declared Pose frame context) are fixed
   `geom:Point`, not a body instance. Each assembly object needs an origin `Point` node, and `world_node`
   needs a corresponding `Point` node for the `wrt`.
 
-- **Assembly `EnvironmentOrientationEntry` missing `as-seen-by` and coordinate values** — `of`/`wrt` points
-  to the rigid body instance (needs `geom:Frame`); no `GEOM_COORD["as-seen-by"]` triple is emitted
-  (unlike position which has it); `_emit_orientation_rpy` is not called so angle values are not stored
-  (works by accident today since all assembly orientations are `{}`).
+- **Assembly `EnvironmentOrientationEntry` missing coordinate values** — `of`/`wrt` now points at nodes
+  typed as frames and attachment RPY terms now receive `as-seen-by`; assembly orientation values are
+  still not expanded with `_emit_orientation_rpy` because current examples use `{}`.
 
 - **`half_arm_2_link` naming mismatch in robmot files** — declared as `half-arm-2-link` (hyphens) in World
   context but referenced as `of: half_arm_2_link` (underscores) in pose props. Produces two separate
@@ -84,3 +79,11 @@ rdf:type, PoseCoordinateView orientation, declared Pose frame context) are fixed
 ## Validation
 
 - **Real robot**: verify that `KDL::ChainHdSolver_Vereshchagin` with `num_constraints=0` and non-zero `tau_ff` correctly passes joint torques through to `tau_ctrl` without corruption or solver rejection. The posture-only path relies on this unconstrained mode; KDL documentation does not explicitly guarantee it for zero-constraint invocations. Run a posture-hold experiment with a single joint and confirm `tau_ctrl(i) == tau_ff(i)` to within numerical tolerance before relying on this in production.
+
+## Recently fixed
+
+- Removed full `geom-rel:LinearDistance` typing from scalar distance quantities to avoid requiring
+  `geom-rel:between-entities` on axis scalars and error scalars.
+- Added `geom-coord:as-seen-by` to attachment RPY coordinate terms.
+- Added monitor-level aggregate error quantity for `until` monitors.
+- Ensured Pose/Trajectory `.position` reference nodes are typed as `qudt_quant:Position`.
