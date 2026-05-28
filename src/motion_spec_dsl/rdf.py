@@ -1081,12 +1081,11 @@ class MotionSpecDatasetBuilder:
         if props is not None:
             of_frame = _geo_prop(props, "of")
             wrt_frame = _geo_prop(props, "wrt")
-            as_seen_by = _geo_prop(props, "as-seen-by") or wrt_frame
             if of_frame is None or wrt_frame is None:
                 return
             self.graph.add((node, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
             self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, quantity)))
-            self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, quantity)))
+            self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_frame, quantity)))
             return
 
         if not constraints or not world_qtys:
@@ -1449,7 +1448,9 @@ class MotionSpecDatasetBuilder:
                 point_node = self._owned_uri(f"point-{qty.name}-origin", qty)
                 self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
                 self.graph.add((node, ref_predicate, point_node))
-            if asb_v:
+            if qty.type == WorldQuantityType.Pose and wrt_v:
+                self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
+            elif asb_v:
                 asb_predicate = (
                     RBDYN_COORD["as-seen-by"]
                     if qty.type == WorldQuantityType.Wrench
@@ -1457,8 +1458,6 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((node, asb_predicate, self._owned_uri(asb_v, qty)))
             elif qty.type == WorldQuantityType.VelocityTwist and wrt_v:
-                self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
-            elif qty.type == WorldQuantityType.Pose and wrt_v:
                 self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
 
     def _emit_derived_quantity_transforms(
@@ -1798,6 +1797,15 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], TRAJ.Trajectory))
         if value_kind is not None:
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], value_kind))
+        if value_kind == GEOM_REL.Pose:
+            self.graph.add((node, RDF.type, GEOM_REL.Pose))
+            self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
+            self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
+            self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity, constraints or [], world_qtys or {})
         self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
         self.graph.add((lerp_node, TRAJ.start, self._emit_context_ref_node(lerp.start, quantity, "start")))
@@ -2399,6 +2407,14 @@ class MotionSpecDatasetBuilder:
                 ref_qty = _context_quantity(spec.expr.reference)
                 if ref_qty is not None:
                     self.graph.add((ctrl_node, CSTR_HDL["reference-signal"], URIRef(ref_qty.uri)))
+                eval_id = _evaluator_id(spec)
+                eval_node = self._owned_uri(eval_id, spec.parent)
+                if eval_id not in seen_eval_ids:
+                    seen_eval_ids.add(eval_id)
+                    self.graph.add((eval_node, RDF.type, CSTR_HDL.ConstraintEvaluator))
+                    self.graph.add((eval_node, RDF.type, CSTR_HDL.AssignmentEvaluator))
+                    self.graph.add((eval_node, CSTR_HDL.constraint, URIRef(spec.uri)))
+                self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
             control_signal_node = self._decode_control_signal(
                 ctrl, qty, subspace, axis, motion, handler, shared

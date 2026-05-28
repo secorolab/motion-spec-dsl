@@ -1,89 +1,28 @@
 # TODO
 
-## Remaining SHACL violations (after generator fixes)
+## SHACL Status
 
-Checked against all three pick_place variants. The original four root causes (xsd:double, Position
-rdf:type, PoseCoordinateView orientation, declared Pose frame context) are fixed; see commit log.
+- `pick_place` and `pick_place_relative` currently conform with the generated manifest SHACL set.
+- Add regression tests that run JSON-LD generation plus `motion_spec/check.py` for both examples.
+- Keep local secorolab SHACL extensions aligned with upstream comp-rob2b shapes as upstream evolves.
 
-- **`qudt_quant:Position` reference typing** — Fixed for Pose/Trajectory `.position` references by
-  typing the referenced node as `qudt_quant:Position` when it is used as a position constraint
-  reference. Keep this covered in regression tests.
+## Semantic Follow-Up
 
-- **`geom-ent:Frame` (7/7/23 per variant)** — Scene object instances (`cube`, `robot`, `table`)
-  are used as `geom-rel:of` on Pose/Orientation nodes. SHACL requires `sh:class geom-ent:Frame`.
-  The 23 in pick_place_relative comes from many cube-relative constraints. Fix: same as the Semantic
-  Gaps item below — emit a body-fixed frame node for each SceneObject and use that as `of`/`wrt`.
-
-- **`geom-ent:Point` (6 each)** — Same root cause: rigid body instances used as `of` for Position
-  nodes, but `PositionShape` requires `sh:class geom-ent:Point`. Fix: same frame/point node
-  emission structural fix.
-
-- **`All constraints must be evaluated` (6 each)** — Open-gripper and close-gripper constraints
-  use `FeedForward` controllers which don't produce error signals, so no evaluator is created. The
-  constraint-handler SPARQL shape requires every motion constraint to have an evaluator entry.
-
-- **Monitor `event-queue` / monitor-level `error`** — Fixed for generated monitors: edge monitors
-  reference the handler `el:EventLoop`, and until monitors now have an aggregate monitor error
-  quantity. Remaining controller/evaluator gaps are tracked under FeedForward/gripper constraints.
-
-- **`dyn_coord:UniformGravitationalFieldCoordinate` (1 each)** — Gravity world quantity emitted
-  without the coordinate type.
-
-- **`slv:motion-drivers` more than 1 (1 each)** and **`slv:attached-to` (4 each)** — solver spec
-  structural issues.
-
-## RDF/Geometry Semantic Gaps (found during SHACL audit)
-
-- **Scene objects (`cube`, `table`) lack `geom:Frame` type** — `geom-rel:Pose` requires `of`/`wrt` to be
-  `geom:Frame`, but scene objects emitted via `_emit_structural_entities` only get `ENV.RigidObject`.
-  Fix: emit a body-fixed frame node (e.g. `cube.frame`) for each SceneObject, point Pose `of`/`wrt` to it,
-  and update IR routing to key on `ENV.RigidObject` instead of absence of `GEOM_ENT.Frame`.
-
-- **Assembly `EnvironmentPositionEntry` uses rigid body as `of`/`wrt`** — `geom-rel:PositionShape` requires
-  `geom:Point`, not a body instance. Each assembly object needs an origin `Point` node, and `world_node`
-  needs a corresponding `Point` node for the `wrt`.
-
-- **Assembly `EnvironmentOrientationEntry` missing coordinate values** — `of`/`wrt` now points at nodes
-  typed as frames and attachment RPY terms now receive `as-seen-by`; assembly orientation values are
-  still not expanded with `_emit_orientation_rpy` because current examples use `{}`.
-
-- **`half_arm_2_link` naming mismatch in robmot files** — declared as `half-arm-2-link` (hyphens) in World
-  context but referenced as `of: half_arm_2_link` (underscores) in pose props. Produces two separate
-  URI nodes; the Pose quantity's `geom-rel:of` lands on a `Frame`-only node instead of the declared
-  `SimplicialComplex` node. Fix: change prop references to `half-arm-2-link` in all three pick_place
-  robmot files.
+- Decide whether comp-rob2b `PoseCoordinate` requiring `as-seen-by == with-respect-to` is sufficient for all relative-frame use cases, or whether an explicit relative/view frame concept is needed upstream.
+- Revisit FeedForward/gripper evaluator semantics if assignment evaluators need runtime-visible outputs beyond satisfying constraint coverage.
+- Add proper body-fixed frame/point nodes for scene objects instead of relying on object nodes also being typed as `Frame`, `Point`, and `SimplicialComplex`.
+- Expand assembly orientation values with `_emit_orientation_rpy` when non-empty assembly orientations are used.
+- Fix `half_arm_2_link` naming drift in robmot files if those models are still active.
 
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
-- Add upstream `control-mode` support to the comp-rob2b constraint-handler context
-  so legacy JSON can use the compact `"control-mode": "JointTorque"` form
-  without a local context override.
-- Add PID output clamp support as an authored controller parameter propagated
-  through DSL, RDF/JSON-LD, IR, and C++ codegen. This is not required for the
-  current pick/place behavior, but should be modeled explicitly if clamps are
-  needed later.
-- Generalize pose-axis error grouping to all vector-valued superobjects. The generator
-  currently groups multi-axis pose subobject equality constraints into one
-  `KDL::diff(parent_pose, target_pose)` and projects the requested components. The
-  same semantic grouping should extend to velocity twists, acceleration twists, and
-  wrenches where applicable.
-- Avoid emitting unused component locals. Grouped pose-diff blocks declare all six
-  component values even when only position or only orientation is consumed. Emit only
-  the components referenced by the group to eliminate compiler warnings.
+- Add upstream `control-mode` support to the comp-rob2b constraint-handler context.
+- Add PID output clamp support as an authored controller parameter if clamps become part of the model.
+- Generalize pose-axis error grouping to velocity twists, acceleration twists, and wrenches where applicable.
+- Avoid emitting unused component locals in grouped pose-diff codegen.
 - Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
-  Current known debt: no tests under `src/motion-spec`, unused symbols in
-  `count.py` / `ir_gen.py`, bare `except` handlers in `ir_gen.py`, and rdflib
-  typing issues in manifest/IR parsing.
 
 ## Validation
 
-- **Real robot**: verify that `KDL::ChainHdSolver_Vereshchagin` with `num_constraints=0` and non-zero `tau_ff` correctly passes joint torques through to `tau_ctrl` without corruption or solver rejection. The posture-only path relies on this unconstrained mode; KDL documentation does not explicitly guarantee it for zero-constraint invocations. Run a posture-hold experiment with a single joint and confirm `tau_ctrl(i) == tau_ff(i)` to within numerical tolerance before relying on this in production.
-
-## Recently fixed
-
-- Removed full `geom-rel:LinearDistance` typing from scalar distance quantities to avoid requiring
-  `geom-rel:between-entities` on axis scalars and error scalars.
-- Added `geom-coord:as-seen-by` to attachment RPY coordinate terms.
-- Added monitor-level aggregate error quantity for `until` monitors.
-- Ensured Pose/Trajectory `.position` reference nodes are typed as `qudt_quant:Position`.
+- Real robot: verify that `KDL::ChainHdSolver_Vereshchagin` with `num_constraints=0` and non-zero `tau_ff` correctly passes joint torques through to `tau_ctrl` without corruption or solver rejection.
