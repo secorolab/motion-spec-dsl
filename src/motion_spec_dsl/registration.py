@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -228,7 +229,9 @@ class CrossHandlerSolverScopeProvider:
         if not isinstance(handler, ConstraintHandler):
             return None
         for solver in getattr(handler, "solvers", []):
-            solver_name = getattr(solver, "name", None) or getattr(_resolved_solver(solver), "name", None)
+            solver_name = getattr(solver, "name", None) or getattr(
+                _resolved_solver(solver), "name", None
+            )
             if solver_name == obj_ref.obj_name:
                 return _resolved_solver(solver)
         return None
@@ -236,12 +239,14 @@ class CrossHandlerSolverScopeProvider:
 
 def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
-    metamodel.register_scope_providers({
-        "*.*": scoping_providers.FQNImportURI(),
-        "ConstraintRef.constraint": MotionConstraintScopeProvider(),
-        "ControllerRef.controller": HandlerControllerScopeProvider(),
-        "SolverRef.solver": CrossHandlerSolverScopeProvider(),
-    })
+    metamodel.register_scope_providers(
+        {
+            "*.*": scoping_providers.FQNImportURI(),
+            "ConstraintRef.constraint": MotionConstraintScopeProvider(),
+            "ControllerRef.controller": HandlerControllerScopeProvider(),
+            "SolverRef.solver": CrossHandlerSolverScopeProvider(),
+        }
+    )
     metamodel.register_model_processor(validate_model)
     return metamodel
 
@@ -291,7 +296,10 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/value-role.shacl.ttl",
     }
-    metamodels_root = Path(__file__).resolve().parents[3] / "metamodels"
+    try:
+        metamodels_root = Path(os.environ["METAMODELS_PATH"])
+    except KeyError:
+        raise RuntimeError("METAMODELS_PATH environment variable is not set")
 
     return {
         "license": "https://github.com/aws/mit-0",
@@ -332,7 +340,9 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
 
     output_format = kwargs.get("format", "json-ld")
     if output_format not in SUPPORTED_FORMATS:
-        raise ValueError(f"Unsupported format '{output_format}', supported: {list(SUPPORTED_FORMATS)}")
+        raise ValueError(
+            f"Unsupported format '{output_format}', supported: {list(SUPPORTED_FORMATS)}"
+        )
 
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
