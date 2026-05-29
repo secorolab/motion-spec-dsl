@@ -50,6 +50,12 @@ class EnvironmentAssetType(StrEnum):
     SceneObject = "SceneObject"
 
 
+class EnvironmentAssemblyType(StrEnum):
+    Object = "Object"
+    Robot = "Robot"
+    Attachment = "Attachment"
+
+
 @dataclass
 class PositionTerm:
     parent: object
@@ -88,20 +94,10 @@ class EnvironmentAsset(NamedNamespaceObject):
     model: str = ""
     xml: str = ""
     urdf: str = ""
-    body: str = ""
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         self.type = EnvironmentAssetType(self.type)
-
-
-@dataclass
-class EnvironmentAttachEntry:
-    parent: object
-    attachment: EnvironmentAsset
-    attach_to: str
-    attach_kind: str = "body"
-    entries: list = field(default_factory=list)
 
 
 @dataclass
@@ -111,33 +107,10 @@ class EnvironmentAttachmentPrefixEntry:
 
 
 @dataclass
-class EnvironmentAttachmentPositionEntry:
-    parent: object
-    value: PositionValue
-
-
-@dataclass
-class EnvironmentAttachmentOrientationEntry:
-    parent: object
-    value: OrientationValue
-
-
-@dataclass
 class EnvironmentAttachmentActuatorEntry:
     parent: object
     value: str
 
-
-@dataclass
-class EnvironmentAttachmentOpenCommandEntry:
-    parent: object
-    value: float
-
-
-@dataclass
-class EnvironmentAttachmentCloseCommandEntry:
-    parent: object
-    value: float
 
 
 @dataclass
@@ -159,10 +132,29 @@ class EnvironmentFreeEntry:
 
 
 @dataclass
-class EnvironmentAttachTargetEntry:
+class EnvironmentAttachTargetRef:
     parent: object
+    assembly: "EnvironmentAssembly"
     kind: str
     name: str
+
+
+@dataclass
+class EnvironmentAttachTargetEntry:
+    parent: object
+    target: EnvironmentAttachTargetRef
+
+    @property
+    def kind(self) -> str:
+        return self.target.kind
+
+    @property
+    def name(self) -> str:
+        return self.target.name
+
+    @property
+    def target_assembly(self) -> "EnvironmentAssembly":
+        return self.target.assembly
 
 
 @dataclass
@@ -173,12 +165,6 @@ class EnvironmentToolBodyEntry:
 
 @dataclass
 class EnvironmentTcpSiteEntry:
-    parent: object
-    value: str
-
-
-@dataclass
-class EnvironmentBodyEntry:
     parent: object
     value: str
 
@@ -249,12 +235,14 @@ class EnvironmentChainEntry:
 @dataclass
 class EnvironmentAssembly(NamedNamespaceObject):
     parent: object
+    type: EnvironmentAssemblyType
     name: str
     asset: EnvironmentAsset
     entries: list = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        self.type = EnvironmentAssemblyType(self.type)
 
     @property
     def chain(self) -> EnvironmentChainEntry | None:
@@ -1026,7 +1014,7 @@ class ControllerParams:
 
     @property
     def has_pid_gains(self) -> bool:
-        return any(gain is not None for gain in self.pid_gains)
+        return all(gain is not None for gain in self.pid_gains)
 
     @property
     def has_impedance_terms(self) -> bool:

@@ -22,6 +22,7 @@ from motion_spec_dsl.validation.controllers import (
     validate_achd_acceleration_constraints,
     validate_controller_commands,
 )
+from motion_spec_dsl.validation.environment import validate_environment_assembly_types
 from motion_spec_dsl.validation.handlers import (
     validate_handler_aliases,
     validate_handler_constraint_assembly,
@@ -48,6 +49,7 @@ __all__ = [
 
 def validate_model(model: Model, metamodel=None) -> None:
     del metamodel
+    validate_environment_assembly_types(model)
     validate_unique_constraint_names(model)
     validate_constraint_aliases(model)
     validate_context_aliases(model)

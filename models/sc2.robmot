@@ -8,11 +8,11 @@ ENVIRONMENT (ns=app) world {
         kinova-left-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
     },
     ASSEMBLY {
-        base: <kelo-urdf> {},
-        right-arm: <kinova-right-urdf> {
+        Robot base using <kelo-urdf> {},
+        Robot right-arm using <kinova-right-urdf> {
             chain: { root: link-rightarm-shoulder, end: link-rightarm-ee }
         },
-        left-arm: <kinova-left-urdf> {
+        Robot left-arm using <kinova-left-urdf> {
             chain: { root: link-leftarm-shoulder, end: link-leftarm-ee }
         }
     }

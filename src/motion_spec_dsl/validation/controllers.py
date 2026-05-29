@@ -49,9 +49,14 @@ def validate_controller_commands(model: Model) -> None:
                     controller,
                 )
             if resolved_controller.type == ControllerType.PID:
-                if not params.has_pid_gains:
+                missing_gains = [
+                    name for name, val in (("Kp", params.kp), ("Ki", params.ki), ("Kd", params.kd))
+                    if val is None
+                ]
+                if missing_gains:
                     raise semantic_error(
-                        f"PID controller '{controller.name}' must author at least one of Kp, Ki, or Kd.",
+                        f"PID controller '{controller.name}' must specify all of Kp, Ki, and Kd; "
+                        f"missing: {missing_gains}.",
                         controller,
                     )
                 if params.has_impedance_terms:

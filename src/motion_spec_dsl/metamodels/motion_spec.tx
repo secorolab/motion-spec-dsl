@@ -23,12 +23,11 @@ EnvironmentRuntime:
 ;
 
 EnvironmentAsset:
-    name=IRI_TRUNK ":" type=EnvironmentAssetType "{"
+    name=IRI_TRUNK ":" type=EnvironmentAssetType ("{"
         ("model" ":" model=RobotModel ",")?
         ("xml" ":" xml=STRING)?
         (","? "urdf" ":" urdf=STRING)?
-        (","? "body" ":" body=IRI_TRUNK)?
-    "}"
+    "}")?
 ;
 
 EnvironmentAssetType:
@@ -36,63 +35,43 @@ EnvironmentAssetType:
 ;
 
 EnvironmentAssembly:
-    name=IRI_TRUNK ":" "<" asset=[EnvironmentAsset|FQN] ">" "{"
-        entries*=EnvironmentAssemblyEntry[","]
-    "}"
+    type=EnvironmentAssemblyType name=IRI_TRUNK "using" "<" asset=[EnvironmentAsset|FQN] ">"
+    ("{" entries*=EnvironmentAssemblyEntry[","] "}")?
+;
+
+EnvironmentAssemblyType:
+    "Object" | "Robot" | "Attachment"
 ;
 
 EnvironmentAssemblyEntry:
-    EnvironmentAttachEntry | EnvironmentPositionEntry | EnvironmentOrientationEntry |
+    EnvironmentPositionEntry | EnvironmentOrientationEntry |
     EnvironmentFreeEntry | EnvironmentToolBodyEntry | EnvironmentTcpSiteEntry |
-    EnvironmentChainEntry | EnvironmentBodyEntry | EnvironmentShapeEntry |
-    EnvironmentSizeEntry | EnvironmentMassEntry | EnvironmentFrictionEntry |
-    EnvironmentColorEntry | EnvironmentAttachTargetEntry | EnvironmentAttachmentPrefixEntry |
-    EnvironmentAttachmentActuatorEntry | EnvironmentAttachmentOpenCommandEntry |
-    EnvironmentAttachmentCloseCommandEntry
+    EnvironmentChainEntry | EnvironmentShapeEntry | EnvironmentSizeEntry |
+    EnvironmentMassEntry | EnvironmentFrictionEntry | EnvironmentColorEntry |
+    EnvironmentAttachTargetEntry | EnvironmentAttachmentPrefixEntry |
+    EnvironmentAttachmentActuatorEntry
 ;
 
 EnvironmentAttachTargetEntry:
-    "attach-to" ":" kind=AttachTargetKind name=IRI_TRUNK
+    "attach-to" ":" target=EnvironmentAttachTargetRef
+;
+
+EnvironmentAttachTargetRef:
+    "<" assembly=[EnvironmentAssembly|FQN] ">" "." kind=AttachTargetKind "(" name=IRI_TRUNK ")"
 ;
 
 AttachTargetKind:
     "body" | "site" | "frame"
 ;
 
-EnvironmentAttachEntry:
-    "attach" "<" attachment=[EnvironmentAsset|FQN] ">" "to" (attach_kind=AttachTargetKind)? attach_to=IRI_TRUNK
-    ("{" entries*=EnvironmentAttachmentEntry[","] "}")?
-;
-
-EnvironmentAttachmentEntry:
-    EnvironmentAttachmentPrefixEntry | EnvironmentAttachmentPositionEntry |
-    EnvironmentAttachmentOrientationEntry | EnvironmentAttachmentActuatorEntry |
-    EnvironmentAttachmentOpenCommandEntry | EnvironmentAttachmentCloseCommandEntry
-;
-
 EnvironmentAttachmentPrefixEntry:
     "prefix" ":" value=IRI_TRUNK
-;
-
-EnvironmentAttachmentPositionEntry:
-    "position" ":" value=PositionValue
-;
-
-EnvironmentAttachmentOrientationEntry:
-    "orientation" ":" value=OrientationValue
 ;
 
 EnvironmentAttachmentActuatorEntry:
     "actuator" ":" value=IRI_TRUNK
 ;
 
-EnvironmentAttachmentOpenCommandEntry:
-    "open" ":" value=FLOAT
-;
-
-EnvironmentAttachmentCloseCommandEntry:
-    "closed" ":" value=FLOAT
-;
 
 EnvironmentPositionEntry:
     "position" ":" value=PositionValue
@@ -114,16 +93,12 @@ EnvironmentTcpSiteEntry:
     "tcp-site" ":" value=IRI_TRUNK
 ;
 
-EnvironmentBodyEntry:
-    "body" ":" value=IRI_TRUNK
-;
-
 EnvironmentShapeEntry:
     "shape" ":" value=SceneObjectShape
 ;
 
 SceneObjectShape:
-    "box" | "sphere" | "cylinder"
+    "Box" | "Sphere" | "Cylinder"
 ;
 
 EnvironmentSizeEntry:

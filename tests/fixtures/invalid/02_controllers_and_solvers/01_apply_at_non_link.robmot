@@ -9,12 +9,10 @@ ENVIRONMENT (ns=app) world {
         kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
     },
     ASSEMBLY {
-        base: <kelo-urdf> {},
-        right-arm: <kinova-urdf> {
+        Robot base using <kelo-urdf> {},
+        Robot right-arm using <kinova-urdf> {
             chain: { root: link-base, end: link-ee }
         }
-    }
-}
     }
 }
 

@@ -29,6 +29,7 @@ from motion_spec.namespace import (
     MJ,
     MOT,
     MOT_EXT,
+    POLY,
     TRAJ,
 
     QUDT_QKIND,
@@ -60,9 +61,6 @@ from motion_spec_dsl.domain import (
     ContextRef,
     ContextSpec,
     EqualityConstraint,
-    EnvironmentAssembly,
-    EnvironmentAsset,
-    EnvironmentAssetType,
     EnvironmentRuntime,
     EnvironmentSpec,
     GeoPropPair,
@@ -245,6 +243,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("el", EL),
     ("rt", RT),
     ("mj", MJ),
+    ("poly", POLY),
     ("snap", SNAP),
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
@@ -521,6 +520,10 @@ class MotionSpecDatasetBuilder:
     def _emit_orientation_rpy(
         self, node: URIRef, value, as_seen_by: URIRef | None = None
     ) -> None:
+        self.graph.add((node, RDF.type, GEOM_REL.Orientation))
+        self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
+        if as_seen_by is not None:
+            self.graph.add((node, GEOM_COORD["as-seen-by"], as_seen_by))
         for term in value.terms:
             term_node = URIRef(f"{node}.{term.axis}")
             self.graph.add((term_node, RDF.type, GEOM_COORD.OrientationCoordinate))
@@ -556,18 +559,14 @@ class MotionSpecDatasetBuilder:
             if asset.xml:
                 self.graph.add((asset_node, RDF.type, MJ.MjcfModel))
                 self.graph.add((asset_node, SIM.path, Literal(asset.xml)))
-            if asset.body:
-                self.graph.add((asset_node, RDF.type, MJ.MuJoCoBody))
-                self.graph.add((asset_node, MJ["body-name"], Literal(asset.body)))
-
         robot_instances = [
             instance
             for instance in env.assembly
-            if instance.asset.type == EnvironmentAssetType.RobotAsset
+            if str(instance.type) == "Robot"
         ]
 
         for instance in env.assembly:
-            is_attachment_instance = instance.asset.type == EnvironmentAssetType.AttachmentAsset
+            is_attachment_instance = str(instance.type) == "Attachment"
             instance_node = URIRef(instance.uri)
             model_node = (
                 self._model_uri(env, instance.asset.model)
@@ -585,11 +584,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add((instance_node, ENV["has-object-model"], model_node))
             if is_attachment_instance and len(robot_instances) == 1:
                 self.graph.add((instance_node, SLV["attached-to"], URIRef(robot_instances[0].uri)))
-            if instance.asset.type == EnvironmentAssetType.SceneObject:
+            if str(instance.type) == "Object":
                 self.graph.add((instance_node, RDF.type, ENV.Object))
-            if instance.asset.body:
-                self.graph.add((instance_node, RDF.type, MJ.MuJoCoBody))
-                self.graph.add((instance_node, MJ["body-name"], Literal(instance.asset.body)))
             for entry in instance.entries:
                 entry_type = entry.__class__.__name__
                 if entry_type == "EnvironmentPositionEntry":
@@ -636,11 +632,9 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((attach_target_node, MJ["body-name"], Literal(entry.name)))
                     self.graph.add((instance_node, MJ["attach-kind"], Literal(entry.kind)))
                     self.graph.add((instance_node, MJ["attach-name"], Literal(entry.name)))
+                    self.graph.add((instance_node, SLV["attached-to"], URIRef(entry.target_assembly.uri)))
                     if is_attachment_instance:
                         self.graph.add((instance_node, MJ["attach-to-body"], attach_target_node))
-                elif entry_type == "EnvironmentBodyEntry":
-                    self.graph.add((instance_node, RDF.type, MJ.MuJoCoBody))
-                    self.graph.add((instance_node, MJ["body-name"], Literal(entry.value)))
                 elif entry_type == "EnvironmentToolBodyEntry":
                     if is_attachment_instance:
                         body_node = URIRef(f"{instance.uri}.tool-body")
@@ -667,37 +661,6 @@ class MotionSpecDatasetBuilder:
                         end_name=instance.end,
                         tcp_site=entry.value,
                     )
-                elif entry_type == "EnvironmentAttachEntry":
-                    attachment_node = URIRef(entry.attachment.uri)
-                    attach_body_node = URIRef(f"{entry.attachment.uri}.attach-to")
-                    self.graph.add((attachment_node, SLV["attached-to"], instance_node))
-                    if entry.attach_kind == "site":
-                        self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoSite))
-                        self.graph.add((attach_body_node, MJ["site-name"], Literal(entry.attach_to)))
-                    else:
-                        self.graph.add((attach_body_node, RDF.type, MJ.MuJoCoBody))
-                        self.graph.add((attach_body_node, MJ["body-name"], Literal(entry.attach_to)))
-                    self.graph.add((attachment_node, MJ["attach-kind"], Literal(entry.attach_kind)))
-                    self.graph.add((attachment_node, MJ["attach-name"], Literal(entry.attach_to)))
-                    self.graph.add((attachment_node, MJ["attach-to-body"], attach_body_node))
-                    for option in entry.entries:
-                        option_type = option.__class__.__name__
-                        if option_type == "EnvironmentAttachmentPrefixEntry":
-                            self.graph.add((attachment_node, MJ["attach-prefix"], Literal(option.value)))
-                        elif option_type == "EnvironmentAttachmentPositionEntry":
-                            pos_node = URIRef(f"{entry.attachment.uri}.attach-position")
-                            self._emit_position_xyz(pos_node, option.value)
-                            self.graph.add((attachment_node, MJ["attach-position"], pos_node))
-                        elif option_type == "EnvironmentAttachmentOrientationEntry":
-                            orient_node = URIRef(f"{entry.attachment.uri}.attach-orientation")
-                            self._emit_orientation_rpy(orient_node, option.value, world_node)
-                            self.graph.add((attachment_node, MJ["attach-orientation"], orient_node))
-                        elif option_type == "EnvironmentAttachmentActuatorEntry":
-                            self.graph.add((attachment_node, MJ["actuator-name"], Literal(option.value)))
-                        elif option_type == "EnvironmentAttachmentOpenCommandEntry":
-                            self.graph.add((attachment_node, MJ["open-command"], Literal(option.value)))
-                        elif option_type == "EnvironmentAttachmentCloseCommandEntry":
-                            self.graph.add((attachment_node, MJ["closed-command"], Literal(option.value)))
                 elif entry_type == "EnvironmentAttachmentPrefixEntry":
                     if is_attachment_instance:
                         self.graph.add((instance_node, MJ["attach-prefix"], Literal(entry.value)))
@@ -705,10 +668,6 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((instance_node, MJ["prefix"], Literal(entry.value)))
                 elif entry_type == "EnvironmentAttachmentActuatorEntry":
                     self.graph.add((instance_node, MJ["actuator-name"], Literal(entry.value)))
-                elif entry_type == "EnvironmentAttachmentOpenCommandEntry":
-                    self.graph.add((instance_node, MJ["open-command"], Literal(entry.value)))
-                elif entry_type == "EnvironmentAttachmentCloseCommandEntry":
-                    self.graph.add((instance_node, MJ["closed-command"], Literal(entry.value)))
                 elif entry_type == "EnvironmentChainEntry":
                     self._emit_runtime_chain_binding(
                         instance_node,
@@ -716,24 +675,49 @@ class MotionSpecDatasetBuilder:
                         end_name=entry.end,
                     )
                 elif entry_type == "EnvironmentShapeEntry":
-                    self.graph.add((instance_node, MJ["shape"], Literal(entry.value)))
+                    if str(entry.value).lower() == "box":
+                        self.graph.add((instance_node, RDF.type, POLY.CuboidWithSize))
+                    else:
+                        self.graph.add((instance_node, MJ["shape"], Literal(entry.value)))
                 elif entry_type == "EnvironmentSizeEntry":
-                    size_node = URIRef(f"{instance.uri}.size")
-                    self._emit_position_xyz(size_node, entry.value)
-                    self.graph.add((instance_node, MJ["size"], size_node))
+                    values = {term.axis: term.value for term in entry.value.terms}
+                    missing = [axis for axis in ("x", "y", "z") if axis not in values]
+                    if missing:
+                        raise ValueError(
+                            f"Scene object '{instance.name}' has size block missing axes "
+                            f"{missing}; all of x, y, z must be specified."
+                        )
+                    self.graph.add((instance_node, POLY["x-size"], Literal(float(values["x"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, POLY["y-size"], Literal(float(values["y"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, POLY["z-size"], Literal(float(values["z"]), datatype=XSD.double)))
                 elif entry_type == "EnvironmentMassEntry":
-                    self.graph.add((instance_node, MJ["mass"], Literal(entry.value)))
+                    mass_node = URIRef(f"{instance.uri}.mass")
+                    self.graph.add((mass_node, RDF.type, RBDYN_ENT.Mass))
+                    self.graph.add((mass_node, RBDYN_ENT["of-body"], instance_node))
+                    self.graph.add((mass_node, RBDYN_ENT.mass, Literal(float(entry.value), datatype=XSD.double)))
                 elif entry_type == "EnvironmentColorEntry":
                     values = {term.channel: term.value for term in entry.value.terms}
-                    self.graph.add((instance_node, MJ["color-r"], Literal(values.get("r", 0.1))))
-                    self.graph.add((instance_node, MJ["color-g"], Literal(values.get("g", 0.35))))
-                    self.graph.add((instance_node, MJ["color-b"], Literal(values.get("b", 1.0))))
-                    self.graph.add((instance_node, MJ["color-a"], Literal(values.get("a", 1.0))))
+                    missing = [ch for ch in ("r", "g", "b", "a") if ch not in values]
+                    if missing:
+                        raise ValueError(
+                            f"Scene object '{instance.name}' has color block missing channels "
+                            f"{missing}; all of r, g, b, a must be specified."
+                        )
+                    self.graph.add((instance_node, MJ["color-r"], Literal(float(values["r"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, MJ["color-g"], Literal(float(values["g"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, MJ["color-b"], Literal(float(values["b"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, MJ["color-a"], Literal(float(values["a"]), datatype=XSD.double)))
                 elif entry_type == "EnvironmentFrictionEntry":
                     values = {term.axis: term.value for term in entry.value.terms}
-                    self.graph.add((instance_node, MJ["friction-slide"], Literal(values.get("slide", 0.5))))
-                    self.graph.add((instance_node, MJ["friction-torsion"], Literal(values.get("torsion", 0.005))))
-                    self.graph.add((instance_node, MJ["friction-roll"], Literal(values.get("roll", 0.0001))))
+                    missing = [axis for axis in ("slide", "torsion", "roll") if axis not in values]
+                    if missing:
+                        raise ValueError(
+                            f"Scene object '{instance.name}' has friction block missing axes "
+                            f"{missing}; all of slide, torsion, roll must be specified."
+                        )
+                    self.graph.add((instance_node, MJ["friction-slide"], Literal(float(values["slide"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, MJ["friction-torsion"], Literal(float(values["torsion"]), datatype=XSD.double)))
+                    self.graph.add((instance_node, MJ["friction-roll"], Literal(float(values["roll"]), datatype=XSD.double)))
 
     def _namespace_owner(self, obj: Any | None) -> Any:
         """Return the namespace declaration that should own a generated node."""
@@ -1976,6 +1960,10 @@ class MotionSpecDatasetBuilder:
 
             node = URIRef(spec.uri)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
+            if qty is None:
+                raise ValueError(
+                    f"Constraint '{spec.name}' does not resolve to a world quantity."
+                )
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
@@ -2433,6 +2421,10 @@ class MotionSpecDatasetBuilder:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
+            if qty is None:
+                raise ValueError(
+                    f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                )
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
@@ -2542,6 +2534,10 @@ class MotionSpecDatasetBuilder:
                 for item in cref.motion.until.constraints:
                     spec = _resolved_spec(item)
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
+                    if qty is None:
+                        raise ValueError(
+                            f"Until monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                        )
                     subspace = _view_subspace(spec)
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
@@ -2594,10 +2590,14 @@ class MotionSpecDatasetBuilder:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
+            if qty is None:
+                raise ValueError(
+                    f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                )
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
-            scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
+            scalar_t = _scalar_type(qty, subspace, axis)
             qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
             error_id = f"{qty_node_id}-err"
 
@@ -2642,7 +2642,6 @@ class MotionSpecDatasetBuilder:
         shared: bool,
     ) -> URIRef:
         solver = self._controller_solver(handler, ctrl)
-        algorithm = getattr(solver, "algorithm", None)
         command = controller_command_record(ctrl)
 
         if ctrl.type == ControllerType.FeedForward:
@@ -2650,6 +2649,17 @@ class MotionSpecDatasetBuilder:
             signal_type = _scalar_type(qty, subspace, axis) if qty is not None else QuantityType.Vector
             self._add_quantity(signal_node, signal_type)
             return signal_node
+
+        if solver is None:
+            raise ValueError(
+                f"Controller '{ctrl.name}' cannot resolve a solver; specify 'via <solver>' "
+                "or ensure the handler has exactly one compatible solver."
+            )
+        if qty is None:
+            raise ValueError(
+                f"Controller '{ctrl.name}' cannot emit a control signal without a resolved quantity."
+            )
+        algorithm = getattr(solver, "algorithm", None)
 
         ws_spec = WORLD_SPECS.get(qty.type) if qty else None
         prop = ws_spec[3].get(subspace) if ws_spec else None
@@ -2819,7 +2829,9 @@ class MotionSpecDatasetBuilder:
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None:
-                continue
+                raise ValueError(
+                    f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                )
 
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis

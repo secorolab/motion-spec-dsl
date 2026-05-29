@@ -1,4 +1,4 @@
-// Valid: PID family can be authored as P, PI, or PD while graph emission normalizes missing gains to zero.
+// Valid: PID controllers must specify Kp, Ki, and Kd explicitly (including zero).
 
 ns app = "https://secorolab.github.io/models/test/"
 
@@ -8,7 +8,7 @@ ENVIRONMENT (ns=app) world {
         kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
     },
     ASSEMBLY {
-        kinova: <kinova-mjcf> {
+        Robot kinova using <kinova-mjcf> {
             chain: { root: link-base, end: link-ee }
         }
     }
@@ -51,9 +51,9 @@ CONSTRAINT_HANDLER (ns=app) handler_pid_variants {
     CONTROL_MODE: JointTorque
 
     CONTROLLERS {
-        ctrl-p: PID { constraint: <m_pid_variants.c_x>, Kp = 1.0 },
-        ctrl-pi: PID { constraint: <m_pid_variants.c_y>, Kp = 1.0, Ki = 0.2 },
-        ctrl-pd: PID { constraint: <m_pid_variants.c_z>, Kp = 1.0, Kd = 0.3 }
+        ctrl-p: PID { constraint: <m_pid_variants.c_x>, Kp = 1.0, Ki = 0.0, Kd = 0.0 },
+        ctrl-pi: PID { constraint: <m_pid_variants.c_y>, Kp = 1.0, Ki = 0.2, Kd = 0.0 },
+        ctrl-pd: PID { constraint: <m_pid_variants.c_z>, Kp = 1.0, Ki = 0.0, Kd = 0.3 }
     }
 
     SOLVERS {

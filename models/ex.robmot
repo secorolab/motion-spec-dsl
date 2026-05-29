@@ -6,7 +6,7 @@ ENVIRONMENT (ns=app) world {
         kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
     },
     ASSEMBLY {
-        kinova: <kinova-mjcf> {
+        Robot kinova using <kinova-mjcf> {
             chain: { root: base_link, end: Bracelet_Link }
         }
     }

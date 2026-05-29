@@ -5,13 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
+import pytest
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
+from textx.exceptions import TextXSemanticError
 
 from motion_spec.ir_gen import Parser
 from motion_spec.namespace import (
-    APP,
     CSTR,
+    SNAP,
     CSTR_HDL,
     EL,
     GEOM_COORD,
@@ -21,6 +23,7 @@ from motion_spec.namespace import (
     KC,
     KC_STAT,
     MAP,
+    MJ,
     MOT,
     QUDT_QKIND,
     QUDT_SCHEMA,
@@ -90,6 +93,97 @@ def _build_string_dataset(source: str):
     return builder, dataset.default_graph, cast(dict[str, str], context)
 
 
+
+def test_env_position_orientation_zero_defaults_are_intentional() -> None:
+    _, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: MuJoCo,
+            ASSETS {
+                cube-asset: SceneObject
+            },
+            ASSEMBLY {
+                Object cube using <cube-asset> {
+                    position: { x: 1.25 m },
+                    orientation: {}
+                }
+            }
+        }
+        """
+    )
+
+    cube = URIRef("https://secorolab.github.io/models/test/world/cube")
+    position = URIRef("https://secorolab.github.io/models/test/world/cube.position")
+
+    assert (position, GEOM_REL.of, cube) in graph
+    assert (position, GEOM_COORD.x, Literal(1.25)) in graph
+    assert (position, GEOM_COORD.y, Literal(0.0)) in graph
+    assert (position, GEOM_COORD.z, Literal(0.0)) in graph
+
+
+
+
+def test_environment_typed_assembly_and_member_attach_target() -> None:
+    _, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: MuJoCo,
+            ASSETS {
+                table-mjcf: SceneObject { xml: "table.xml" },
+                kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "gen3.xml" },
+                gripper-mjcf: AttachmentAsset { xml: "2f85.xml" }
+            },
+            ASSEMBLY {
+                Object table using <table-mjcf>,
+                Robot robot using <kinova-mjcf> {
+                    attach-to: <table>.site(table_top),
+                    chain: { root: base_link, end: pinch_site }
+                },
+                Attachment gripper using <gripper-mjcf> {
+                    attach-to: <robot>.site(pinch_site),
+                    actuator: fingers_actuator
+                }
+            }
+        }
+        """
+    )
+
+    robot = URIRef("https://secorolab.github.io/models/test/world/robot")
+    gripper = URIRef("https://secorolab.github.io/models/test/world/gripper")
+
+    table = URIRef("https://secorolab.github.io/models/test/world/table")
+
+    assert (robot, MJ["attach-kind"], Literal("site")) in graph
+    assert (robot, MJ["attach-name"], Literal("table_top")) in graph
+    assert (robot, SLV["attached-to"], table) in graph
+    assert (gripper, MJ["attach-kind"], Literal("site")) in graph
+    assert (gripper, MJ["attach-name"], Literal("pinch_site")) in graph
+    assert (gripper, SLV["attached-to"], robot) in graph
+    assert (gripper, MJ["actuator-name"], Literal("fingers_actuator")) in graph
+
+
+def test_environment_assembly_type_must_match_asset_type() -> None:
+    with pytest.raises(TextXSemanticError, match="declared as Robot.*SceneObject asset"):
+        _build_string_dataset(
+            """
+            ns app = "https://secorolab.github.io/models/test/"
+
+            ENVIRONMENT (ns=app) world {
+                runtime: MuJoCo,
+                ASSETS {
+                    cube-asset: SceneObject
+                },
+                ASSEMBLY {
+                    Robot cube using <cube-asset>
+                }
+            }
+            """
+        )
+
 def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> None:
     builder, graph, context = _build_dataset(STANDALONE_MANIPULATOR)
 
@@ -111,7 +205,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
     assert (base_node, RDF.type, GEOM_ENT.Frame) in graph
 
 
-def test_pid_gain_variants_only_emit_authored_gain_terms() -> None:
+def test_pid_gain_variants_emit_all_three_gains() -> None:
     builder, graph, _ = _build_dataset(PID_GAIN_VARIANTS)
 
     controllers = {
@@ -119,17 +213,17 @@ def test_pid_gain_variants_only_emit_authored_gain_terms() -> None:
     }
 
     expected = {
-        "ctrl-p": {"proportional-gain": "1.0"},
-        "ctrl-pi": {"proportional-gain": "1.0", "integral-gain": "0.2"},
-        "ctrl-pd": {"proportional-gain": "1.0", "derivative-gain": "0.3"},
+        "ctrl-p":  {"proportional-gain": "1.0", "integral-gain": "0.0", "derivative-gain": "0.0"},
+        "ctrl-pi": {"proportional-gain": "1.0", "integral-gain": "0.2", "derivative-gain": "0.0"},
+        "ctrl-pd": {"proportional-gain": "1.0", "integral-gain": "0.0", "derivative-gain": "0.3"},
     }
     for name, gains in expected.items():
         controller_node = URIRef(controllers[name].uri)
         assert (controller_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative) in graph
         for predicate, value in gains.items():
-            assert (controller_node, CSTR_HDL[predicate], Literal(value)) in graph
-        for predicate in {"proportional-gain", "integral-gain", "derivative-gain"} - set(gains):
-            assert not list(graph.objects(controller_node, CSTR_HDL[predicate]))
+            literal = graph.value(controller_node, CSTR_HDL[predicate])
+            assert literal is not None, f"{name}: {predicate} missing from graph"
+            assert float(literal) == float(value)
 
 
 def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> None:
@@ -188,7 +282,7 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
     handler = builder.authored_handlers[0]
     motion = handler.motion
     driver_node = builder.root_uri(f"driver-{motion.name}", owner=handler)
-    solver_node = builder.root_uri(handler.solvers[0].name, owner=handler)
+    solver_node = builder.root_uri(f"{handler.solvers[0].name}-{motion.name}", owner=handler)
     energy_node = builder.root_uri("eacc-twist-ee-base.linear.z-m_move", owner=motion)
     acc_node = builder.root_uri("acc-cstr-twist-ee-base.linear.z-m_move", owner=motion)
     driver_acc_specs = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
@@ -304,8 +398,8 @@ def test_snapshot_pose_constraint_uses_snapshot_value_node() -> None:
     live_pose_node = URIRef(live_pose.uri)
     constraint_node = URIRef(idle.while_.constraints[0].uri)
 
-    assert (snapshot_node, RDF.type, URIRef(str(APP._NS) + "Snapshot")) in graph
-    assert (snapshot_node, URIRef(str(APP._NS) + "snapshot-of"), live_pose_node) in graph
+    assert (snapshot_node, RDF.type, SNAP.Snapshot) in graph
+    assert (snapshot_node, SNAP["snapshot-of"], live_pose_node) in graph
     assert (constraint_node, RDF.type, URIRef(str(CSTR._NS) + "PoseConstraint")) in graph
     assert (constraint_node, CSTR["reference-value"], snapshot_node) in graph
 
@@ -334,10 +428,10 @@ def test_multi_solver_builder_emits_one_driver_and_solver_per_solver_and_uses_mo
     motion = handler.motion
     controllers = {controller.name: controller for controller in handler.controllers}
 
-    solver_a_node = builder.root_uri("solver_a", owner=handler)
-    solver_b_node = builder.root_uri("solver_b", owner=handler)
-    driver_a_node = builder.root_uri("driver-solver_a", owner=handler)
-    driver_b_node = builder.root_uri("driver-solver_b", owner=handler)
+    solver_a_node = builder.root_uri(f"solver_a-{motion.name}", owner=handler)
+    solver_b_node = builder.root_uri(f"solver_b-{motion.name}", owner=handler)
+    driver_a_node = builder.root_uri(f"driver-solver_a-{motion.name}", owner=handler)
+    driver_b_node = builder.root_uri(f"driver-solver_b-{motion.name}", owner=handler)
 
     assert (solver_a_node, SLV["motion-drivers"], driver_a_node) in graph
     assert (solver_b_node, SLV["motion-drivers"], driver_b_node) in graph
@@ -363,7 +457,7 @@ def test_posture_controller_emits_joint_force_specification() -> None:
     handler = builder.authored_handlers[0]
     controller = handler.controllers[0]
     handler_node = URIRef(handler.uri)
-    solver_node = builder.root_uri(handler.solvers[0].name, owner=handler.solvers[0])
+    solver_node = builder.root_uri(f"{handler.solvers[0].name}-{handler.motion.name}", owner=handler)
     driver_node = builder.root_uri(f"driver-{handler.motion.name}", owner=handler)
     torque_node = builder.root_uri("tau-ctrl-j2-posture", owner=handler)
     spec_node = builder.root_uri("jf-spec-ctrl-j2-posture", owner=handler)
@@ -485,8 +579,8 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
 
     start_monitor_node = URIRef(start_monitor.uri)
     stop_monitor_node = URIRef(stop_monitor.uri)
-    start_event_node = builder.root_uri("evt-start", owner=handler)
-    stop_flag_node = builder.root_uri("flag-stop", owner=handler)
+    start_event_node = URIRef(f"{start_monitor.uri}.evt-start")
+    stop_flag_node = URIRef(f"{stop_monitor.uri}.flag-stop")
     start_eval_node = builder.root_uri(
         _evaluator_id(start_constraint), owner=start_constraint.parent
     )
@@ -548,7 +642,7 @@ ENVIRONMENT (ns=app) world {{
         kinova-urdf: RobotAsset {{ model: KinovaGen3, urdf: "../robots/kg3.urdf" }}
     }},
     ASSEMBLY {{
-        kinova: <kinova-urdf> {{
+        Robot kinova using <kinova-urdf> {{
             chain: {{ root: frame-base, end: frame-ee }}
         }}
     }}

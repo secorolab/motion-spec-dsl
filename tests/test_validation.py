@@ -109,9 +109,9 @@ def test_standalone_manipulator_solver_refs_use_robot_name() -> None:
     handler = model.specs[-1]
     solver = handler.solvers[0]
 
-    assert str(solver.robot) == "kinova"
-    assert str(solver.root) == "kinova.chain.root"
-    assert str(solver.end) == "kinova.chain.end"
+    assert str(solver.robot) == "world.kinova"
+    assert str(solver.root) == "world.kinova.chain.root"
+    assert str(solver.end) == "world.kinova.chain.end"
 
 
 def test_crf_model_supports_context_and_solver_references() -> None:
