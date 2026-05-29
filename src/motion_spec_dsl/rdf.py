@@ -225,6 +225,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
     QuantityType.Position: QUDT_QKIND.Position,
     QuantityType.Orientation: QUDT_QKIND.Direction,
+    QuantityType.Direction: QUDT_QKIND.Direction,
     QuantityType.Vector: QUDT_QKIND.Vector,
     QuantityType.Trajectory: TRAJ.Trajectory,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
@@ -1121,6 +1122,36 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, owner)))
         self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_frame, owner)))
 
+    def _emit_snapshot_position_metadata(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+    ) -> None:
+        # A snapshot of <pose>.position needs Position-coordinate RDF metadata
+        # so the IR parser surfaces it as a Position record (mapping to
+        # KDL::Vector in shared) instead of a generic Quantity (double).
+        source = getattr(quantity.value, "source", None)
+        source_qty = getattr(source, "quantity", None) if source is not None else None
+        if not isinstance(source_qty, WorldQuantity) or not isinstance(
+            source_qty.props, GeometricProps
+        ):
+            return
+        of_frame = _geo_prop(source_qty.props, "of")
+        wrt_frame = _geo_prop(source_qty.props, "wrt")
+        if of_frame is None or wrt_frame is None:
+            return
+        as_seen_by = _geo_prop(source_qty.props, "as-seen-by") or wrt_frame
+        self.graph.add((node, RDF.type, GEOM_REL.Position))
+        self.graph.add((node, RDF.type, GEOM_COORD.PositionCoordinate))
+        self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((node, GEOM_REL.of, self._owned_uri(of_frame, source_qty)))
+        self.graph.add(
+            (node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, source_qty))
+        )
+        self.graph.add(
+            (node, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, source_qty))
+        )
+
     def _emit_declared_pose_frame_metadata(
         self,
         node: URIRef,
@@ -1636,9 +1667,58 @@ class MotionSpecDatasetBuilder:
                 and axis is not None
             ):
                 self._register_pose_component_view(scalar_uri, quantity, mapped_subspace, axis, owner)
+            elif (
+                quantity.type == WorldQuantityType.Pose
+                and mapped_subspace == "position"
+                and axis is None
+            ):
+                self._register_pose_position_view(scalar_uri, quantity, owner)
             return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
+
+    def _register_pose_position_view(
+        self,
+        scalar_uri: URIRef,
+        quantity: "WorldQuantity",
+        owner: Any,
+    ) -> None:
+        # Promote `<pose>.position` to a Position-coordinate node so IR.position()
+        # picks it up as a Position record (KDL::Vector in shared) instead of a
+        # generic Quantity (double). Also register a MAP.View so access-expr
+        # resolves reads of the view to `shared.<pose>.p` at runtime — the
+        # subobject field itself is never assigned to. Idempotent.
+        if (scalar_uri, RDF.type, GEOM_COORD.PositionCoordinate) in self.graph:
+            return
+        props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+        of_frame = _geo_prop(props, "of") if props is not None else None
+        wrt_frame = _geo_prop(props, "wrt") if props is not None else None
+        if of_frame is None or wrt_frame is None:
+            return
+        as_seen_by = _geo_prop(props, "as-seen-by") or wrt_frame
+        self.graph.add((scalar_uri, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((scalar_uri, RDF.type, GEOM_REL.Position))
+        self.graph.add((scalar_uri, RDF.type, GEOM_COORD.PositionCoordinate))
+        self.graph.add((scalar_uri, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((scalar_uri, RDF.type, QUDT_QKIND.Position))
+        self.graph.add((scalar_uri, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
+        self.graph.add((scalar_uri, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+        self.graph.add((scalar_uri, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
+        self.graph.add(
+            (scalar_uri, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, quantity))
+        )
+        self.graph.add(
+            (scalar_uri, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, quantity))
+        )
+
+        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'position', None)}", owner)
+        if (view_uri, RDF.type, MAP.View) not in self.graph:
+            self.graph.add((view_uri, RDF.type, MAP.View))
+            self.graph.add((view_uri, RDF.type, MAP.PoseCoordinateView))
+            self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+            self.graph.add((view_uri, MAP.subobject, scalar_uri))
+            self.graph.add((view_uri, MAP.subspace, MAP.position))
+            # axis intentionally omitted: this view exposes the whole 3-vector.
 
     def _register_pose_component_view(
         self,
@@ -1678,6 +1758,9 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
             if quantity.type == QuantityType.Trajectory:
                 self._emit_trajectory_quantity(node, quantity, constraints, world_qtys)
+                continue
+            if quantity.type == QuantityType.Direction:
+                self._emit_direction_quantity(node, quantity)
                 continue
             if isinstance(quantity.value, PoseValue):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
@@ -1719,6 +1802,8 @@ class MotionSpecDatasetBuilder:
                 )
                 if qkind == GEOM_REL.Pose:
                     self._emit_declared_pose_frame_metadata(node, quantity, constraints, world_qtys)
+                elif quantity.type == QuantityType.Position:
+                    self._emit_snapshot_position_metadata(node, quantity)
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, ScalarQuantity):
@@ -1832,6 +1917,27 @@ class MotionSpecDatasetBuilder:
             )
         return start_kind
 
+    def _emit_direction_quantity(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+    ) -> None:
+        as_seen_by_name = _geo_prop(quantity.props, "as-seen-by") or _geo_prop(quantity.props, "wrt")
+        if as_seen_by_name is None:
+            raise ValueError(
+                f"Direction quantity '{quantity.name}' needs an 'as-seen-by: <frame>' prop."
+            )
+        as_seen_by_node = self._owned_uri(as_seen_by_name, quantity)
+        vector: tuple[float, float, float] | None = None
+        if isinstance(quantity.value, VectorQuantity):
+            vector = (float(quantity.value.x), float(quantity.value.y), float(quantity.value.z))
+        elif quantity.value is not None:
+            raise ValueError(
+                f"Direction quantity '{quantity.name}' value must be a Vector literal."
+            )
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_direction_coordinate(node, as_seen_by_node, vector)
+
     def _emit_trajectory_quantity(
         self,
         node: URIRef,
@@ -1840,9 +1946,55 @@ class MotionSpecDatasetBuilder:
         world_qtys: dict[str, WorldQuantity] | None = None,
     ) -> None:
         assert isinstance(quantity.value, TrajectoryValue)
-        lerp = quantity.value.lerp
-        lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
-        value_kind = self._lerp_value_kind(lerp)
+        value = quantity.value
+        if value.lerp is not None:
+            self._emit_lerp_trajectory(node, quantity, value.lerp, constraints, world_qtys)
+        elif value.circle is not None:
+            self._emit_geometric_trajectory(
+                node, quantity, value.circle, TRAJ.Circle, "circle",
+                [("center", TRAJ.center, value.circle.center),
+                 ("radius", TRAJ.radius, value.circle.radius),
+                 ("plane-normal", TRAJ["plane-normal"], value.circle.plane_normal),
+                 ("orientation", TRAJ.orientation, value.circle.orientation),
+                 ("alpha", TRAJ.alpha, value.circle.alpha)],
+                constraints, world_qtys,
+            )
+        elif value.semicircle is not None:
+            self._emit_geometric_trajectory(
+                node, quantity, value.semicircle, TRAJ.SemiCircle, "semicircle",
+                [("start", TRAJ.start, value.semicircle.start),
+                 ("end", TRAJ.end, value.semicircle.end),
+                 ("radius", TRAJ.radius, value.semicircle.radius),
+                 ("plane-normal", TRAJ["plane-normal"], value.semicircle.plane_normal),
+                 ("orientation", TRAJ.orientation, value.semicircle.orientation),
+                 ("alpha", TRAJ.alpha, value.semicircle.alpha)],
+                constraints, world_qtys,
+            )
+        elif value.helix is not None:
+            self._emit_geometric_trajectory(
+                node, quantity, value.helix, TRAJ.Helix, "helix",
+                [("center", TRAJ.center, value.helix.center),
+                 ("radius", TRAJ.radius, value.helix.radius),
+                 ("axis", TRAJ.axis, value.helix.axis),
+                 ("pitch", TRAJ.pitch, value.helix.pitch),
+                 ("revolutions", TRAJ.revolutions, value.helix.revolutions),
+                 ("orientation", TRAJ.orientation, value.helix.orientation),
+                 ("alpha", TRAJ.alpha, value.helix.alpha)],
+                constraints, world_qtys,
+            )
+        else:
+            raise ValueError(
+                f"TrajectoryValue on '{quantity.name}' has no populated spec"
+            )
+
+    def _emit_trajectory_pose_metadata(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+        value_kind: Any | None,
+        constraints: list[ConstraintSpecification] | None,
+        world_qtys: dict[str, WorldQuantity] | None,
+    ) -> None:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
         self.graph.add((node, RDF.type, TRAJ.Trajectory))
@@ -1859,11 +2011,44 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity, constraints or [], world_qtys or {})
+
+    def _emit_lerp_trajectory(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+        lerp: Any,
+        constraints: list[ConstraintSpecification] | None,
+        world_qtys: dict[str, WorldQuantity] | None,
+    ) -> None:
+        lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
+        value_kind = self._lerp_value_kind(lerp)
+        self._emit_trajectory_pose_metadata(node, quantity, value_kind, constraints, world_qtys)
         self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
         self.graph.add((lerp_node, TRAJ.start, self._emit_context_ref_node(lerp.start, quantity, "start")))
         self.graph.add((lerp_node, TRAJ.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal")))
         self.graph.add((lerp_node, TRAJ.alpha, self._emit_context_ref_node(lerp.alpha, quantity, "alpha")))
         self.graph.add((lerp_node, TRAJ.trajectory, node))
+
+    def _emit_geometric_trajectory(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+        spec: Any,
+        spec_type: URIRef,
+        spec_prefix: str,
+        inputs: list[tuple[str, URIRef, Any]],
+        constraints: list[ConstraintSpecification] | None,
+        world_qtys: dict[str, WorldQuantity] | None,
+    ) -> None:
+        # All geometric trajectories output a Pose (KDL::Frame).
+        self._emit_trajectory_pose_metadata(node, quantity, GEOM_REL.Pose, constraints, world_qtys)
+        op_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
+        self.graph.add((op_node, RDF.type, spec_type))
+        for suffix, predicate, ref in inputs:
+            self.graph.add(
+                (op_node, predicate, self._emit_context_ref_node(ref, quantity, suffix))
+            )
+        self.graph.add((op_node, TRAJ.trajectory, node))
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         quantity = _context_quantity(ref)

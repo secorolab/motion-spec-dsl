@@ -198,7 +198,7 @@ TrajectorySpec:
     type=TrajectoryType
 ;
 
-TrajectoryType: "Lerp" ;
+TrajectoryType: "Lerp" | "Circle" | "SemiCircle" | "Helix" ;
 
 ConstraintSection:
     WhenSection | WhileSection | UntilSection
@@ -343,11 +343,12 @@ QuantityType:
     "LinearDistance"  |
     "Angle"           |
     "AngularDistance" |
+    "Direction"       |
     "Vector"
 ;
 
 TrajectoryValue:
-    "=" lerp=LerpSpec
+    "=" (lerp=LerpSpec | circle=CircleSpec | semicircle=SemiCircleSpec | helix=HelixSpec)
 ;
 
 LerpSpec:
@@ -355,6 +356,39 @@ LerpSpec:
         "start" ":" start=ContextRef ","
         "goal"  ":" goal=ContextRef  ","
         "alpha" ":" alpha=ContextRef
+    "}"
+;
+
+CircleSpec:
+    "Circle" "{"
+        "center"       ":" center=ContextRef       ","
+        "radius"       ":" radius=ContextRef       ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "orientation"  ":" orientation=ContextRef  ","
+        "alpha"        ":" alpha=ContextRef
+    "}"
+;
+
+SemiCircleSpec:
+    "SemiCircle" "{"
+        "start"        ":" start=ContextRef        ","
+        "end"          ":" end=ContextRef          ","
+        "radius"       ":" radius=ContextRef       ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "orientation"  ":" orientation=ContextRef  ","
+        "alpha"        ":" alpha=ContextRef
+    "}"
+;
+
+HelixSpec:
+    "Helix" "{"
+        "center"      ":" center=ContextRef      ","
+        "radius"      ":" radius=ContextRef      ","
+        "axis"        ":" axis=ContextRef        ","
+        "pitch"       ":" pitch=ContextRef       ","
+        "revolutions" ":" revolutions=ContextRef ","
+        "orientation" ":" orientation=ContextRef ","
+        "alpha"       ":" alpha=ContextRef
     "}"
 ;
 

@@ -1,0 +1,77 @@
+// Valid: minimal manipulator following a Helix trajectory.
+
+ns app = "https://secorolab.github.io/models/test/"
+
+ENVIRONMENT (ns=app) world {
+    runtime: MuJoCo,
+    ASSETS {
+        kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+    },
+    ASSEMBLY {
+        Robot kinova using <kinova-mjcf> {
+            chain: { root: link-base, end: link-ee }
+        }
+    }
+}
+
+MOTION_SPEC (ns=app) m_helix {
+    CONTEXT {
+        c1: World {
+            pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base }
+        },
+        c2: Spec {
+            alpha:       TrajectoryProgress,
+            radius:      LinearDistance = 0.08 m,
+            pitch:       LinearDistance = 0.04 m,
+            revolutions: Distance       = 2.0 m,
+            center-pos:  Position = Snapshot of <c1.pose-ee-base>.position,
+            axis:        Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = -1.0 m },
+            start-pose:  Pose = Snapshot of <c1.pose-ee-base>,
+            traj: Trajectory = Helix {
+                center:      <c2.center-pos>,
+                radius:      <c2.radius>,
+                axis:        <c2.axis>,
+                pitch:       <c2.pitch>,
+                revolutions: <c2.revolutions>,
+                orientation: <c2.start-pose>,
+                alpha:       <c2.alpha>
+            }
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        follow-pos: keeping <c1.pose-ee-base>.position equal to <c2.traj>.position
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_helix {
+    CONTEXT {
+        c1: World {
+            gravity: Gravity
+        },
+        c2: Spec {
+            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        }
+    }
+
+    MOTION: <m_helix>
+    CONTROL_MODE: JointTorque
+
+    CONTROLLERS {
+        ctrl-follow: PID { constraint: <m_helix.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
+    }
+
+    SOLVERS {
+        kinova_solver: Solver {
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <c1.gravity> equal to <c2.gravity-vec>
+        }
+    }
+}

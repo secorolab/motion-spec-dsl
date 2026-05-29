@@ -360,9 +360,52 @@ class LerpSpec:
 
 
 @dataclass
+class CircleSpec:
+    parent: object
+    center: object        # ContextRef
+    radius: object        # ContextRef
+    plane_normal: object  # ContextRef
+    orientation: object   # ContextRef
+    alpha: object         # ContextRef
+
+
+@dataclass
+class SemiCircleSpec:
+    parent: object
+    start: object         # ContextRef
+    end: object           # ContextRef
+    radius: object        # ContextRef
+    plane_normal: object  # ContextRef
+    orientation: object   # ContextRef
+    alpha: object         # ContextRef
+
+
+@dataclass
+class HelixSpec:
+    parent: object
+    center: object        # ContextRef
+    radius: object        # ContextRef
+    axis: object          # ContextRef
+    pitch: object         # ContextRef
+    revolutions: object   # ContextRef
+    orientation: object   # ContextRef
+    alpha: object         # ContextRef
+
+
+@dataclass
 class TrajectoryValue:
     parent: object
-    lerp: LerpSpec
+    lerp: LerpSpec | None = None
+    circle: CircleSpec | None = None
+    semicircle: SemiCircleSpec | None = None
+    helix: HelixSpec | None = None
+
+    @property
+    def spec(self) -> LerpSpec | CircleSpec | SemiCircleSpec | HelixSpec:
+        for candidate in (self.lerp, self.circle, self.semicircle, self.helix):
+            if candidate is not None:
+                return candidate
+        raise ValueError("TrajectoryValue has no spec populated")
 
 
 @dataclass
@@ -551,6 +594,7 @@ class QuantityType(StrEnum):
     Pose                = "Pose"
     Position            = "Position"
     Orientation         = "Orientation"
+    Direction           = "Direction"
     Distance            = "Distance"
     Angle               = "Angle"
     PlaneAngle          = "PlaneAngle"
