@@ -148,7 +148,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
                 "angular-acceleration",
                 "ang",
                 QuantityType.PlaneAngle,
-                MAP.PoseCoordinateView,
+                MAP.PoseOrientationView,
             ),
             "distance": (
                 "position",
@@ -1921,7 +1921,7 @@ class MotionSpecDatasetBuilder:
             self._add_quantity(component_node, QuantityType.Angle)
             self.graph.add((orientation_node, GEOM_COORD["has-coordinate"], component_node))
             self.graph.add((view_node, RDF.type, MAP.View))
-            self.graph.add((view_node, RDF.type, MAP.PoseCoordinateView))
+            self.graph.add((view_node, RDF.type, MAP.PoseOrientationView))
             self.graph.add((view_node, MAP.superobject, node))
             self.graph.add((view_node, MAP.subobject, component_node))
             self.graph.add((view_node, MAP.subspace, MAP.rotation))
