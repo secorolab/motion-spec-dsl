@@ -49,7 +49,7 @@ VALID_FIXTURES = FIXTURES / "valid"
 MODELS = Path(__file__).parents[1] / "models"
 
 CIRCLE_TRAJECTORY = "05_trajectories/01_circle.robmot"
-SEMICIRCLE_TRAJECTORY = "05_trajectories/02_semicircle.robmot"
+ARC_TRAJECTORY = "05_trajectories/02_arc.robmot"
 HELIX_TRAJECTORY = "05_trajectories/03_helix.robmot"
 FIGURE8_TRAJECTORY = "05_trajectories/04_figure8.robmot"
 STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
@@ -368,7 +368,7 @@ def test_pose_diff_supports_position_and_orientation_component_subsets() -> None
     position_node = builder.root_uri("pose-ee-base.position", owner=motion)
     orientation_node = builder.root_uri("pose-ee-base.orientation", owner=motion)
     assert (position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position) in graph
-    assert (orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction) in graph
+    assert (orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle) in graph
 
     for controller_name, components in expected.items():
         diff_node = builder.root_uri(f"pose-diff-{controller_name}", owner=motion.while_)
@@ -814,7 +814,7 @@ def test_circle_trajectory_emits_operator_and_input_edges() -> None:
 
 
 def test_arc_trajectory_emits_operator_and_input_edges() -> None:
-    builder, graph, _ = _build_dataset(SEMICIRCLE_TRAJECTORY)
+    builder, graph, _ = _build_dataset(ARC_TRAJECTORY)
     motion = builder.authored_handlers[0].motion
     traj_quantity = _trajectory_quantity(motion, "traj")
     traj_node = URIRef(traj_quantity.uri)

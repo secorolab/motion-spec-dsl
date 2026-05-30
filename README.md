@@ -84,7 +84,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
             gravity: Gravity
         },
         spec: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 
@@ -123,7 +123,7 @@ Imports are resolved relative to the current file and participate in textX cross
 
 World quantity types: `VelocityTwist`, `Wrench`, `Pose`, `JointPosition`, `KinematicChain`, `Frame`, `Link`, `Gravity`.
 
-Context quantity types: `AngularVelocity`, `LinearVelocity`, `Force`, `Torque`, `Distance`, `LinearDistance`, `Angle`, `AngularDistance`, `Vector`.
+Context quantity types: `AngularVelocity`, `LinearVelocity`, `Force`, `Torque`, `Distance`, `LinearDistance`, `Angle`, `AngularDistance`, `Direction`, `FreeVector`.
 
 `LinearDistance` is accepted as an alias for `Distance`.
 

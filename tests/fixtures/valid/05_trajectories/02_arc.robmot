@@ -15,7 +15,7 @@ ENVIRONMENT (ns=app) world {
     }
 }
 
-MOTION_SPEC (ns=app) m_semicircle {
+MOTION_SPEC (ns=app) m_arc {
     CONTEXT {
         c1: World {
             pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base }
@@ -46,7 +46,7 @@ MOTION_SPEC (ns=app) m_semicircle {
     UNTIL {}
 }
 
-CONSTRAINT_HANDLER (ns=app) handler_semicircle {
+CONSTRAINT_HANDLER (ns=app) handler_arc {
     CONTEXT {
         c1: World {
             gravity: Gravity
@@ -56,11 +56,11 @@ CONSTRAINT_HANDLER (ns=app) handler_semicircle {
         }
     }
 
-    MOTION: <m_semicircle>
+    MOTION: <m_arc>
     CONTROL_MODE: JointTorque
 
     CONTROLLERS {
-        ctrl-follow: PID { constraint: <m_semicircle.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
+        ctrl-follow: PID { constraint: <m_arc.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
     }
 
     SOLVERS {

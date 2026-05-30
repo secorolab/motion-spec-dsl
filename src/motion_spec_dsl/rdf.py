@@ -178,7 +178,7 @@ WORLD_STRUCTURE_TYPES: dict[WorldQuantityType, Any] = {
 SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.Pose: QUDT_UNIT.UNITLESS,
     QuantityType.Position: QUDT_UNIT.M,
-    QuantityType.Orientation: QUDT_UNIT.UNITLESS,
+    QuantityType.Orientation: QUDT_UNIT["RAD"],
     QuantityType.Distance: QUDT_UNIT.M,
     QuantityType.Angle: QUDT_UNIT["RAD"],
     QuantityType.PlaneAngle: QUDT_UNIT["RAD"],
@@ -224,7 +224,7 @@ CSTR_TYPE_NAME: dict[Any, str] = {
 QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
     QuantityType.Position: QUDT_QKIND.Position,
-    QuantityType.Orientation: QUDT_QKIND.Direction,
+    QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
     QuantityType.Direction: QUDT_QKIND.Dimensionless,
     QuantityType.FreeVector: QUDT_QKIND.FreeVector,
     QuantityType.Trajectory: TRAJ.Trajectory,
@@ -2169,7 +2169,11 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
             elif subspace == "orientation":
                 self.graph.add((ref_node, RDF.type, GEOM_REL.Orientation))
-                self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction))
+                self.graph.add((ref_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+                self.graph.add((ref_node, RDF.type, GEOM_COORD["EulerAngles"]))
+                self.graph.add((ref_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+                self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+                self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
         return ref_node
 
     def _emit_constraints(
