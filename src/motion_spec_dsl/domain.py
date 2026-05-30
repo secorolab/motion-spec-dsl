@@ -266,6 +266,26 @@ class EnvironmentAssembly(NamedNamespaceObject):
 
 
 @dataclass
+class EnvironmentTrace:
+    """Live EE trajectory trace overlay configuration for the MuJoCo viewer.
+
+    color is a ColorValue (r/g/b/a channels in [0, 1]); when omitted the runtime
+    falls back to its default warm orange. length is the maximum number of recent
+    EE positions retained in the trace ring buffer.
+    """
+
+    parent: object
+    enabled: bool = False
+    length: int = 0
+    color: ColorValue | None = None
+
+    def channel(self, name: str, default: float) -> float:
+        if self.color is None:
+            return default
+        return next((t.value for t in self.color.terms if t.channel == name), default)
+
+
+@dataclass
 class EnvironmentSpec(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
@@ -273,6 +293,7 @@ class EnvironmentSpec(IHasNamespaceDeclare):
     runtime: EnvironmentRuntime
     assets: list[EnvironmentAsset] = field(default_factory=list)
     assembly: list[EnvironmentAssembly] = field(default_factory=list)
+    trace: EnvironmentTrace | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)

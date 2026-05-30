@@ -15,6 +15,15 @@ EnvironmentSpec:
         "runtime" ":" runtime=EnvironmentRuntime
         ("," "ASSETS" "{" assets+=EnvironmentAsset[","] "}")?
         ("," "ASSEMBLY" "{" assembly+=EnvironmentAssembly[","] "}")?
+        ("," "TRACE" trace=EnvironmentTrace)?
+    "}"
+;
+
+EnvironmentTrace:
+    "{"
+        "enabled" ":" enabled=BOOL
+        ("," "length" ":" length=INT)?
+        ("," "color" ":" color=ColorValue)?
     "}"
 ;
 

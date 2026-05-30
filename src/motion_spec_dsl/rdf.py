@@ -535,6 +535,20 @@ class MotionSpecDatasetBuilder:
             self.graph.add((term_node, QUDT_SCHEMA.unit, URIRef(str(QUDT_UNIT._NS) + term.unit.upper())))
             self.graph.add((node, GEOM_COORD["has-coordinate"], term_node))
 
+    def _emit_color_rgba(self, owner_node, r, g, b, a) -> None:
+        """Attach a grouped mj:ColorRGBA value node to owner_node via mj:color.
+
+        One canonical colour representation shared by scene objects and the
+        trajectory-trace overlay, mirroring how positions group into VectorXYZ.
+        """
+        color_node = URIRef(f"{owner_node}.color")
+        self.graph.add((owner_node, MJ["color"], color_node))
+        self.graph.add((color_node, RDF.type, MJ.ColorRGBA))
+        self.graph.add((color_node, MJ["color-r"], Literal(float(r), datatype=XSD.double)))
+        self.graph.add((color_node, MJ["color-g"], Literal(float(g), datatype=XSD.double)))
+        self.graph.add((color_node, MJ["color-b"], Literal(float(b), datatype=XSD.double)))
+        self.graph.add((color_node, MJ["color-a"], Literal(float(a), datatype=XSD.double)))
+
     def _emit_environment(self, env: EnvironmentSpec) -> None:
         env_node = URIRef(env.uri)
         world_node = URIRef(f"{env.uri}.world")
@@ -545,6 +559,22 @@ class MotionSpecDatasetBuilder:
             self.graph.add((env_node, RT["uses-runtime"], RT.MuJoCoRuntime))
         elif env.runtime == EnvironmentRuntime.RealRobot:
             self.graph.add((env_node, RT["uses-runtime"], RT.RealRobotRuntime))
+
+        if env.trace is not None:
+            trace_node = URIRef(f"{env.uri}.trace")
+            self.graph.add((env_node, MJ["has-trace"], trace_node))
+            self.graph.add((trace_node, RDF.type, MJ.TrajectoryTrace))
+            self.graph.add((trace_node, MJ["trace-enabled"], Literal(env.trace.enabled)))
+            self.graph.add(
+                (trace_node, MJ["trace-length"], Literal(env.trace.length or 4096))
+            )
+            self._emit_color_rgba(
+                trace_node,
+                env.trace.channel("r", 1.0),
+                env.trace.channel("g", 0.5),
+                env.trace.channel("b", 0.1),
+                env.trace.channel("a", 1.0),
+            )
 
         for asset in env.assets:
             asset_node = URIRef(asset.uri)
@@ -595,19 +625,16 @@ class MotionSpecDatasetBuilder:
                         self._emit_position_xyz(pos_node, entry.value)
                         self.graph.add((instance_node, MJ["attach-position"], pos_node))
                         continue
-                    values = {term.axis: term.value for term in entry.value.terms}
                     pos_node = URIRef(f"{instance.uri}.position")
+                    self._emit_position_xyz(pos_node, entry.value)
+                    # Position-specific semantics layered on the shared VectorXYZ core.
                     self.graph.add((pos_node, RDF.type, GEOM_REL.Position))
                     self.graph.add((pos_node, RDF.type, GEOM_COORD.PositionCoordinate))
-                    self.graph.add((pos_node, RDF.type, GEOM_COORD.VectorXYZ))
                     self.graph.add((pos_node, GEOM_REL.of, instance_node))
                     self.graph.add((pos_node, GEOM_REL["with-respect-to"], world_node))
                     self.graph.add((pos_node, GEOM_COORD["as-seen-by"], world_node))
                     self.graph.add((pos_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
                     self.graph.add((pos_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-                    self.graph.add((pos_node, GEOM_COORD.x, Literal(float(values.get("x", 0.0)), datatype=XSD.double)))
-                    self.graph.add((pos_node, GEOM_COORD.y, Literal(float(values.get("y", 0.0)), datatype=XSD.double)))
-                    self.graph.add((pos_node, GEOM_COORD.z, Literal(float(values.get("z", 0.0)), datatype=XSD.double)))
                 elif entry_type == "EnvironmentOrientationEntry":
                     if is_attachment_instance:
                         orient_node = URIRef(f"{instance.uri}.attach-orientation")
@@ -704,10 +731,9 @@ class MotionSpecDatasetBuilder:
                             f"Scene object '{instance.name}' has color block missing channels "
                             f"{missing}; all of r, g, b, a must be specified."
                         )
-                    self.graph.add((instance_node, MJ["color-r"], Literal(float(values["r"]), datatype=XSD.double)))
-                    self.graph.add((instance_node, MJ["color-g"], Literal(float(values["g"]), datatype=XSD.double)))
-                    self.graph.add((instance_node, MJ["color-b"], Literal(float(values["b"]), datatype=XSD.double)))
-                    self.graph.add((instance_node, MJ["color-a"], Literal(float(values["a"]), datatype=XSD.double)))
+                    self._emit_color_rgba(
+                        instance_node, values["r"], values["g"], values["b"], values["a"]
+                    )
                 elif entry_type == "EnvironmentFrictionEntry":
                     values = {term.axis: term.value for term in entry.value.terms}
                     missing = [axis for axis in ("slide", "torsion", "roll") if axis not in values]
