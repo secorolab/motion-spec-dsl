@@ -1,9 +1,5 @@
 # TODO
 
-## SHACL Status
-
-- Keep local secorolab SHACL extensions aligned with upstream comp-rob2b shapes as upstream evolves.
-
 ## Semantic Follow-Up
 
 - Add proper body-fixed frame/point nodes for scene objects (and `world`/robot frames) instead of
