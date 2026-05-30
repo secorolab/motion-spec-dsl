@@ -1,4 +1,5 @@
-// Valid: minimal manipulator following a SemiCircle trajectory between two endpoints.
+// Valid: minimal manipulator following an Arc trajectory between two endpoints
+// (amplitude = half the chord reproduces a semicircle).
 
 ns app = "https://secorolab.github.io/models/test/"
 
@@ -21,17 +22,16 @@ MOTION_SPEC (ns=app) m_semicircle {
         },
         c2: Spec {
             alpha:        TrajectoryProgress,
-            radius:       LinearDistance = 0.20 m,
-            start-point:  Position = Snapshot of <c1.pose-ee-base>.position,
-            end-point:    Position = Snapshot of <c1.pose-ee-base>.position,
-            plane-normal: Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = 1.0 m },
+            plane-normal: Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = 1.0 },
+            chord-vec:    FreeVector { as-seen-by: link-base } { x = 0.20, y = 0.0, z = 0.0 m },
+            amplitude:    LinearDistance = 0.10 m,
             start-pose:   Pose = Snapshot of <c1.pose-ee-base>,
-            traj: Trajectory = SemiCircle {
-                start:        <c2.start-point>,
+            end-point:    Position = Snapshot of <c1.pose-ee-base>.position + <c2.chord-vec>,
+            traj: Trajectory = Arc {
+                start:        <c2.start-pose>,
                 end:          <c2.end-point>,
-                radius:       <c2.radius>,
+                amplitude:    <c2.amplitude>,
                 plane-normal: <c2.plane-normal>,
-                orientation:  <c2.start-pose>,
                 alpha:        <c2.alpha>
             }
         }
@@ -52,7 +52,7 @@ CONSTRAINT_HANDLER (ns=app) handler_semicircle {
             gravity: Gravity
         },
         c2: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 

@@ -207,7 +207,7 @@ TrajectorySpec:
     type=TrajectoryType
 ;
 
-TrajectoryType: "Lerp" | "Circle" | "SemiCircle" | "Helix" ;
+TrajectoryType: "Lerp" | "Circle" | "Arc" | "Helix" | "Figure8" ;
 
 ConstraintSection:
     WhenSection | WhileSection | UntilSection
@@ -335,7 +335,7 @@ VectorQuantity:
     "{"
     "x" "=" x=FLOAT ","
     "y" "=" y=FLOAT ","
-    "z" "=" z=FLOAT unit=Unit
+    "z" "=" z=FLOAT (unit=Unit)?
     "}"
 ;
 
@@ -353,11 +353,11 @@ QuantityType:
     "Angle"           |
     "AngularDistance" |
     "Direction"       |
-    "Vector"
+    "FreeVector"
 ;
 
 TrajectoryValue:
-    "=" (lerp=LerpSpec | circle=CircleSpec | semicircle=SemiCircleSpec | helix=HelixSpec)
+    "=" (lerp=LerpSpec | circle=CircleSpec | arc=ArcSpec | helix=HelixSpec | figure8=Figure8Spec)
 ;
 
 LerpSpec:
@@ -370,36 +370,45 @@ LerpSpec:
 
 CircleSpec:
     "Circle" "{"
+        "start"        ":" start=ContextRef        ","
         "center"       ":" center=ContextRef       ","
-        "radius"       ":" radius=ContextRef       ","
         "plane-normal" ":" plane_normal=ContextRef ","
-        "orientation"  ":" orientation=ContextRef  ","
         "alpha"        ":" alpha=ContextRef
     "}"
 ;
 
-SemiCircleSpec:
-    "SemiCircle" "{"
+ArcSpec:
+    "Arc" "{"
         "start"        ":" start=ContextRef        ","
         "end"          ":" end=ContextRef          ","
-        "radius"       ":" radius=ContextRef       ","
+        "amplitude"    ":" amplitude=ContextRef    ","
         "plane-normal" ":" plane_normal=ContextRef ","
-        "orientation"  ":" orientation=ContextRef  ","
         "alpha"        ":" alpha=ContextRef
     "}"
 ;
 
 HelixSpec:
     "Helix" "{"
+        "start"       ":" start=ContextRef       ","
         "center"      ":" center=ContextRef      ","
-        "radius"      ":" radius=ContextRef      ","
         "axis"        ":" axis=ContextRef        ","
         "pitch"       ":" pitch=ContextRef       ","
         "revolutions" ":" revolutions=ContextRef ","
-        "orientation" ":" orientation=ContextRef ","
         "alpha"       ":" alpha=ContextRef
     "}"
 ;
+
+Figure8Spec:
+    "Figure8" "{"
+        "anchor"       ":" anchor=ContextRef       ","
+        "radius"       ":" radius=ContextRef       ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "alpha"        ":" alpha=ContextRef
+        ("," "form" ":" form=Figure8Form)?
+    "}"
+;
+
+Figure8Form: "Gerono" | "Bernoulli" ;
 
 PoseValue:
     "{"

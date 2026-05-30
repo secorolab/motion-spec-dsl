@@ -21,19 +21,18 @@ MOTION_SPEC (ns=app) m_helix {
         },
         c2: Spec {
             alpha:       TrajectoryProgress,
-            radius:      LinearDistance = 0.08 m,
             pitch:       LinearDistance = 0.04 m,
             revolutions: Distance       = 2.0 m,
-            center-pos:  Position = Snapshot of <c1.pose-ee-base>.position,
-            axis:        Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = -1.0 m },
+            axis:        Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = -1.0 },
+            radius-vec:  FreeVector { as-seen-by: link-base } { x = 0.08, y = 0.0, z = 0.0 m },
             start-pose:  Pose = Snapshot of <c1.pose-ee-base>,
+            center-pos:  Position = Snapshot of <c1.pose-ee-base>.position + <c2.radius-vec>,
             traj: Trajectory = Helix {
+                start:       <c2.start-pose>,
                 center:      <c2.center-pos>,
-                radius:      <c2.radius>,
                 axis:        <c2.axis>,
                 pitch:       <c2.pitch>,
                 revolutions: <c2.revolutions>,
-                orientation: <c2.start-pose>,
                 alpha:       <c2.alpha>
             }
         }
@@ -54,7 +53,7 @@ CONSTRAINT_HANDLER (ns=app) handler_helix {
             gravity: Gravity
         },
         c2: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 

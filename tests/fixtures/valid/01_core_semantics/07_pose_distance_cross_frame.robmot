@@ -43,7 +43,7 @@ CONSTRAINT_HANDLER (ns=app) handler_cross_distance {
             gravity: Gravity
         },
         c2: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 

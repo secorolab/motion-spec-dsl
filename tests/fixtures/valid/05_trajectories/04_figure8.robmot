@@ -1,4 +1,4 @@
-// Invalid: ABAG controller syntax is recognized, but graph semantics are not modeled yet.
+// Valid: minimal manipulator following a Figure8 trajectory (geometric).
 
 ns app = "https://secorolab.github.io/models/test/"
 
@@ -14,26 +14,36 @@ ENVIRONMENT (ns=app) world {
     }
 }
 
-MOTION_SPEC (ns=app) m_move {
+MOTION_SPEC (ns=app) m_figure8 {
     CONTEXT {
         c1: World {
-            twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base }
+            pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base }
         },
         c2: Spec {
-            vel-z-ref: LinearVelocity = 0.1 m/s
+            alpha:        TrajectoryProgress,
+            radius:       LinearDistance = 0.10 m,
+            plane-normal: Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = 1.0 },
+            start-pose:   Pose = Snapshot of <c1.pose-ee-base>,
+            traj: Trajectory = Figure8 {
+                anchor:       <c2.start-pose>,
+                radius:       <c2.radius>,
+                plane-normal: <c2.plane-normal>,
+                alpha:        <c2.alpha>,
+                form:         Bernoulli
+            }
         }
     }
 
     WHEN {}
 
     WHILE {
-        c1: <c1.twist-ee-base>.linvel.z equal to <c2.vel-z-ref>
+        follow-pos: keeping <c1.pose-ee-base>.position equal to <c2.traj>.position
     }
 
     UNTIL {}
 }
 
-CONSTRAINT_HANDLER (ns=app) handler_move {
+CONSTRAINT_HANDLER (ns=app) handler_figure8 {
     CONTEXT {
         c1: World {
             gravity: Gravity
@@ -43,11 +53,11 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         }
     }
 
-    MOTION: <m_move>
+    MOTION: <m_figure8>
     CONTROL_MODE: JointTorque
 
     CONTROLLERS {
-        ctrl-c1: ABAG { constraint: <m_move.c1> }
+        ctrl-follow: PID { constraint: <m_figure8.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
     }
 
     SOLVERS {

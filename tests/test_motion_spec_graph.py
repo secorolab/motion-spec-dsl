@@ -51,6 +51,7 @@ MODELS = Path(__file__).parents[1] / "models"
 CIRCLE_TRAJECTORY = "05_trajectories/01_circle.robmot"
 SEMICIRCLE_TRAJECTORY = "05_trajectories/02_semicircle.robmot"
 HELIX_TRAJECTORY = "05_trajectories/03_helix.robmot"
+FIGURE8_TRAJECTORY = "05_trajectories/04_figure8.robmot"
 STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
 REUSED_CONSTRAINT = "01_core_semantics/02_reused_constraint.robmot"
 SNAPSHOT_POSE = "01_core_semantics/03_snapshot_pose.robmot"
@@ -686,7 +687,7 @@ MOTION_SPEC (ns=app) m_frame_traj {{
 CONSTRAINT_HANDLER (ns=app) handler_frame_traj {{
     CONTEXT {{
         hw: World {{ gravity: Gravity }},
-        hs: Spec {{ gravity-vec: Vector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }} }}
+        hs: Spec {{ gravity-vec: FreeVector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }} }}
     }}
 
     MOTION: <m_frame_traj>
@@ -803,33 +804,63 @@ def test_circle_trajectory_emits_operator_and_input_edges() -> None:
     op_node = builder.root_uri("circle-traj", owner=traj_quantity)
 
     assert (op_node, RDF.type, TRAJ.Circle) in graph
+    assert (op_node, TRAJ.start, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.center, URIRef(_trajectory_quantity(motion, "center-pos").uri)) in graph
-    assert (op_node, TRAJ.radius, URIRef(_trajectory_quantity(motion, "radius").uri)) in graph
     assert (op_node, TRAJ["plane-normal"], URIRef(_trajectory_quantity(motion, "plane-normal").uri)) in graph
-    assert (op_node, TRAJ.orientation, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph
     assert (op_node, TRAJ.trajectory, traj_node) in graph
     assert (traj_node, RDF.type, TRAJ.Trajectory) in graph
     assert (traj_node, RDF.type, GEOM_REL.Pose) in graph
 
 
-def test_semicircle_trajectory_emits_operator_and_input_edges() -> None:
+def test_arc_trajectory_emits_operator_and_input_edges() -> None:
     builder, graph, _ = _build_dataset(SEMICIRCLE_TRAJECTORY)
     motion = builder.authored_handlers[0].motion
     traj_quantity = _trajectory_quantity(motion, "traj")
     traj_node = URIRef(traj_quantity.uri)
-    op_node = builder.root_uri("semicircle-traj", owner=traj_quantity)
+    op_node = builder.root_uri("arc-traj", owner=traj_quantity)
 
-    assert (op_node, RDF.type, TRAJ.SemiCircle) in graph
-    assert (op_node, TRAJ.start, URIRef(_trajectory_quantity(motion, "start-point").uri)) in graph
+    assert (op_node, RDF.type, TRAJ.Arc) in graph
+    assert (op_node, TRAJ.start, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.end, URIRef(_trajectory_quantity(motion, "end-point").uri)) in graph
-    assert (op_node, TRAJ.radius, URIRef(_trajectory_quantity(motion, "radius").uri)) in graph
+    assert (op_node, TRAJ.amplitude, URIRef(_trajectory_quantity(motion, "amplitude").uri)) in graph
     assert (op_node, TRAJ["plane-normal"], URIRef(_trajectory_quantity(motion, "plane-normal").uri)) in graph
-    assert (op_node, TRAJ.orientation, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph
     assert (op_node, TRAJ.trajectory, traj_node) in graph
     assert (traj_node, RDF.type, TRAJ.Trajectory) in graph
     assert (traj_node, RDF.type, GEOM_REL.Pose) in graph
+
+
+def test_figure8_trajectory_emits_operator_and_input_edges() -> None:
+    builder, graph, _ = _build_dataset(FIGURE8_TRAJECTORY)
+    motion = builder.authored_handlers[0].motion
+    traj_quantity = _trajectory_quantity(motion, "traj")
+    traj_node = URIRef(traj_quantity.uri)
+    op_node = builder.root_uri("figure8-traj", owner=traj_quantity)
+
+    assert (op_node, RDF.type, TRAJ.Figure8) in graph
+    assert (op_node, TRAJ.anchor, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
+    assert (op_node, TRAJ.radius, URIRef(_trajectory_quantity(motion, "radius").uri)) in graph
+    assert (op_node, TRAJ["plane-normal"], URIRef(_trajectory_quantity(motion, "plane-normal").uri)) in graph
+    assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph
+    # 04_figure8.robmot selects the Bernoulli form explicitly.
+    assert (op_node, TRAJ.form, Literal("Bernoulli")) in graph
+    assert (op_node, TRAJ.trajectory, traj_node) in graph
+    assert (traj_node, RDF.type, TRAJ.Trajectory) in graph
+    assert (traj_node, RDF.type, GEOM_REL.Pose) in graph
+
+
+def test_figure8_trajectory_defaults_form_to_gerono_when_omitted() -> None:
+    source = (VALID_FIXTURES / FIGURE8_TRAJECTORY).read_text().replace(
+        ",\n                form:         Bernoulli", ""
+    )
+    builder, graph, _ = _build_string_dataset(source)
+    motion = builder.authored_handlers[0].motion
+    traj_quantity = _trajectory_quantity(motion, "traj")
+    op_node = builder.root_uri("figure8-traj", owner=traj_quantity)
+
+    assert (op_node, RDF.type, TRAJ.Figure8) in graph
+    assert (op_node, TRAJ.form, Literal("Gerono")) in graph
 
 
 def test_helix_trajectory_emits_operator_and_input_edges() -> None:
@@ -840,12 +871,11 @@ def test_helix_trajectory_emits_operator_and_input_edges() -> None:
     op_node = builder.root_uri("helix-traj", owner=traj_quantity)
 
     assert (op_node, RDF.type, TRAJ.Helix) in graph
+    assert (op_node, TRAJ.start, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.center, URIRef(_trajectory_quantity(motion, "center-pos").uri)) in graph
-    assert (op_node, TRAJ.radius, URIRef(_trajectory_quantity(motion, "radius").uri)) in graph
     assert (op_node, TRAJ.axis, URIRef(_trajectory_quantity(motion, "axis").uri)) in graph
     assert (op_node, TRAJ.pitch, URIRef(_trajectory_quantity(motion, "pitch").uri)) in graph
     assert (op_node, TRAJ.revolutions, URIRef(_trajectory_quantity(motion, "revolutions").uri)) in graph
-    assert (op_node, TRAJ.orientation, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
     assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph
     assert (op_node, TRAJ.trajectory, traj_node) in graph
     assert (traj_node, RDF.type, TRAJ.Trajectory) in graph

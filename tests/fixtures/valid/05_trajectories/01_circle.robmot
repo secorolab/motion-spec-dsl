@@ -21,15 +21,14 @@ MOTION_SPEC (ns=app) m_circle {
         },
         c2: Spec {
             alpha:        TrajectoryProgress,
-            radius:       LinearDistance = 0.10 m,
-            center-pos:   Position = Snapshot of <c1.pose-ee-base>.position,
-            plane-normal: Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = 1.0 m },
+            plane-normal: Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = 1.0 },
+            radius-vec:   FreeVector { as-seen-by: link-base } { x = 0.10, y = 0.0, z = 0.0 m },
             start-pose:   Pose = Snapshot of <c1.pose-ee-base>,
+            center-pos:   Position = Snapshot of <c1.pose-ee-base>.position + <c2.radius-vec>,
             traj: Trajectory = Circle {
+                start:        <c2.start-pose>,
                 center:       <c2.center-pos>,
-                radius:       <c2.radius>,
                 plane-normal: <c2.plane-normal>,
-                orientation:  <c2.start-pose>,
                 alpha:        <c2.alpha>
             }
         }
@@ -50,7 +49,7 @@ CONSTRAINT_HANDLER (ns=app) handler_circle {
             gravity: Gravity
         },
         c2: Spec {
-            gravity-vec: Vector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
         }
     }
 

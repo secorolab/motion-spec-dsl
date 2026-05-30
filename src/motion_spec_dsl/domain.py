@@ -383,34 +383,41 @@ class LerpSpec:
 @dataclass
 class CircleSpec:
     parent: object
-    center: object        # ContextRef
-    radius: object        # ContextRef
+    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    center: object        # ContextRef (Position the curve orbits; radius = |start - center| in-plane)
     plane_normal: object  # ContextRef
-    orientation: object   # ContextRef
     alpha: object         # ContextRef
 
 
 @dataclass
-class SemiCircleSpec:
+class ArcSpec:
     parent: object
-    start: object         # ContextRef
-    end: object           # ContextRef
-    radius: object        # ContextRef
+    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    end: object           # ContextRef (Position: the other endpoint)
+    amplitude: object     # ContextRef (LinearDistance: how far the arc bows from the chord; = chord/2 -> semicircle)
     plane_normal: object  # ContextRef
-    orientation: object   # ContextRef
     alpha: object         # ContextRef
 
 
 @dataclass
 class HelixSpec:
     parent: object
-    center: object        # ContextRef
-    radius: object        # ContextRef
+    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    center: object        # ContextRef (Position the helix winds around; radius = |start - center| in-plane)
     axis: object          # ContextRef
     pitch: object         # ContextRef
     revolutions: object   # ContextRef
-    orientation: object   # ContextRef
     alpha: object         # ContextRef
+
+
+@dataclass
+class Figure8Spec:
+    parent: object
+    anchor: object        # ContextRef (Pose: position -> center, rotation -> orientation)
+    radius: object        # ContextRef
+    plane_normal: object  # ContextRef
+    alpha: object         # ContextRef
+    form: str = "Gerono"
 
 
 @dataclass
@@ -418,12 +425,13 @@ class TrajectoryValue:
     parent: object
     lerp: LerpSpec | None = None
     circle: CircleSpec | None = None
-    semicircle: SemiCircleSpec | None = None
+    arc: ArcSpec | None = None
     helix: HelixSpec | None = None
+    figure8: Figure8Spec | None = None
 
     @property
-    def spec(self) -> LerpSpec | CircleSpec | SemiCircleSpec | HelixSpec:
-        for candidate in (self.lerp, self.circle, self.semicircle, self.helix):
+    def spec(self) -> LerpSpec | CircleSpec | ArcSpec | HelixSpec | Figure8Spec:
+        for candidate in (self.lerp, self.circle, self.arc, self.helix, self.figure8):
             if candidate is not None:
                 return candidate
         raise ValueError("TrajectoryValue has no spec populated")
@@ -626,7 +634,7 @@ class QuantityType(StrEnum):
     AngularAcceleration = "AngularAcceleration"
     Force               = "Force"
     Torque              = "Torque"
-    Vector              = "Vector"
+    FreeVector          = "FreeVector"
     Trajectory          = "Trajectory"
     TrajectoryProgress  = "TrajectoryProgress"
 

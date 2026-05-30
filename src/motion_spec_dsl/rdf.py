@@ -225,8 +225,8 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
     QuantityType.Position: QUDT_QKIND.Position,
     QuantityType.Orientation: QUDT_QKIND.Direction,
-    QuantityType.Direction: QUDT_QKIND.Direction,
-    QuantityType.Vector: QUDT_QKIND.Vector,
+    QuantityType.Direction: QUDT_QKIND.Dimensionless,
+    QuantityType.FreeVector: QUDT_QKIND.FreeVector,
     QuantityType.Trajectory: TRAJ.Trajectory,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
 }
@@ -1343,7 +1343,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_REL.Direction))
         self.graph.add((node, RDF.type, GEOM_COORD.DirectionCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Direction))
+        # A direction is a normalized (unit) vector: its quantity kind is Dimensionless.
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Dimensionless))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
         self.graph.add((node, GEOM_COORD["as-seen-by"], as_seen_by))
         if vector is not None:
@@ -1819,6 +1820,11 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((out_node, RDF.type, qkind))
                     self.graph.add((out_node, QUDT_SCHEMA["hasQuantityKind"], qkind))
                     self.graph.add((out_node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS)))
+                    # A vector-valued (Position) offset result is a 3-vector: tag it with
+                    # Position-coordinate metadata so the IR types it as KDL::Vector, not a
+                    # scalar double. (Scalar offsets, e.g. LinearDistance, stay double.)
+                    if quantity.type == QuantityType.Position:
+                        self._emit_snapshot_position_metadata(out_node, quantity)
                     snap_source = out_node
                 else:
                     snap_source = view_node
@@ -1978,35 +1984,42 @@ class MotionSpecDatasetBuilder:
         elif value.circle is not None:
             self._emit_geometric_trajectory(
                 node, quantity, value.circle, TRAJ.Circle, "circle",
-                [("center", TRAJ.center, value.circle.center),
-                 ("radius", TRAJ.radius, value.circle.radius),
+                [("start", TRAJ.start, value.circle.start),
+                 ("center", TRAJ.center, value.circle.center),
                  ("plane-normal", TRAJ["plane-normal"], value.circle.plane_normal),
-                 ("orientation", TRAJ.orientation, value.circle.orientation),
                  ("alpha", TRAJ.alpha, value.circle.alpha)],
                 constraints, world_qtys,
             )
-        elif value.semicircle is not None:
+        elif value.arc is not None:
             self._emit_geometric_trajectory(
-                node, quantity, value.semicircle, TRAJ.SemiCircle, "semicircle",
-                [("start", TRAJ.start, value.semicircle.start),
-                 ("end", TRAJ.end, value.semicircle.end),
-                 ("radius", TRAJ.radius, value.semicircle.radius),
-                 ("plane-normal", TRAJ["plane-normal"], value.semicircle.plane_normal),
-                 ("orientation", TRAJ.orientation, value.semicircle.orientation),
-                 ("alpha", TRAJ.alpha, value.semicircle.alpha)],
+                node, quantity, value.arc, TRAJ.Arc, "arc",
+                [("start", TRAJ.start, value.arc.start),
+                 ("end", TRAJ.end, value.arc.end),
+                 ("amplitude", TRAJ.amplitude, value.arc.amplitude),
+                 ("plane-normal", TRAJ["plane-normal"], value.arc.plane_normal),
+                 ("alpha", TRAJ.alpha, value.arc.alpha)],
                 constraints, world_qtys,
             )
         elif value.helix is not None:
             self._emit_geometric_trajectory(
                 node, quantity, value.helix, TRAJ.Helix, "helix",
-                [("center", TRAJ.center, value.helix.center),
-                 ("radius", TRAJ.radius, value.helix.radius),
+                [("start", TRAJ.start, value.helix.start),
+                 ("center", TRAJ.center, value.helix.center),
                  ("axis", TRAJ.axis, value.helix.axis),
                  ("pitch", TRAJ.pitch, value.helix.pitch),
                  ("revolutions", TRAJ.revolutions, value.helix.revolutions),
-                 ("orientation", TRAJ.orientation, value.helix.orientation),
                  ("alpha", TRAJ.alpha, value.helix.alpha)],
                 constraints, world_qtys,
+            )
+        elif value.figure8 is not None:
+            self._emit_geometric_trajectory(
+                node, quantity, value.figure8, TRAJ.Figure8, "figure8",
+                [("anchor", TRAJ.anchor, value.figure8.anchor),
+                 ("radius", TRAJ.radius, value.figure8.radius),
+                 ("plane-normal", TRAJ["plane-normal"], value.figure8.plane_normal),
+                 ("alpha", TRAJ.alpha, value.figure8.alpha)],
+                constraints, world_qtys,
+                literals=[(TRAJ.form, Literal(value.figure8.form or "Gerono"))],
             )
         else:
             raise ValueError(
@@ -2065,6 +2078,7 @@ class MotionSpecDatasetBuilder:
         inputs: list[tuple[str, URIRef, Any]],
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
+        literals: list[tuple[URIRef, Any]] = (),
     ) -> None:
         # All geometric trajectories output a Pose (KDL::Frame).
         self._emit_trajectory_pose_metadata(node, quantity, GEOM_REL.Pose, constraints, world_qtys)
@@ -2074,6 +2088,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add(
                 (op_node, predicate, self._emit_context_ref_node(ref, quantity, suffix))
             )
+        for predicate, literal in literals:
+            self.graph.add((op_node, predicate, literal))
         self.graph.add((op_node, TRAJ.trajectory, node))
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
@@ -2741,7 +2757,7 @@ class MotionSpecDatasetBuilder:
 
             if isinstance(cref, UntilMonitorRef):
                 aggregate_error_node = URIRef(f"{mon.uri}.error")
-                self._add_quantity(aggregate_error_node, QuantityType.Vector)
+                self._add_quantity(aggregate_error_node, QuantityType.FreeVector)
                 for item in cref.motion.until.constraints:
                     spec = _resolved_spec(item)
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
@@ -2857,7 +2873,7 @@ class MotionSpecDatasetBuilder:
 
         if ctrl.type == ControllerType.FeedForward:
             signal_node = self._owned_uri(f"cmd-{ctrl.name}", handler)
-            signal_type = _scalar_type(qty, subspace, axis) if qty is not None else QuantityType.Vector
+            signal_type = _scalar_type(qty, subspace, axis) if qty is not None else QuantityType.FreeVector
             self._add_quantity(signal_node, signal_type)
             return signal_node
 

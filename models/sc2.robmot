@@ -223,7 +223,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
             }
         },
         c2: Spec {
-            gravity-vec: Vector { x = 9.72607409, y = 0.90542332, z = -0.90542332 m/s2 }
+            gravity-vec: FreeVector { x = 9.72607409, y = 0.90542332, z = -0.90542332 m/s2 }
         }
     }
 
@@ -300,7 +300,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
             }
         },
         c2: Spec {
-            gravity-vec: Vector { x = 9.72607409, y = -0.90542332, z = -0.90542332 m/s2 }
+            gravity-vec: FreeVector { x = 9.72607409, y = -0.90542332, z = -0.90542332 m/s2 }
         }
     }
 
