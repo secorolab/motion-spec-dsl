@@ -18,6 +18,7 @@ from motion_spec.namespace import (
     APP,
     CSTR,
     CSTR_HDL,
+    CSTR_HDL_EXT,
     ENV,
     GEOM_COORD,
     GEOM_ENT,
@@ -26,6 +27,7 @@ from motion_spec.namespace import (
     KC,
     KC_STAT,
     MAP,
+    MAP_EXT,
     MJ,
     MOT,
     MOT_EXT,
@@ -38,10 +40,12 @@ from motion_spec.namespace import (
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
+    RBDYN_OP_EXT,
     RT,
     SIM,
     SNAP,
     SLV,
+    SLV_EXT,
     VALUE_ROLE,
 )
 from motion_spec_dsl.controller_semantics import (
@@ -148,7 +152,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
                 "angular-acceleration",
                 "ang",
                 QuantityType.PlaneAngle,
-                MAP.PoseOrientationView,
+                MAP_EXT.PoseOrientationView,
             ),
             "distance": (
                 "position",
@@ -249,15 +253,19 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
     ("rbdyn-op", RBDYN_OP),
+    ("rbdyn-op-ext", RBDYN_OP_EXT),
     ("qudt", QUDT_SCHEMA),
     ("qkind", QUDT_QKIND),
     ("unit", QUDT_UNIT),
     ("map", MAP),
     ("cstr", CSTR),
+    ("map-ext", MAP_EXT),
     ("mot", MOT),
     ("mot-ext", MOT_EXT),
     ("cstr-hdl", CSTR_HDL),
+    ("cstr-hdl-ext", CSTR_HDL_EXT),
     ("slv", SLV),
+    ("slv-ext", SLV_EXT),
 )
 
 
@@ -1482,14 +1490,25 @@ class MotionSpecDatasetBuilder:
             if default_node not in explicit_structural_nodes:
                 implicit.setdefault((default_node, rdf_type), None)
 
+        # A frame referenced as a pose/twist `of`/`wrt` also acts as the origin
+        # Point and attached SimplicialComplex when derived Position / twist nodes
+        # reuse it (e.g. `<pose>.position` with-respect-to a base frame). Type it
+        # as the full Frame+Point+SimplicialComplex trio, matching the fusion
+        # already applied to scene objects and `world`, so those reuses conform to
+        # the geometry SHACL shapes (Position.of=Point, Twist.wrt=SimplicialComplex).
+        frame_trio = (GEOM_ENT.Frame, GEOM_ENT.Point, GEOM_ENT.SimplicialComplex)
+
         for qty in world_qtys.values():
             props = qty.props if isinstance(qty.props, GeometricProps) else None
             if qty.type == WorldQuantityType.Pose:
-                for key in ("of", "wrt", "as-seen-by"):
-                    add_implicit(_geo_prop(props, key), GEOM_ENT.Frame, qty)
+                for key in ("of", "wrt"):
+                    for rdf_type in frame_trio:
+                        add_implicit(_geo_prop(props, key), rdf_type, qty)
+                add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
             elif qty.type == WorldQuantityType.VelocityTwist:
                 for key in ("of", "wrt"):
-                    add_implicit(_geo_prop(props, key), GEOM_ENT.SimplicialComplex, qty)
+                    for rdf_type in frame_trio:
+                        add_implicit(_geo_prop(props, key), rdf_type, qty)
                 add_implicit(_geo_prop(props, "ref-point"), GEOM_ENT.Point, qty)
                 add_implicit(
                     _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt"),
@@ -1741,7 +1760,10 @@ class MotionSpecDatasetBuilder:
         view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'position', None)}", owner)
         if (view_uri, RDF.type, MAP.View) not in self.graph:
             self.graph.add((view_uri, RDF.type, MAP.View))
-            self.graph.add((view_uri, RDF.type, MAP.PoseCoordinateView))
+            # Whole 3-vector position view: not a per-axis upstream
+            # map:PoseCoordinateView (which mandates map:axis), but the secorolab
+            # map-ext:PosePositionView, which exposes the entire position vector.
+            self.graph.add((view_uri, RDF.type, MAP_EXT.PosePositionView))
             self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
             self.graph.add((view_uri, MAP.subobject, scalar_uri))
             self.graph.add((view_uri, MAP.subspace, MAP.position))
@@ -1811,7 +1833,7 @@ class MotionSpecDatasetBuilder:
                     add_node = self._owned_uri(f"{quantity.name}-add", quantity)
                     out_node = self._owned_uri(f"{quantity.name}-add-out", quantity)
                     qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
-                    self.graph.add((add_node, RDF.type, RBDYN_OP["AddQuantity"]))
+                    self.graph.add((add_node, RDF.type, RBDYN_OP_EXT["AddQuantity"]))
                     self.graph.add((add_node, RBDYN_OP["in1"], view_node))
                     self.graph.add((add_node, RBDYN_OP["in2"], offset_ref_node))
                     self.graph.add((add_node, RBDYN_OP["out"], out_node))
@@ -1921,10 +1943,10 @@ class MotionSpecDatasetBuilder:
             self._add_quantity(component_node, QuantityType.Angle)
             self.graph.add((orientation_node, GEOM_COORD["has-coordinate"], component_node))
             self.graph.add((view_node, RDF.type, MAP.View))
-            self.graph.add((view_node, RDF.type, MAP.PoseOrientationView))
+            self.graph.add((view_node, RDF.type, MAP_EXT.PoseOrientationView))
             self.graph.add((view_node, MAP.superobject, node))
             self.graph.add((view_node, MAP.subobject, component_node))
-            self.graph.add((view_node, MAP.subspace, MAP.rotation))
+            self.graph.add((view_node, MAP.subspace, MAP_EXT.rotation))
             self.graph.add((view_node, MAP.axis, MAP[axis]))
             if term.ref is not None:
                 ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
@@ -2411,9 +2433,9 @@ class MotionSpecDatasetBuilder:
         if rotation_pose is not None:
             rotation_id = f"rotation-{motion.name}"
             op_node = self._owned_uri(f"compute-{rotation_id}", motion)
-            self.graph.add((op_node, RDF.type, MAP.ComputeRotationFromPose))
-            self.graph.add((op_node, MAP.pose, self._owned_uri(rotation_pose, motion)))
-            self.graph.add((op_node, MAP.rotation, self._owned_uri(rotation_id, motion)))
+            self.graph.add((op_node, RDF.type, MAP_EXT.ComputeRotationFromPose))
+            self.graph.add((op_node, MAP_EXT.pose, self._owned_uri(rotation_pose, motion)))
+            self.graph.add((op_node, MAP_EXT.rotation, self._owned_uri(rotation_id, motion)))
 
         seen_angle_ops: set[str] = set()
         for spec in constraints:
@@ -2504,7 +2526,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((d_node, QUDT_SCHEMA.value, Literal(float(ctrl.params.damping), datatype=XSD.double)))
                 self.graph.add((ctrl_node, CSTR_HDL["damping"], d_node))
         elif ctrl.type == ControllerType.FeedForward:
-            self.graph.add((ctrl_node, RDF.type, CSTR_HDL.FeedForwardController))
+            self.graph.add((ctrl_node, RDF.type, CSTR_HDL_EXT.FeedForwardController))
         else:
             raise ValueError(
                 f"Controller '{ctrl.name}' uses {ctrl.type.value}, "
@@ -2716,7 +2738,7 @@ class MotionSpecDatasetBuilder:
             if ctrl.type == ControllerType.FeedForward and isinstance(spec.expr, EqualityConstraint):
                 ref_qty = _context_quantity(spec.expr.reference)
                 if ref_qty is not None:
-                    self.graph.add((ctrl_node, CSTR_HDL["reference-signal"], URIRef(ref_qty.uri)))
+                    self.graph.add((ctrl_node, CSTR_HDL_EXT["reference-signal"], URIRef(ref_qty.uri)))
                 eval_id = _evaluator_id(spec)
                 eval_node = self._owned_uri(eval_id, spec.parent)
                 if eval_id not in seen_eval_ids:
@@ -2972,8 +2994,8 @@ class MotionSpecDatasetBuilder:
 
             alg = solver.algorithm
             if alg == "CommandForwarding":
-                self.graph.add((solver_node, RDF.type, SLV.CommandForwardingSolver))
-                self.graph.add((solver_node, SLV.solver, SLV.CommandForwardingAlgorithm))
+                self.graph.add((solver_node, RDF.type, SLV_EXT.CommandForwardingSolver))
+                self.graph.add((solver_node, SLV.solver, SLV_EXT.CommandForwardingAlgorithm))
                 self._emit_solver_interfaces(
                     handler,
                     motion,
@@ -3006,7 +3028,7 @@ class MotionSpecDatasetBuilder:
             gravity_ref = getattr(solver, "gravity_value", None)
             gravity_value = _context_quantity(gravity_ref) if gravity_ref is not None else None
             if gravity_value is not None:
-                self.graph.add((solver_node, SLV["gravity-value"], URIRef(gravity_value.uri)))
+                self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
 
             chain_root_name = getattr(
                 getattr(getattr(solver.robot, "environment_robot", None), "assembly_spec", None),
@@ -3082,10 +3104,10 @@ class MotionSpecDatasetBuilder:
                         ctrl, qty, subspace, axis, motion, handler, shared
                     )
                     spec_node = self._owned_uri(f"cmd-fwd-{ctrl.name}", handler)
-                    self.graph.add((spec_node, RDF.type, SLV.CommandForwardingSpecification))
-                    self.graph.add((spec_node, SLV["control-signal"], control_signal_node))
+                    self.graph.add((spec_node, RDF.type, SLV_EXT.CommandForwardingSpecification))
+                    self.graph.add((spec_node, SLV_EXT["control-signal"], control_signal_node))
                     self.graph.add((spec_node, SLV["attached-to"], self._owned_uri(target_name, qty)))
-                    self.graph.add((solver_node, SLV["command-forwarding"], spec_node))
+                    self.graph.add((solver_node, SLV_EXT["command-forwarding"], spec_node))
                 continue
 
             if (

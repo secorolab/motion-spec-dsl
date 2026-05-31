@@ -295,6 +295,8 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/simulation.shacl.ttl",
         "https://secorolab.github.io/metamodels/snapshot.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
+        "https://secorolab.github.io/metamodels/task/map-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/motion-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
