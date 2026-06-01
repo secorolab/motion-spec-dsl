@@ -22,6 +22,10 @@
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
 - Add PID output clamp support as an authored controller parameter if clamps become part of the model.
 - Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
+- Make codegen output deterministic. `shared_state.hpp` field order and the solver-handle alias
+  chosen for gripper actuator commands (e.g. `arm_solver_retreat` vs `arm_solver_open_grasp_hold`,
+  all the same robot) vary run-to-run from Python/RDF set iteration. Harmless at runtime but produces
+  noisy regeneration diffs; sort the emitted collections by a stable key.
 
 ## Validation
 

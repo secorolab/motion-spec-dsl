@@ -2700,10 +2700,20 @@ class MotionSpecDatasetBuilder:
                 and command.acceleration_constraints
                 and isinstance(spec.expr, EqualityConstraint)
             ):
-                ref_qty = _context_quantity(spec.expr.reference)
                 ref_uri = None
-                if ref_qty is not None and getattr(ref_qty, "type", None) in {QuantityType.Pose, QuantityType.Trajectory}:
-                    ref_uri = URIRef(ref_qty.uri)
+                if subspace == "pose":
+                    # Full-pose equality: the constraint's reference-value already
+                    # encodes any frame conversion (e.g. a cube-relative trajectory
+                    # composed into the world frame via ComposePose). The diff must be
+                    # taken against that world-frame pose, not the raw reference frame.
+                    ref_uri = self.graph.value(URIRef(spec.uri), CSTR["reference-value"])
+                else:
+                    # Position/orientation diffs extract components from the parent
+                    # pose/trajectory frame, so the evaluator needs that frame itself
+                    # (a coordinate node is not a Frame).
+                    ref_qty = _context_quantity(spec.expr.reference)
+                    if ref_qty is not None and getattr(ref_qty, "type", None) in {QuantityType.Pose, QuantityType.Trajectory}:
+                        ref_uri = URIRef(ref_qty.uri)
                 if ref_uri is None:
                     ref_uri = self.graph.value(URIRef(spec.uri), CSTR["reference-value"])
                 if ref_uri is not None:

@@ -745,6 +745,20 @@ def test_frame_aware_trajectory_reference_composes_cube_trajectory_into_base_fra
     assert (compose_node, GEOM_OP.composite, transformed_node) in graph
     assert (constraint_node, CSTR["reference-value"], transformed_node) in graph
 
+    # The pose-diff evaluator must diff against the world-frame trajectory, not the
+    # raw cube-frame one — otherwise the controller drives the EE to the wrong place.
+    ee_pose_quantity = next(
+        item
+        for ctx in motion.context
+        for item in getattr(ctx, "declaration", [])
+        if getattr(item, "name", None) == "pose-ee-base"
+    )
+    eval_node = builder.root_uri("eval-pose-diff-ctrl-follow", owner=motion)
+    assert (eval_node, RDF.type, GEOM_OP["PoseDiffEvaluator"]) in graph
+    assert (eval_node, GEOM_OP.in1, URIRef(ee_pose_quantity.uri)) in graph
+    assert (eval_node, GEOM_OP.in2, transformed_node) in graph
+    assert (eval_node, GEOM_OP.in2, traj_node) not in graph
+
 
 def test_frame_aware_trajectory_reference_inverts_path_when_target_is_cube_frame() -> None:
     builder, graph, _ = _build_string_dataset(
