@@ -22,6 +22,14 @@
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
 - Add PID output clamp support as an authored controller parameter if clamps become part of the model.
 - Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
+- Harden JSON-LD emission determinism (not a bottleneck now). `_canonicalize_jsonld`
+  (`registration.py`) sorts the `@graph` array by `@id` after rdflib serialization, which makes the
+  whole pipeline (IR + generated C++) reproducible — verified byte-identical across 4 `PYTHONHASHSEED`
+  values. Two known soft spots if it ever regresses: (1) only the top-level array is sorted; within-node
+  multi-valued/`@type` list order currently relies on rdflib staying stable — make the canonicalization
+  total by recursively sorting node lists; (2) `ir_gen` still depends on input `@graph` order, so a
+  raw `textx generate` outside this emitter could be non-deterministic — optionally `export
+  PYTHONHASHSEED=0` in `models/Makefile` as belt-and-suspenders, or sort `ir_gen` graph queries by id.
 
 ## Validation
 
