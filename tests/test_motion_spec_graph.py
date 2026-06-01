@@ -40,6 +40,7 @@ from motion_spec_dsl.rdf import (
 )
 from motion_spec_dsl.domain import _resolved_spec
 from motion_spec_dsl.registration import (
+    _canonicalize_jsonld,
     motion_spec_metamodel,
 )
 
@@ -894,3 +895,25 @@ def test_helix_trajectory_emits_operator_and_input_edges() -> None:
     assert (op_node, TRAJ.trajectory, traj_node) in graph
     assert (traj_node, RDF.type, TRAJ.Trajectory) in graph
     assert (traj_node, RDF.type, GEOM_REL.Pose) in graph
+
+
+def test_canonicalize_jsonld_orders_graph_by_id_deterministically() -> None:
+    import json
+
+    # rdflib emits @graph in hash-seeded order; emission must not depend on it.
+    doc = {
+        "@context": {"app": "https://example.org/"},
+        "@graph": [
+            {"@id": "app:charlie", "v": 1},
+            {"@id": "app:alpha", "v": 2},
+            {"@id": "app:bravo", "v": 3},
+        ],
+    }
+    out = json.loads(_canonicalize_jsonld(json.dumps(doc)))
+
+    assert [n["@id"] for n in out["@graph"]] == ["app:alpha", "app:bravo", "app:charlie"]
+    # @context is preserved and node payloads are untouched (only order changes).
+    assert out["@context"] == doc["@context"]
+    assert {n["@id"]: n["v"] for n in out["@graph"]} == {"app:charlie": 1, "app:alpha": 2, "app:bravo": 3}
+    # Idempotent: canonicalizing an already-canonical document is a no-op.
+    assert _canonicalize_jsonld(_canonicalize_jsonld(json.dumps(doc))) == _canonicalize_jsonld(json.dumps(doc))

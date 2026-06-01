@@ -263,6 +263,23 @@ motion_spec_lang = LanguageDesc(
 )
 
 
+def _canonicalize_jsonld(text: str) -> str:
+    """Order the ``@graph`` array by ``@id`` so emission is stable across runs.
+
+    rdflib's JSON-LD serializer lays out ``@graph`` nodes in hash-seeded set order,
+    so the generated graph — and every artifact derived from it (IR, generated C++) —
+    differs from run to run for byte-identical input. Every node here carries a unique
+    IRI ``@id`` (no blank nodes), so sorting by ``@id`` yields a deterministic,
+    semantically identical document.
+    """
+    doc = json.loads(text)
+    graph = doc.get("@graph") if isinstance(doc, dict) else None
+    if isinstance(graph, list):
+        doc["@graph"] = sorted(graph, key=lambda node: node.get("@id", ""))
+        return json.dumps(doc, indent=2)
+    return text
+
+
 def _merged_context(context: Any) -> list[str | dict[str, str]]:
     context_urls: set[str] = set()
     local_context: dict[str, str] = {}
@@ -361,7 +378,10 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     serialized = dataset.default_graph.serialize(
         format=output_format, indent=2, context=_merged_context(context)
     )
-    graph_path.write_text(serialized.decode() if isinstance(serialized, bytes) else serialized)
+    serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
+    if output_format == "json-ld":
+        serialized = _canonicalize_jsonld(serialized)
+    graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
     manifest_path = output_dir / f"{stem}-app.json"
