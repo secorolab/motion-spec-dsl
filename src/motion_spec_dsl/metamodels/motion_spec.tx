@@ -365,8 +365,11 @@ LerpSpec:
         "start" ":" start=ContextRef ","
         "goal"  ":" goal=ContextRef  ","
         "alpha" ":" alpha=ContextRef
+        ("," "profile" ":" profile=EasingProfile)?
     "}"
 ;
+
+EasingProfile: "Linear" | "EaseIn" | "EaseOut" | "EaseInOut" ;
 
 CircleSpec:
     "Circle" "{"
@@ -528,9 +531,14 @@ HandlerContextItem:
 MonitorEntry:
     name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "and"
     (
-        ("trigger" "event" event=IRI_TRUNK "when" "active") |
+        ("trigger" "event" event=EventName "when" "active"
+            ("fallback" "<" fallback=[MotionSpec|IRI_TRUNK] ">")?) |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
     )
+;
+
+EventName:
+    (ns=[NamespaceDeclare|IRI_TRUNK] ".")? name=IRI_TRUNK
 ;
 
 ControllerEntry:

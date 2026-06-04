@@ -617,6 +617,25 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
     assert (stop_eval_node, CSTR_HDL.error, stop_error_node) in graph
 
 
+def test_namespace_qualified_monitor_event_uses_foreign_namespace_uri() -> None:
+    # A namespace-qualified monitor event (e.g. an FSM event) resolves under the
+    # referenced namespace, while a standalone event stays monitor-owned.
+    source = (VALID_FIXTURES / MONITOR_EVENT_FLAG).read_text().replace(
+        'ns app = "https://secorolab.github.io/models/test/"',
+        'ns app = "https://secorolab.github.io/models/test/"\nns coord = "http://example.org/coord/"',
+    ).replace("trigger event evt-start when active", "trigger event coord.E_OBJ_REACHED when active")
+
+    builder, graph, _ = _build_string_dataset(source)
+    start_monitor = builder.authored_handlers[0].monitors[0]
+    event_node = URIRef("http://example.org/coord/E_OBJ_REACHED")
+
+    assert start_monitor.event.uri == "http://example.org/coord/E_OBJ_REACHED"
+    assert (URIRef(start_monitor.uri), CSTR_HDL.event, event_node) in graph
+    assert (event_node, RDF.type, EL.Event) in graph
+    # The qualified URI does NOT fall under the monitor's own namespace.
+    assert not str(event_node).startswith(start_monitor.uri)
+
+
 def test_derived_velocity_twist_transform_emits_rotate_operation() -> None:
     builder, graph, _ = _build_dataset(VELOCITY_TWIST_FRAME_TRANSFORM)
 

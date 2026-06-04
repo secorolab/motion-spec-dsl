@@ -425,6 +425,13 @@ class MotionSpecDatasetBuilder:
         self.graph = self.dataset.default_graph
         self._default_ns_owner: Any | None = next(iter(self.authored_handlers), None)
         self._relative_pose_plans: dict[tuple[Any, ...], _RelativePosePlan] = {}
+        # The relative-pose / distance computation between two world quantities lives in the shared
+        # (app) namespace, named by the quantities — so it is the same node no matter which motion
+        # asks for it. Emit it once across all motions; a second motion that needs the same distance
+        # just references the shared node (its schedule still discovers it via backward traversal).
+        # Without this, two handlers computing the same `distance between` duplicate the compose/op
+        # node's outputs and fail SHACL maxCount on geom-op:composite / geom-op:pose.
+        self._emitted_distance_ops: set[str] = set()
 
     def build(self) -> tuple[Dataset, dict[str, str]]:
         handlers = self.authored_handlers
@@ -1830,8 +1837,12 @@ class MotionSpecDatasetBuilder:
                     offset_ref_node = self._emit_context_ref_node(
                         quantity.value.offset, quantity, "add-offset"
                     )
-                    add_node = self._owned_uri(f"{quantity.name}-add", quantity)
-                    out_node = self._owned_uri(f"{quantity.name}-add-out", quantity)
+                    # Own the op nodes by the quantity's (motion-qualified) URI, not the flat model
+                    # namespace: two motions that declare a same-named quantity with the same value
+                    # expression must not collapse into one shared op node that accumulates both
+                    # motions' inputs.
+                    add_node = URIRef(f"{node}-add")
+                    out_node = URIRef(f"{node}-add-out")
                     qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
                     self.graph.add((add_node, RDF.type, RBDYN_OP_EXT["AddQuantity"]))
                     self.graph.add((add_node, RBDYN_OP["in1"], view_node))
@@ -2088,6 +2099,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((lerp_node, TRAJ.start, self._emit_context_ref_node(lerp.start, quantity, "start")))
         self.graph.add((lerp_node, TRAJ.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal")))
         self.graph.add((lerp_node, TRAJ.alpha, self._emit_context_ref_node(lerp.alpha, quantity, "alpha")))
+        self.graph.add((lerp_node, TRAJ.profile, Literal(lerp.profile or "EaseInOut")))
         self.graph.add((lerp_node, TRAJ.trajectory, node))
 
     def _emit_geometric_trajectory(
@@ -2457,7 +2469,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((op_node, GEOM_OP.angle, self._owned_uri(scalar_id, motion)))
             self.graph.add((op_node, GEOM_OP.axis, GEOM_OP[axis]))
 
-        seen_distance_ops: set[str] = set()
+        seen_distance_ops = self._emitted_distance_ops
         for spec in constraints:
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None or qty.type != WorldQuantityType.Pose:
@@ -2685,10 +2697,16 @@ class MotionSpecDatasetBuilder:
             scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
             command = controller_command_record(ctrl)
 
-            error_id: str | None = None
-            if qty is not None and ctrl.type != ControllerType.FeedForward:
+            controller_error_id: str | None = None
+            evaluator_error_id: str | None = None
+            if qty is not None:
                 sid = _scalar_id(qty, subspace, axis)
-                error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
+                candidate_error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
+                if ctrl.type != ControllerType.FeedForward:
+                    controller_error_id = candidate_error_id
+                    evaluator_error_id = candidate_error_id
+                elif isinstance(spec.expr, EqualityConstraint):
+                    evaluator_error_id = candidate_error_id
 
             # Pose equality can expand to any requested acceleration components:
             # full pose -> 6D, position-only -> 3D, or orientation-only -> 3D.
@@ -2740,23 +2758,15 @@ class MotionSpecDatasetBuilder:
             self._emit_controller_base(ctrl_node, ctrl)
             self.graph.add((ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
 
-            if error_id:
+            if controller_error_id:
                 self.graph.add(
-                    (ctrl_node, CSTR_HDL["error-signal"], self._owned_uri(error_id, spec.parent))
+                    (ctrl_node, CSTR_HDL["error-signal"], self._owned_uri(controller_error_id, spec.parent))
                 )
 
             if ctrl.type == ControllerType.FeedForward and isinstance(spec.expr, EqualityConstraint):
                 ref_qty = _context_quantity(spec.expr.reference)
                 if ref_qty is not None:
                     self.graph.add((ctrl_node, CSTR_HDL_EXT["reference-signal"], URIRef(ref_qty.uri)))
-                eval_id = _evaluator_id(spec)
-                eval_node = self._owned_uri(eval_id, spec.parent)
-                if eval_id not in seen_eval_ids:
-                    seen_eval_ids.add(eval_id)
-                    self.graph.add((eval_node, RDF.type, CSTR_HDL.ConstraintEvaluator))
-                    self.graph.add((eval_node, RDF.type, CSTR_HDL.AssignmentEvaluator))
-                    self.graph.add((eval_node, CSTR_HDL.constraint, URIRef(spec.uri)))
-                self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
             control_signal_node = self._decode_control_signal(
                 ctrl, qty, subspace, axis, motion, handler, shared
@@ -2764,9 +2774,9 @@ class MotionSpecDatasetBuilder:
             self.graph.add((ctrl_node, CSTR_HDL["control-signal"], control_signal_node))
             self.graph.add((handler_node, CSTR_HDL.controllers, ctrl_node))
 
-            if error_id and error_id not in seen_error_ids:
-                seen_error_ids.add(error_id)
-                err_node = self._owned_uri(error_id, spec.parent)
+            if evaluator_error_id and evaluator_error_id not in seen_error_ids:
+                seen_error_ids.add(evaluator_error_id)
+                err_node = self._owned_uri(evaluator_error_id, spec.parent)
                 self._add_quantity(err_node, scalar_t)
                 if scalar_t == QuantityType.Pose and qty is not None and isinstance(qty.props, GeometricProps):
                     of_v = _geo_prop(qty.props, "of")
@@ -2776,19 +2786,19 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((err_node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty)))
                         self.graph.add((err_node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
 
-            if error_id:
+            if evaluator_error_id:
                 self._emit_error_evaluator(
                     handler_node,
                     spec,
-                    self._owned_uri(error_id, spec.parent),
+                    self._owned_uri(evaluator_error_id, spec.parent),
                     seen_eval_ids,
                 )
 
         for mon in getattr(handler, "monitors", []):
             cref = mon.constraint
-            signal_name = mon.event or mon.flag
-            signal_kind = "event" if mon.event else "flag"
-            signal_node = URIRef(f"{mon.uri}.{signal_name}")
+            is_event = mon.event is not None
+            signal_kind = "event" if is_event else "flag"
+            signal_node = URIRef(mon.event.uri) if is_event else URIRef(f"{mon.uri}.{mon.flag}")
             mon_node = URIRef(mon.uri)
 
             if isinstance(cref, UntilMonitorRef):
@@ -2888,6 +2898,11 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
+                if mon.fallback is not None:
+                    self.graph.add(
+                        (mon_node, CSTR_HDL["fallback-motion"],
+                         self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
+                    )
             else:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
@@ -3049,11 +3064,12 @@ class MotionSpecDatasetBuilder:
             if chain_root_name:
                 root_body = _body_name(chain_root_name)
                 for qty in world_qtys.values():
-                    if qty.type not in (WorldQuantityType.Pose, WorldQuantityType.VelocityTwist):
-                        continue
-                    props = qty.props if isinstance(qty.props, GeometricProps) else None
-                    wrt = _geo_prop(props, "wrt")
-                    if wrt and _body_name(wrt) == root_body:
+                    if qty.type in (WorldQuantityType.Pose, WorldQuantityType.VelocityTwist):
+                        props = qty.props if isinstance(qty.props, GeometricProps) else None
+                        wrt = _geo_prop(props, "wrt")
+                        if wrt and _body_name(wrt) == root_body:
+                            self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
+                    elif qty.type == WorldQuantityType.JointPosition:
                         self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(

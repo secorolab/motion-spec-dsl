@@ -378,6 +378,7 @@ class LerpSpec:
     start: object  # ContextRef
     goal: object   # ContextRef
     alpha: object  # ContextRef
+    profile: str = "EaseInOut"  # progress easing: Linear | EaseIn | EaseOut | EaseInOut
 
 
 @dataclass
@@ -951,11 +952,30 @@ class ConstraintHandler(IHasNamespaceDeclare):
 
 
 @dataclass
+class EventName:
+    parent: object
+    name: str
+    ns: NamespaceDeclLike | None = None
+
+    @property
+    def event_name(self) -> str:
+        return self.name
+
+    @property
+    def uri(self) -> str:
+        if self.ns is not None:
+            return str(Namespace(self.ns.uri)[self.name])
+        # Standalone (unqualified) event stays monitor-owned, as before.
+        return f"{self.parent.uri}.{self.name}"
+
+
+@dataclass
 class MonitorEntry(NamedNamespaceObject):
     parent: object
     name: str
     constraint: ConstraintRef | UntilMonitorRef
-    event: str = ""
+    event: EventName | None = None
+    fallback: MotionSpec | None = None
     flag: str = ""
 
     def __post_init__(self):

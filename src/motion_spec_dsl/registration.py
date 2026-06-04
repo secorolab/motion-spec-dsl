@@ -55,6 +55,7 @@ from motion_spec_dsl.domain import (
     GeoPropPair,
     GeometricProps,
     GreaterThanConstraint,
+    EventName,
     Import,
     LessThanConstraint,
     LerpSpec,
@@ -173,6 +174,7 @@ LANGUAGE_CLASSES = [
     LessThanConstraint,
     BilateralConstraint,
     MonitorEntry,
+    EventName,
     ControllerAlias,
     ControllerReference,
     ControllerEntry,
@@ -323,6 +325,15 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         metamodels_root = Path(os.environ["METAMODELS_PATH"])
     except KeyError:
         raise RuntimeError("METAMODELS_PATH environment variable is not set")
+    comp_rob2b_metamodels = metamodels_root.parent / "comp-rob2b" / "metamodels"
+    iri_map = {
+        "https://secorolab.github.io/metamodels/": {"path": str(metamodels_root)},
+        "https://secorolab.github.io/": {"path": "models/"},
+    }
+    if comp_rob2b_metamodels.exists():
+        iri_map["https://comp-rob2b.github.io/metamodels/"] = {
+            "path": str(comp_rob2b_metamodels)
+        }
 
     return {
         "license": "https://github.com/aws/mit-0",
@@ -349,10 +360,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
             {
                 "import": imported_files,
                 "constraints": sorted(constraint_paths | local_constraint_paths),
-                "iri-map": {
-                    "https://secorolab.github.io/metamodels/": {"path": str(metamodels_root)},
-                    "https://secorolab.github.io/": {"path": "models/"},
-                },
+                "iri-map": iri_map,
             }
         ],
     }
