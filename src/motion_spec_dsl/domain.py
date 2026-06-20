@@ -430,13 +430,6 @@ class TrajectoryValue:
     helix: HelixSpec | None = None
     figure8: Figure8Spec | None = None
 
-    @property
-    def spec(self) -> LerpSpec | CircleSpec | ArcSpec | HelixSpec | Figure8Spec:
-        for candidate in (self.lerp, self.circle, self.arc, self.helix, self.figure8):
-            if candidate is not None:
-                return candidate
-        raise ValueError("TrajectoryValue has no spec populated")
-
 
 @dataclass
 class PoseValue:

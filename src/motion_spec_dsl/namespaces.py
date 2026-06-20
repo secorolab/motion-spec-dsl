@@ -14,21 +14,10 @@ class NamespaceDeclLike(Protocol):
     uri: str
 
 
-class IHasParent(object):
+class IHasNamespace(object):
     def __init__(self, **kwargs) -> None:
         self.parent = kwargs.get("parent", None)
         assert self.parent is not None, f"'parent' not handled for type '{self.__class__.__name__}'"
-
-
-class IHasNamespace(IHasParent):
-    def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
-
-    @property
-    def namespace(self) -> Namespace:
-        raise NotImplementedError(
-            f"'namespace' property not implemented for '{self.__class__.__name__}'"
-        )
 
 
 class IHasNamespaceDeclare(IHasNamespace):

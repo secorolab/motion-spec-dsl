@@ -105,7 +105,6 @@ from motion_spec_dsl.rdf import (
 from motion_spec_dsl.validation import motion_constraint_items, validate_model
 
 GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"))
-SUPPORTED_FORMATS = {"json-ld": "json", "ttl": "ttl", "xml": "xml"}
 
 LANGUAGE_CLASSES = [
     Model,
@@ -367,13 +366,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
 
 
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
-    del metamodel, overwrite, debug
-
-    output_format = kwargs.get("format", "json-ld")
-    if output_format not in SUPPORTED_FORMATS:
-        raise ValueError(
-            f"Unsupported format '{output_format}', supported: {list(SUPPORTED_FORMATS)}"
-        )
+    del metamodel, overwrite, debug, kwargs
 
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
@@ -382,13 +375,12 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(model._tx_filename).stem
 
-    graph_path = output_dir / f"{stem}.{SUPPORTED_FORMATS[output_format]}"
+    graph_path = output_dir / f"{stem}.json"
     serialized = dataset.default_graph.serialize(
-        format=output_format, indent=2, context=_merged_context(context)
+        format="json-ld", indent=2, context=_merged_context(context)
     )
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
-    if output_format == "json-ld":
-        serialized = _canonicalize_jsonld(serialized)
+    serialized = _canonicalize_jsonld(serialized)
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
