@@ -573,21 +573,12 @@ class WorldQuantityAlias(WorldQuantity):
     props: GeometricProps | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if not self.name:
+            self.name = self.ref.name
         NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
         self._uri = self.ref.uri
         self.type = self.ref.type
         self.props = self.ref.props
-
-
-@dataclass
-class WorldQuantityReference(WorldQuantityAlias):
-    parent: object
-    ref: WorldQuantity
-    name: str = field(init=False)
-
-    def __post_init__(self):
-        self.name = self.ref.name
-        super().__post_init__()
 
 
 @dataclass
@@ -691,21 +682,12 @@ class ContextQuantityAlias(ContextQuantity):
     value: ScalarQuantity | VectorQuantity | SnapshotValue | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if not self.name:
+            self.name = self.ref.name
         NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
         self._uri = self.ref.uri
         self.type = self.ref.type
         self.value = self.ref.value
-
-
-@dataclass
-class ContextQuantityReference(ContextQuantityAlias):
-    parent: object
-    ref: ContextQuantity
-    name: str = field(init=False)
-
-    def __post_init__(self):
-        self.name = self.ref.name
-        super().__post_init__()
 
 
 @dataclass
@@ -786,22 +768,13 @@ class ConstraintAlias(NamedNamespaceObject):
     ref: ConstraintRef
 
     def __post_init__(self):
+        if not self.name:
+            self.name = self.ref.constraint.name
         super().__init__(parent=self.parent, name=self.name)
 
     @property
     def constraint(self) -> ConstraintSpecification:
         return self.ref.constraint
-
-
-@dataclass
-class ConstraintReference(ConstraintAlias):
-    parent: object
-    ref: ConstraintRef
-    name: str = field(init=False)
-
-    def __post_init__(self):
-        self.name = self.ref.constraint.name
-        super().__post_init__()
 
 
 def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> ConstraintSpecification:
@@ -1026,6 +999,8 @@ class ControllerAlias(ControllerEntry):
     apply_at: WorldQuantity | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if not self.name:
+            self.name = self.ref.controller.name
         NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
         self._uri = self.ref.controller.uri
         self.type = self.ref.controller.type
@@ -1033,17 +1008,6 @@ class ControllerAlias(ControllerEntry):
         self.solver = self.ref.controller.solver
         self.command_type = self.ref.controller.command_type
         self.apply_at = self.ref.controller.apply_at
-
-
-@dataclass
-class ControllerReference(ControllerAlias):
-    parent: object
-    ref: ControllerRef
-    name: str = field(init=False)
-
-    def __post_init__(self):
-        self.name = self.ref.controller.name
-        super().__post_init__()
 
 
 @dataclass
@@ -1151,6 +1115,8 @@ class SolverAlias(SolverEntry):
     end: RobotAnchorRef | None = field(init=False, default=None)
 
     def __post_init__(self):
+        if not self.name:
+            self.name = self.ref.solver.name
         NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
         self._uri = self.ref.solver.uri
         self.robot = self.ref.solver.robot
@@ -1159,17 +1125,6 @@ class SolverAlias(SolverEntry):
         self.gravity = self.ref.solver.gravity
         self.gravity_value = self.ref.solver.gravity_value
         self.end = self.ref.solver.end
-
-
-@dataclass
-class SolverReference(SolverAlias):
-    parent: object
-    ref: SolverRef
-    name: str = field(init=False)
-
-    def __post_init__(self):
-        self.name = self.ref.solver.name
-        super().__post_init__()
 
 
 def _resolved_controller(item: ControllerEntry | ControllerAlias) -> ControllerEntry:

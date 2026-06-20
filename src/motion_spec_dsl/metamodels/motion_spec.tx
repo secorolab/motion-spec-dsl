@@ -218,9 +218,8 @@ WhileSection: "WHILE" "{" constraints*=ConstraintItem[","]? "}" ;
 UntilSection: "UNTIL" (logic=UntilLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
 UntilLogic:   "any" | "all" ;
 
-ConstraintItem: ConstraintSpecification | ConstraintAlias | ConstraintReference ;
-ConstraintAlias: name=IRI_TRUNK ":" "<" ref=ConstraintRef ">" ;
-ConstraintReference: "<" ref=ConstraintRef ">" ;
+ConstraintItem: ConstraintSpecification | ConstraintAlias ;
+ConstraintAlias: (name=IRI_TRUNK ":")? "<" ref=ConstraintRef ">" ;
 
 MotionContextDecl:
     QuantityContextDecl
@@ -255,27 +254,19 @@ PostContextDecl:
 ;
 
 WorldQuantityItem:
-    WorldQuantityAlias | WorldQuantityReference | WorldQuantity
+    WorldQuantityAlias | WorldQuantity
 ;
 
 WorldQuantityAlias:
-    name=IRI_TRUNK ":" "<" ref=[WorldQuantity|FQN] ">"
-;
-
-WorldQuantityReference:
-    "<" ref=[WorldQuantity|FQN] ">"
+    (name=IRI_TRUNK ":")? "<" ref=[WorldQuantity|FQN] ">"
 ;
 
 ContextQuantityItem:
-    ContextQuantityAlias | ContextQuantityReference | ContextQuantity
+    ContextQuantityAlias | ContextQuantity
 ;
 
 ContextQuantityAlias:
-    name=IRI_TRUNK ":" "<" ref=[ContextQuantity|FQN] ">"
-;
-
-ContextQuantityReference:
-    "<" ref=[ContextQuantity|FQN] ">"
+    (name=IRI_TRUNK ":")? "<" ref=[ContextQuantity|FQN] ">"
 ;
 
 WorldQuantity:
@@ -497,27 +488,19 @@ ConstraintHandler:
 ;
 
 ControllerItem:
-    ControllerAlias | ControllerReference | ControllerEntry
+    ControllerAlias | ControllerEntry
 ;
 
 ControllerAlias:
-    name=IRI_TRUNK ":" "<" ref=ControllerRef ">"
-;
-
-ControllerReference:
-    "<" ref=ControllerRef ">"
+    (name=IRI_TRUNK ":")? "<" ref=ControllerRef ">"
 ;
 
 SolverItem:
-    SolverAlias | SolverReference | SolverEntry
+    SolverAlias | SolverEntry
 ;
 
 SolverAlias:
-    name=IRI_TRUNK ":" "<" ref=SolverRef ">"
-;
-
-SolverReference:
-    "<" ref=SolverRef ">"
+    (name=IRI_TRUNK ":")? "<" ref=SolverRef ">"
 ;
 
 HandlerContextDecl:

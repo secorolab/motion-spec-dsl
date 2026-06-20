@@ -9,13 +9,13 @@ import pytest
 from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.domain import (
-    ConstraintReference,
-    ControllerReference,
+    ConstraintAlias,
+    ControllerAlias,
     HandlerControlMode,
     QuantityType,
-    SolverReference,
-    ContextQuantityReference,
-    WorldQuantityReference,
+    SolverAlias,
+    ContextQuantityAlias,
+    WorldQuantityAlias,
 )
 from motion_spec_dsl.registration import motion_spec_metamodel
 
@@ -127,11 +127,16 @@ def test_crf_model_supports_context_and_solver_references() -> None:
     loosen_controllers = handler_loosen.controllers
     handler_solver = handler_loosen.solvers[0]
 
-    assert isinstance(loosen_world[0], WorldQuantityReference)
-    assert isinstance(loosen_spec[1], ContextQuantityReference)
-    assert isinstance(loosen_constraints[1], ConstraintReference)
-    assert isinstance(loosen_controllers[1], ControllerReference)
-    assert isinstance(handler_solver, SolverReference)
+    assert isinstance(loosen_world[0], WorldQuantityAlias)
+    assert loosen_world[0].name == loosen_world[0].ref.name
+    assert isinstance(loosen_spec[1], ContextQuantityAlias)
+    assert loosen_spec[1].name == loosen_spec[1].ref.name
+    assert isinstance(loosen_constraints[1], ConstraintAlias)
+    assert loosen_constraints[1].name == loosen_constraints[1].ref.constraint.name
+    assert isinstance(loosen_controllers[1], ControllerAlias)
+    assert loosen_controllers[1].name == loosen_controllers[1].ref.controller.name
+    assert isinstance(handler_solver, SolverAlias)
+    assert handler_solver.name == handler_solver.ref.solver.name
     assert handler_solver.uri == handler_solver.ref.solver.uri
 
 
