@@ -20,6 +20,7 @@ from motion_spec.namespace import (
     CSTR_HDL,
     CSTR_HDL_EXT,
     ENV,
+    EXEC,
     GEOM_COORD,
     GEOM_ENT,
     GEOM_OP,
@@ -42,7 +43,6 @@ from motion_spec.namespace import (
     RBDYN_OP,
     RBDYN_OP_EXT,
     RT,
-    SIM,
     SNAP,
     SLV,
     SLV_EXT,
@@ -243,7 +243,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("geom-coord", GEOM_COORD),
     ("geom-op", GEOM_OP),
     ("env", ENV),
-    ("sim", SIM),
+    ("exec", EXEC),
 
     ("el", EL),
     ("rt", RT),
@@ -492,8 +492,8 @@ class MotionSpecDatasetBuilder:
         if model_type is not None:
             self.graph.add((model_node, RDF.type, model_type))
         if resource_path:
-            self.graph.add((model_node, RDF.type, SIM.ResourceWithPath))
-            self.graph.add((model_node, SIM.path, Literal(resource_path)))
+            self.graph.add((model_node, RDF.type, EXEC.ResourceWithPath))
+            self.graph.add((model_node, EXEC.path, Literal(resource_path)))
 
     def _emit_runtime_chain_binding(
         self,
@@ -604,7 +604,7 @@ class MotionSpecDatasetBuilder:
             self._emit_object_model(asset_node)
             if asset.xml:
                 self.graph.add((asset_node, RDF.type, MJ.MjcfModel))
-                self.graph.add((asset_node, SIM.path, Literal(asset.xml)))
+                self.graph.add((asset_node, EXEC.path, Literal(asset.xml)))
         robot_instances = [
             instance
             for instance in env.assembly

@@ -290,7 +290,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/runtime/runtime.shacl.ttl",
         "https://secorolab.github.io/metamodels/simulation/mujoco.shacl.ttl",
-        "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/simulation.shacl.ttl",
+        "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/execution-context.shacl.ttl",
         "https://secorolab.github.io/metamodels/snapshot.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
