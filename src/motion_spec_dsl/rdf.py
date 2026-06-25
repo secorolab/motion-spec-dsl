@@ -657,11 +657,9 @@ class MotionSpecDatasetBuilder:
                         self.graph.add((instance_node, MJ["attach-orientation"], orient_node))
                         continue
                     orient_node = URIRef(f"{instance.uri}.orientation")
-                    self.graph.add((orient_node, RDF.type, GEOM_REL.Orientation))
-                    self.graph.add((orient_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+                    self._emit_orientation_rpy(orient_node, entry.value, world_node)
                     self.graph.add((orient_node, GEOM_REL.of, instance_node))
                     self.graph.add((orient_node, GEOM_REL["with-respect-to"], world_node))
-                    self.graph.add((orient_node, GEOM_COORD["as-seen-by"], world_node))
                 elif entry_type == "EnvironmentFreeEntry":
                     if bool(entry.value):
                         self.graph.add((instance_node, RDF.type, GEOM_ENT.RigidBody))
@@ -3055,10 +3053,13 @@ class MotionSpecDatasetBuilder:
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
 
-            chain_root_name = getattr(
-                getattr(getattr(solver.robot, "environment_robot", None), "assembly_spec", None),
-                "root", ""
+            robot_assembly = getattr(
+                getattr(solver.robot, "environment_robot", None), "assembly_spec", None
             )
+            chain_root_name = getattr(robot_assembly, "root", "")
+            robot_uri = getattr(robot_assembly, "uri", None)
+            if robot_uri:
+                self.graph.add((solver_node, SLV_EXT["robot"], URIRef(robot_uri)))
             self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
 
             if chain_root_name:
