@@ -24,6 +24,7 @@ EnvironmentTrace:
         "enabled" ":" enabled=BOOL
         ("," "length" ":" length=INT)?
         ("," "color" ":" color=ColorValue)?
+        ("," "ee" ":" "[" targets+=IRI_TRUNK[","] "]")?
     "}"
 ;
 
@@ -213,9 +214,10 @@ ConstraintSection:
     WhenSection | WhileSection | UntilSection
 ;
 
-WhenSection:  "WHEN"  "{" constraints*=ConstraintItem[","]? "}" ;
+WhenSection:  "WHEN"  (logic=WhenLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
 WhileSection: "WHILE" "{" constraints*=ConstraintItem[","]? "}" ;
 UntilSection: "UNTIL" (logic=UntilLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
+WhenLogic:    "any" | "all" ;
 UntilLogic:   "any" | "all" ;
 
 ConstraintItem: ConstraintSpecification | ConstraintAlias ;
@@ -555,11 +557,15 @@ HandlerControlMode:
 ;
 
 MonitorTarget:
-    UntilMonitorRef | ConstraintRef
+    UntilMonitorRef | WhenMonitorRef | ConstraintRef
 ;
 
 UntilMonitorRef:
     motion=[MotionSpec|IRI_TRUNK] "." "until"
+;
+
+WhenMonitorRef:
+    motion=[MotionSpec|IRI_TRUNK] "." "when"
 ;
 
 ConstraintRef:

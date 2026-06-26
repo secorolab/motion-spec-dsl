@@ -278,6 +278,7 @@ class EnvironmentTrace:
     enabled: bool = False
     length: int = 0
     color: ColorValue | None = None
+    targets: list = field(default_factory=list)
 
     def channel(self, name: str, default: float) -> float:
         if self.color is None:
@@ -526,8 +527,10 @@ class ConstraintSection(NamedNamespaceObject):
         super().__init__(parent=self.parent, name=self.kind)
 
 
+@dataclass
 class WhenSection(ConstraintSection):
     kind = "when"
+    logic: str | None = None
 
 
 class WhileSection(ConstraintSection):
@@ -758,6 +761,23 @@ class UntilMonitorRef:
 
     def __str__(self) -> str:
         return f"{self.motion.name}.until"
+
+
+@dataclass
+class WhenMonitorRef:
+    motion: MotionSpec
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def motion_name(self) -> str:
+        return self.motion.name
+
+    @property
+    def name(self) -> str:
+        return "when"
+
+    def __str__(self) -> str:
+        return f"{self.motion.name}.when"
 
 
 @dataclass

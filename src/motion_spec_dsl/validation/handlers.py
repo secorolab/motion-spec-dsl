@@ -3,7 +3,13 @@
 
 from __future__ import annotations
 
-from motion_spec_dsl.domain import Model, UntilMonitorRef, _resolved_controller, _resolved_spec
+from motion_spec_dsl.domain import (
+    Model,
+    UntilMonitorRef,
+    WhenMonitorRef,
+    _resolved_controller,
+    _resolved_spec,
+)
 from motion_spec_dsl.validation.common import (
     constraint_handlers,
     motion_constraint_items,
@@ -23,10 +29,10 @@ def validate_handler_constraint_assembly(model: Model) -> None:
         }
 
         for monitor in handler.monitors:
-            if isinstance(monitor.constraint, UntilMonitorRef):
+            if isinstance(monitor.constraint, (UntilMonitorRef, WhenMonitorRef)):
                 if monitor.constraint.motion is not handler.motion:
                     raise semantic_error(
-                        f"Monitor '{monitor.name}' references UNTIL guard "
+                        f"Monitor '{monitor.name}' references guard "
                         f"'{monitor.constraint}', but handler '{handler.name}' primary motion "
                         f"is '{handler.motion.name}'.",
                         monitor,
@@ -85,7 +91,7 @@ def validate_handler_requirements(model: Model) -> None:
             individual_until_monitors = [
                 mon
                 for mon in handler.monitors
-                if not isinstance(mon.constraint, UntilMonitorRef)
+                if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
                 and id(mon.constraint.constraint) in {id(c) for c in until_items}
             ]
             if individual_until_monitors:
@@ -101,18 +107,24 @@ def validate_handler_requirements(model: Model) -> None:
                 until_monitor_refs[0],
             )
 
+        # A WHEN guard may be monitored either per-constraint (single-arm style) or
+        # by one aggregate <motion.when> monitor that ANDs all WHEN constraints.
+        when_aggregate_monitored = any(
+            isinstance(mon.constraint, WhenMonitorRef) for mon in handler.monitors
+        )
         monitored = {
             id(mon.constraint.constraint)
             for mon in handler.monitors
-            if not isinstance(mon.constraint, UntilMonitorRef)
+            if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
         }
-        for constraint in [_resolved_spec(item) for item in handler.motion.when.constraints]:
-            if id(constraint) not in monitored:
-                raise semantic_error(
-                    f"ConstraintHandler '{handler.name}' has WHEN constraint "
-                    f"'{constraint.name}' without a monitor.",
-                    constraint,
-                )
+        if not when_aggregate_monitored:
+            for constraint in [_resolved_spec(item) for item in handler.motion.when.constraints]:
+                if id(constraint) not in monitored:
+                    raise semantic_error(
+                        f"ConstraintHandler '{handler.name}' has WHEN constraint "
+                        f"'{constraint.name}' without a monitor.",
+                        constraint,
+                    )
 
 
 def validate_motion_spec_coverage(model: Model) -> None:

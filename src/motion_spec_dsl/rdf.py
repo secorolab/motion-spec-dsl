@@ -84,6 +84,7 @@ from motion_spec_dsl.domain import (
     ContextQuantity,
     TrajectoryValue,
     UntilMonitorRef,
+    WhenMonitorRef,
     VectorQuantity,
     WorldContextDecl,
     WorldQuantity,
@@ -590,6 +591,8 @@ class MotionSpecDatasetBuilder:
                 env.trace.channel("b", 0.1),
                 env.trace.channel("a", 1.0),
             )
+            for target in env.trace.targets:
+                self.graph.add((trace_node, MJ["trace-target"], Literal(target)))
 
         for asset in env.assets:
             asset_node = URIRef(asset.uri)
@@ -2309,10 +2312,17 @@ class MotionSpecDatasetBuilder:
             lerp_node = self._owned_uri(f"motion-{motion.name}-lerp", motion)
             self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
             self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
-        for item in motion.when.constraints:
-            spec = _resolved_spec(item)
-            if not spec.disabled:
-                self.graph.add((motion_node, MOT.when, URIRef(spec.uri)))
+        raw_when_logic = getattr(motion.when, "logic", None)
+        when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
+        if raw_when_logic == "any" and len(when_constraints) > 1:
+            when_disjunction_node = self._owned_uri(f"motion-{motion.name}-when-disjunction", motion)
+            self.graph.add((when_disjunction_node, RDF.type, MOT_EXT.ConstraintDisjunction))
+            self.graph.add((motion_node, MOT.when, when_disjunction_node))
+            for item in when_constraints:
+                self.graph.add((when_disjunction_node, MOT_EXT["has-constraint"], URIRef(_resolved_spec(item).uri)))
+        else:
+            for item in when_constraints:
+                self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(item).uri)))
         for item in motion.while_.constraints:
             spec = _resolved_spec(item)
             if not spec.disabled:
@@ -2799,15 +2809,20 @@ class MotionSpecDatasetBuilder:
             signal_node = URIRef(mon.event.uri) if is_event else URIRef(f"{mon.uri}.{mon.flag}")
             mon_node = URIRef(mon.uri)
 
-            if isinstance(cref, UntilMonitorRef):
+            if isinstance(cref, (UntilMonitorRef, WhenMonitorRef)):
+                is_when_ref = isinstance(cref, WhenMonitorRef)
+                section_constraints = (
+                    cref.motion.when.constraints if is_when_ref else cref.motion.until.constraints
+                )
+                monitors_pred = "monitors-when" if is_when_ref else "monitors-until"
                 aggregate_error_node = URIRef(f"{mon.uri}.error")
                 self._add_quantity(aggregate_error_node, QuantityType.FreeVector)
-                for item in cref.motion.until.constraints:
+                for item in section_constraints:
                     spec = _resolved_spec(item)
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
                     if qty is None:
                         raise ValueError(
-                            f"Until monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                            f"Aggregate monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
                         )
                     subspace = _view_subspace(spec)
                     axis_raw = spec.view.axis
@@ -2843,11 +2858,16 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
                 self.graph.add((mon_node, CSTR_HDL.error, aggregate_error_node))
-                self.graph.add((mon_node, CSTR_HDL["monitors-until"], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
+                self.graph.add((mon_node, CSTR_HDL[monitors_pred], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
                 if signal_kind == "event":
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
+                    if mon.fallback is not None:
+                        self.graph.add(
+                            (mon_node, CSTR_HDL["fallback-motion"],
+                             self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
+                        )
                 else:
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
