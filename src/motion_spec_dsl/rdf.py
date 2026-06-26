@@ -216,7 +216,7 @@ CONSTRAINT_PATH_BY_PREFIX = {
     "rbdyn-op": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/operators.ttl",
     "map": "https://comp-rob2b.github.io/metamodels/task/map.ttl",
     "cstr": "https://comp-rob2b.github.io/metamodels/task/constraint.ttl",
-    "mot": "https://comp-rob2b.github.io/metamodels/task/motion-specification.ttl",
+    "mot": "https://secorolab.github.io/metamodels/task/motion-specification.shacl.ttl",
     "cstr-hdl": "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
     "slv": "https://comp-rob2b.github.io/metamodels/task/solver-specification.ttl",
 }
