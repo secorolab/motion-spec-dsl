@@ -2858,14 +2858,14 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
                 self.graph.add((mon_node, CSTR_HDL.error, aggregate_error_node))
-                self.graph.add((mon_node, CSTR_HDL[monitors_pred], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
+                self.graph.add((mon_node, CSTR_HDL_EXT[monitors_pred], self._owned_uri(f"motion-{cref.motion.name}", cref.motion)))
                 if signal_kind == "event":
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
                     if mon.fallback is not None:
                         self.graph.add(
-                            (mon_node, CSTR_HDL["fallback-motion"],
+                            (mon_node, CSTR_HDL_EXT["fallback-motion"],
                              self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
                         )
                 else:
@@ -2918,7 +2918,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
                 if mon.fallback is not None:
                     self.graph.add(
-                        (mon_node, CSTR_HDL["fallback-motion"],
+                        (mon_node, CSTR_HDL_EXT["fallback-motion"],
                          self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
                     )
             else:

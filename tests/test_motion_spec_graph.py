@@ -15,6 +15,7 @@ from motion_spec.namespace import (
     CSTR,
     SNAP,
     CSTR_HDL,
+    CSTR_HDL_EXT,
     EL,
     GEOM_COORD,
     GEOM_ENT,
@@ -610,7 +611,7 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
 
     assert (stop_monitor_node, RDF.type, CSTR_HDL.Monitor) in graph
     assert (stop_monitor_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor) in graph
-    assert (stop_monitor_node, CSTR_HDL["monitors-until"], motion_node) in graph
+    assert (stop_monitor_node, CSTR_HDL_EXT["monitors-until"], motion_node) in graph
     assert (stop_monitor_node, CSTR_HDL.flag, stop_flag_node) in graph
     assert (stop_flag_node, RDF.type, EL.Flag) in graph
     assert (stop_eval_node, CSTR_HDL.constraint, URIRef(stop_constraint.uri)) in graph
