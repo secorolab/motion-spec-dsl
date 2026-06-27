@@ -71,6 +71,7 @@ VELOCITY_TWIST_FRAME_TRANSFORM = (
 )
 POSE_COMPONENT_SUBSETS = "02_acceleration_constraints/05_pose_component_subsets.robmot"
 PID_GAIN_VARIANTS = "02_acceleration_constraints/06_pid_gain_variants.robmot"
+VELOCITY_PROFILE_PID = "02_acceleration_constraints/07_velocity_profile_pid.robmot"
 FORCE_CONTROLLER = "03_force_commands/01_force_controller.robmot"
 POSITION_FORCE_CONTROLLER = "03_force_commands/02_position_force_controller.robmot"
 POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
@@ -211,6 +212,30 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
     assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
     assert (twist_node, GEOM_COORD["as-seen-by"], base_node) in graph
     assert (base_node, RDF.type, GEOM_ENT.Frame) in graph
+
+
+def test_velocity_profile_pid_rewires_distance_reference() -> None:
+    builder, graph, _ = _build_dataset(VELOCITY_PROFILE_PID)
+
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    constraint = _resolved_spec(motion.while_.constraints[0])
+    controller = handler.controllers[0]
+    profile = next(q for ctx in motion.context for q in ctx.declaration if getattr(q, "name", "") == "vp")
+
+    constraint_node = URIRef(constraint.uri)
+    ref_node = builder.root_uri("gap-ctrl-gap-profile-ref", owner=motion)
+    op_node = builder.root_uri("profile-gap-ctrl-gap", owner=motion)
+    measured_node = graph.value(constraint_node, CSTR.quantity)
+
+    assert (constraint_node, CSTR["reference-value"], ref_node) in graph
+    assert (ref_node, RDF.type, VALUE_ROLE.Computed) in graph
+    assert (op_node, RDF.type, CSTR_HDL_EXT.VelocityProfile) in graph
+    assert (op_node, CSTR_HDL_EXT["measured"], measured_node) in graph
+    assert (op_node, CSTR_HDL_EXT["controller"], URIRef(controller.uri)) in graph
+    assert (op_node, CSTR_HDL_EXT["reference"], ref_node) in graph
+    assert (op_node, CSTR_HDL_EXT["shape"], Literal("SCurve")) in graph
+    assert (URIRef(controller.uri), CSTR_HDL_EXT["velocity-profile"], URIRef(profile.uri)) in graph
 
 
 def test_pid_gain_variants_emit_all_three_gains() -> None:

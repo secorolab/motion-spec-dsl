@@ -13,11 +13,15 @@ from motion_spec_dsl.domain import (
     ControllerAlias,
     ControllerEntry,
     ControllerType,
+    ContextQuantity,
     EqualityConstraint,
     Model,
+    ProfileSpec,
     QuantityType,
+    SubSpace,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_context_quantity,
     _resolved_controller,
     _resolved_world_quantity,
 )
@@ -32,8 +36,30 @@ def _achd_acceleration_axis_keys(
     return [(record.subspace, record.axis) for record in command.acceleration_constraints]
 
 
+def _profile_quantity(controller: ControllerEntry) -> ContextQuantity | None:
+    ref = getattr(controller.params, "profile", None)
+    if ref is None:
+        return None
+    quantity = getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+    return _resolved_context_quantity(quantity) if isinstance(quantity, ContextQuantity) else None
+
+
+def _supports_velocity_profile(spec) -> bool:
+    view = spec.view
+    if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
+        return True
+    quantity = getattr(view, "quantity", None)
+    return (
+        isinstance(quantity, WorldQuantity)
+        and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
+        and getattr(view, "subspace", None) == SubSpace.Position
+        and getattr(view, "axis", None) is not None
+    )
+
+
 def validate_controller_commands(model: Model) -> None:
     for handler in constraint_handlers(model):
+        profiled_constraints: dict[int, str] = {}
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
             params = resolved_controller.params
@@ -64,7 +90,43 @@ def validate_controller_commands(model: Model) -> None:
                         f"PID controller '{controller.name}' cannot use Stiffness or Damping terms.",
                         controller,
                     )
+                profile_qty = _profile_quantity(resolved_controller)
+                if params.profile is not None:
+                    if profile_qty is None:
+                        raise semantic_error(
+                            f"Controller '{controller.name}' profile must reference a VelocityProfile.",
+                            params.profile,
+                        )
+                    if profile_qty.type != QuantityType.VelocityProfile or not isinstance(profile_qty.value, ProfileSpec):
+                        raise semantic_error(
+                            f"Controller '{controller.name}' profile must reference a VelocityProfile.",
+                            params.profile,
+                        )
+                    spec = params.constraint.constraint
+                    if not isinstance(spec.expr, EqualityConstraint):
+                        raise semantic_error(
+                            f"Controller '{controller.name}' profile requires a distance equality constraint.",
+                            controller,
+                        )
+                    if not _supports_velocity_profile(spec):
+                        raise semantic_error(
+                            f"Controller '{controller.name}' profile is only supported for distance constraints.",
+                            controller,
+                        )
+                    spec_id = id(spec)
+                    if spec_id in profiled_constraints:
+                        raise semantic_error(
+                            f"Constraint '{spec.name}' has multiple profiled controllers: "
+                            f"{profiled_constraints[spec_id]}, {controller.name}.",
+                            controller,
+                        )
+                    profiled_constraints[spec_id] = controller.name
             elif resolved_controller.type == ControllerType.Impedance:
+                if params.profile is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' profile is only supported on PID controllers.",
+                        controller,
+                    )
                 if not params.has_impedance_terms:
                     raise semantic_error(
                         f"Impedance controller '{controller.name}' must author Stiffness, Damping, or both.",
@@ -76,6 +138,11 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
             elif resolved_controller.type == ControllerType.FeedForward:
+                if params.profile is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' profile is only supported on PID controllers.",
+                        controller,
+                    )
                 if params.has_pid_gains or params.has_impedance_terms:
                     raise semantic_error(
                         f"FeedForward controller '{controller.name}' cannot use PID or impedance terms.",

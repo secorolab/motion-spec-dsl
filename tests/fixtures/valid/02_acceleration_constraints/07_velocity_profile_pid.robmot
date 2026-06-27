@@ -1,0 +1,74 @@
+// Valid: a distance equality PID can use a velocity profile to limit reference motion.
+
+ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        Robot kinova using <kinova-urdf> {
+            chain: { root: link-base, end: link-ee }
+        }
+    }
+}
+
+MOTION_SPEC (ns=app) m_profiled_gap {
+    CONTEXT {
+        w: World {
+            pose-ee-base: Pose { of: frame-ee, wrt: frame-base },
+            pose-cube-base: Pose { of: frame-cube, wrt: frame-base },
+            link-ee: Link
+        },
+        s: Spec {
+            goal-gap: Distance = 0.08 m,
+            vmax: LinearVelocity = 0.10 m/s,
+            amax: LinearAcceleration = 0.30 m/s2,
+            jmax: LinearJerk = 2.0 m/s3,
+            vp: VelocityProfile = Profile {
+                max_velocity: <s.vmax>,
+                max_acceleration: <s.amax>,
+                max_jerk: <s.jmax>,
+                shape: SCurve
+            }
+        }
+    }
+
+    WHEN {}
+
+    WHILE {
+        gap: distance between <w.pose-ee-base> and <w.pose-cube-base> equal to <s.goal-gap>
+    }
+
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_profiled_gap {
+    CONTEXT {
+        s: Spec {
+            gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+        },
+        w: World {
+            gravity: Gravity
+        }
+    }
+
+    MOTION: <m_profiled_gap>
+    CONTROL_MODE: JointTorque
+
+    CONTROL_PERIOD: 1.0 ms
+    CONTROLLERS {
+        ctrl-gap: PID { constraint: <m_profiled_gap.gap>, profile: <m_profiled_gap.s.vp>, Kp = 30.0, Ki = 0.0, Kd = 4.0 } as Force apply at <m_profiled_gap.w.link-ee>
+    }
+
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <s.gravity-vec>
+        }
+    }
+}

@@ -305,7 +305,7 @@ ContextQuantity:
 ;
 
 ContextQuantityType:
-    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress"
+    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress" | "VelocityProfile"
 ;
 
 SnapshotQuantityType:
@@ -313,7 +313,7 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    QuantityValue | SnapshotValue | TrajectoryValue | PoseValue
+    QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue
 ;
 
 QuantityValue:
@@ -337,16 +337,18 @@ SnapshotValue:
 ;
 
 QuantityType:
-    "AngularVelocity" |
-    "LinearVelocity"  |
-    "Force"           |
-    "Torque"          |
-    "Distance"        |
-    "LinearDistance"  |
-    "Angle"           |
-    "AngularDistance" |
-    "Direction"       |
-    "FreeVector"      |
+    "AngularVelocity"     |
+    "LinearVelocity"      |
+    "LinearAcceleration"  |
+    "LinearJerk"          |
+    "Force"               |
+    "Torque"              |
+    "Distance"            |
+    "LinearDistance"      |
+    "Angle"               |
+    "AngularDistance"     |
+    "Direction"           |
+    "FreeVector"          |
     "Duration"
 ;
 
@@ -364,6 +366,17 @@ LerpSpec:
 ;
 
 EasingProfile: "Linear" | "EaseIn" | "EaseOut" | "EaseInOut" ;
+
+ProfileSpec:
+    "=" "Profile" "{"
+        "max_velocity" ":" max_velocity=ContextRef ","
+        "max_acceleration" ":" max_acceleration=ContextRef
+        ("," "max_jerk" ":" max_jerk=ContextRef)?
+        ("," "shape" ":" shape=VelocityProfileShape)?
+    "}"
+;
+
+VelocityProfileShape: "Trapezoidal" | "SCurve" ;
 
 CircleSpec:
     "Circle" "{"
@@ -549,6 +562,7 @@ ControllerType:
 
 ControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("," "profile" ":" profile=ContextRef)?
     ("," terms*=ControllerParam[","])?
 ;
 
@@ -623,7 +637,7 @@ SolverAlgorithm:
 // Compact DSL unit spellings only. Verbose QUDT spellings belong in JSON-LD,
 // not authored .rob_mot files.
 Unit:
-    "rad/s" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
+    "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
     "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N"
 ;
 

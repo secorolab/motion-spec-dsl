@@ -212,6 +212,94 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
         )
 
 
+def _profiled_distance_model(controller_block: str) -> str:
+    return f"""ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {{
+    runtime: RealRobot,
+    ASSETS {{
+        kinova-urdf: RobotAsset {{ model: KinovaGen3, urdf: "../robots/kg3.urdf" }}
+    }},
+    ASSEMBLY {{
+        Robot kinova using <kinova-urdf> {{
+            chain: {{ root: link-base, end: link-ee }}
+        }}
+    }}
+}}
+
+MOTION_SPEC (ns=app) move {{
+    CONTEXT {{
+        w: World {{
+            pose-ee-base: Pose {{ of: link-ee, wrt: link-base, as-seen-by: link-base }},
+            pose-cube-base: Pose {{ of: cube, wrt: link-base, as-seen-by: link-base }},
+            link-ee: Link
+        }},
+        s: Spec {{
+            goal-gap: Distance = 0.08 m,
+            vmax: LinearVelocity = 0.10 m/s,
+            amax: LinearAcceleration = 0.30 m/s2,
+            vp: VelocityProfile = Profile {{
+                max_velocity: <s.vmax>,
+                max_acceleration: <s.amax>
+            }},
+            gravity-vec: FreeVector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }}
+        }}
+    }}
+    WHEN {{}}
+    WHILE {{
+        gap: distance between <w.pose-ee-base> and <w.pose-cube-base> equal to <s.goal-gap>
+    }}
+    UNTIL {{}}
+}}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {{
+    CONTEXT {{
+        <move.w>,
+        <move.s>,
+        w: World {{ gravity: Gravity }}
+    }}
+    MOTION: <move>
+    CONTROL_MODE: JointTorque
+    CONTROL_PERIOD: 1.0 ms
+    CONTROLLERS {{
+{controller_block}
+    }}
+    SOLVERS {{
+        arm-solver: Solver {{
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <move.s.gravity-vec>
+        }}
+    }}
+}}
+"""
+
+
+def test_pid_profile_must_reference_velocity_profile() -> None:
+    metamodel = motion_spec_metamodel()
+
+    with pytest.raises(TextXSemanticError, match="profile must reference a VelocityProfile"):
+        metamodel.model_from_str(
+            _profiled_distance_model(
+                "        ctrl-gap: PID { constraint: <move.gap>, profile: 1.0 m, Kp = 30.0, Ki = 0.0, Kd = 4.0 } as Force apply at <move.w.link-ee>"
+            )
+        )
+
+
+def test_distance_constraint_allows_only_one_profiled_controller() -> None:
+    metamodel = motion_spec_metamodel()
+
+    with pytest.raises(TextXSemanticError, match="multiple profiled controllers"):
+        metamodel.model_from_str(
+            _profiled_distance_model(
+                """        ctrl-gap-a: PID { constraint: <move.gap>, profile: <move.s.vp>, Kp = 30.0, Ki = 0.0, Kd = 4.0 } as Force apply at <move.w.link-ee>,
+        ctrl-gap-b: PID { constraint: <move.gap>, profile: <move.s.vp>, Kp = 30.0, Ki = 0.0, Kd = 4.0 } as Force apply at <move.w.link-ee>"""
+            )
+        )
+
+
 @pytest.mark.parametrize(
     ("constraint", "message"),
     [

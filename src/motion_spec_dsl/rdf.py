@@ -76,6 +76,7 @@ from motion_spec_dsl.domain import (
     MotionSpec,
     PostContextDecl,
     PreContextDecl,
+    ProfileSpec,
     QuantityType,
     PoseValue,
     ScalarQuantity,
@@ -191,6 +192,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.AngularVelocity: QUDT_UNIT["RAD-PER-SEC"],
     QuantityType.LinearAcceleration: QUDT_UNIT["M-PER-SEC2"],
     QuantityType.AngularAcceleration: QUDT_UNIT["RAD-PER-SEC2"],
+    QuantityType.LinearJerk: QUDT_UNIT["M-PER-SEC3"],
     QuantityType.Force: QUDT_UNIT.N,
     QuantityType.Torque: QUDT_UNIT["N-M"],
     QuantityType.TrajectoryProgress: QUDT_UNIT.UNITLESS,
@@ -201,6 +203,7 @@ DSL_UNIT: dict[str, Any] = {
     "rad/s": QUDT_UNIT["RAD-PER-SEC"],
     "rad": QUDT_UNIT["RAD"],
     "m/s": QUDT_UNIT["M-PER-SEC"],
+    "m/s3": QUDT_UNIT["M-PER-SEC3"],
     "m": QUDT_UNIT.M,
     "Nm": QUDT_UNIT["N-M"],
     "N": QUDT_UNIT.N,
@@ -238,6 +241,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Duration: QUDT_QKIND.Time,
     QuantityType.Trajectory: TRAJ.Trajectory,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
+    QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
@@ -1831,6 +1835,9 @@ class MotionSpecDatasetBuilder:
             if quantity.type == QuantityType.Direction:
                 self._emit_direction_quantity(node, quantity)
                 continue
+            if quantity.type == QuantityType.VelocityProfile:
+                self._emit_velocity_profile_quantity(node, quantity)
+                continue
             if isinstance(quantity.value, PoseValue):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
                 continue
@@ -1891,6 +1898,24 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, GEOM_COORD.x, Literal(float(quantity.value.x), datatype=XSD.double)))
                 self.graph.add((node, GEOM_COORD.y, Literal(float(quantity.value.y), datatype=XSD.double)))
                 self.graph.add((node, GEOM_COORD.z, Literal(float(quantity.value.z), datatype=XSD.double)))
+
+    def _emit_velocity_profile_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        if not isinstance(quantity.value, ProfileSpec):
+            return
+        spec = quantity.value
+        self.graph.add((node, RDF.type, CSTR_HDL_EXT.VelocityProfile))
+        self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
+        self.graph.add(
+            (node, CSTR_HDL_EXT["max-velocity"], self._emit_context_ref_node(spec.max_velocity, quantity, "max-velocity"))
+        )
+        self.graph.add(
+            (node, CSTR_HDL_EXT["max-acceleration"], self._emit_context_ref_node(spec.max_acceleration, quantity, "max-acceleration"))
+        )
+        if spec.max_jerk is not None:
+            self.graph.add(
+                (node, CSTR_HDL_EXT["max-jerk"], self._emit_context_ref_node(spec.max_jerk, quantity, "max-jerk"))
+            )
+        self.graph.add((node, CSTR_HDL_EXT["shape"], Literal(spec.shape or "Trapezoidal")))
 
     def _emit_pose_value_quantity(
         self,
@@ -2300,6 +2325,15 @@ class MotionSpecDatasetBuilder:
                         motion=motion,
                         stem=spec.name,
                     )
+                profiled_ctrl = self._profiled_controller_for_spec(motion, spec)
+                if profiled_ctrl is not None:
+                    ref_node = self._emit_velocity_profile_reference(
+                        profiled_ctrl,
+                        spec,
+                        motion,
+                        ref_node,
+                        qty_node,
+                    )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
             elif isinstance(expr, GreaterThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
@@ -2321,6 +2355,74 @@ class MotionSpecDatasetBuilder:
                 up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
+
+    def _profiled_controller_for_spec(
+        self, motion: MotionSpec, spec: ConstraintSpecification
+    ) -> ControllerEntry | None:
+        for handler in self.authored_handlers:
+            if handler.motion is not motion:
+                continue
+            for ctrl_item in getattr(handler, "controllers", []):
+                ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+                cref = ctrl.params.constraint
+                if (
+                    getattr(cref, "constraint", None) is spec
+                    and getattr(ctrl.params, "profile", None) is not None
+                ):
+                    return ctrl
+        return None
+
+    def _emit_velocity_profile_reference(
+        self,
+        ctrl: ControllerEntry,
+        spec: ConstraintSpecification,
+        motion: MotionSpec,
+        goal_node: URIRef,
+        measured_node: URIRef | None,
+    ) -> URIRef:
+        if measured_node is None:
+            raise ValueError(f"Profiled controller '{ctrl.name}' needs a measured quantity.")
+        profile_qty = _context_quantity(ctrl.params.profile)
+        if not isinstance(profile_qty, ContextQuantity):
+            raise ValueError(f"Controller '{ctrl.name}' has an unresolved velocity profile.")
+        profile_qty = _resolved_context_quantity(profile_qty)
+        if not isinstance(profile_qty.value, ProfileSpec):
+            raise ValueError(f"Controller '{ctrl.name}' profile '{profile_qty.name}' is not a Profile.")
+
+        out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-profile-ref", motion)
+        self._add_quantity(out_node, QuantityType.Distance)
+        self.graph.add((out_node, RDF.type, VALUE_ROLE.Computed))
+
+        op_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
+        self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.VelocityProfile))
+        self.graph.add((op_node, CSTR_HDL_EXT["goal"], goal_node))
+        self.graph.add((op_node, CSTR_HDL_EXT["measured"], measured_node))
+        self.graph.add(
+            (
+                op_node,
+                CSTR_HDL_EXT["max-velocity"],
+                self._emit_context_ref_node(profile_qty.value.max_velocity, profile_qty, "max-velocity"),
+            )
+        )
+        self.graph.add(
+            (
+                op_node,
+                CSTR_HDL_EXT["max-acceleration"],
+                self._emit_context_ref_node(profile_qty.value.max_acceleration, profile_qty, "max-acceleration"),
+            )
+        )
+        if profile_qty.value.max_jerk is not None:
+            self.graph.add(
+                (
+                    op_node,
+                    CSTR_HDL_EXT["max-jerk"],
+                    self._emit_context_ref_node(profile_qty.value.max_jerk, profile_qty, "max-jerk"),
+                )
+            )
+        self.graph.add((op_node, CSTR_HDL_EXT["shape"], Literal(profile_qty.value.shape or "Trapezoidal")))
+        self.graph.add((op_node, CSTR_HDL_EXT["controller"], URIRef(ctrl.uri)))
+        self.graph.add((op_node, CSTR_HDL_EXT["reference"], out_node))
+        return out_node
 
     def _elapsed_quantity_node(self, spec: ConstraintSpecification, motion: MotionSpec) -> URIRef:
         return self._owned_uri(f"{spec.name}-elapsed", motion)
@@ -2844,6 +2946,16 @@ class MotionSpecDatasetBuilder:
             ctrl_node = URIRef(ctrl.uri)
             self._emit_controller_base(ctrl_node, ctrl)
             self.graph.add((ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
+            if getattr(ctrl.params, "profile", None) is not None:
+                profile_qty = _context_quantity(ctrl.params.profile)
+                if isinstance(profile_qty, ContextQuantity):
+                    self.graph.add(
+                        (
+                            ctrl_node,
+                            CSTR_HDL_EXT["velocity-profile"],
+                            URIRef(_resolved_context_quantity(profile_qty).uri),
+                        )
+                    )
 
             if controller_error_id:
                 self.graph.add(

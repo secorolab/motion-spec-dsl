@@ -433,6 +433,15 @@ class TrajectoryValue:
 
 
 @dataclass
+class ProfileSpec:
+    parent: object
+    max_velocity: object
+    max_acceleration: object
+    max_jerk: object | None = None
+    shape: str = "Trapezoidal"
+
+
+@dataclass
 class PoseValue:
     parent: object
     position: PositionValue
@@ -620,12 +629,14 @@ class QuantityType(StrEnum):
     AngularVelocity     = "AngularVelocity"
     LinearAcceleration  = "LinearAcceleration"
     AngularAcceleration = "AngularAcceleration"
+    LinearJerk          = "LinearJerk"
     Force               = "Force"
     Torque              = "Torque"
     FreeVector          = "FreeVector"
     Duration            = "Duration"
     Trajectory          = "Trajectory"
     TrajectoryProgress  = "TrajectoryProgress"
+    VelocityProfile     = "VelocityProfile"
 
 
 class HandlerControlMode(StrEnum):
@@ -653,7 +664,7 @@ class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
-    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | PoseValue | None = None
+    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | None = None
     props: GeometricProps | None = field(default=None, kw_only=True)
 
     _SCALAR_TYPES = frozenset({
@@ -669,6 +680,8 @@ class ContextQuantity(NamedNamespaceObject):
             self.type = QuantityType.Trajectory
         elif self.type == "TrajectoryProgress":
             self.type = QuantityType.TrajectoryProgress
+        elif self.type == "VelocityProfile":
+            self.type = QuantityType.VelocityProfile
         else:
             self.type = QuantityType(self.type)
         if self.props is not None and str(self.type) in self._SCALAR_TYPES:
@@ -683,7 +696,7 @@ class ContextQuantityAlias(ContextQuantity):
     name: str
     ref: ContextQuantity
     type: QuantityType = field(init=False)
-    value: ScalarQuantity | VectorQuantity | SnapshotValue | None = field(init=False, default=None)
+    value: object | None = field(init=False, default=None)
 
     def __post_init__(self):
         if not self.name:
@@ -1055,6 +1068,7 @@ class ControllerParam:
 @dataclass
 class ControllerParams:
     constraint: ConstraintRef
+    profile: ContextRef | None = None
     terms: list[ControllerParam] = field(default_factory=list)
     kp: float | None = field(init=False, default=None)
     ki: float | None = field(init=False, default=None)

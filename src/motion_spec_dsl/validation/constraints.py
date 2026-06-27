@@ -18,7 +18,9 @@ from motion_spec_dsl.domain import (
     LessThanConstraint,
     Model,
     MotionSpec,
+    ProfileSpec,
     QuantityType,
+    ScalarQuantity,
     SnapshotValue,
     SubSpace,
     WorldQuantity,
@@ -27,6 +29,7 @@ from motion_spec_dsl.domain import (
     _resolved_world_quantity,
 )
 from motion_spec_dsl.validation.common import (
+    constraint_handlers,
     motion_constraint_items,
     motion_constraints,
     motion_specs,
@@ -126,6 +129,59 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
     return right in compatible.get(left, {left})
 
 
+def _static_scalar(ref: ContextRef) -> ScalarQuantity | None:
+    value = context_ref_value(ref)
+    value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
+    scalar = getattr(value, "value", None)
+    return scalar if isinstance(scalar, ScalarQuantity) else None
+
+
+def _check_profile_ref(
+    profile: ProfileSpec,
+    attr: str,
+    expected: QuantityType,
+    *,
+    required: bool = True,
+) -> None:
+    ref = getattr(profile, attr)
+    if ref is None:
+        if required:
+            raise semantic_error(f"VelocityProfile is missing {attr}.", profile)
+        return
+    actual = _context_ref_shape(ref)
+    if actual != expected:
+        raise semantic_error(
+            f"VelocityProfile {attr} must reference {expected}, got {actual}.",
+            ref,
+        )
+    scalar = _static_scalar(ref)
+    if scalar is not None and scalar.value <= 0:
+        raise semantic_error(f"VelocityProfile {attr} must be positive.", ref)
+
+
+def _validate_profile_quantity(quantity: ContextQuantity) -> None:
+    value = getattr(quantity, "value", None)
+    if not isinstance(value, ProfileSpec):
+        return
+    if quantity.type != QuantityType.VelocityProfile:
+        raise semantic_error(
+            f"Profile '{quantity.name}' must be declared as VelocityProfile.",
+            quantity,
+        )
+    shape = value.shape or "Trapezoidal"
+    if shape not in {"Trapezoidal", "SCurve"}:
+        raise semantic_error(f"VelocityProfile '{quantity.name}' has unsupported shape '{shape}'.", quantity)
+    _check_profile_ref(value, "max_velocity", QuantityType.LinearVelocity)
+    _check_profile_ref(value, "max_acceleration", QuantityType.LinearAcceleration)
+    if shape == "SCurve":
+        _check_profile_ref(value, "max_jerk", QuantityType.LinearJerk)
+    elif value.max_jerk is not None:
+        raise semantic_error(
+            f"VelocityProfile '{quantity.name}' may only specify max_jerk for shape SCurve.",
+            value.max_jerk,
+        )
+
+
 def validate_context_quantity_values(model: Model) -> None:
     for motion in motion_specs(model):
         for ctx in motion.context:
@@ -135,6 +191,7 @@ def validate_context_quantity_values(model: Model) -> None:
                     continue
                 quantity = _resolved_context_quantity(item)
                 value = getattr(quantity, "value", None)
+                _validate_profile_quantity(quantity)
                 if not isinstance(value, SnapshotValue):
                     continue
                 source_shape = _view_shape(value.source)
@@ -144,6 +201,12 @@ def validate_context_quantity_values(model: Model) -> None:
                         f"but its source has type {source_shape}.",
                         quantity,
                     )
+    for handler in constraint_handlers(model):
+        for ctx in handler.context:
+            ctx = _resolved_context_decl(ctx)
+            for item in getattr(ctx, "declaration", []):
+                if isinstance(item, ContextQuantity):
+                    _validate_profile_quantity(_resolved_context_quantity(item))
 
 
 def validate_constraint_value_types(model: Model) -> None:
