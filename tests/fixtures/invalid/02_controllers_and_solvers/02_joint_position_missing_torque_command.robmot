@@ -46,6 +46,7 @@ CONSTRAINT_HANDLER (ns=app) handler_posture {
     MOTION: <m_posture>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-j2: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 }
     }

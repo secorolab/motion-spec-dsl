@@ -136,6 +136,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
     CONTROL_MODE: JointTorque
 
 
+    CONTROL_PERIOD: 1.0 ms
     MONITORS {
 
     }
@@ -181,6 +182,7 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
     CONTROL_MODE: JointTorque
 
 
+    CONTROL_PERIOD: 1.0 ms
     MONITORS {
 
     }

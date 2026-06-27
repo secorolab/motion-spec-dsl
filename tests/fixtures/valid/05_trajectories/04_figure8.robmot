@@ -56,6 +56,7 @@ CONSTRAINT_HANDLER (ns=app) handler_figure8 {
     MOTION: <m_figure8>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-follow: PID { constraint: <m_figure8.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
     }

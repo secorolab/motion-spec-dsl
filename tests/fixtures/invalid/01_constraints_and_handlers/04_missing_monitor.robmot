@@ -56,6 +56,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     MOTION: <m_move>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     MONITORS {}
 
     CONTROLLERS {

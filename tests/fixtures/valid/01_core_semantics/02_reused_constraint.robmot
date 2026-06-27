@@ -65,6 +65,7 @@ CONSTRAINT_HANDLER (ns=app) handler_a {
     MOTION: <move_a>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-a: PID { constraint: <move_a.shared>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }
@@ -93,6 +94,7 @@ CONSTRAINT_HANDLER (ns=app) handler_b {
     MOTION: <move_b>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-b: PID { constraint: <move_a.shared>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }

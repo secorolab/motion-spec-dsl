@@ -623,6 +623,7 @@ class QuantityType(StrEnum):
     Force               = "Force"
     Torque              = "Torque"
     FreeVector          = "FreeVector"
+    Duration            = "Duration"
     Trajectory          = "Trajectory"
     TrajectoryProgress  = "TrajectoryProgress"
 
@@ -657,7 +658,7 @@ class ContextQuantity(NamedNamespaceObject):
 
     _SCALAR_TYPES = frozenset({
         "Distance", "LinearDistance", "Angle", "PlaneAngle",
-        "AngularDistance", "TrajectoryProgress",
+        "AngularDistance", "TrajectoryProgress", "Duration",
     })
 
     def __post_init__(self):
@@ -701,6 +702,14 @@ class ScalarQuantity:
 
 
 @dataclass
+class BareScalar:
+    """An anonymous literal magnitude+unit used directly as a threshold (e.g. `5.0 s`)."""
+    value: float = 0.0
+    unit: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
 class VectorQuantity:
     x: float = 0.0
     y: float = 0.0
@@ -720,8 +729,8 @@ class SnapshotValue:
 class ConstraintSpecification(NamedNamespaceObject):
     parent: object
     name: str
-    view: View
-    expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint
+    view: View | None = None
+    expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | None = None
     disabled: bool = False
 
     def __post_init__(self):
@@ -838,6 +847,7 @@ class View:
     axis: Axis | None = None
     distance_from: WorldQuantity | None = None
     distance_to: WorldQuantity | None = None
+    is_elapsed: bool = False
 
     def __post_init__(self):
         if isinstance(self.subspace, str):
@@ -852,6 +862,7 @@ class ContextRef:
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
     literal_value: ScalarQuantity | VectorQuantity | None = None
+    bare: BareScalar | None = None
     subspace: str | None = None
     axis: str | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -930,6 +941,7 @@ class ConstraintHandler(IHasNamespaceDeclare):
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
+    control_period: BareScalar | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)

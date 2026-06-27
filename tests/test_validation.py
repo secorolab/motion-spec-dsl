@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 import pytest
-from textx.exceptions import TextXSemanticError
+from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
 from motion_spec_dsl.domain import (
     ConstraintAlias,
@@ -173,6 +173,43 @@ def test_impedance_controller_passes_validation() -> None:
     assert controller.type.value == "Impedance"
     assert controller.params.stiffness == 1.0
     assert controller.params.damping == 0.1
+
+
+def test_constraint_handler_requires_control_period() -> None:
+    metamodel = motion_spec_metamodel()
+
+    with pytest.raises(TextXSyntaxError, match="CONTROL_PERIOD"):
+        metamodel.model_from_str(
+            """ns app = "https://secorolab.github.io/models/tests/"
+
+MOTION_SPEC (ns=app) move {
+    CONTEXT {
+        w: World { joint: JointPosition { of: j1 } },
+        s: Spec { target: Angle = 0.0 rad }
+    }
+    WHEN {}
+    WHILE { hold: keeping <w.joint> equal to <s.target> }
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {
+    CONTEXT {}
+    MOTION: <move>
+    CONTROL_MODE: JointTorque
+    CONTROLLERS {
+        ctrl-hold: PID { constraint: <move.hold>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <robot>,
+            algorithm: ACHD,
+            root: <root>,
+            end: <end>
+        }
+    }
+}
+"""
+        )
 
 
 @pytest.mark.parametrize(

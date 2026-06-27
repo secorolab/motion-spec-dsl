@@ -39,6 +39,8 @@ def _is_orientation_axis(axis: str | None) -> bool:
 
 
 def _view_shape(view) -> QuantityType | None:
+    if getattr(view, "is_elapsed", False):
+        return QuantityType.Duration
     if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
         return QuantityType.Distance
 
@@ -97,6 +99,11 @@ def _constraint_reference_shapes(constraint: ConstraintSpecification) -> list[tu
     refs = constraint_context_refs(constraint)
     pairs: list[tuple[ContextRef, QuantityType]] = []
     for ref in refs:
+        bare = getattr(ref, "bare", None)
+        if bare is not None:
+            if getattr(bare, "unit", None) in {"s", "ms"}:
+                pairs.append((ref, QuantityType.Duration))
+            continue
         ref_shape = _context_ref_shape(ref)
         if ref_shape is not None:
             pairs.append((ref, ref_shape))
@@ -114,6 +121,7 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
         QuantityType.Position: {QuantityType.Position},
         QuantityType.Orientation: {QuantityType.Orientation},
         QuantityType.Pose: {QuantityType.Pose, QuantityType.Trajectory},
+        QuantityType.Duration: {QuantityType.Duration},
     }
     return right in compatible.get(left, {left})
 
@@ -193,6 +201,8 @@ def _resolved_context_decl(ctx: object) -> object:
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
+    if getattr(ref, "bare", None) is not None:
+        return None
     value = (
         getattr(ref, "quantity", None)
         or getattr(ref, "value", None)
@@ -221,6 +231,8 @@ def constraint_context_refs(constraint: ConstraintSpecification) -> list[Context
 
 
 def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[object | None]:
+    if constraint.view is None or getattr(constraint.view, "is_elapsed", False):
+        return []
     if (
         getattr(constraint.view, "distance_from", None) is not None
         and getattr(constraint.view, "distance_to", None) is not None
@@ -246,6 +258,8 @@ def validate_constraint_context_refs(model: Model) -> None:
                     )
 
             for ref in constraint_context_refs(constraint):
+                if getattr(ref, "bare", None) is not None:
+                    continue
                 value = context_ref_value(ref)
                 value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
                 if value is None:

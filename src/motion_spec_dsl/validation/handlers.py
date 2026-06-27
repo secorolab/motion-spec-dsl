@@ -82,24 +82,31 @@ def validate_handler_requirements(model: Model) -> None:
         until_items = [_resolved_spec(item) for item in handler.motion.until.constraints]
         until_monitor_refs = [mon for mon in handler.monitors if isinstance(mon.constraint, UntilMonitorRef)]
         if until_items:
-            if len(until_monitor_refs) != 1:
-                raise semantic_error(
-                    f"ConstraintHandler '{handler.name}' must monitor the UNTIL guard with exactly one "
-                    f"aggregate monitor like <{handler.motion.name}.until>.",
-                    handler,
-                )
             individual_until_monitors = [
                 mon
                 for mon in handler.monitors
                 if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
                 and id(mon.constraint.constraint) in {id(c) for c in until_items}
             ]
-            if individual_until_monitors:
+            if until_monitor_refs and individual_until_monitors:
                 raise semantic_error(
-                    f"ConstraintHandler '{handler.name}' monitors individual UNTIL constraints; "
-                    f"use one aggregate monitor <{handler.motion.name}.until> instead.",
+                    f"ConstraintHandler '{handler.name}' mixes aggregate and individual UNTIL monitors.",
                     individual_until_monitors[0],
                 )
+            if len(until_monitor_refs) > 1:
+                raise semantic_error(
+                    f"ConstraintHandler '{handler.name}' must monitor <{handler.motion.name}.until> at most once.",
+                    handler,
+                )
+            if not until_monitor_refs:
+                monitored = {id(mon.constraint.constraint) for mon in individual_until_monitors}
+                missing = [c.name for c in until_items if id(c) not in monitored]
+                if missing:
+                    raise semantic_error(
+                        f"ConstraintHandler '{handler.name}' has unmonitored UNTIL constraint(s): "
+                        f"{', '.join(missing)}.",
+                        handler,
+                    )
         elif until_monitor_refs:
             raise semantic_error(
                 f"ConstraintHandler '{handler.name}' monitors <{handler.motion.name}.until>, "

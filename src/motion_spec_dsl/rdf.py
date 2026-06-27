@@ -194,6 +194,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.Force: QUDT_UNIT.N,
     QuantityType.Torque: QUDT_UNIT["N-M"],
     QuantityType.TrajectoryProgress: QUDT_UNIT.UNITLESS,
+    QuantityType.Duration: QUDT_UNIT["SEC"],
 }
 
 DSL_UNIT: dict[str, Any] = {
@@ -208,6 +209,8 @@ DSL_UNIT: dict[str, Any] = {
     "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
     "cm": QUDT_UNIT["CentiM"],
     "m/s2": QUDT_UNIT["M-PER-SEC2"],
+    "s": QUDT_UNIT["SEC"],
+    "ms": QUDT_UNIT["MilliSEC"],
 }
 
 CONSTRAINT_PATH_BY_PREFIX = {
@@ -232,6 +235,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
     QuantityType.Direction: QUDT_QKIND.Dimensionless,
     QuantityType.FreeVector: QUDT_QKIND.FreeVector,
+    QuantityType.Duration: QUDT_QKIND.Time,
     QuantityType.Trajectory: TRAJ.Trajectory,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
 }
@@ -384,8 +388,14 @@ def _dsl_unit(unit_name: str) -> Any:
         raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
 
 
+def _time_unit(unit_name: str) -> Any:
+    if unit_name not in {"s", "ms"}:
+        raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
+    return _dsl_unit(unit_name)
+
+
 def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
-    return getattr(ref, "quantity", None) or getattr(ref, "value", None)
+    return getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
 
 
 
@@ -859,6 +869,8 @@ class MotionSpecDatasetBuilder:
         spec: ConstraintSpecification,
         world_qtys: dict[str, WorldQuantity],
     ) -> WorldQuantity | None:
+        if getattr(spec.view, "is_elapsed", False):
+            return None
         if _is_distance_view(spec):
             return self._resolve_distance_pose(spec, world_qtys)
         return self._resolve_qty(spec.view.quantity, world_qtys)
@@ -2225,6 +2237,11 @@ class MotionSpecDatasetBuilder:
             seen_uris.add(uri_str)
 
             node = URIRef(spec.uri)
+
+            if getattr(spec.view, "is_elapsed", False):
+                self._emit_elapsed_constraint(node, spec, motion)
+                continue
+
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None:
                 raise ValueError(
@@ -2304,6 +2321,57 @@ class MotionSpecDatasetBuilder:
                 up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
+
+    def _elapsed_quantity_node(self, spec: ConstraintSpecification, motion: MotionSpec) -> URIRef:
+        return self._owned_uri(f"{spec.name}-elapsed", motion)
+
+    def _emit_elapsed_constraint(
+        self, node: URIRef, spec: ConstraintSpecification, motion: MotionSpec
+    ) -> None:
+        """A timing constraint: a normal cstr:Constraint whose measured quantity is the
+        motion-state elapsed time (filled at runtime from the world clock), compared
+        against a Duration threshold. No kinematics — codegen reads the clock directly."""
+        expr = spec.expr
+        self.graph.add((node, RDF.type, CSTR.Constraint))
+
+        qty_node = self._elapsed_quantity_node(spec, motion)
+        self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((qty_node, RDF.type, VALUE_ROLE.Measured))
+        self.graph.add((qty_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
+        self.graph.add((qty_node, QUDT_SCHEMA.unit, QUDT_UNIT["SEC"]))
+        self.graph.add((node, CSTR.quantity, qty_node))
+
+        if isinstance(expr, GreaterThanConstraint):
+            self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
+            self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
+            threshold = expr.threshold
+        elif isinstance(expr, LessThanConstraint):
+            self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
+            self.graph.add((node, RDF.type, CSTR.LessThanConstraint))
+            threshold = expr.threshold
+        else:
+            raise ValueError(
+                f"Timing constraint '{spec.name}' must use 'greater than' or 'less than'."
+            )
+        thr_node = self._emit_duration_threshold_node(threshold, motion, f"{spec.name}-threshold")
+        self.graph.add((node, CSTR.threshold, thr_node))
+
+    def _emit_duration_threshold_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
+        bare = getattr(ref, "bare", None)
+        if bare is not None:
+            node = self._owned_uri(suffix, owner)
+            self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((node, RDF.type, VALUE_ROLE.Reference))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
+            self.graph.add((node, QUDT_SCHEMA.unit, _time_unit(bare.unit)))
+            self.graph.add((node, QUDT_SCHEMA.value, Literal(float(bare.value), datatype=XSD.double)))
+            return node
+        quantity = _context_quantity(ref)
+        if isinstance(quantity, ContextQuantity):
+            return URIRef(_resolved_context_quantity(quantity).uri)
+        raise ValueError(
+            "Timing threshold must be a declared Duration quantity or an inline literal like `5.0 s`."
+        )
 
     def _emit_motion_spec(self, motion: MotionSpec) -> None:
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
@@ -2446,7 +2514,8 @@ class MotionSpecDatasetBuilder:
             (
                 _node_name(spec.view.quantity)
                 for spec in constraints
-                if _view_subspace(spec) == "rotation" and spec.view.axis is None
+                if not getattr(spec.view, "is_elapsed", False)
+                and _view_subspace(spec) == "rotation" and spec.view.axis is None
             ),
             None,
         )
@@ -2678,6 +2747,16 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (handler_node, CSTR_HDL["control-mode"], CSTR_HDL[handler.control_mode.value])
         )
+        if getattr(handler, "control_period", None) is not None:
+            period_node = self._owned_uri("control-period", handler)
+            self.graph.add((period_node, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((period_node, RDF.type, VALUE_ROLE.Declared))
+            self.graph.add((period_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
+            self.graph.add((period_node, QUDT_SCHEMA.unit, _time_unit(handler.control_period.unit)))
+            self.graph.add(
+                (period_node, QUDT_SCHEMA.value, Literal(float(handler.control_period.value), datatype=XSD.double))
+            )
+            self.graph.add((handler_node, CSTR_HDL_EXT["control-period"], period_node))
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
         self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
 
@@ -2819,6 +2898,13 @@ class MotionSpecDatasetBuilder:
                 self._add_quantity(aggregate_error_node, QuantityType.FreeVector)
                 for item in section_constraints:
                     spec = _resolved_spec(item)
+                    if getattr(spec.view, "is_elapsed", False):
+                        self._emit_error_evaluator(
+                            handler_node, spec,
+                            self._elapsed_quantity_node(spec, cref.motion),
+                            seen_eval_ids,
+                        )
+                        continue
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
                     if qty is None:
                         raise ValueError(
@@ -2880,26 +2966,29 @@ class MotionSpecDatasetBuilder:
             if spec.disabled:
                 continue
 
-            qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None:
-                raise ValueError(
-                    f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
-                )
-            subspace = _view_subspace(spec)
-            axis_raw = spec.view.axis
-            axis = semantic_axis_label(axis_raw)
-            scalar_t = _scalar_type(qty, subspace, axis)
-            qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
-            error_id = f"{qty_node_id}-err"
-
-            if error_id not in seen_error_ids:
-                seen_error_ids.add(error_id)
-                self._add_quantity(self._owned_uri(error_id, spec.parent), scalar_t)
+            if getattr(spec.view, "is_elapsed", False):
+                error_node = self._elapsed_quantity_node(spec, cref.motion)
+            else:
+                qty = self._resolve_constraint_quantity(spec, world_qtys)
+                if qty is None:
+                    raise ValueError(
+                        f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
+                    )
+                subspace = _view_subspace(spec)
+                axis_raw = spec.view.axis
+                axis = semantic_axis_label(axis_raw)
+                scalar_t = _scalar_type(qty, subspace, axis)
+                qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
+                error_id = f"{qty_node_id}-err"
+                error_node = self._owned_uri(error_id, spec.parent)
+                if error_id not in seen_error_ids:
+                    seen_error_ids.add(error_id)
+                    self._add_quantity(error_node, scalar_t)
 
             self._emit_error_evaluator(
                 handler_node,
                 spec,
-                self._owned_uri(error_id, spec.parent),
+                error_node,
                 seen_eval_ids,
             )
 
@@ -2911,7 +3000,7 @@ class MotionSpecDatasetBuilder:
             )
             self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
-            self.graph.add((mon_node, CSTR_HDL.error, self._owned_uri(error_id, spec.parent)))
+            self.graph.add((mon_node, CSTR_HDL.error, error_node))
             if signal_kind == "event":
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))

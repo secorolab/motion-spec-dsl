@@ -77,6 +77,7 @@ CONSTRAINT_HANDLER (ns=app) handler-find {
     MOTION: <m-find>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     MONITORS {
         mon-find-until:
             monitor <m-find.until> and
@@ -179,6 +180,7 @@ CONSTRAINT_HANDLER (ns=app) handler-loosen {
     MOTION: <m-loosen>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     MONITORS {
         mon-torque-loosen-contact:
             monitor <m-loosen.cstr-torque-loosen-contact> and

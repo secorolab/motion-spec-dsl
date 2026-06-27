@@ -50,6 +50,7 @@ CONSTRAINT_HANDLER (ns=app) handler-joint-limits {
     MOTION: <m-joint-limits>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-bilateral-j2: PID {
             constraint: <m-joint-limits.cstr-bilateral-j2>,

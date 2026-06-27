@@ -16,6 +16,7 @@ from textx.scoping import providers as scoping_providers
 from motion_spec_dsl.domain import (
     BilateralConstraint,
     ConstraintAlias,
+    BareScalar,
     ConstraintHandler,    ConstraintSpecification,
     ConstraintRef,
     ContextDeclReference,
@@ -149,6 +150,7 @@ LANGUAGE_CLASSES = [
     VectorQuantity,
     SnapshotValue,
     ConstraintAlias,    ConstraintSpecification,
+    BareScalar,
     ConstraintRef,
     UntilMonitorRef,
     WhenMonitorRef,

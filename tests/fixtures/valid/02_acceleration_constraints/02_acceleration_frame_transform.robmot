@@ -50,6 +50,7 @@ CONSTRAINT_HANDLER (ns=app) handler_frame {
     MOTION: <m_frame>
     CONTROL_MODE: JointTorque
 
+    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-lin-x: PID { constraint: <m_frame.c_lin_x>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }

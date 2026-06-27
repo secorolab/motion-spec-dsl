@@ -166,7 +166,7 @@ PositionValue:
 ;
 
 PositionTerm:
-    axis=LinearAxis ":" (ref=ContextRef | value=FLOAT unit=LinearDistanceUnit)
+    axis=LinearAxis ":" (value=FLOAT unit=LinearDistanceUnit | ref=ContextRef)
 ;
 
 LinearAxis:
@@ -182,7 +182,7 @@ OrientationValue:
 ;
 
 OrientationTerm:
-    axis=AngularAxis ":" (ref=ContextRef | value=FLOAT unit=AngleUnit)
+    axis=AngularAxis ":" (value=FLOAT unit=AngleUnit | ref=ContextRef)
 ;
 
 AngularAxis:
@@ -346,7 +346,8 @@ QuantityType:
     "Angle"           |
     "AngularDistance" |
     "Direction"       |
-    "FreeVector"
+    "FreeVector"      |
+    "Duration"
 ;
 
 TrajectoryValue:
@@ -414,7 +415,8 @@ PoseValue:
 ;
 
 ConstraintSpecification:
-    disabled?='@disable' name=IRI_TRUNK ":" ("keeping")? view=View expr=ConstraintExpression
+    disabled?='@disable' name=IRI_TRUNK ":"
+    ("keeping")? view=View expr=ConstraintExpression
 ;
 
 ConstraintExpression:
@@ -428,6 +430,8 @@ View:
         "and"
         "<" distance_to=[WorldQuantity|FQN] ">"
     )
+    |
+    is_elapsed?="elapsed"
     |
     (
         "<" quantity=[WorldQuantity|FQN] ">"
@@ -453,7 +457,10 @@ ContextRef:
     "[" quantity=[ContextQuantity:FQN] literal_value=QuantityValue? "]"
   | "<" quantity=[ContextQuantity|ScopedName] ">" ("." subspace=SubSpace ("." axis=Axis)?)?
   | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
+  | bare=BareScalar
 ;
+
+BareScalar: value=FLOAT unit=Unit ;
 
 ContextScope:
     "Pre" | "Spec" | "Post"
@@ -483,6 +490,7 @@ ConstraintHandler:
         "CONTEXT"      "{" context*=HandlerContextItem[","] "}"
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         "CONTROL_MODE" ":" control_mode=HandlerControlMode
+        "CONTROL_PERIOD" ":" control_period=BareScalar
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
         "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
         "SOLVERS"      "{" solvers+=SolverItem[","] "}"
@@ -616,7 +624,7 @@ SolverAlgorithm:
 // not authored .rob_mot files.
 Unit:
     "rad/s" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
-    "Nm"    | "rad"  | "deg" | "cm"   | "m"     | "N"
+    "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N"
 ;
 
 

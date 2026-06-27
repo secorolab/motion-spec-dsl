@@ -33,6 +33,7 @@ from motion_spec.namespace import (
     RBDYN_OP,
     SLV,
     TRAJ,
+    VALUE_ROLE,
 )
 from motion_spec_dsl.rdf import (
     MotionSpecDatasetBuilder,
@@ -637,6 +638,104 @@ def test_namespace_qualified_monitor_event_uses_foreign_namespace_uri() -> None:
     assert not str(event_node).startswith(start_monitor.uri)
 
 
+def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> None:
+    builder, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: RealRobot,
+            ASSETS {
+                kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+            },
+            ASSEMBLY {
+                Robot kinova using <kinova-urdf> {
+                    chain: { root: frame-base, end: frame-ee }
+                }
+            }
+        }
+
+        MOTION_SPEC (ns=app) wait {
+            CONTEXT {
+                w: World {
+                    ee:   Pose { of: frame-ee,   wrt: frame-base, as-seen-by: frame-base },
+                    cube: Pose { of: frame-cube, wrt: frame-base, as-seen-by: frame-base }
+                },
+                s: Spec {
+                    hold-pose: Pose = Snapshot of <w.ee>,
+                    dwell:    Duration = 5.0 s,
+                    lost-dist: LinearDistance = 0.1 m
+                }
+            }
+
+            WHEN {}
+            WHILE {
+                hold: keeping <w.ee> equal to <s.hold-pose>
+            }
+            UNTIL any {
+                wait5s:    elapsed greater than <s.dwell>,
+                inline5s: elapsed greater than 5000.0 ms,
+                far:       distance between <w.ee> and <w.cube> greater than <s.lost-dist>
+            }
+        }
+
+        CONSTRAINT_HANDLER (ns=app) handler_wait {
+            CONTEXT {
+                hw: World { gravity: Gravity },
+                hs: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 } }
+            }
+
+            MOTION: <wait>
+            CONTROL_MODE: JointTorque
+            CONTROL_PERIOD: 1.0 ms
+
+            MONITORS {
+                mon-wait:   monitor <wait.wait5s>    and trigger event evt-wait when active,
+                mon-inline: monitor <wait.inline5s> and trigger event evt-inline when active,
+                mon-far:    monitor <wait.far>       and trigger event evt-far when active
+            }
+
+            CONTROLLERS {
+                ctrl-hold: PID { constraint: <wait.hold>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+            }
+
+            SOLVERS {
+                arm-solver: Solver {
+                    robot: <world.kinova>,
+                    algorithm: ACHD,
+                    root: <world.kinova.chain.root>,
+                    end: <world.kinova.chain.end>,
+                    gravity: <hw.gravity> equal to <hs.gravity-vec>
+                }
+            }
+        }
+        """
+    )
+
+    handler = builder.authored_handlers[0]
+    wait5s = _resolved_spec(handler.motion.until.constraints[0])
+    inline5s = _resolved_spec(handler.motion.until.constraints[1])
+
+    wait_node = URIRef(wait5s.uri)
+    wait_qty = graph.value(wait_node, CSTR.quantity)
+    assert (wait_qty, RDF.type, QUDT_SCHEMA.Quantity) in graph
+    assert (wait_qty, RDF.type, VALUE_ROLE.Measured) in graph
+    assert (wait_qty, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time) in graph
+    assert (wait_qty, QUDT_SCHEMA.unit, QUDT_UNIT.SEC) in graph
+
+    inline_threshold = graph.value(URIRef(inline5s.uri), CSTR.threshold)
+    assert (inline_threshold, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time) in graph
+    assert (inline_threshold, QUDT_SCHEMA.unit, QUDT_UNIT["MilliSEC"]) in graph
+    assert (inline_threshold, QUDT_SCHEMA.value, Literal(5000.0)) in graph
+
+    period = graph.value(URIRef(handler.uri), CSTR_HDL_EXT["control-period"])
+    assert (period, QUDT_SCHEMA.unit, QUDT_UNIT["MilliSEC"]) in graph
+    assert (period, QUDT_SCHEMA.value, Literal(1.0)) in graph
+
+    inline_monitor = URIRef(handler.monitors[1].uri)
+    assert (inline_monitor, CSTR_HDL.constraint, URIRef(inline5s.uri)) in graph
+
+
 def test_derived_velocity_twist_transform_emits_rotate_operation() -> None:
     builder, graph, _ = _build_dataset(VELOCITY_TWIST_FRAME_TRANSFORM)
 
@@ -713,6 +812,7 @@ CONSTRAINT_HANDLER (ns=app) handler_frame_traj {{
 
     MOTION: <m_frame_traj>
     CONTROL_MODE: JointTorque
+    CONTROL_PERIOD: 1.0 ms
 
     CONTROLLERS {{
         ctrl-follow: PID {{ constraint: <m_frame_traj.follow>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }}
