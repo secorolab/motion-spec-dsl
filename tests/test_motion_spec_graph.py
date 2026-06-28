@@ -327,6 +327,75 @@ def test_standalone_builder_emits_acceleration_energy_and_solver_links() -> None
     assert (solver_node, SLV["motion-drivers"], driver_node) in graph
 
 
+def test_rne_solver_emits_pose_acceleration_constraints() -> None:
+    source = """ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {
+    runtime: MuJoCo,
+    ASSETS {
+        kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+    },
+    ASSEMBLY {
+        Robot kinova using <kinova-mjcf> {
+            chain: { root: link-base, end: link-ee }
+        }
+    }
+}
+
+MOTION_SPEC (ns=app) hold {
+    CONTEXT {
+        w: World {
+            pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base }
+        },
+        s: Spec {
+            target: Pose = Snapshot of <w.pose-ee-base>
+        }
+    }
+    WHEN {}
+    WHILE {
+        hold-pose: keeping <w.pose-ee-base> equal to <s.target>
+    }
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_hold {
+    CONTEXT {
+        w: World { gravity: Gravity },
+        s: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 } }
+    }
+    MOTION: <hold>
+    CONTROL_MODE: JointTorque
+    CONTROL_PERIOD: 1.0 ms
+    CONTROLLERS {
+        ctrl-hold-pose: PID { constraint: <hold.hold-pose>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+    }
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <world.kinova>,
+            algorithm: RNE,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <s.gravity-vec>
+        }
+    }
+}
+"""
+    builder, graph, _ = _build_string_dataset(source)
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    driver_node = builder.root_uri(f"driver-{motion.name}", owner=handler)
+    solver_node = builder.root_uri(f"{handler.solvers[0].name}-{motion.name}", owner=handler)
+    spec_nodes = list(graph.objects(driver_node, SLV["acceleration-constraint"]))
+
+    assert (solver_node, SLV.solver, SLV["RecursiveNewtonEulerAlgorithm"]) in graph
+    assert len(spec_nodes) == 1
+    constraint_nodes = list(graph.objects(spec_nodes[0], SLV.constraints))
+    assert len(constraint_nodes) == 6
+    for constraint_node in constraint_nodes:
+        energy_node = graph.value(constraint_node, SLV["acceleration-energy"])
+        assert (energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy) in graph
+
+
 def test_sliding_table_emits_only_five_acceleration_constraints() -> None:
     builder, graph, _ = _build_dataset(SLIDING_TABLE_5DOF)
 

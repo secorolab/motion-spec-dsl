@@ -3200,9 +3200,9 @@ class MotionSpecDatasetBuilder:
         if qty is not None and command.is_force_command:
             return self._force_control_signal_node(ctrl, handler)
 
-        # ACHD acceleration energy
+        # Acceleration energy for dynamics solvers.
         if (
-            algorithm == "ACHD"
+            algorithm in {"ACHD", "RNE"}
             and qty is not None
             and axis is not None
             and accel_prefix is not None
@@ -3290,7 +3290,7 @@ class MotionSpecDatasetBuilder:
             alg_node = (
                 SLV.AccelerationConstrainedHybridDynamicsAlgorithm
                 if alg == "ACHD"
-                else SLV.NewtonEulerAlgorithm
+                else SLV["RecursiveNewtonEulerAlgorithm"]
                 if alg == "RNE"
                 else SLV[alg]
             )
@@ -3392,7 +3392,7 @@ class MotionSpecDatasetBuilder:
                 continue
 
             if (
-                solver.algorithm == "ACHD"
+                solver.algorithm in {"ACHD", "RNE"}
                 and qty.type == WorldQuantityType.Pose
                 and subspace in {"pose", "position", "orientation"}
                 and axis is None
@@ -3413,7 +3413,7 @@ class MotionSpecDatasetBuilder:
                         )
                     acc_constraint_nodes.append(acc_node)
 
-            if solver.algorithm == "ACHD" and axis is not None and axis_acceleration is not None:
+            if solver.algorithm in {"ACHD", "RNE"} and axis is not None and axis_acceleration is not None:
                 sid = _scalar_id(qty, subspace, axis)
                 energy_stem = f"eacc-{sid}"
                 energy_id = energy_stem if shared else f"{energy_stem}-{motion.name}"

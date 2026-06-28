@@ -9,6 +9,7 @@ from motion_spec_dsl.domain import (
     ControllerAlias,
     ControllerEntry,
     ControllerType,
+    EnvironmentRuntime,
     HandlerControlMode,
     Model,
     QuantityType,
@@ -171,11 +172,13 @@ def validate_supported_solver_algorithms(model: Model) -> None:
             if str(resolved_solver.algorithm) == "CommandForwarding":
                 continue
             if str(resolved_solver.algorithm) == "RNE":
-                raise semantic_error(
-                    f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
-                    "but RNE is not modeled in the DSL generator yet.",
-                    solver,
-                )
+                runtime = resolved_solver.robot.environment_robot.environment.runtime
+                if runtime != EnvironmentRuntime.MuJoCo:
+                    raise semantic_error(
+                        f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
+                        "but standalone RNE is only supported on the MuJoCo backend.",
+                        solver,
+                    )
 
 
 def validate_handler_control_mode_solver_compatibility(model: Model) -> None:

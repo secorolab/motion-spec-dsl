@@ -56,7 +56,7 @@ IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
         ),
         (
             "02_controllers_and_solvers/05_mixed_solver_same_domain.robmot",
-            "uses RNE, but RNE is not modeled",
+            "mixes ACHD and RNE on the same domain(s): pose",
         ),
         (
             "02_controllers_and_solvers/06_unsupported_impedance_controller.robmot",
@@ -112,6 +112,65 @@ def test_standalone_manipulator_solver_refs_use_robot_name() -> None:
     assert str(solver.robot) == "world.kinova"
     assert str(solver.root) == "world.kinova.chain.root"
     assert str(solver.end) == "world.kinova.chain.end"
+
+
+def _rne_backend_model(runtime: str) -> str:
+    asset_file = 'xml: "../robots/kg3.xml"' if runtime == "MuJoCo" else 'urdf: "../robots/kg3.urdf"'
+    return f"""ns app = "https://secorolab.github.io/models/test/"
+
+ENVIRONMENT (ns=app) world {{
+    runtime: {runtime},
+    ASSETS {{
+        kinova-asset: RobotAsset {{ model: KinovaGen3, {asset_file} }}
+    }},
+    ASSEMBLY {{
+        Robot kinova using <kinova-asset> {{
+            chain: {{ root: link-base, end: link-ee }}
+        }}
+    }}
+}}
+
+MOTION_SPEC (ns=app) move {{
+    CONTEXT {{
+        w: World {{ twist-ee-base: VelocityTwist {{ of: link-ee, wrt: link-base }} }},
+        s: Spec {{ vz: LinearVelocity = 0.0 m/s }}
+    }}
+    WHEN {{}}
+    WHILE {{ hold-z: <w.twist-ee-base>.linvel.z equal to <s.vz> }}
+    UNTIL {{}}
+}}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {{
+    CONTEXT {{
+        w: World {{ gravity: Gravity }},
+        s: Spec {{ gravity-vec: FreeVector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }} }}
+    }}
+    MOTION: <move>
+    CONTROL_MODE: JointTorque
+    CONTROL_PERIOD: 1.0 ms
+    CONTROLLERS {{
+        ctrl-hold-z: PID {{ constraint: <move.hold-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }}
+    }}
+    SOLVERS {{
+        kinova-solver: Solver {{
+            robot: <world.kinova>,
+            algorithm: RNE,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <s.gravity-vec>
+        }}
+    }}
+}}
+"""
+
+
+def test_rne_solver_is_allowed_on_mujoco() -> None:
+    motion_spec_metamodel().model_from_str(_rne_backend_model("MuJoCo"))
+
+
+def test_rne_solver_rejects_real_robot_backend() -> None:
+    with pytest.raises(TextXSemanticError, match="standalone RNE is only supported on the MuJoCo backend"):
+        motion_spec_metamodel().model_from_str(_rne_backend_model("RealRobot"))
 
 
 def test_crf_model_supports_context_and_solver_references() -> None:
