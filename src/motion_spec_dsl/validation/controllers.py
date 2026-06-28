@@ -57,6 +57,14 @@ def _supports_velocity_profile(spec) -> bool:
     )
 
 
+def _requires_measured_velocity(spec) -> bool:
+    view = spec.view
+    return not (
+        getattr(view, "distance_from", None) is not None
+        and getattr(view, "distance_to", None) is not None
+    )
+
+
 def validate_controller_commands(model: Model) -> None:
     for handler in constraint_handlers(model):
         profiled_constraints: dict[int, str] = {}
@@ -112,6 +120,11 @@ def validate_controller_commands(model: Model) -> None:
                         raise semantic_error(
                             f"Controller '{controller.name}' profile is only supported for distance constraints.",
                             controller,
+                        )
+                    if _requires_measured_velocity(spec) and profile_qty.value.measured_velocity is None:
+                        raise semantic_error(
+                            f"Controller '{controller.name}' profile must specify measured_velocity for pose-axis constraints.",
+                            params.profile,
                         )
                     spec_id = id(spec)
                     if spec_id in profiled_constraints:

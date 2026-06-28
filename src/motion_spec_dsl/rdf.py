@@ -1911,6 +1911,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (node, CSTR_HDL_EXT["max-acceleration"], self._emit_context_ref_node(spec.max_acceleration, quantity, "max-acceleration"))
         )
+        if spec.measured_velocity is not None:
+            self.graph.add((node, CSTR_HDL_EXT["measured-velocity"], self._emit_profile_view_node(spec.measured_velocity, quantity)))
         if spec.max_jerk is not None:
             self.graph.add(
                 (node, CSTR_HDL_EXT["max-jerk"], self._emit_context_ref_node(spec.max_jerk, quantity, "max-jerk"))
@@ -2411,6 +2413,14 @@ class MotionSpecDatasetBuilder:
                 self._emit_context_ref_node(profile_qty.value.max_acceleration, profile_qty, "max-acceleration"),
             )
         )
+        if profile_qty.value.measured_velocity is not None:
+            self.graph.add(
+                (
+                    op_node,
+                    CSTR_HDL_EXT["measured-velocity"],
+                    self._emit_profile_view_node(profile_qty.value.measured_velocity, profile_qty),
+                )
+            )
         if profile_qty.value.max_jerk is not None:
             self.graph.add(
                 (
@@ -2423,6 +2433,29 @@ class MotionSpecDatasetBuilder:
         self.graph.add((op_node, CSTR_HDL_EXT["controller"], URIRef(ctrl.uri)))
         self.graph.add((op_node, CSTR_HDL_EXT["reference"], out_node))
         return out_node
+
+    def _emit_profile_view_node(self, view: Any, owner: Any) -> URIRef:
+        node = self._view_node(view, owner)
+        quantity = getattr(view, "quantity", None)
+        if not isinstance(quantity, WorldQuantity):
+            return node
+        subspace = SUBSPACE_ALIAS.get(str(getattr(view, "subspace", "")), str(getattr(view, "subspace", "")))
+        axis = semantic_axis_label(getattr(view, "axis", None))
+        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(subspace)
+        if axis is None or prop is None or prop[4] is None:
+            return node
+        view_subspace_uri, _, _, scalar_t, view_type = prop
+        self._add_quantity(node, scalar_t)
+        view_node = self._owned_uri(f"view-{_scalar_id(quantity, subspace, axis)}", owner)
+        if (view_node, RDF.type, MAP.View) in self.graph:
+            return node
+        self.graph.add((view_node, RDF.type, MAP.View))
+        self.graph.add((view_node, RDF.type, view_type))
+        self.graph.add((view_node, MAP.superobject, URIRef(quantity.uri)))
+        self.graph.add((view_node, MAP.subobject, node))
+        self.graph.add((view_node, MAP.subspace, MAP[view_subspace_uri]))
+        self.graph.add((view_node, MAP.axis, MAP[axis]))
+        return node
 
     def _elapsed_quantity_node(self, spec: ConstraintSpecification, motion: MotionSpec) -> URIRef:
         return self._owned_uri(f"{spec.name}-elapsed", motion)

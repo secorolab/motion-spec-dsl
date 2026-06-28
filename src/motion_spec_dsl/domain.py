@@ -437,6 +437,7 @@ class ProfileSpec:
     parent: object
     max_velocity: object
     max_acceleration: object
+    measured_velocity: object | None = None
     max_jerk: object | None = None
     shape: str = "Trapezoidal"
 

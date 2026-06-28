@@ -371,6 +371,7 @@ ProfileSpec:
     "=" "Profile" "{"
         "max_velocity" ":" max_velocity=ContextRef ","
         "max_acceleration" ":" max_acceleration=ContextRef
+        ("," "measured_velocity" ":" measured_velocity=View)?
         ("," "max_jerk" ":" max_jerk=ContextRef)?
         ("," "shape" ":" shape=VelocityProfileShape)?
     "}"
