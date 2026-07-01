@@ -170,6 +170,13 @@ class EnvironmentTcpSiteEntry:
 
 
 @dataclass
+class EnvironmentFtSensorEntry:
+    parent: object
+    name: str
+    frame_site: str
+
+
+@dataclass
 class EnvironmentShapeEntry:
     parent: object
     value: str
@@ -395,7 +402,7 @@ class CircleSpec:
 class ArcSpec:
     parent: object
     start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
-    end: object           # ContextRef (Position: the other endpoint)
+    end: object           # ContextRef (Pose: the other endpoint and orientation target)
     amplitude: object     # ContextRef (LinearDistance: how far the arc bows from the chord; = chord/2 -> semicircle)
     plane_normal: object  # ContextRef
     alpha: object         # ContextRef
@@ -440,6 +447,17 @@ class ProfileSpec:
     measured_velocity: object | None = None
     max_jerk: object | None = None
     shape: str = "Trapezoidal"
+
+
+@dataclass
+class AdmittanceSpec:
+    parent: object
+    force: object                 # View onto an ExternalForce axis (force-in)
+    mass: float
+    damping: float
+    stiffness: float = 0.0
+    max_velocity: float = 0.25
+    max_velocity_unit: object | None = None
 
 
 @dataclass
@@ -558,6 +576,8 @@ class WorldQuantityType(StrEnum):
     Pose           = "Pose"
     VelocityTwist  = "VelocityTwist"
     Wrench         = "Wrench"
+    ExternalForceMagnitude = "ExternalForceMagnitude"
+    ExternalForce  = "ExternalForce"
     JointPosition  = "JointPosition"
     KinematicChain = "KinematicChain"
     Link           = "Link"
@@ -605,6 +625,8 @@ class GeometricPropKey(StrEnum):
     Wrt       = "wrt"
     RefPoint  = "ref-point"
     AsSeenBy  = "as-seen-by"
+    FtSensor  = "ft-sensor"
+    Deadband  = "deadband"
 
 
 @dataclass
@@ -638,6 +660,7 @@ class QuantityType(StrEnum):
     Trajectory          = "Trajectory"
     TrajectoryProgress  = "TrajectoryProgress"
     VelocityProfile     = "VelocityProfile"
+    Admittance          = "Admittance"
 
 
 class HandlerControlMode(StrEnum):
@@ -665,7 +688,7 @@ class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
-    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | None = None
+    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | ProfileSpec | AdmittanceSpec | PoseValue | None = None
     props: GeometricProps | None = field(default=None, kw_only=True)
 
     _SCALAR_TYPES = frozenset({
@@ -683,6 +706,8 @@ class ContextQuantity(NamedNamespaceObject):
             self.type = QuantityType.TrajectoryProgress
         elif self.type == "VelocityProfile":
             self.type = QuantityType.VelocityProfile
+        elif self.type == "Admittance":
+            self.type = QuantityType.Admittance
         else:
             self.type = QuantityType(self.type)
         if self.props is not None and str(self.type) in self._SCALAR_TYPES:
@@ -736,7 +761,16 @@ class VectorQuantity:
 class SnapshotValue:
     source: View
     offset: ContextRef | None = None
+    # Sampling clock (snap:sampled-on): "task" = sampled once, held for the run
+    # (default); "entry" = re-sampled on each state (re-)entry of the owning motion.
+    clock: str = "task"
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        # textX leaves an unmatched optional string assignment empty; normalise to
+        # the default task clock so an omitted `on <clock>` == sampled-once.
+        if not self.clock:
+            self.clock = "task"
 
 
 @dataclass

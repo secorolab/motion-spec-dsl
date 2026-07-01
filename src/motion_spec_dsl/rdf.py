@@ -77,6 +77,7 @@ from motion_spec_dsl.domain import (
     PostContextDecl,
     PreContextDecl,
     ProfileSpec,
+    AdmittanceSpec,
     QuantityType,
     PoseValue,
     ScalarQuantity,
@@ -170,6 +171,30 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.PlaneAngle,),
         (QUDT_UNIT.RAD,),
         {},
+    ),
+    # Measured external-force magnitude (Newtons). Scalar: the QUDT Quantity type
+    # makes it a `double` shared member; the MJ coordinate type lets ir_gen dispatch
+    # the per-step find_ft_sensor read. Sourced from a plan-001 ft-sensor (carried as
+    # an ft-sensor-ref property in _emit_world_quantities).
+    WorldQuantityType.ExternalForceMagnitude: (
+        # QUDT_QKIND.Force is also an rdf:type (not just hasQuantityKind) so the scalar
+        # `force greater than <Force-threshold>` monitor satisfies the cstr:quantity
+        # sh:class qudt_quant:Force shape, symmetric with the authored Force threshold.
+        (QUDT_SCHEMA.Quantity, MJ.ExternalForceMagnitudeCoordinate, QUDT_QKIND.Force),
+        (QUDT_QKIND.Force,),
+        (QUDT_UNIT.N,),
+        {},
+    ),
+    # Measured external-force VECTOR (plan 003): same FT source as the scalar
+    # magnitude, but a KDL::Vector shared member with x/y/z force-subspace views
+    # (mirror Wrench's force views). Feeds the Admittance reference filter.
+    WorldQuantityType.ExternalForce: (
+        (QUDT_SCHEMA.Quantity, MJ.ExternalForceCoordinate, QUDT_QKIND.Force),
+        (QUDT_QKIND.Force,),
+        (QUDT_UNIT.N,),
+        {
+            "force": ("force", None, None, QuantityType.Force, MJ.ExternalForceCoordinateView),
+        },
     ),
 }
 
@@ -312,12 +337,19 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
 def _view_subspace(constraint: ConstraintSpecification) -> str:
     subspace = constraint_view_subspace(constraint)
     if subspace is None:
+        # Bare-scalar external-force magnitude: monitored directly with no sub-view
+        # (like JointPosition). Synthesise a subspace so the scalar comparison emits.
+        # ponytail: the symmetric root fix lives in controller_semantics.constraint_view_subspace
+        # (out of this plan's scope); this keeps the change in rdf.py.
+        qty = getattr(getattr(constraint, "view", None), "quantity", None)
+        if getattr(qty, "type", None) == WorldQuantityType.ExternalForceMagnitude:
+            return "ext-force"
         raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
     return subspace
 
 
 def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
-    if quantity.type == WorldQuantityType.JointPosition:
+    if quantity.type in (WorldQuantityType.JointPosition, WorldQuantityType.ExternalForceMagnitude):
         return quantity.name
     if axis is None:
         return f"{quantity.name}.{subspace}"
@@ -357,6 +389,8 @@ def _pose_diff_energy_id(ctrl: ControllerEntry, component: AccelerationConstrain
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
+    if quantity.type == WorldQuantityType.ExternalForceMagnitude:
+        return QuantityType.Force
     if quantity.type == WorldQuantityType.Pose:
         if subspace == "pose":
             return QuantityType.Pose
@@ -719,6 +753,11 @@ class MotionSpecDatasetBuilder:
                         end_name=instance.end,
                         tcp_site=entry.value,
                     )
+                elif entry_type == "EnvironmentFtSensorEntry":
+                    ft_node = URIRef(f"{instance.uri}.ft-sensor.{entry.name}")
+                    self.graph.add((ft_node, MJ["sensor-name"], Literal(entry.name)))
+                    self.graph.add((ft_node, MJ["frame-site"], Literal(entry.frame_site)))
+                    self.graph.add((instance_node, MJ["ft-sensor"], ft_node))
                 elif entry_type == "EnvironmentAttachmentPrefixEntry":
                     if is_attachment_instance:
                         self.graph.add((instance_node, MJ["attach-prefix"], Literal(entry.value)))
@@ -1269,7 +1308,7 @@ class MotionSpecDatasetBuilder:
             if view_qty is not None and view_qty.type == WorldQuantityType.Pose:
                 return view_qty
 
-        # Case 3: quantity is the Lerp goal/start of a trajectory that is constrained against a world Pose.
+        # Case 3: quantity is a pose input to a trajectory constrained against a world Pose.
         for spec in constraints:
             if not isinstance(spec.expr, EqualityConstraint):
                 continue
@@ -1277,11 +1316,19 @@ class MotionSpecDatasetBuilder:
             ref_qty = _context_quantity(ref)
             if ref_qty is None or not isinstance(getattr(ref_qty, "value", None), TrajectoryValue):
                 continue
-            lerp = ref_qty.value.lerp
-            lerp_start = _context_quantity(lerp.start)
-            lerp_goal = _context_quantity(lerp.goal)
-            if (getattr(lerp_start, "name", None) == quantity.name or
-                    getattr(lerp_goal, "name", None) == quantity.name):
+            traj = ref_qty.value
+            pose_refs = []
+            if traj.lerp is not None:
+                pose_refs.extend([traj.lerp.start, traj.lerp.goal])
+            if traj.arc is not None:
+                pose_refs.extend([traj.arc.start, traj.arc.end])
+            if traj.circle is not None:
+                pose_refs.append(traj.circle.start)
+            if traj.helix is not None:
+                pose_refs.append(traj.helix.start)
+            if traj.figure8 is not None:
+                pose_refs.append(traj.figure8.anchor)
+            if any(getattr(_context_quantity(item), "name", None) == quantity.name for item in pose_refs):
                 view_qty = self._resolve_qty(spec.view.quantity, world_qtys)
                 if view_qty is not None and view_qty.type == WorldQuantityType.Pose:
                     return view_qty
@@ -1544,6 +1591,8 @@ class MotionSpecDatasetBuilder:
                 add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
             elif qty.type == WorldQuantityType.JointPosition:
                 add_implicit(_geo_prop(props, "of"), KC.Joint, qty)
+            elif qty.type in (WorldQuantityType.ExternalForceMagnitude, WorldQuantityType.ExternalForce):
+                add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
 
         for node, rdf_type in implicit:
             self.graph.add((node, RDF.type, rdf_type))
@@ -1578,6 +1627,16 @@ class MotionSpecDatasetBuilder:
             wrt_v = _geo_prop(props, "wrt")
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by")
+
+            if qty.type in (WorldQuantityType.ExternalForceMagnitude, WorldQuantityType.ExternalForce):
+                # Carry the source ft-sensor logical name (plan 001) and the optional
+                # authored deadband Spec name. ir_gen reads these to wire the runtime read.
+                ft_ref = _geo_prop(props, "ft-sensor")
+                if ft_ref:
+                    self.graph.add((node, MJ["ft-sensor-ref"], Literal(ft_ref)))
+                dead_ref = _geo_prop(props, "deadband")
+                if dead_ref:
+                    self.graph.add((node, MJ["deadband-ref"], Literal(dead_ref)))
 
             # geo-prop targets: walk up qty → WorldContextDecl → MotionSpec → motion_ns
             if of_v:
@@ -1720,6 +1779,8 @@ class MotionSpecDatasetBuilder:
                 return URIRef(quantity.uri)
             if subspace_raw is None and quantity.type == WorldQuantityType.JointPosition:
                 return URIRef(quantity.uri)
+            if subspace_raw is None and quantity.type == WorldQuantityType.ExternalForceMagnitude:
+                return URIRef(quantity.uri)
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
             if (
                 quantity.type == WorldQuantityType.Pose
@@ -1817,7 +1878,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_uri, RDF.type, view_type))
         self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
         self.graph.add((view_uri, MAP.subobject, scalar_uri))
-        self.graph.add((view_uri, MAP.subspace, MAP[view_subspace_uri]))
+        subspace_ns = MAP_EXT if view_subspace_uri == "rotation" else MAP
+        self.graph.add((view_uri, MAP.subspace, subspace_ns[view_subspace_uri]))
         self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
     def _emit_context_quantities(
@@ -1837,6 +1899,9 @@ class MotionSpecDatasetBuilder:
                 continue
             if quantity.type == QuantityType.VelocityProfile:
                 self._emit_velocity_profile_quantity(node, quantity)
+                continue
+            if quantity.type == QuantityType.Admittance:
+                self._emit_admittance_quantity(node, quantity)
                 continue
             if isinstance(quantity.value, PoseValue):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
@@ -1882,6 +1947,9 @@ class MotionSpecDatasetBuilder:
                 else:
                     snap_source = view_node
                 self.graph.add((node, SNAP["snapshot-of"], snap_source))
+                # snap:sampled-on clock: "entry" re-samples per state entry, "task" once.
+                clock = getattr(quantity.value, "clock", "task") or "task"
+                self.graph.add((node, SNAP["sampled-on"], SNAP[f"{clock}-clock"]))
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
@@ -1918,6 +1986,19 @@ class MotionSpecDatasetBuilder:
                 (node, CSTR_HDL_EXT["max-jerk"], self._emit_context_ref_node(spec.max_jerk, quantity, "max-jerk"))
             )
         self.graph.add((node, CSTR_HDL_EXT["shape"], Literal(spec.shape or "Trapezoidal")))
+
+    def _emit_admittance_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        # The declared node is just a well-typed placeholder; the actual per-step
+        # filter op is emitted at constraint-binding time (_emit_admittance_reference),
+        # mirroring how VelocityProfile's op is emitted from the controller path.
+        if not isinstance(quantity.value, AdmittanceSpec):
+            return
+        self.graph.add((node, RDF.type, CSTR_HDL_EXT.Admittance))
+        self.graph.add((node, RDF.type, VALUE_ROLE.Declared))
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, QUDT_QKIND.LinearVelocity))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]))
 
     def _emit_pose_value_quantity(
         self,
@@ -2294,7 +2375,10 @@ class MotionSpecDatasetBuilder:
                     subspace == "pose"
                     and axis is None
                     and qty.type == WorldQuantityType.Pose
-                ):
+                ) or qty.type == WorldQuantityType.ExternalForceMagnitude:
+                    # The world node carries the QUDT typing (qkind:Force, Measured) the
+                    # cstr:ForceConstraint shape needs and is the same node the solver-output
+                    # find_ft_sensor read fills (both `self.id()` to `ext_force`).
                     qty_node = URIRef(qty.uri)
                 else:
                     sid = _scalar_id(qty, subspace, axis)
@@ -2336,6 +2420,22 @@ class MotionSpecDatasetBuilder:
                         ref_node,
                         qty_node,
                     )
+                admit_qty = _context_quantity(expr.reference)
+                if isinstance(admit_qty, ContextQuantity):
+                    admit_qty = _resolved_context_quantity(admit_qty)
+                if (
+                    isinstance(admit_qty, ContextQuantity)
+                    and admit_qty.type == QuantityType.Admittance
+                ):
+                    admit_ctrl = self._controller_for_spec(motion, spec)
+                    if admit_ctrl is None:
+                        raise ValueError(
+                            f"Admittance constraint '{spec.name}' needs a tracking PID "
+                            "to host the filter's per-step integrator state."
+                        )
+                    ref_node = self._emit_admittance_reference(
+                        admit_ctrl, spec, motion, admit_qty, scalar_t
+                    )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
             elif isinstance(expr, GreaterThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
@@ -2373,6 +2473,49 @@ class MotionSpecDatasetBuilder:
                 ):
                     return ctrl
         return None
+
+    def _controller_for_spec(
+        self, motion: MotionSpec, spec: ConstraintSpecification
+    ) -> ControllerEntry | None:
+        for handler in self.authored_handlers:
+            if handler.motion is not motion:
+                continue
+            for ctrl_item in getattr(handler, "controllers", []):
+                ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+                if getattr(ctrl.params.constraint, "constraint", None) is spec:
+                    return ctrl
+        return None
+
+    def _emit_admittance_reference(
+        self,
+        ctrl: ControllerEntry,
+        spec: ConstraintSpecification,
+        motion: MotionSpec,
+        admit_qty: ContextQuantity,
+        scalar_t: Any,
+    ) -> URIRef:
+        # Mirror _emit_velocity_profile_reference: emit a stateful reference-generating
+        # op whose `reference` output becomes the constraint's reference-value. The op's
+        # integrator state lives on the constraint's controller (state.<ctrl>), exactly
+        # like the VelocityProfile vp_* members on PIDControl.
+        spec_val = admit_qty.value
+        if not isinstance(spec_val, AdmittanceSpec):
+            raise ValueError(f"Admittance quantity '{admit_qty.name}' has no filter spec.")
+
+        out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-admit-ref", motion)
+        self._add_quantity(out_node, scalar_t)
+        self.graph.add((out_node, RDF.type, VALUE_ROLE.Computed))
+
+        op_node = self._owned_uri(f"admit-{spec.name}-{ctrl.name}", motion)
+        self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.Admittance))
+        self.graph.add((op_node, CSTR_HDL_EXT["force"], self._emit_profile_view_node(spec_val.force, admit_qty)))
+        self.graph.add((op_node, CSTR_HDL_EXT["mass"], Literal(float(spec_val.mass))))
+        self.graph.add((op_node, CSTR_HDL_EXT["damping"], Literal(float(spec_val.damping))))
+        self.graph.add((op_node, CSTR_HDL_EXT["stiffness"], Literal(float(spec_val.stiffness))))
+        self.graph.add((op_node, CSTR_HDL_EXT["max-velocity"], Literal(float(spec_val.max_velocity))))
+        self.graph.add((op_node, CSTR_HDL_EXT["controller"], URIRef(ctrl.uri)))
+        self.graph.add((op_node, CSTR_HDL_EXT["reference"], out_node))
+        return out_node
 
     def _emit_velocity_profile_reference(
         self,
@@ -2749,6 +2892,11 @@ class MotionSpecDatasetBuilder:
                 d_node = URIRef(f"{ctrl_node}-damping")
                 self.graph.add((d_node, QUDT_SCHEMA.value, Literal(float(ctrl.params.damping), datatype=XSD.double)))
                 self.graph.add((ctrl_node, CSTR_HDL["damping"], d_node))
+            # Optional integral gain (Ki): integral action to null steady-state error.
+            if ctrl.params.ki is not None:
+                i_node = URIRef(f"{ctrl_node}-integral")
+                self.graph.add((i_node, QUDT_SCHEMA.value, Literal(float(ctrl.params.ki), datatype=XSD.double)))
+                self.graph.add((ctrl_node, CSTR_HDL["integral-gain"], i_node))
         elif ctrl.type == ControllerType.FeedForward:
             self.graph.add((ctrl_node, RDF.type, CSTR_HDL_EXT.FeedForwardController))
         else:
@@ -3059,8 +3207,7 @@ class MotionSpecDatasetBuilder:
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
                     scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
-                    qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
-                    error_id = f"{qty_node_id}-err"
+                    error_id = f"{_evaluator_id(spec)}-err"
 
                     if error_id not in seen_error_ids:
                         seen_error_ids.add(error_id)
@@ -3123,12 +3270,18 @@ class MotionSpecDatasetBuilder:
                 axis_raw = spec.view.axis
                 axis = semantic_axis_label(axis_raw)
                 scalar_t = _scalar_type(qty, subspace, axis)
-                qty_node_id = _scalar_id(qty, subspace, axis) if qty else spec.name
-                error_id = f"{qty_node_id}-err"
+                error_id = f"{_evaluator_id(spec)}-err"
                 error_node = self._owned_uri(error_id, spec.parent)
                 if error_id not in seen_error_ids:
                     seen_error_ids.add(error_id)
                     self._add_quantity(error_node, scalar_t)
+                    if scalar_t == QuantityType.Pose and qty is not None and isinstance(qty.props, GeometricProps):
+                        of_v = _geo_prop(qty.props, "of")
+                        wrt_v = _geo_prop(qty.props, "wrt")
+                        if of_v and wrt_v:
+                            self.graph.add((error_node, GEOM_REL.of, self._owned_uri(of_v, qty)))
+                            self.graph.add((error_node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty)))
+                            self.graph.add((error_node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
 
             self._emit_error_evaluator(
                 handler_node,
@@ -3325,6 +3478,10 @@ class MotionSpecDatasetBuilder:
                         if wrt and _body_name(wrt) == root_body:
                             self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                     elif qty.type == WorldQuantityType.JointPosition:
+                        self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
+                    elif qty.type in (WorldQuantityType.ExternalForceMagnitude, WorldQuantityType.ExternalForce):
+                        # Measured external-force quantity: register it as a solver output
+                        # (like JointPosition) so its per-step find_ft_sensor read emits.
                         self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(

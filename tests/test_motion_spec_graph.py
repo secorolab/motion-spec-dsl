@@ -72,6 +72,7 @@ VELOCITY_TWIST_FRAME_TRANSFORM = (
 POSE_COMPONENT_SUBSETS = "02_acceleration_constraints/05_pose_component_subsets.robmot"
 PID_GAIN_VARIANTS = "02_acceleration_constraints/06_pid_gain_variants.robmot"
 VELOCITY_PROFILE_PID = "02_acceleration_constraints/07_velocity_profile_pid.robmot"
+IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
 FORCE_CONTROLLER = "03_force_commands/01_force_controller.robmot"
 POSITION_FORCE_CONTROLLER = "03_force_commands/02_position_force_controller.robmot"
 POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
@@ -257,6 +258,17 @@ def test_pid_gain_variants_emit_all_three_gains() -> None:
             literal = graph.value(controller_node, CSTR_HDL[predicate])
             assert literal is not None, f"{name}: {predicate} missing from graph"
             assert float(literal) == float(value)
+
+
+def test_impedance_controller_emits_optional_integral_gain() -> None:
+    builder, graph, _ = _build_dataset(IMPEDANCE_CONTROLLER)
+
+    controller = builder.authored_handlers[0].controllers[0]
+    controller_node = URIRef(controller.uri)
+    integral_node = graph.value(controller_node, CSTR_HDL["integral-gain"])
+
+    assert integral_node is not None
+    assert float(graph.value(integral_node, QUDT_SCHEMA.value)) == 0.2
 
 
 def test_force_controller_builder_emits_force_scalar_view_and_solver_specs() -> None:
@@ -1051,7 +1063,7 @@ def test_arc_trajectory_emits_operator_and_input_edges() -> None:
 
     assert (op_node, RDF.type, TRAJ.Arc) in graph
     assert (op_node, TRAJ.start, URIRef(_trajectory_quantity(motion, "start-pose").uri)) in graph
-    assert (op_node, TRAJ.end, URIRef(_trajectory_quantity(motion, "end-point").uri)) in graph
+    assert (op_node, TRAJ.end, URIRef(_trajectory_quantity(motion, "end-pose").uri)) in graph
     assert (op_node, TRAJ.amplitude, URIRef(_trajectory_quantity(motion, "amplitude").uri)) in graph
     assert (op_node, TRAJ["plane-normal"], URIRef(_trajectory_quantity(motion, "plane-normal").uri)) in graph
     assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph

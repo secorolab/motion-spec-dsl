@@ -114,6 +114,30 @@ def test_standalone_manipulator_solver_refs_use_robot_name() -> None:
     assert str(solver.end) == "world.kinova.chain.end"
 
 
+def test_environment_ft_sensor_entry_binds_name_and_frame_site() -> None:
+    model = motion_spec_metamodel().model_from_str(
+        'ns app = "https://secorolab.github.io/models/test/"\n'
+        "\n"
+        "ENVIRONMENT (ns=app) world {\n"
+        "    runtime: MuJoCo,\n"
+        "    ASSETS {\n"
+        '        kinova-asset: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }\n'
+        "    },\n"
+        "    ASSEMBLY {\n"
+        "        Robot kinova using <kinova-asset> {\n"
+        "            ft-sensor: wrist_ft frame-site wrist_ft_site,\n"
+        "            chain: { root: link-base, end: link-ee }\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    env = next(s for s in model.specs if s.__class__.__name__ == "EnvironmentSpec")
+    entries = [entry for assembly in env.assembly for entry in assembly.entries]
+    ft = next(e for e in entries if e.__class__.__name__ == "EnvironmentFtSensorEntry")
+    assert ft.name == "wrist_ft"
+    assert ft.frame_site == "wrist_ft_site"
+
+
 def _rne_backend_model(runtime: str) -> str:
     asset_file = 'xml: "../robots/kg3.xml"' if runtime == "MuJoCo" else 'urdf: "../robots/kg3.urdf"'
     return f"""ns app = "https://secorolab.github.io/models/test/"
@@ -232,6 +256,7 @@ def test_impedance_controller_passes_validation() -> None:
     assert controller.type.value == "Impedance"
     assert controller.params.stiffness == 1.0
     assert controller.params.damping == 0.1
+    assert controller.params.ki == 0.2
 
 
 def test_constraint_handler_requires_control_period() -> None:
@@ -412,3 +437,84 @@ MOTION_SPEC (ns=app) bad_pose_subspace {{
 
     with pytest.raises(TextXSemanticError, match=re.escape(message)):
         metamodel.model_from_str(model)
+
+
+_ADMITTANCE_MODEL = """ns app = "https://secorolab.github.io/models/admit-test/"
+
+ENVIRONMENT (ns=app) world {{
+    runtime: MuJoCo,
+    ASSETS {{
+        kinova-asset: RobotAsset {{ model: KinovaGen3, xml: "../robots/kg3.xml" }}
+    }},
+    ASSEMBLY {{
+        Robot kinova using <kinova-asset> {{
+            ft-sensor: wrist_ft frame-site wrist_ft_site,
+            chain: {{ root: base_link, end: bracelet_link }}
+        }}
+    }}
+}}
+
+MOTION_SPEC (ns=app) comply {{
+    CONTEXT {{
+        world: World {{
+            twist-ee: VelocityTwist {{ of: bracelet_link, wrt: base_link, as-seen-by: base_link }},
+            ext-force: ExternalForce {{ ft-sensor: wrist_ft, as-seen-by: base_link }}
+        }},
+        spec: Spec {{
+            admit-vx: Admittance {{ force: <world.ext-force>.force.x, {mass}damping = 60.0, stiffness = 0.0, max-velocity = 0.20 m/s }}
+        }}
+    }}
+    WHEN {{}}
+    WHILE {{
+        comply-x: keeping <world.twist-ee>.linvel.x equal to <spec.admit-vx>
+    }}
+    UNTIL {{}}
+}}
+
+CONSTRAINT_HANDLER (ns=app) handler-comply {{
+    CONTEXT {{
+        world: World {{ gravity: Gravity }},
+        spec: Spec {{ gravity-vec: FreeVector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }} }}
+    }}
+    MOTION: <comply>
+    CONTROL_MODE: JointTorque
+    CONTROL_PERIOD: 1.0 ms
+    MONITORS {{}}
+    CONTROLLERS {{
+        ctrl-comply-x: PID {{ constraint: <comply.comply-x>, Kp = 12, Ki = 0, Kd = 0 }}
+    }}
+    SOLVERS {{
+        arm-solver: Solver {{
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <world.gravity> equal to <spec.gravity-vec>
+        }}
+    }}
+}}
+"""
+
+
+def test_admittance_quantity_binds_and_tracks_velocity_constraint() -> None:
+    model = motion_spec_metamodel().model_from_str(
+        _ADMITTANCE_MODEL.format(mass="mass = 6.0, ")
+    )
+    motion = next(s for s in model.specs if s.__class__.__name__ == "MotionSpec")
+    spec_ctx = [c for c in motion.context if hasattr(c, "declaration")]
+    admit = next(
+        item
+        for ctx in spec_ctx
+        for item in ctx.declaration
+        if getattr(item, "name", None) == "admit-vx"
+    )
+    assert str(admit.type) == QuantityType.Admittance
+    assert admit.value.__class__.__name__ == "AdmittanceSpec"
+    assert admit.value.mass == 6.0
+    assert admit.value.damping == 60.0
+    assert admit.value.max_velocity == 0.20
+
+
+def test_admittance_missing_mass_is_rejected() -> None:
+    with pytest.raises(TextXSyntaxError):
+        motion_spec_metamodel().model_from_str(_ADMITTANCE_MODEL.format(mass=""))

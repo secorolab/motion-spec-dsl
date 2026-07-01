@@ -125,6 +125,9 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
         QuantityType.Orientation: {QuantityType.Orientation},
         QuantityType.Pose: {QuantityType.Pose, QuantityType.Trajectory},
         QuantityType.Duration: {QuantityType.Duration},
+        # An Admittance quantity is a per-axis velocity reference: a velocity
+        # constraint may track it exactly like a plain LinearVelocity setpoint.
+        QuantityType.LinearVelocity: {QuantityType.LinearVelocity, QuantityType.Admittance},
     }
     return right in compatible.get(left, {left})
 

@@ -145,9 +145,14 @@ def validate_controller_commands(model: Model) -> None:
                         f"Impedance controller '{controller.name}' must author Stiffness, Damping, or both.",
                         controller,
                     )
-                if params.has_pid_gains:
+                disallowed_gains = [
+                    name for name, val in (("Kp", params.kp), ("Kd", params.kd))
+                    if val is not None
+                ]
+                if disallowed_gains:
                     raise semantic_error(
-                        f"Impedance controller '{controller.name}' cannot use Kp, Ki, or Kd terms.",
+                        f"Impedance controller '{controller.name}' cannot use "
+                        f"{', '.join(disallowed_gains)} terms.",
                         controller,
                     )
             elif resolved_controller.type == ControllerType.FeedForward:

@@ -56,6 +56,7 @@ EnvironmentAssemblyType:
 EnvironmentAssemblyEntry:
     EnvironmentPositionEntry | EnvironmentOrientationEntry |
     EnvironmentFreeEntry | EnvironmentToolBodyEntry | EnvironmentTcpSiteEntry |
+    EnvironmentFtSensorEntry |
     EnvironmentChainEntry | EnvironmentShapeEntry | EnvironmentSizeEntry |
     EnvironmentMassEntry | EnvironmentFrictionEntry | EnvironmentColorEntry |
     EnvironmentAttachTargetEntry | EnvironmentAttachmentPrefixEntry |
@@ -101,6 +102,10 @@ EnvironmentToolBodyEntry:
 
 EnvironmentTcpSiteEntry:
     "tcp-site" ":" value=IRI_TRUNK
+;
+
+EnvironmentFtSensorEntry:
+    "ft-sensor" ":" name=IRI_TRUNK "frame-site" frame_site=IRI_TRUNK
 ;
 
 EnvironmentShapeEntry:
@@ -279,6 +284,8 @@ WorldQuantity:
 WorldQuantityType:
     "VelocityTwist"              |
     "Wrench"                     |
+    "ExternalForceMagnitude"     |
+    "ExternalForce"              |
     "Pose"                       |
     "JointPosition"              |
     "KinematicChain"             |
@@ -297,7 +304,7 @@ GeoPropPair:
 ;
 
 GeoPropKey:
-    "of" | "wrt" | "ref-point" | "as-seen-by"
+    "of" | "wrt" | "ref-point" | "as-seen-by" | "ft-sensor" | "deadband"
 ;
 
 ContextQuantity:
@@ -305,7 +312,7 @@ ContextQuantity:
 ;
 
 ContextQuantityType:
-    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress" | "VelocityProfile"
+    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress" | "VelocityProfile" | "Admittance"
 ;
 
 SnapshotQuantityType:
@@ -313,7 +320,20 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue
+    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue
+;
+
+// Admittance reference quantity: a virtual mass-damper(-spring) filter turning a
+// measured external-force axis into a per-axis velocity setpoint. Sibling of
+// ProfileSpec (VelocityProfile); consumed as a velocity constraint's reference.
+AdmittanceSpec:
+    "{"
+        "force" ":" force=View ","
+        "mass" "=" mass=FLOAT ","
+        "damping" "=" damping=FLOAT
+        ("," "stiffness" "=" stiffness=FLOAT)?
+        ("," "max-velocity" "=" max_velocity=FLOAT (max_velocity_unit=Unit)?)?
+    "}"
 ;
 
 QuantityValue:
@@ -332,8 +352,14 @@ VectorQuantity:
     "}"
 ;
 
+// Snapshot sampling clock: `on task` (default) samples once/holds for the run;
+// `on entry` re-samples on each state (re-)entry of the owning motion.
 SnapshotValue:
-    "=" "Snapshot" "of" source=View ("+" offset=ContextRef)?
+    "=" "Snapshot" "of" source=View ("+" offset=ContextRef)? ("on" clock=SnapshotClock)?
+;
+
+SnapshotClock:
+    "task" | "entry"
 ;
 
 QuantityType:

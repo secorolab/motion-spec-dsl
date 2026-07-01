@@ -1,4 +1,4 @@
-// Valid: Impedance controller with Stiffness and Damping terms.
+// Valid: Impedance controller with Stiffness, Damping, and optional Ki terms.
 
 ns app = "https://secorolab.github.io/models/test/"
 
@@ -49,7 +49,7 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
 
     CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
-        ctrl-c1: Impedance { constraint: <m_move.c1>, Stiffness = 1.0, Damping = 0.1 }
+        ctrl-c1: Impedance { constraint: <m_move.c1>, Stiffness = 1.0, Damping = 0.1, Ki = 0.2 }
             apply at <c1.link-ee>
     }
 
