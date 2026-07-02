@@ -1,5 +1,7 @@
 // Motion Specification DSL Grammar
 
+reference coord_dsl_fsm as fsm
+
 Model:
     imports*=Import
     namespaces*=NamespaceDeclare
@@ -573,7 +575,8 @@ MonitorEntry:
 ;
 
 EventName:
-    (ns=[NamespaceDeclare|IRI_TRUNK] ".")? name=IRI_TRUNK
+    (ns=[NamespaceDeclare|IRI_TRUNK] "." event=[fsm.Event|IRI_TRUNK]) |
+    standalone=IRI_TRUNK
 ;
 
 ControllerEntry:

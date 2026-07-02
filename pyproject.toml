@@ -16,6 +16,7 @@ dependencies = [
     "rdflib>=8.0.0",
     "motion_spec",
     "pyshacl>=0.25.0",
+    "coord_dsl",
 ]
 
 [project.entry-points."textx_languages"]

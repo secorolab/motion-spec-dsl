@@ -112,7 +112,6 @@ class EnvironmentAttachmentActuatorEntry:
     value: str
 
 
-
 @dataclass
 class EnvironmentPositionEntry:
     parent: object
@@ -253,7 +252,9 @@ class EnvironmentAssembly(NamedNamespaceObject):
 
     @property
     def chain(self) -> EnvironmentChainEntry | None:
-        return next((entry for entry in self.entries if isinstance(entry, EnvironmentChainEntry)), None)
+        return next(
+            (entry for entry in self.entries if isinstance(entry, EnvironmentChainEntry)), None
+        )
 
     @property
     def root(self) -> str:
@@ -331,7 +332,9 @@ class EnvironmentRobotRef:
 
     @property
     def assembly_spec(self) -> EnvironmentAssembly | None:
-        return next((entry for entry in self.environment.assembly if entry.name == self.assembly), None)
+        return next(
+            (entry for entry in self.environment.assembly if entry.name == self.assembly), None
+        )
 
     @property
     def name(self) -> str:
@@ -399,7 +402,7 @@ class RobotAnchorRef:
 class LerpSpec:
     parent: object
     start: object  # ContextRef
-    goal: object   # ContextRef
+    goal: object  # ContextRef
     alpha: object  # ContextRef
     profile: str = "EaseInOut"  # progress easing: Linear | EaseIn | EaseOut | EaseInOut
 
@@ -407,40 +410,48 @@ class LerpSpec:
 @dataclass
 class CircleSpec:
     parent: object
-    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
-    center: object        # ContextRef (Position the curve orbits; radius = |start - center| in-plane)
+    start: (
+        object  # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    )
+    center: object  # ContextRef (Position the curve orbits; radius = |start - center| in-plane)
     plane_normal: object  # ContextRef
-    alpha: object         # ContextRef
+    alpha: object  # ContextRef
 
 
 @dataclass
 class ArcSpec:
     parent: object
-    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
-    end: object           # ContextRef (Pose: the other endpoint and orientation target)
-    amplitude: object     # ContextRef (LinearDistance: how far the arc bows from the chord; = chord/2 -> semicircle)
+    start: (
+        object  # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    )
+    end: object  # ContextRef (Pose: the other endpoint and orientation target)
+    amplitude: object  # ContextRef (LinearDistance: how far the arc bows from the chord; = chord/2 -> semicircle)
     plane_normal: object  # ContextRef
-    alpha: object         # ContextRef
+    alpha: object  # ContextRef
 
 
 @dataclass
 class HelixSpec:
     parent: object
-    start: object         # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
-    center: object        # ContextRef (Position the helix winds around; radius = |start - center| in-plane)
-    axis: object          # ContextRef
-    pitch: object         # ContextRef
-    revolutions: object   # ContextRef
-    alpha: object         # ContextRef
+    start: (
+        object  # ContextRef (Pose on the curve: position -> start point, rotation -> orientation)
+    )
+    center: (
+        object  # ContextRef (Position the helix winds around; radius = |start - center| in-plane)
+    )
+    axis: object  # ContextRef
+    pitch: object  # ContextRef
+    revolutions: object  # ContextRef
+    alpha: object  # ContextRef
 
 
 @dataclass
 class Figure8Spec:
     parent: object
-    anchor: object        # ContextRef (Pose: position -> center, rotation -> orientation)
-    radius: object        # ContextRef
+    anchor: object  # ContextRef (Pose: position -> center, rotation -> orientation)
+    radius: object  # ContextRef
     plane_normal: object  # ContextRef
-    alpha: object         # ContextRef
+    alpha: object  # ContextRef
     form: str = "Gerono"
 
 
@@ -467,7 +478,7 @@ class ProfileSpec:
 @dataclass
 class AdmittanceSpec:
     parent: object
-    force: object                 # View onto an ExternalForce axis (force-in)
+    force: object  # View onto an ExternalForce axis (force-in)
     mass: float
     damping: float
     stiffness: float = 0.0
@@ -496,11 +507,7 @@ class MotionSpec(IHasNamespaceDeclare):
     move: str | None
     trajectory: TrajectorySpec | None
     context: list[
-        WorldContextDecl
-        | PreContextDecl
-        | SpecContextDecl
-        | PostContextDecl
-        | ContextDeclReference
+        WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl | ContextDeclReference
     ]
     sections: list[WhenSection | WhileSection | UntilSection]
 
@@ -509,7 +516,9 @@ class MotionSpec(IHasNamespaceDeclare):
         self.when = self._section("when")
         self.while_ = self._section("while")
         self.until = self._section("until")
-        assert len(self.while_.constraints) > 0, "MotionSpec must have at least one 'while' constraint"
+        assert len(self.while_.constraints) > 0, (
+            "MotionSpec must have at least one 'while' constraint"
+        )
 
     def _section(self, name: str) -> WhenSection | WhileSection | UntilSection:
         for section in self.sections:
@@ -587,17 +596,17 @@ class UntilSection(ConstraintSection):
 
 
 class WorldQuantityType(StrEnum):
-    Frame          = "Frame"
-    Pose           = "Pose"
-    VelocityTwist  = "VelocityTwist"
-    Wrench         = "Wrench"
+    Frame = "Frame"
+    Pose = "Pose"
+    VelocityTwist = "VelocityTwist"
+    Wrench = "Wrench"
     ExternalForceMagnitude = "ExternalForceMagnitude"
-    ExternalForce  = "ExternalForce"
-    JointPosition  = "JointPosition"
+    ExternalForce = "ExternalForce"
+    JointPosition = "JointPosition"
     KinematicChain = "KinematicChain"
-    Link           = "Link"
-    SceneObject    = "SceneObject"
-    Gravity        = "Gravity"
+    Link = "Link"
+    SceneObject = "SceneObject"
+    Gravity = "Gravity"
 
 
 @dataclass
@@ -636,12 +645,12 @@ class GeometricProps:
 
 
 class GeometricPropKey(StrEnum):
-    Of        = "of"
-    Wrt       = "wrt"
-    RefPoint  = "ref-point"
-    AsSeenBy  = "as-seen-by"
-    FtSensor  = "ft-sensor"
-    Deadband  = "deadband"
+    Of = "of"
+    Wrt = "wrt"
+    RefPoint = "ref-point"
+    AsSeenBy = "as-seen-by"
+    FtSensor = "ft-sensor"
+    Deadband = "deadband"
 
 
 @dataclass
@@ -655,27 +664,27 @@ class GeoPropPair:
 
 
 class QuantityType(StrEnum):
-    Pose                = "Pose"
-    Position            = "Position"
-    Orientation         = "Orientation"
-    Direction           = "Direction"
-    Distance            = "Distance"
-    Angle               = "Angle"
-    PlaneAngle          = "PlaneAngle"
-    AngularDistance     = "AngularDistance"
-    LinearVelocity      = "LinearVelocity"
-    AngularVelocity     = "AngularVelocity"
-    LinearAcceleration  = "LinearAcceleration"
+    Pose = "Pose"
+    Position = "Position"
+    Orientation = "Orientation"
+    Direction = "Direction"
+    Distance = "Distance"
+    Angle = "Angle"
+    PlaneAngle = "PlaneAngle"
+    AngularDistance = "AngularDistance"
+    LinearVelocity = "LinearVelocity"
+    AngularVelocity = "AngularVelocity"
+    LinearAcceleration = "LinearAcceleration"
     AngularAcceleration = "AngularAcceleration"
-    LinearJerk          = "LinearJerk"
-    Force               = "Force"
-    Torque              = "Torque"
-    FreeVector          = "FreeVector"
-    Duration            = "Duration"
-    Trajectory          = "Trajectory"
-    TrajectoryProgress  = "TrajectoryProgress"
-    VelocityProfile     = "VelocityProfile"
-    Admittance          = "Admittance"
+    LinearJerk = "LinearJerk"
+    Force = "Force"
+    Torque = "Torque"
+    FreeVector = "FreeVector"
+    Duration = "Duration"
+    Trajectory = "Trajectory"
+    TrajectoryProgress = "TrajectoryProgress"
+    VelocityProfile = "VelocityProfile"
+    Admittance = "Admittance"
 
 
 class HandlerControlMode(StrEnum):
@@ -703,13 +712,29 @@ class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
     type: QuantityType
-    value: ScalarQuantity | VectorQuantity | SnapshotValue | TrajectoryValue | ProfileSpec | AdmittanceSpec | PoseValue | None = None
+    value: (
+        ScalarQuantity
+        | VectorQuantity
+        | SnapshotValue
+        | TrajectoryValue
+        | ProfileSpec
+        | AdmittanceSpec
+        | PoseValue
+        | None
+    ) = None
     props: GeometricProps | None = field(default=None, kw_only=True)
 
-    _SCALAR_TYPES = frozenset({
-        "Distance", "LinearDistance", "Angle", "PlaneAngle",
-        "AngularDistance", "TrajectoryProgress", "Duration",
-    })
+    _SCALAR_TYPES = frozenset(
+        {
+            "Distance",
+            "LinearDistance",
+            "Angle",
+            "PlaneAngle",
+            "AngularDistance",
+            "TrajectoryProgress",
+            "Duration",
+        }
+    )
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -758,6 +783,7 @@ class ScalarQuantity:
 @dataclass
 class BareScalar:
     """An anonymous literal magnitude+unit used directly as a threshold (e.g. `5.0 s`)."""
+
     value: float = 0.0
     unit: str = ""
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -793,7 +819,9 @@ class ConstraintSpecification(NamedNamespaceObject):
     parent: object
     name: str
     view: View | None = None
-    expr: EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | None = None
+    expr: (
+        EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | None
+    ) = None
     disabled: bool = False
 
     def __post_init__(self):
@@ -855,6 +883,7 @@ class WhenMonitorRef:
 @dataclass
 class ConstraintAlias(NamedNamespaceObject):
     """Local name in a section that references a constraint from another motion."""
+
     parent: object
     name: str
     ref: ConstraintRef
@@ -883,14 +912,14 @@ def _resolved_context_quantity(item: ContextQuantity | ContextQuantityAlias) -> 
 
 
 class SubSpace(StrEnum):
-    Position       = "position"
-    Orientation    = "orientation"
-    LinVel         = "linvel"
-    AngVel         = "angvel"
-    LinAcc         = "linacc"
-    AngAcc         = "angacc"
-    Force          = "force"
-    Torque         = "torque"
+    Position = "position"
+    Orientation = "orientation"
+    LinVel = "linvel"
+    AngVel = "angvel"
+    LinAcc = "linacc"
+    AngAcc = "angacc"
+    Force = "force"
+    Torque = "torque"
 
 
 class Axis(StrEnum):
@@ -1011,23 +1040,27 @@ class ConstraintHandler(IHasNamespaceDeclare):
         self.control_mode = HandlerControlMode(self.control_mode)
 
 
-
 @dataclass
 class EventName:
     parent: object
-    name: str
+    # Qualified form: `ns.EventName`  →  event is the resolved fsm.Event object
+    event: object = None
     ns: NamespaceDeclLike | None = None
+    # Standalone form: bare name with no namespace prefix
+    standalone: str = ""
 
     @property
-    def event_name(self) -> str:
-        return self.name
+    def name(self) -> str:
+        """Bare event name string (works for both qualified and standalone forms)."""
+        return self.event.name if self.event is not None else self.standalone
 
     @property
     def uri(self) -> str:
-        if self.ns is not None:
-            return str(Namespace(self.ns.uri)[self.name])
-        # Standalone (unqualified) event stays monitor-owned, as before.
-        return f"{self.parent.uri}.{self.name}"
+        if self.ns is not None and self.event is not None:
+            # Qualified: use the locally-declared namespace URI (same as in the .fsm).
+            return str(Namespace(self.ns.uri)[self.event.name])
+        # Standalone (unqualified) event stays monitor-owned.
+        return f"{self.parent.uri}.{self.standalone}"
 
 
 _DURATION_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}

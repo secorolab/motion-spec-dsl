@@ -17,14 +17,16 @@ from motion_spec_dsl.domain import (
     BilateralConstraint,
     ConstraintAlias,
     BareScalar,
-    ConstraintHandler,    ConstraintSpecification,
+    ConstraintHandler,
+    ConstraintSpecification,
     ConstraintRef,
     ContextDeclReference,
     ContextRef,
     ContextSpec,
     ControllerAlias,
     ControllerEntry,
-    ControllerParam,    ControllerRef,
+    ControllerParam,
+    ControllerRef,
     ControllerParams,
     EnvironmentAssembly,
     EnvironmentAttachTargetEntry,
@@ -74,16 +76,19 @@ from motion_spec_dsl.domain import (
     RobotRef,
     ScalarQuantity,
     SolverAlias,
-    SolverEntry,    SolverRef,
+    SolverEntry,
+    SolverRef,
     SnapshotValue,
     SpecContextDecl,
-    ContextQuantityAlias,    ContextQuantity,
+    ContextQuantityAlias,
+    ContextQuantity,
     TrajectorySpec,
     TrajectoryValue,
     VectorQuantity,
     View,
     WorldContextDecl,
-    WorldQuantityAlias,    WorldQuantity,
+    WorldQuantityAlias,
+    WorldQuantity,
     WhenSection,
     WhileSection,
     UntilSection,
@@ -149,13 +154,16 @@ LANGUAGE_CLASSES = [
     PostContextDecl,
     ContextDeclReference,
     WorldQuantity,
-    WorldQuantityAlias,    GeometricProps,
+    WorldQuantityAlias,
+    GeometricProps,
     GeoPropPair,
     ContextQuantity,
-    ContextQuantityAlias,    ScalarQuantity,
+    ContextQuantityAlias,
+    ScalarQuantity,
     VectorQuantity,
     SnapshotValue,
-    ConstraintAlias,    ConstraintSpecification,
+    ConstraintAlias,
+    ConstraintSpecification,
     BareScalar,
     ConstraintRef,
     UntilMonitorRef,
@@ -168,11 +176,13 @@ LANGUAGE_CLASSES = [
     BilateralConstraint,
     MonitorEntry,
     EventName,
-    ControllerAlias,    ControllerEntry,
+    ControllerAlias,
+    ControllerEntry,
     ControllerRef,
     ControllerParams,
     ControllerParam,
-    SolverAlias,    SolverEntry,
+    SolverAlias,
+    SolverEntry,
     SolverRef,
     WhenSection,
     WhileSection,
@@ -237,6 +247,9 @@ def motion_spec_metamodel():
     metamodel.register_scope_providers(
         {
             "*.*": scoping_providers.FQNImportURI(),
+            # FSM events are flat (not FQN-nested) — resolve by plain name across
+            # all models loaded via importURI (including any imported .fsm).
+            "EventName.event": scoping_providers.PlainNameImportURI(),
             "ConstraintRef.constraint": MotionConstraintScopeProvider(),
             "ControllerRef.controller": HandlerControllerScopeProvider(),
             "SolverRef.solver": CrossHandlerSolverScopeProvider(),
@@ -320,9 +333,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "https://secorolab.github.io/": {"path": "models/"},
     }
     if comp_rob2b_metamodels.exists():
-        iri_map["https://comp-rob2b.github.io/metamodels/"] = {
-            "path": str(comp_rob2b_metamodels)
-        }
+        iri_map["https://comp-rob2b.github.io/metamodels/"] = {"path": str(comp_rob2b_metamodels)}
 
     return {
         "license": "https://github.com/aws/mit-0",
@@ -355,6 +366,31 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
     }
 
 
+def _gen_fsm(model, output_dir: Path) -> None:
+    """Generate FSM C++ header and IR JSON for any .fsm files imported by the model."""
+    from coord_dsl.generators.fsm_graph import gen_cpp_header, gen_json, get_fsm_graph
+
+    for imp in getattr(model, "imports", []):
+        if not imp.importURI.endswith(".fsm"):
+            continue
+        loaded = getattr(imp, "_tx_loaded_models", [])
+        if not loaded:
+            continue
+        fsm_model = loaded[0]
+        graph, _, fsm_ref = get_fsm_graph(fsm_model)
+        ir = gen_json(graph, fsm_ref)
+        # Add the namespace URI so codegen can match event IRIs without re-parsing the .fsm.
+        ir["namespace_uri"] = fsm_model.fsm.ns.uri
+
+        hpp_path = output_dir / f"{ir['name']}.hpp"
+        hpp_path.write_text(gen_cpp_header(ir))
+        print(f"  wrote {hpp_path}")
+
+        ir_path = output_dir / "fsm_ir.json"
+        ir_path.write_text(json.dumps(ir, indent=2))
+        print(f"  wrote {ir_path}")
+
+
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
     del metamodel, overwrite, debug, kwargs
 
@@ -377,6 +413,8 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     manifest_path = output_dir / f"{stem}-app.json"
     manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name]), indent=2))
     print(f"  wrote {manifest_path}")
+
+    _gen_fsm(model, output_dir)
 
 
 motion_spec_gen = GeneratorDesc(
