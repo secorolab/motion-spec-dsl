@@ -1,0 +1,26 @@
+ns coord = "http://example.org/coord/"
+
+FSM (ns=coord) coord_events_fsm {
+DESCRIPTION: "Minimal FSM fixture: a foreign-namespace event a monitor can trigger, to test namespace-qualified monitor events."
+
+STATES:
+    S_START,
+    S_DONE
+
+START_STATE: @S_START
+END_STATE: @S_DONE
+
+EVENTS:
+    E_STEP,
+    E_OBJ_REACHED
+
+TRANSITIONS:
+    T_START_DONE:
+        FROM: @S_START
+        TO: @S_DONE
+
+REACTIONS:
+    R_OBJ_REACHED:
+        WHEN: @E_OBJ_REACHED
+        DO: @T_START_DONE
+}

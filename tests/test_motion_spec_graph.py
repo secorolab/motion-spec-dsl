@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import cast
 
@@ -797,11 +798,11 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
     stop_eval_node = builder.root_uri(_evaluator_id(stop_constraint), owner=stop_constraint.parent)
     motion_node = builder.root_uri("motion-m_guarded", owner=motion)
     start_error_node = builder.root_uri(
-        "twist-ee-base.linear.z-err",
+        f"{_evaluator_id(start_constraint)}-err",
         owner=start_constraint.parent,
     )
     stop_error_node = builder.root_uri(
-        "twist-ee-base.linear.z-err",
+        f"{_evaluator_id(stop_constraint)}-err",
         owner=stop_constraint.parent,
     )
 
@@ -821,15 +822,32 @@ def test_monitor_event_and_flag_emit_signal_nodes_and_evaluators() -> None:
     assert (stop_eval_node, CSTR_HDL.error, stop_error_node) in graph
 
 
-def test_namespace_qualified_monitor_event_uses_foreign_namespace_uri() -> None:
-    # A namespace-qualified monitor event (e.g. an FSM event) resolves under the
-    # referenced namespace, while a standalone event stays monitor-owned.
-    source = (VALID_FIXTURES / MONITOR_EVENT_FLAG).read_text().replace(
-        'ns app = "https://secorolab.github.io/models/test/"',
-        'ns app = "https://secorolab.github.io/models/test/"\nns coord = "http://example.org/coord/"',
-    ).replace("trigger event evt-start when active", "trigger event coord.E_OBJ_REACHED when active")
+def test_namespace_qualified_monitor_event_uses_foreign_namespace_uri(tmp_path) -> None:
+    # A namespace-qualified monitor event resolves to an Event declared in an imported
+    # .fsm (under that fsm's namespace); a standalone event stays monitor-owned.
+    shutil.copy(
+        VALID_FIXTURES / "01_core_semantics" / "coord_events.fsm",
+        tmp_path / "coord_events.fsm",
+    )
+    source = (
+        'import "coord_events.fsm"\n'
+        + (VALID_FIXTURES / MONITOR_EVENT_FLAG).read_text()
+        .replace(
+            'ns app = "https://secorolab.github.io/models/test/"',
+            'ns app = "https://secorolab.github.io/models/test/"\n'
+            'ns coord = "http://example.org/coord/"',
+        )
+        .replace(
+            "trigger event evt-start when active",
+            "trigger event coord.E_OBJ_REACHED when active",
+        )
+    )
+    model_path = tmp_path / "model.robmot"
+    model_path.write_text(source)
 
-    builder, graph, _ = _build_string_dataset(source)
+    metamodel = motion_spec_metamodel()
+    builder = MotionSpecDatasetBuilder(metamodel.model_from_file(model_path))
+    graph = builder.build()[0].default_graph
     start_monitor = builder.authored_handlers[0].monitors[0]
     event_node = URIRef("http://example.org/coord/E_OBJ_REACHED")
 
