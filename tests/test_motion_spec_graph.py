@@ -26,6 +26,7 @@ from motion_spec.namespace import (
     MAP,
     MJ,
     MOT,
+    MOT_EXT,
     QUDT_QKIND,
     QUDT_SCHEMA,
     QUDT_UNIT,
@@ -935,6 +936,21 @@ def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> N
 
     inline_monitor = URIRef(handler.monitors[1].uri)
     assert (inline_monitor, CSTR_HDL.constraint, URIRef(inline5s.uri)) in graph
+
+    # `UNTIL any` emits an OR: the three constraints hang off one ConstraintDisjunction
+    # node linked from the motion via MOT.until -- not three direct MOT.until triples.
+    far = _resolved_spec(handler.motion.until.constraints[2])
+    disjunction = graph.value(predicate=RDF.type, object=MOT_EXT.ConstraintDisjunction)
+    assert disjunction is not None
+    assert set(graph.objects(disjunction, MOT_EXT["has-constraint"])) == {
+        URIRef(wait5s.uri),
+        URIRef(inline5s.uri),
+        URIRef(far.uri),
+    }
+    until_owners = list(graph.subjects(MOT.until, disjunction))
+    assert len(until_owners) == 1
+    # Members are reached only through the disjunction, never linked directly.
+    assert (until_owners[0], MOT.until, URIRef(wait5s.uri)) not in graph
 
 
 def test_derived_velocity_twist_transform_emits_rotate_operation() -> None:

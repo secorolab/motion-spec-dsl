@@ -2850,7 +2850,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
         raw_when_logic = getattr(motion.when, "logic", None)
         when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
-        if raw_when_logic == "any" and len(when_constraints) > 1:
+        if raw_when_logic == "any" and when_constraints:
             when_disjunction_node = self._owned_uri(
                 f"motion-{motion.name}-when-disjunction", motion
             )
@@ -2873,7 +2873,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((motion_node, MOT["while"], URIRef(spec.uri)))
         raw_logic = getattr(motion.until, "logic", None)
         until_constraints = [i for i in motion.until.constraints if not _resolved_spec(i).disabled]
-        if raw_logic == "any" and len(until_constraints) > 1:
+        if raw_logic == "any" and until_constraints:
             disjunction_node = self._owned_uri(f"motion-{motion.name}-until-disjunction", motion)
             self.graph.add((disjunction_node, RDF.type, MOT_EXT.ConstraintDisjunction))
             self.graph.add((motion_node, MOT.until, disjunction_node))
