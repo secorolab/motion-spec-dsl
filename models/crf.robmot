@@ -4,6 +4,7 @@ ns app = "https://secorolab.github.io/models/crf/"
 
 ENVIRONMENT (ns=app) world {
     runtime: RealRobot,
+    timestep: 1.0 ms,
     ASSETS {
         kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
     },
@@ -76,8 +77,6 @@ CONSTRAINT_HANDLER (ns=app) handler-find {
 
     MOTION: <m-find>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {
         mon-find-until:
             monitor <m-find.until> and
@@ -175,12 +174,8 @@ MOTION_SPEC (ns=app) m-loosen {
 }
 
 CONSTRAINT_HANDLER (ns=app) handler-loosen {
-    CONTEXT {}
-
     MOTION: <m-loosen>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {
         mon-torque-loosen-contact:
             monitor <m-loosen.cstr-torque-loosen-contact> and

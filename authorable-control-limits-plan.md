@@ -49,9 +49,8 @@ This plan makes that authorable so it survives regeneration and generalizes.
 ### Emit strategy: single-value app-dict keys, sourced from the arm solver
 
 All handlers in these models alias ONE arm solver (`<handler-home.arm-solver>`), and
-the runtime constants are per-model globals. Mirror `control_period_ns`: collect the
-authored value from every arm solver, require agreement (else error like the
-CONTROL_PERIOD check at `ir_gen.py:3535`), and inject as top-level IR keys read by the
+the runtime constants are per-model globals. Mirror the loop-period handling: collect the
+authored value from every arm solver, require agreement on conflicts, and inject as top-level IR keys read by the
 `runtime_header` template. This is the least-invasive correct design; per-solver
 members are a later upgrade if multi-solver-with-different-limits scenes ever appear.
 
@@ -85,7 +84,7 @@ add the predicate + a qudt value node (mirror the controller damping emit at
   `damping_lambda: float | None`, `torque_limit: float | None`,
   `beta_max_lin: float | None`, `beta_max_rot: float | None`.
 - Populate them in `solver_with_input_and_output` (line 1203) from the new predicates.
-- In the app-build post-pass (near line 3537, beside `control_period_ns`): collect the
+- In the app-build post-pass (near the loop-period setup): collect the
   authored values across `slv_arm`, dedup, error on conflict, apply defaults
   (λ default 0.05; beta defaults large e.g. 1e6; torque default sentinel -> "from MJCF").
   Add to the returned dict (line 3601 area):
@@ -184,10 +183,10 @@ blockers (INSTALL, textx, motion-spec-check/ir-gen, stst were all present).
     predicates via a small `_optional_float` helper (`g.value(...)` is
     `None` when the predicate is absent — this is graph-level absence, not
     the `0.0`-as-sentinel workaround needed on the rdf.py/domain.py side).
-  - App-build post-pass (~3538-3556, beside the existing `CONTROL_PERIOD`
+  - App-build post-pass (~3538-3556, beside the loop-period setup
     block): a `_single_solver_value(attr, label, default)` helper collects
     the authored value across `slv_arm`, dedups, raises on conflict (mirrors
-    the `CONTROL_PERIOD` multi-value check), and applies the default when
+    the single-value loop-period contract), and applies the default when
     unauthored. Computes `rne_damping_lambda` (default `0.05`),
     `beta_max_lin`/`beta_max_rot` (default `1e6`), `tau_max_override`
     (default `None`). All four added to the returned dict (~3635-3639).

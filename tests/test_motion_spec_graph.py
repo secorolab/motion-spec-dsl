@@ -292,7 +292,6 @@ def test_pose_pid_measured_derivative_emits_component_derivative_views() -> None
 
         MOTION_SPEC (ns=app) move {
             CONTEXT {
-                <shared.world>,
                 cs: Spec {
                     pose-start: Pose = Snapshot of <shared.world.pose-ee-base>
                 }
@@ -308,14 +307,8 @@ def test_pose_pid_measured_derivative_emits_component_derivative_views() -> None
         }
 
         CONSTRAINT_HANDLER (ns=app) handler {
-            CONTEXT {
-                <shared.world>,
-                <shared.spec>
-            }
-
             MOTION: <move>
             CONTROL_MODE: JointTorque
-            CONTROL_PERIOD: 1.0 ms
 
             CONTROLLERS {
                 ctrl-follow: PID { constraint: <move.follow-pos>, measured_derivative: <shared.world.twist-ee-base>.linvel, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
@@ -474,7 +467,6 @@ CONSTRAINT_HANDLER (ns=app) handler_hold {
     }
     MOTION: <hold>
     CONTROL_MODE: JointTorque
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-hold-pose: PID { constraint: <hold.hold-pose>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
     }
@@ -907,7 +899,6 @@ def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> N
 
             MOTION: <wait>
             CONTROL_MODE: JointTorque
-            CONTROL_PERIOD: 1.0 ms
 
             MONITORS {
                 mon-wait:   monitor <wait.wait5s>    and trigger event evt-wait when active,
@@ -947,10 +938,6 @@ def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> N
     assert (inline_threshold, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time) in graph
     assert (inline_threshold, QUDT_SCHEMA.unit, QUDT_UNIT["MilliSEC"]) in graph
     assert (inline_threshold, QUDT_SCHEMA.value, Literal(5000.0)) in graph
-
-    period = graph.value(URIRef(handler.uri), CSTR_HDL_EXT["control-period"])
-    assert (period, QUDT_SCHEMA.unit, QUDT_UNIT["MilliSEC"]) in graph
-    assert (period, QUDT_SCHEMA.value, Literal(1.0)) in graph
 
     inline_monitor = URIRef(handler.monitors[1].uri)
     assert (inline_monitor, CSTR_HDL.constraint, URIRef(inline5s.uri)) in graph
@@ -1047,7 +1034,6 @@ CONSTRAINT_HANDLER (ns=app) handler_frame_traj {{
 
     MOTION: <m_frame_traj>
     CONTROL_MODE: JointTorque
-    CONTROL_PERIOD: 1.0 ms
 
     CONTROLLERS {{
         ctrl-follow: PID {{ constraint: <m_frame_traj.follow>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }}

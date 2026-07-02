@@ -2,6 +2,7 @@ ns app = "https://secorolab.github.io/models/demo/"
 
 ENVIRONMENT (ns=app) world {
     runtime: RealRobot,
+    timestep: 1.0 ms,
     ASSETS {
         kelo-urdf: RobotAsset { model: Kelo, urdf: "../robots/eddie.urdf" },
         kinova-right-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" },
@@ -229,9 +230,6 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-rightarm {
 
     MOTION: <motion_rightarm>
     CONTROL_MODE: JointTorque
-
-
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {
 
     }
@@ -307,9 +305,6 @@ CONSTRAINT_HANDLER (ns=app) cstr-hdl-leftarm {
 
     MOTION: <motion_leftarm>
     CONTROL_MODE: JointTorque
-
-
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {
 
     }

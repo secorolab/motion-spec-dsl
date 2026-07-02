@@ -300,9 +300,8 @@ class EnvironmentSpec(IHasNamespaceDeclare):
     ns: NamespaceDeclLike
     name: str
     runtime: EnvironmentRuntime
-    # Optional authored physics timestep (e.g. `timestep: 2.0 ms`). Absent -> the
-    # backend default. Decoupled from CONTROL_PERIOD on purpose: the sim step is a
-    # physics-fidelity/tuning choice the author owns, not a derived value.
+    # Optional authored physics/control timestep (e.g. `timestep: 2.0 ms`).
+    # Absent -> the backend default.
     timestep: BareScalar | None = None
     assets: list[EnvironmentAsset] = field(default_factory=list)
     assembly: list[EnvironmentAssembly] = field(default_factory=list)
@@ -1052,7 +1051,6 @@ class ConstraintHandler(IHasNamespaceDeclare):
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
-    control_period: BareScalar | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)

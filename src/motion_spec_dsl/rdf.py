@@ -521,8 +521,8 @@ class MotionSpecDatasetBuilder:
             context[handler.ns_prefix] = handler.ns.uri
             context[motion.ns_prefix] = motion.ns.uri
 
-            world_qtys = self._collect_world_quantities(motion, handler)
             context_quantities = self._collect_context_quantities(motion, handler)
+            world_qtys = self._collect_world_quantities(motion, handler, context_quantities)
             constraints = _resolved_constraint_items(motion)
 
             self._emit_structural_entities(world_qtys)
@@ -898,22 +898,68 @@ class MotionSpecDatasetBuilder:
             return URIRef(str(value.uri))
         return self._owned_uri(_node_name(value), owner)
 
+    @staticmethod
+    def _add_world_quantity(
+        qtys: dict[str, WorldQuantity], quantity: Any, *, overwrite: bool = False
+    ) -> None:
+        if isinstance(quantity, WorldQuantity):
+            quantity = _resolved_world_quantity(quantity)
+            if overwrite:
+                qtys[quantity.name] = quantity
+            else:
+                qtys.setdefault(quantity.name, quantity)
+
+    def _add_view_world_quantities(self, qtys: dict[str, WorldQuantity], view: Any) -> None:
+        if view is None:
+            return
+        for attr in ("quantity", "distance_from", "distance_to"):
+            self._add_world_quantity(qtys, getattr(view, attr, None))
+
+    def _add_value_world_quantities(self, qtys: dict[str, WorldQuantity], value: Any) -> None:
+        if isinstance(value, SnapshotValue):
+            self._add_view_world_quantities(qtys, value.source)
+        elif isinstance(value, ProfileSpec):
+            self._add_view_world_quantities(qtys, value.measured_velocity)
+        elif isinstance(value, AdmittanceSpec):
+            self._add_view_world_quantities(qtys, value.force)
+
     def _collect_world_quantities(
-        self, motion: MotionSpec, handler: ConstraintHandler
+        self,
+        motion: MotionSpec,
+        handler: ConstraintHandler,
+        context_quantities: dict[str, ContextQuantity] | None = None,
     ) -> dict[str, WorldQuantity]:
+        context_quantities = context_quantities or self._collect_context_quantities(motion, handler)
         qtys: dict[str, WorldQuantity] = {}
+        for model in self.models:
+            for spec in getattr(model, "specs", []):
+                if not isinstance(spec, ContextSpec):
+                    continue
+                for ctx in spec.context:
+                    if isinstance(ctx, WorldContextDecl):
+                        for item in ctx.declaration:
+                            self._add_world_quantity(qtys, item)
         for ctx in motion.context:
             ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, WorldContextDecl):
                 for item in ctx.declaration:
-                    if isinstance(item, WorldQuantity):
-                        qtys[item.name] = item
+                    self._add_world_quantity(qtys, item, overwrite=True)
         for ctx in getattr(handler, "context", []):
             ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, WorldContextDecl):
                 for item in ctx.declaration:
-                    if isinstance(item, WorldQuantity):
-                        qtys.setdefault(item.name, item)
+                    self._add_world_quantity(qtys, item)
+        for constraint in _resolved_constraint_items(motion):
+            self._add_view_world_quantities(qtys, constraint.view)
+        for quantity in context_quantities.values():
+            self._add_value_world_quantities(qtys, getattr(quantity, "value", None))
+        for ctrl_item in getattr(handler, "controllers", []):
+            ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+            self._add_view_world_quantities(qtys, getattr(ctrl.params, "measured_derivative", None))
+            self._add_world_quantity(qtys, getattr(ctrl, "apply_at", None))
+        for solver in getattr(handler, "solvers", []):
+            solver = _resolved_solver(solver)
+            self._add_world_quantity(qtys, getattr(solver, "gravity", None))
         return qtys
 
     @staticmethod
@@ -926,6 +972,15 @@ class MotionSpecDatasetBuilder:
         self, motion: MotionSpec, handler: ConstraintHandler
     ) -> dict[str, ContextQuantity]:
         quantities: dict[str, ContextQuantity] = {}
+        for model in self.models:
+            for spec in getattr(model, "specs", []):
+                if not isinstance(spec, ContextSpec):
+                    continue
+                for ctx in spec.context:
+                    if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
+                        for item in ctx.declaration:
+                            if isinstance(item, ContextQuantity):
+                                quantities.setdefault(item.name, _resolved_context_quantity(item))
         for ctx in motion.context:
             ctx = self._resolved_context_decl(ctx)
             if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
@@ -958,6 +1013,11 @@ class MotionSpecDatasetBuilder:
                 quantity = _context_quantity(gv)
                 if isinstance(quantity, ContextQuantity):
                     quantities.setdefault(quantity.name, quantity)
+        for ctrl_item in getattr(handler, "controllers", []):
+            ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+            quantity = _context_quantity(getattr(ctrl.params, "profile", None))
+            if isinstance(quantity, ContextQuantity):
+                quantities.setdefault(quantity.name, _resolved_context_quantity(quantity))
         return quantities
 
     def _resolve_qty(self, ref: Any, world_qtys: dict[str, WorldQuantity]) -> WorldQuantity | None:
@@ -3328,20 +3388,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (handler_node, CSTR_HDL["control-mode"], CSTR_HDL[handler.control_mode.value])
         )
-        if getattr(handler, "control_period", None) is not None:
-            period_node = self._owned_uri("control-period", handler)
-            self.graph.add((period_node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((period_node, RDF.type, VALUE_ROLE.Declared))
-            self.graph.add((period_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
-            self.graph.add((period_node, QUDT_SCHEMA.unit, _time_unit(handler.control_period.unit)))
-            self.graph.add(
-                (
-                    period_node,
-                    QUDT_SCHEMA.value,
-                    Literal(float(handler.control_period.value), datatype=XSD.double),
-                )
-            )
-            self.graph.add((handler_node, CSTR_HDL_EXT["control-period"], period_node))
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
         self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
 

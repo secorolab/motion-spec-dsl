@@ -171,7 +171,6 @@ CONSTRAINT_HANDLER (ns=app) handler_move {{
     }}
     MOTION: <move>
     CONTROL_MODE: JointTorque
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {{
         ctrl-hold-z: PID {{ constraint: <move.hold-z>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }}
     }}
@@ -259,17 +258,42 @@ def test_impedance_controller_passes_validation() -> None:
     assert controller.params.ki == 0.2
 
 
-def test_constraint_handler_requires_control_period() -> None:
+def test_constraint_handler_context_is_optional() -> None:
     metamodel = motion_spec_metamodel()
 
-    with pytest.raises(TextXSyntaxError, match="CONTROL_PERIOD"):
-        metamodel.model_from_str(
-            """ns app = "https://secorolab.github.io/models/tests/"
+    model = metamodel.model_from_str(
+        """ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {
+    runtime: MuJoCo,
+    timestep: 1.0 ms,
+    ASSETS {
+        kinova-asset: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+    },
+    ASSEMBLY {
+        Robot kinova using <kinova-asset> {
+            chain: { root: link-base, end: link-ee }
+        }
+    }
+}
+
+CONTEXT (ns=app) shared {
+    world: World {
+        gravity: Gravity
+    },
+    spec: Spec {
+        gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+    }
+}
 
 MOTION_SPEC (ns=app) move {
     CONTEXT {
-        w: World { joint: JointPosition { of: j1 } },
-        s: Spec { target: Angle = 0.0 rad }
+        w: World {
+            joint: JointPosition { of: joint-1 }
+        },
+        s: Spec {
+            target: Angle = 0.0 rad
+        }
     }
     WHEN {}
     WHILE { hold: keeping <w.joint> equal to <s.target> }
@@ -277,23 +301,26 @@ MOTION_SPEC (ns=app) move {
 }
 
 CONSTRAINT_HANDLER (ns=app) handler_move {
-    CONTEXT {}
     MOTION: <move>
     CONTROL_MODE: JointTorque
     CONTROLLERS {
-        ctrl-hold: PID { constraint: <move.hold>, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+        ctrl-hold: PID { constraint: <move.hold>, Kp = 1.0, Ki = 0.0, Kd = 0.1 } as Torque
     }
     SOLVERS {
         arm-solver: Solver {
-            robot: <robot>,
+            robot: <world.kinova>,
             algorithm: ACHD,
-            root: <root>,
-            end: <end>
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <shared.world.gravity> equal to <shared.spec.gravity-vec>
         }
     }
 }
 """
-        )
+    )
+
+    handler = model.specs[-1]
+    assert handler.context == []
 
 
 def _profiled_distance_model(controller_block: str) -> str:
@@ -344,7 +371,6 @@ CONSTRAINT_HANDLER (ns=app) handler_move {{
     }}
     MOTION: <move>
     CONTROL_MODE: JointTorque
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {{
 {controller_block}
     }}
@@ -478,7 +504,6 @@ CONSTRAINT_HANDLER (ns=app) handler-comply {{
     }}
     MOTION: <comply>
     CONTROL_MODE: JointTorque
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {{}}
     CONTROLLERS {{
         ctrl-comply-x: PID {{ constraint: <comply.comply-x>, Kp = 12, Ki = 0, Kd = 0 }}

@@ -45,8 +45,6 @@ CONSTRAINT_HANDLER (ns=app) handler_idle {
 
     MOTION: <idle>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-hold-pose: PID { constraint: <idle.hold-pose>, Kp = 4.0, Ki = 0.0, Kd = 0.4 }
     }

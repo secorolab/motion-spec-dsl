@@ -21,15 +21,14 @@ transitions, no chatter, zero-cross ~0-2). Now porting to source.
   `on entry` (line 243). Guard moves from shared `arc_support_z_captured` to the
   motion-local `snapshot_taken` block automatically (snapshot-clock codegen).
 
-## Fix 2 — sim timestep = declared control period  [template + ir_gen]
+## Fix 2 - sim timestep drives the control loop  [template + ir_gen]
 - Bug: `mj_kdl_backend.stg:149` hardcodes `mj_scene.timestep = 0.002;` but every
-  handler declares `CONTROL_PERIOD: 1.0 ms`, and the loop paces at
+  model declares `ENVIRONMENT timestep: 1.0 ms`, and the loop paces at
   `control_period_ns` and sets `kControlPeriodS = control_period_ns*1e-9 = 0.001`.
   So controllers run once per 2 ms sim step with dt_=1 ms -> derivative 2x, integral 0.5x.
-- Fix: emit timestep from the control period.
-  - `ir_gen.py`: where the app dict is assembled (control_period_ns computed at
-    ir_gen.py:3521; app dict `"scene": scene` at 3582), add `scene["timestep_s"] =
-    control_period_ns * 1e-9` (SceneSpec built at 3146 / `_scene_from_graph` 3347).
+- Fix: derive the control loop period from `ENVIRONMENT timestep`.
+  - `ir_gen.py`: where the app dict is assembled, compute `control_period_ns` from
+    `scene.timestep_s` (SceneSpec built by `_scene_from_graph`).
   - `mj_kdl_backend.stg:149`: `mj_scene.timestep = <scene.timestep_s>;`
 - REGRESSION SURFACE: ALL models (all declare 1 ms) switch 0.002 -> 0.001. Must
   regen + build + headless-run pick_place_single, pick_place_dual, pick_place_single_rnea,
@@ -78,7 +77,7 @@ Thread it exactly like `snap:sampled-on` (snapshot clock). Reference commits/edi
 ## Status
 - [x] Fix 1 applied (admittance_arc_single.robmot:189 on task->on entry; regen confirms
       arc_support_z now captured under !state.snapshot_taken).
-- [x] Fix 2 applied (ir_gen SceneSpec.timestep_s = control_period_ns*1e-9; mj_kdl_backend.stg
+- [x] Fix 2 applied (ir_gen derives control_period_ns from SceneSpec.timestep_s; mj_kdl_backend.stg
       emits <scene.timestep_s>). Verified: admittance_arc, pick_place_single AND
       pick_place_dual all emit timestep=0.001, build, and complete full sequence
       (single+dual: START..GRASP..LIFT..PLACE..OPEN..RETREAT; cube placed). No regression.

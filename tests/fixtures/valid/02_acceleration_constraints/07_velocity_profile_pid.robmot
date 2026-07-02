@@ -56,8 +56,6 @@ CONSTRAINT_HANDLER (ns=app) handler_profiled_gap {
 
     MOTION: <m_profiled_gap>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-gap: PID { constraint: <m_profiled_gap.gap>, profile: <m_profiled_gap.s.vp>, Kp = 30.0, Ki = 0.0, Kd = 4.0 } as Force apply at <m_profiled_gap.w.link-ee>
     }

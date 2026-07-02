@@ -59,8 +59,6 @@ CONSTRAINT_HANDLER (ns=app) handler_helix {
 
     MOTION: <m_helix>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     CONTROLLERS {
         ctrl-follow: PID { constraint: <m_helix.follow-pos>, Kp = 200, Ki = 100, Kd = 40 }
     }

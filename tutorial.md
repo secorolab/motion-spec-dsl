@@ -314,13 +314,13 @@ Controllers bind `WHILE` constraints to command semantics.
 ```robmot
 CONTROLLERS {
     ctrl-vel-z: PID { constraint: <m_move.keep-z>, Kp = 5.0, Ki = 1.0, Kd = 1.0 },
-    ctrl-force-z: PID { constraint: <m_contact.regulate-force>, Kp = 1.0 } as Force apply at <w.link-ee>,
-    ctrl-joint: PID { constraint: <m_move.keep-j2>, Kp = 10.0, Kd = 0.5 } as Torque
+    ctrl-force-z: PID { constraint: <m_contact.regulate-force>, Kp = 1.0, Ki = 0.0, Kd = 0.0 } as Force apply at <w.link-ee>,
+    ctrl-joint: PID { constraint: <m_move.keep-j2>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque
 }
 ```
 
-`PID` gains are optional, so P, PI, PD, I, D, and full PID controllers can be expressed
-by including only the terms you need.
+`PID` controllers must spell out `Kp`, `Ki`, and `Kd`; set unused terms explicitly to
+`0.0`.
 
 Command type is inferred when possible. Use `as Force` for force commands and
 `apply at <link>` when the command needs a link target. `JointPosition` constraints must
@@ -354,7 +354,7 @@ If a handler has multiple solvers, controllers that could route to more than one
 must say which one they use:
 
 ```robmot
-ctrl-x: PID { constraint: <m_move.keep-x>, Kp = 1.0 } via <arm-solver>
+ctrl-x: PID { constraint: <m_move.keep-x>, Kp = 1.0, Ki = 0.0, Kd = 0.0 } via <arm-solver>
 ```
 
 Cross-handler solver references include the handler name:

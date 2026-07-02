@@ -534,10 +534,9 @@ OutsideConstraint:
 
 ConstraintHandler:
     "CONSTRAINT_HANDLER" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        "CONTEXT"      "{" context*=HandlerContextItem[","] "}"
+        ("CONTEXT"    "{" context*=HandlerContextItem[","] "}")?
         "MOTION"       ":" "<" motion=[MotionSpec|IRI_TRUNK] ">"
         "CONTROL_MODE" ":" control_mode=HandlerControlMode
-        "CONTROL_PERIOD" ":" control_period=BareScalar
         ("MONITORS"    "{" monitors*=MonitorEntry[","]? "}")?
         "CONTROLLERS"  "{" controllers*=ControllerItem[","]? "}"
         "SOLVERS"      "{" solvers+=SolverItem[","] "}"

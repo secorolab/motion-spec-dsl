@@ -51,8 +51,6 @@ CONSTRAINT_HANDLER (ns=app) handler_guarded {
 
     MOTION: <m_guarded>
     CONTROL_MODE: JointTorque
-
-    CONTROL_PERIOD: 1.0 ms
     MONITORS {
         mon-start: monitor <m_guarded.c_start> and trigger event evt-start when active,
         mon-stop: monitor <m_guarded.until> and set flag flag-stop while active
