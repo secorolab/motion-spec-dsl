@@ -820,7 +820,12 @@ class ConstraintSpecification(NamedNamespaceObject):
     name: str
     view: View | None = None
     expr: (
-        EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | None
+        EqualityConstraint
+        | GreaterThanConstraint
+        | LessThanConstraint
+        | BilateralConstraint
+        | OutsideConstraint
+        | None
     ) = None
     disabled: bool = False
 
@@ -1013,6 +1018,20 @@ class LessThanConstraint:
 
 @dataclass
 class BilateralConstraint:
+    lower: ContextRef
+    upper: ContextRef
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        assert self.lower is not None
+        assert self.upper is not None
+
+
+@dataclass
+class OutsideConstraint:
+    """Satisfied when the quantity is outside [lower, upper] (the complement of
+    BilateralConstraint's in-band). Used to detect a value leaving a ±band."""
+
     lower: ContextRef
     upper: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)

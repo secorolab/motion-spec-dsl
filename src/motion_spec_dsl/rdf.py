@@ -17,6 +17,7 @@ from motion_spec.namespace import (
     EL,
     APP,
     CSTR,
+    CSTR_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
     ENV,
@@ -56,6 +57,7 @@ from motion_spec_dsl.controller_semantics import (
 )
 from motion_spec_dsl.domain import (
     BilateralConstraint,
+    OutsideConstraint,
     ConstraintHandler,
     ConstraintSpecification,
     ContextDeclReference,
@@ -292,6 +294,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("unit", QUDT_UNIT),
     ("map", MAP),
     ("cstr", CSTR),
+    ("cstr-ext", CSTR_EXT),
     ("map-ext", MAP_EXT),
     ("mot", MOT),
     ("mot-ext", MOT_EXT),
@@ -942,7 +945,7 @@ class MotionSpecDatasetBuilder:
                 refs = [expr.reference]
             elif isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
                 refs = [expr.threshold]
-            elif isinstance(expr, BilateralConstraint):
+            elif isinstance(expr, (BilateralConstraint, OutsideConstraint)):
                 refs = [expr.lower, expr.upper]
             for ref in refs:
                 quantity = _context_quantity(ref)
@@ -2621,6 +2624,12 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, CSTR.threshold, thr_node))
             elif isinstance(expr, BilateralConstraint):
                 self.graph.add((node, RDF.type, CSTR.BilateralConstraint))
+                lo_node = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
+                up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
+                self.graph.add((node, CSTR["lower-threshold"], lo_node))
+                self.graph.add((node, CSTR["upper-threshold"], up_node))
+            elif isinstance(expr, OutsideConstraint):
+                self.graph.add((node, RDF.type, CSTR_EXT.OutsideConstraint))
                 lo_node = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
                 up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))

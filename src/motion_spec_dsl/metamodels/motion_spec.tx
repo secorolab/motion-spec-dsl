@@ -463,7 +463,7 @@ ConstraintSpecification:
 ;
 
 ConstraintExpression:
-    EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint
+    EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | OutsideConstraint
 ;
 
 View:
@@ -523,6 +523,10 @@ LessThanConstraint:
 
 BilateralConstraint:
     "between" lower=ContextRef "and" upper=ContextRef
+;
+
+OutsideConstraint:
+    "outside" lower=ContextRef "and" upper=ContextRef
 ;
 
 
