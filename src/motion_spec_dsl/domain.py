@@ -299,6 +299,10 @@ class EnvironmentSpec(IHasNamespaceDeclare):
     ns: NamespaceDeclLike
     name: str
     runtime: EnvironmentRuntime
+    # Optional authored physics timestep (e.g. `timestep: 2.0 ms`). Absent -> the
+    # backend default. Decoupled from CONTROL_PERIOD on purpose: the sim step is a
+    # physics-fidelity/tuning choice the author owns, not a derived value.
+    timestep: BareScalar | None = None
     assets: list[EnvironmentAsset] = field(default_factory=list)
     assembly: list[EnvironmentAssembly] = field(default_factory=list)
     trace: EnvironmentTrace | None = None
@@ -306,6 +310,17 @@ class EnvironmentSpec(IHasNamespaceDeclare):
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
         self.runtime = EnvironmentRuntime(self.runtime)
+
+    @property
+    def timestep_seconds(self) -> float | None:
+        if self.timestep is None:
+            return None
+        scale = _DURATION_UNIT_SECONDS.get(self.timestep.unit)
+        if scale is None:
+            raise ValueError(
+                f"Environment '{self.name}' timestep unit '{self.timestep.unit}' must be 's' or 'ms'."
+            )
+        return self.timestep.value * scale
 
 
 @dataclass
@@ -1015,6 +1030,9 @@ class EventName:
         return f"{self.parent.uri}.{self.name}"
 
 
+_DURATION_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}
+
+
 @dataclass
 class MonitorEntry(NamedNamespaceObject):
     parent: object
@@ -1023,9 +1041,24 @@ class MonitorEntry(NamedNamespaceObject):
     event: EventName | None = None
     fallback: MotionSpec | None = None
     flag: str = ""
+    # Optional `for <FLOAT> <Unit>` debounce clause: the monitored condition must
+    # hold continuously for this long before the edge-triggered monitor fires.
+    # Absent (None) == current byte-identical rising-edge behaviour.
+    debounce: BareScalar | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def debounce_seconds(self) -> float | None:
+        if self.debounce is None:
+            return None
+        scale = _DURATION_UNIT_SECONDS.get(self.debounce.unit)
+        if scale is None:
+            raise ValueError(
+                f"Monitor '{self.name}' debounce unit '{self.debounce.unit}' must be 's' or 'ms'."
+            )
+        return self.debounce.value * scale
 
     @property
     def constraint_name(self) -> str:
@@ -1104,6 +1137,7 @@ class ControllerParam:
 class ControllerParams:
     constraint: ConstraintRef
     profile: ContextRef | None = None
+    measured_derivative: View | None = None
     terms: list[ControllerParam] = field(default_factory=list)
     kp: float | None = field(init=False, default=None)
     ki: float | None = field(init=False, default=None)
@@ -1158,6 +1192,14 @@ class SolverEntry(NamedNamespaceObject):
     name: str
     robot: RobotRef
     algorithm: str
+    # Optional control-loop tuning (DLS damping lambda, torque-limit override,
+    # Cartesian-accel "beta" clamp overrides). Unauthored FLOAT grammar attrs
+    # default to 0.0, not None; 0.0 is never a valid authored value (SHACL
+    # requires > 0), so it doubles as the "unauthored" sentinel downstream.
+    damping: float = 0.0
+    torque_limit: float = 0.0
+    max_linear_accel: float = 0.0
+    max_angular_accel: float = 0.0
     root: RobotAnchorRef | None = None
     gravity: WorldQuantity | None = None
     gravity_value: ContextRef | None = None
@@ -1190,6 +1232,10 @@ class SolverAlias(SolverEntry):
     ref: SolverRef
     robot: RobotRef = field(init=False)
     algorithm: str = field(init=False)
+    damping: float = field(init=False, default=0.0)
+    torque_limit: float = field(init=False, default=0.0)
+    max_linear_accel: float = field(init=False, default=0.0)
+    max_angular_accel: float = field(init=False, default=0.0)
     root: RobotAnchorRef | None = field(init=False, default=None)
     gravity: WorldQuantity | None = field(init=False, default=None)
     gravity_value: ContextRef | None = field(init=False, default=None)
@@ -1202,6 +1248,10 @@ class SolverAlias(SolverEntry):
         self._uri = self.ref.solver.uri
         self.robot = self.ref.solver.robot
         self.algorithm = self.ref.solver.algorithm
+        self.damping = self.ref.solver.damping
+        self.torque_limit = self.ref.solver.torque_limit
+        self.max_linear_accel = self.ref.solver.max_linear_accel
+        self.max_angular_accel = self.ref.solver.max_angular_accel
         self.root = self.ref.solver.root
         self.gravity = self.ref.solver.gravity
         self.gravity_value = self.ref.solver.gravity_value

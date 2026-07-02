@@ -260,6 +260,101 @@ def test_pid_gain_variants_emit_all_three_gains() -> None:
             assert float(literal) == float(value)
 
 
+def test_pose_pid_measured_derivative_emits_component_derivative_views() -> None:
+    builder, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: MuJoCo,
+            ASSETS {
+                kinova-mjcf: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+            },
+            ASSEMBLY {
+                Robot kinova using <kinova-mjcf> {
+                    chain: { root: link-base, end: link-ee }
+                }
+            }
+        }
+
+        CONTEXT (ns=app) shared {
+            world: World {
+                pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base },
+                twist-ee-base: VelocityTwist { of: link-ee, wrt: link-base, as-seen-by: link-base },
+                gravity: Gravity
+            },
+            spec: Spec {
+                gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            }
+        }
+
+        MOTION_SPEC (ns=app) move {
+            CONTEXT {
+                <shared.world>,
+                cs: Spec {
+                    pose-start: Pose = Snapshot of <shared.world.pose-ee-base>
+                }
+            }
+
+            WHEN {}
+
+            WHILE {
+                follow-pos: keeping <shared.world.pose-ee-base>.position equal to <cs.pose-start>.position
+            }
+
+            UNTIL {}
+        }
+
+        CONSTRAINT_HANDLER (ns=app) handler {
+            CONTEXT {
+                <shared.world>,
+                <shared.spec>
+            }
+
+            MOTION: <move>
+            CONTROL_MODE: JointTorque
+            CONTROL_PERIOD: 1.0 ms
+
+            CONTROLLERS {
+                ctrl-follow: PID { constraint: <move.follow-pos>, measured_derivative: <shared.world.twist-ee-base>.linvel, Kp = 1.0, Ki = 0.0, Kd = 0.1 }
+            }
+
+            SOLVERS {
+                arm_solver: Solver {
+                    robot: <world.kinova>,
+                    algorithm: ACHD,
+                    root: <world.kinova.chain.root>,
+                    end: <world.kinova.chain.end>,
+                    gravity: <shared.world.gravity> equal to <shared.spec.gravity-vec>
+                }
+            }
+        }
+        """
+    )
+
+    handler = builder.authored_handlers[0]
+    motion = handler.motion
+    shared = next(spec for spec in builder.model.specs if getattr(spec, "name", "") == "shared")
+    twist = next(
+        q
+        for ctx in shared.context
+        for q in ctx.declaration
+        if getattr(q, "name", "") == "twist-ee-base"
+    )
+
+    for axis in ("x", "y", "z"):
+        controller_node = builder.root_uri(f"ctrl-follow-lin-{axis}", owner=handler)
+        derivative_node = builder.root_uri(f"ctrl-follow-measured-derivative-lin-{axis}", owner=motion)
+        view_node = builder.root_uri(f"view-ctrl-follow-measured-derivative-lin-{axis}", owner=motion)
+
+        assert (controller_node, CSTR_HDL_EXT["measured-derivative"], derivative_node) in graph
+        assert (view_node, RDF.type, MAP.View) in graph
+        assert (view_node, MAP.superobject, URIRef(twist.uri)) in graph
+        assert (view_node, MAP.subobject, derivative_node) in graph
+        assert (view_node, MAP.subspace, MAP["linear-velocity"]) in graph
+        assert (view_node, MAP.axis, MAP[axis]) in graph
+
+
 def test_impedance_controller_emits_optional_integral_gain() -> None:
     builder, graph, _ = _build_dataset(IMPEDANCE_CONTROLLER)
 

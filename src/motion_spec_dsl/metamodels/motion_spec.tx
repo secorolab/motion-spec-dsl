@@ -13,6 +13,7 @@ Specification:
 EnvironmentSpec:
     "ENVIRONMENT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "runtime" ":" runtime=EnvironmentRuntime
+        ("," "timestep" ":" timestep=BareScalar)?
         ("," "ASSETS" "{" assets+=EnvironmentAsset[","] "}")?
         ("," "ASSEMBLY" "{" assembly+=EnvironmentAssembly[","] "}")?
         ("," "TRACE" trace=EnvironmentTrace)?
@@ -565,6 +566,7 @@ MonitorEntry:
     name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "and"
     (
         ("trigger" "event" event=EventName "when" "active"
+            ("for" debounce=BareScalar)?
             ("fallback" "<" fallback=[MotionSpec|IRI_TRUNK] ">")?) |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
     )
@@ -590,6 +592,7 @@ ControllerType:
 ControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">"
     ("," "profile" ":" profile=ContextRef)?
+    ("," "measured_derivative" ":" measured_derivative=View)?
     ("," terms*=ControllerParam[","])?
 ;
 
@@ -633,6 +636,10 @@ SolverEntry:
     name=IRI_TRUNK ":" "Solver" "{"
         "robot"     ":" robot=RobotRef ","
         "algorithm" ":" algorithm=SolverAlgorithm
+        ("," "damping" ":" damping=FLOAT)?
+        ("," "torque-limit" ":" torque_limit=FLOAT)?
+        ("," "max-linear-accel" ":" max_linear_accel=FLOAT)?
+        ("," "max-angular-accel" ":" max_angular_accel=FLOAT)?
         ("," "root"      ":" root=RobotAnchorRef
             ("," "end"  ":" end=RobotAnchorRef)?
             "," "gravity" ":" "<" gravity=[WorldQuantity|ScopedName] ">" "equal to" gravity_value=ContextRef

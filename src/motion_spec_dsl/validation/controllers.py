@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections import defaultdict
 
 from motion_spec_dsl.controller_semantics import (
+    SUBSPACE_ALIAS,
+    axis_label,
     controller_command_record,
     infer_command_type,
 )
@@ -65,6 +67,71 @@ def _requires_measured_velocity(spec) -> bool:
     )
 
 
+def _authored_subspace(view) -> str | None:
+    subspace = getattr(view, "subspace", None)
+    if subspace is None:
+        return None
+    raw = str(getattr(subspace, "value", subspace))
+    return SUBSPACE_ALIAS.get(raw, raw)
+
+
+def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_controller: ControllerEntry) -> None:
+    measured_derivative = getattr(resolved_controller.params, "measured_derivative", None)
+    if measured_derivative is None:
+        return
+
+    command = controller_command_record(resolved_controller)
+    quantity = command.quantity
+    if (
+        quantity is None
+        or quantity.type != WorldQuantityType.Pose
+        or not command.acceleration_constraints
+        or not isinstance(resolved_controller.params.constraint.constraint.expr, EqualityConstraint)
+    ):
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative is only supported for pose equality PID controllers.",
+            measured_derivative,
+        )
+
+    measured_quantity = getattr(measured_derivative, "quantity", None)
+    if not isinstance(measured_quantity, WorldQuantity):
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative must reference a derivative quantity.",
+            measured_derivative,
+        )
+    measured_quantity = _resolved_world_quantity(measured_quantity)
+    if measured_quantity.type != WorldQuantityType.VelocityTwist:
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative must reference a VelocityTwist for pose damping.",
+            measured_derivative,
+        )
+
+    required_subspaces = {
+        "linear" if component.subspace == "linear-acceleration" else "angular"
+        for component in command.acceleration_constraints
+    }
+    measured_subspace = _authored_subspace(measured_derivative)
+    if measured_subspace is not None and measured_subspace not in required_subspaces:
+        expected = ", ".join(sorted(required_subspaces))
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative subspace must match {expected}.",
+            measured_derivative,
+        )
+    if len(required_subspaces) > 1 and measured_subspace is not None:
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative must reference the whole derivative quantity for full-pose damping.",
+            measured_derivative,
+        )
+
+    required_axes = {component.axis for component in command.acceleration_constraints}
+    measured_axis = axis_label(getattr(measured_derivative, "axis", None))
+    if measured_axis is not None and (len(required_axes) != 1 or measured_axis not in required_axes):
+        raise semantic_error(
+            f"Controller '{controller.name}' measured_derivative axis must match the controlled axis.",
+            measured_derivative,
+        )
+
+
 def validate_controller_commands(model: Model) -> None:
     for handler in constraint_handlers(model):
         profiled_constraints: dict[int, str] = {}
@@ -98,6 +165,7 @@ def validate_controller_commands(model: Model) -> None:
                         f"PID controller '{controller.name}' cannot use Stiffness or Damping terms.",
                         controller,
                     )
+                _validate_pid_measured_derivative(controller, resolved_controller)
                 profile_qty = _profile_quantity(resolved_controller)
                 if params.profile is not None:
                     if profile_qty is None:
@@ -135,6 +203,11 @@ def validate_controller_commands(model: Model) -> None:
                         )
                     profiled_constraints[spec_id] = controller.name
             elif resolved_controller.type == ControllerType.Impedance:
+                if params.measured_derivative is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' measured_derivative is only supported on PID controllers.",
+                        controller,
+                    )
                 if params.profile is not None:
                     raise semantic_error(
                         f"Controller '{controller.name}' profile is only supported on PID controllers.",
@@ -156,6 +229,11 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
             elif resolved_controller.type == ControllerType.FeedForward:
+                if params.measured_derivative is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' measured_derivative is only supported on PID controllers.",
+                        controller,
+                    )
                 if params.profile is not None:
                     raise semantic_error(
                         f"Controller '{controller.name}' profile is only supported on PID controllers.",

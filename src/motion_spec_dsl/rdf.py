@@ -94,6 +94,7 @@ from motion_spec_dsl.domain import (
     _resolved_context_quantity,
     _resolved_spec,
     _resolved_solver,
+    _resolved_world_quantity,
 )
 
 # Each entry: (rdf_types, qkinds, units, prop_map)
@@ -386,6 +387,10 @@ def _pose_diff_energy_id(ctrl: ControllerEntry, component: AccelerationConstrain
     return f"eacc-{ctrl.name}-{component.suffix}"
 
 
+def _pose_diff_measured_derivative_id(ctrl: ControllerEntry, component: AccelerationConstraintRecord) -> str:
+    return f"{ctrl.name}-measured-derivative-{component.suffix}"
+
+
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
@@ -623,6 +628,10 @@ class MotionSpecDatasetBuilder:
             self.graph.add((env_node, RT["uses-runtime"], RT.MuJoCoRuntime))
         elif env.runtime == EnvironmentRuntime.RealRobot:
             self.graph.add((env_node, RT["uses-runtime"], RT.RealRobotRuntime))
+
+        timestep_s = env.timestep_seconds
+        if timestep_s is not None:
+            self.graph.add((env_node, MJ["timestep"], Literal(timestep_s, datatype=XSD.double)))
 
         if env.trace is not None:
             trace_node = URIRef(f"{env.uri}.trace")
@@ -3009,9 +3018,53 @@ class MotionSpecDatasetBuilder:
             self.graph.add(
                 (comp_ctrl_node, CSTR_HDL["error-signal"], self._owned_uri(err_id, spec.parent))
             )
+            measured_derivative_node = self._emit_pose_diff_measured_derivative(
+                ctrl,
+                component,
+                spec.parent,
+            )
+            if measured_derivative_node is not None:
+                self.graph.add(
+                    (comp_ctrl_node, CSTR_HDL_EXT["measured-derivative"], measured_derivative_node)
+                )
             self.graph.add((comp_ctrl_node, CSTR_HDL["control-signal"], energy_node))
             self._emit_acceleration_energy_quantity(energy_node)
             self.graph.add((handler_node, CSTR_HDL.controllers, comp_ctrl_node))
+
+    def _emit_pose_diff_measured_derivative(
+        self,
+        ctrl: ControllerEntry,
+        component: AccelerationConstraintRecord,
+        owner: Any,
+    ) -> URIRef | None:
+        measured_derivative = getattr(ctrl.params, "measured_derivative", None)
+        if measured_derivative is None:
+            return None
+        quantity = getattr(measured_derivative, "quantity", None)
+        if not isinstance(quantity, WorldQuantity):
+            return None
+        quantity = _resolved_world_quantity(quantity)
+        if quantity.type != WorldQuantityType.VelocityTwist:
+            return None
+
+        subspace = "linear" if component.subspace == "linear-acceleration" else "angular"
+        scalar_type = (
+            QuantityType.LinearVelocity
+            if subspace == "linear"
+            else QuantityType.AngularVelocity
+        )
+        velocity_subspace = f"{subspace}-velocity"
+        node = self._owned_uri(_pose_diff_measured_derivative_id(ctrl, component), owner)
+        view_node = self._owned_uri(f"view-{_pose_diff_measured_derivative_id(ctrl, component)}", owner)
+        self._add_quantity(node, scalar_type)
+        if (view_node, RDF.type, MAP.View) not in self.graph:
+            self.graph.add((view_node, RDF.type, MAP.View))
+            self.graph.add((view_node, RDF.type, MAP.VelocityTwistCoordinateView))
+            self.graph.add((view_node, MAP.superobject, URIRef(quantity.uri)))
+            self.graph.add((view_node, MAP.subobject, node))
+            self.graph.add((view_node, MAP.subspace, MAP[velocity_subspace]))
+            self.graph.add((view_node, MAP.axis, MAP[component.axis]))
+        return node
 
     def _emit_constraint_handler(
         self,
@@ -3246,6 +3299,11 @@ class MotionSpecDatasetBuilder:
                             (mon_node, CSTR_HDL_EXT["fallback-motion"],
                              self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
                         )
+                    if mon.debounce_seconds is not None:
+                        self.graph.add(
+                            (mon_node, CSTR_HDL_EXT["debounce-seconds"],
+                             Literal(mon.debounce_seconds, datatype=XSD.double))
+                        )
                 else:
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
@@ -3307,6 +3365,11 @@ class MotionSpecDatasetBuilder:
                     self.graph.add(
                         (mon_node, CSTR_HDL_EXT["fallback-motion"],
                          self._owned_uri(f"motion-{mon.fallback.name}", mon.fallback))
+                    )
+                if mon.debounce_seconds is not None:
+                    self.graph.add(
+                        (mon_node, CSTR_HDL_EXT["debounce-seconds"],
+                         Literal(mon.debounce_seconds, datatype=XSD.double))
                     )
             else:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
@@ -3459,6 +3522,33 @@ class MotionSpecDatasetBuilder:
             gravity_value = _context_quantity(gravity_ref) if gravity_ref is not None else None
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
+
+            # Optional control-loop tuning (DLS damping, torque-limit override, beta
+            # clamps). Unauthored FLOAT grammar attrs default to 0.0, not None; a
+            # truthy check is the correct "was this authored" test since SHACL
+            # requires these to be strictly positive when present.
+            if getattr(solver, "damping", None):
+                self.graph.add((solver_node, SLV_EXT["damping"], Literal(float(solver.damping), datatype=XSD.double)))
+            if getattr(solver, "torque_limit", None):
+                self.graph.add(
+                    (solver_node, SLV_EXT["torque-limit"], Literal(float(solver.torque_limit), datatype=XSD.double))
+                )
+            if getattr(solver, "max_linear_accel", None):
+                self.graph.add(
+                    (
+                        solver_node,
+                        SLV_EXT["max-linear-accel"],
+                        Literal(float(solver.max_linear_accel), datatype=XSD.double),
+                    )
+                )
+            if getattr(solver, "max_angular_accel", None):
+                self.graph.add(
+                    (
+                        solver_node,
+                        SLV_EXT["max-angular-accel"],
+                        Literal(float(solver.max_angular_accel), datatype=XSD.double),
+                    )
+                )
 
             robot_assembly = getattr(
                 getattr(solver.robot, "environment_robot", None), "assembly_spec", None
