@@ -21,7 +21,9 @@ from motion_spec_dsl.domain import (
 
 
 SUBSPACE_ALIAS: dict[str, str] = {
+    "angacc": "angular-acceleration",
     "angvel": "angular",
+    "linacc": "linear-acceleration",
     "linvel": "linear",
     "orientation": "rotation",
     "position": "distance",

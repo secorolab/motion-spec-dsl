@@ -666,6 +666,9 @@ class QuantityType(StrEnum):
     Pose = "Pose"
     Position = "Position"
     Orientation = "Orientation"
+    VelocityTwist = "VelocityTwist"
+    AccelerationTwist = "AccelerationTwist"
+    Wrench = "Wrench"
     Direction = "Direction"
     Distance = "Distance"
     Angle = "Angle"
@@ -714,6 +717,7 @@ class ContextQuantity(NamedNamespaceObject):
     value: (
         ScalarQuantity
         | VectorQuantity
+        | ReferenceValue
         | SnapshotValue
         | TrajectoryValue
         | ProfileSpec
@@ -794,6 +798,13 @@ class VectorQuantity:
     y: float = 0.0
     z: float = 0.0
     unit: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class ReferenceValue:
+    source: ContextRef
+    offset: ContextRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
 

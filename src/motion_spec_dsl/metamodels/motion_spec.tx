@@ -319,11 +319,11 @@ ContextQuantityType:
 ;
 
 SnapshotQuantityType:
-    "Pose" | "Position" | "Orientation"
+    "Pose" | "Position" | "Orientation" | "VelocityTwist" | "AccelerationTwist" | "Wrench"
 ;
 
 ContextQuantityValue:
-    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue
+    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | ReferenceValue
 ;
 
 // Admittance reference quantity: a virtual mass-damper(-spring) filter turning a
@@ -341,6 +341,10 @@ AdmittanceSpec:
 
 QuantityValue:
     ScalarQuantity | VectorQuantity
+;
+
+ReferenceValue:
+    "=" source=ContextRef ("+" offset=ContextRef)?
 ;
 
 ScalarQuantity:
@@ -483,7 +487,9 @@ View:
 ;
 
 SubSpace:
+    "angacc"      |
     "angvel"      |
+    "linacc"      |
     "linvel"      |
     "torque"      |
     "force"       |

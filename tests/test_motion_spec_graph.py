@@ -25,6 +25,7 @@ from motion_spec.namespace import (
     KC,
     KC_STAT,
     MAP,
+    MAP_EXT,
     MJ,
     MOT,
     MOT_EXT,
@@ -103,6 +104,164 @@ def _build_string_dataset(source: str):
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
     return builder, dataset.default_graph, cast(dict[str, str], context)
+
+
+def test_reference_value_context_views_emit_map_views() -> None:
+    builder, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: RealRobot,
+            ASSETS {
+                kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+            },
+            ASSEMBLY {
+                Robot kinova using <kinova-urdf> {
+                    chain: { root: frame-base, end: frame-ee }
+                }
+            }
+        }
+
+        CONTEXT (ns=app) shared {
+            world: World {
+                pose-ee-base: Pose { of: frame-ee, wrt: frame-base, as-seen-by: frame-base },
+                twist-ee-base: VelocityTwist {
+                    of: frame-ee,
+                    wrt: frame-base,
+                    as-seen-by: frame-base
+                },
+                wrench-ee: Wrench { ref-point: point-ee, as-seen-by: frame-base },
+                external-force-ee: ExternalForce { ft-sensor: wrist-ft, as-seen-by: frame-base },
+                gravity: Gravity
+            },
+            spec: Spec {
+                dx: LinearDistance = 0.01 m,
+                dv: LinearVelocity = 0.02 m/s,
+                da: LinearAcceleration = 0.03 m/s2,
+                df: Force = 0.04 N,
+                gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }
+            }
+        }
+
+        MOTION_SPEC (ns=app) move {
+            CONTEXT {
+                spec: Spec {
+                    task-pose: Pose = Snapshot of <shared.world.pose-ee-base>,
+                    task-twist: VelocityTwist = Snapshot of <shared.world.twist-ee-base>,
+                    task-wrench: Wrench = Snapshot of <shared.world.wrench-ee>,
+                    task-acc: AccelerationTwist,
+                    task-ori: Orientation = <spec.task-pose>.orientation,
+                    snap-vx: LinearVelocity = Snapshot of <shared.world.twist-ee-base>.linvel.x,
+                    snap-fx: Force = Snapshot of <shared.world.wrench-ee>.force.x,
+                    snap-ext-fx: Force = Snapshot of <shared.world.external-force-ee>.force.x,
+                    end-x: LinearDistance = <spec.task-pose>.position.x + <shared.spec.dx>,
+                    end-vx: LinearVelocity = <spec.task-twist>.linvel.x + <shared.spec.dv>,
+                    end-ax: LinearAcceleration = <spec.task-acc>.linacc.x + <shared.spec.da>,
+                    end-fx: Force = <spec.task-wrench>.force.x + <shared.spec.df>
+                }
+            }
+
+            WHEN {}
+            WHILE {
+                px: keeping <shared.world.pose-ee-base>.position.x equal to <spec.end-x>
+            }
+            UNTIL {}
+        }
+
+        CONSTRAINT_HANDLER (ns=app) handler {
+            MOTION: <move>
+            CONTROL_MODE: JointTorque
+            CONTROLLERS {
+                ctrl-px: PID { constraint: <move.px>, Kp = 1.0, Ki = 0.0, Kd = 0.0 }
+            }
+            SOLVERS {
+                arm_solver: Solver {
+                    robot: <world.kinova>,
+                    algorithm: ACHD,
+                    root: <world.kinova.chain.root>,
+                    end: <world.kinova.chain.end>,
+                    gravity: <shared.world.gravity> equal to <shared.spec.gravity-vec>
+                }
+            }
+        }
+        """
+    )
+
+    motion = builder.authored_handlers[0].motion
+    quantities = {q.name: q for ctx in motion.context for q in ctx.declaration}
+
+    expected = [
+        ("task-pose", "position", "x", MAP.PoseCoordinateView, MAP.position),
+        ("task-twist", "linvel", "x", MAP.VelocityTwistCoordinateView, MAP["linear-velocity"]),
+        (
+            "task-acc",
+            "linacc",
+            "x",
+            MAP.AccelerationTwistCoordinateView,
+            MAP["linear-acceleration"],
+        ),
+        ("task-wrench", "force", "x", MAP.WrenchCoordinateView, MAP.force),
+    ]
+    for name, subspace, axis, view_type, subspace_uri in expected:
+        quantity = quantities[name]
+        subobject = builder.root_uri(f"{name}.{subspace}.{axis}", owner=quantity)
+        view = builder.root_uri(f"view-{name}.{subspace}.{axis}", owner=quantity)
+        assert (view, RDF.type, MAP.View) in graph
+        assert (view, RDF.type, view_type) in graph
+        assert (view, MAP.superobject, URIRef(quantity.uri)) in graph
+        assert (view, MAP.subobject, subobject) in graph
+        assert (view, MAP.subspace, subspace_uri) in graph
+        assert (view, MAP.axis, MAP[axis]) in graph
+
+    orientation = quantities["task-ori"]
+    orientation_view = builder.root_uri("view-task-pose.orientation", owner=quantities["task-pose"])
+    orientation_subobject = builder.root_uri("task-pose.orientation", owner=quantities["task-pose"])
+    assert (orientation_view, RDF.type, MAP.View) in graph
+    assert (orientation_view, RDF.type, MAP_EXT.PoseOrientationView) in graph
+    assert (orientation_view, MAP.superobject, URIRef(quantities["task-pose"].uri)) in graph
+    assert (orientation_view, MAP.subobject, orientation_subobject) in graph
+    assert (orientation_view, MAP.subspace, MAP_EXT.rotation) in graph
+    assert (orientation_view, MAP.axis, None) not in graph
+    assert (URIRef(orientation.uri), CSTR["reference-value"], orientation_subobject) in graph
+
+    shared_ctx = next(ctx for ctx in builder.model.specs if getattr(ctx, "name", "") == "shared")
+    shared_world = next(decl for decl in shared_ctx.context if decl.name == "world")
+    world_quantities = {q.name: q for q in shared_world.declaration}
+    world_expected = [
+        ("snap-vx", "twist-ee-base", "linear", "x", MAP.VelocityTwistCoordinateView),
+        ("snap-fx", "wrench-ee", "force", "x", MAP.WrenchCoordinateView),
+        ("snap-ext-fx", "external-force-ee", "force", "x", MJ.ExternalForceCoordinateView),
+    ]
+    for snap_name, world_name, subspace, axis, view_type in world_expected:
+        snap = quantities[snap_name]
+        world_qty = world_quantities[world_name]
+        subobject = builder.root_uri(_scalar_id(world_qty, subspace, axis), owner=snap)
+        view = builder.root_uri(f"view-{_scalar_id(world_qty, subspace, axis)}", owner=snap)
+        assert (view, RDF.type, MAP.View) in graph
+        assert (view, RDF.type, view_type) in graph
+        assert (view, MAP.superobject, URIRef(world_qty.uri)) in graph
+        assert (view, MAP.subobject, subobject) in graph
+        assert (view, MAP.axis, MAP[axis]) in graph
+        assert (URIRef(snap.uri), SNAP["snapshot-of"], subobject) in graph
+
+    assert (URIRef(quantities["task-pose"].uri), RDF.type, GEOM_COORD.PoseCoordinate) in graph
+    assert (
+        URIRef(quantities["task-twist"].uri),
+        RDF.type,
+        GEOM_COORD.VelocityTwistCoordinate,
+    ) in graph
+    assert (
+        URIRef(quantities["task-acc"].uri),
+        RDF.type,
+        GEOM_COORD.AccelerationTwistCoordinate,
+    ) in graph
+    assert (URIRef(quantities["task-wrench"].uri), RDF.type, RBDYN_COORD.WrenchCoordinate) in graph
+    assert (
+        builder.root_uri("point-ee", owner=world_quantities["wrench-ee"]),
+        RDF.type,
+        GEOM_ENT.Point,
+    ) in graph
 
 
 

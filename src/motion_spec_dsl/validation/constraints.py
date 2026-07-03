@@ -20,6 +20,7 @@ from motion_spec_dsl.domain import (
     MotionSpec,
     ProfileSpec,
     QuantityType,
+    ReferenceValue,
     ScalarQuantity,
     SnapshotValue,
     SubSpace,
@@ -57,15 +58,24 @@ def _view_shape(view) -> QuantityType | None:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
     if quantity.type == WorldQuantityType.VelocityTwist:
+        if subspace is None:
+            return QuantityType.VelocityTwist
         if subspace == SubSpace.LinVel:
             return QuantityType.LinearVelocity
         if subspace == SubSpace.AngVel:
             return QuantityType.AngularVelocity
     if quantity.type == WorldQuantityType.Wrench:
+        if subspace is None:
+            return QuantityType.Wrench
         if subspace == SubSpace.Force:
             return QuantityType.Force
         if subspace == SubSpace.Torque:
             return QuantityType.Torque
+    if quantity.type == WorldQuantityType.ExternalForce:
+        if subspace is None:
+            return QuantityType.Force
+        if subspace == SubSpace.Force:
+            return QuantityType.Force
     if quantity.type == WorldQuantityType.Pose:
         if subspace is None:
             return QuantityType.Pose
@@ -86,16 +96,32 @@ def _context_ref_shape(ref: ContextRef) -> QuantityType | None:
     if not isinstance(value, ContextQuantity):
         return None
     base_shape = _context_quantity_shape(value)
-    subspace = getattr(ref, "subspace", None)
+    subspace_raw = getattr(ref, "subspace", None)
     axis = axis_label(getattr(ref, "axis", None))
+    if subspace_raw is None:
+        return base_shape
+    subspace = str(getattr(subspace_raw, "value", subspace_raw))
     if base_shape in {QuantityType.Pose, QuantityType.Trajectory}:
-        if subspace is None:
-            return base_shape
         if subspace == SubSpace.Position:
             return QuantityType.Distance if axis is not None else QuantityType.Position
         if subspace == SubSpace.Orientation:
             return QuantityType.Angle if _is_orientation_axis(axis) else QuantityType.Orientation
-    return base_shape
+    if base_shape == QuantityType.VelocityTwist:
+        if subspace == SubSpace.LinVel:
+            return QuantityType.LinearVelocity
+        if subspace == SubSpace.AngVel:
+            return QuantityType.AngularVelocity
+    if base_shape == QuantityType.AccelerationTwist:
+        if subspace == SubSpace.LinAcc:
+            return QuantityType.LinearAcceleration
+        if subspace == SubSpace.AngAcc:
+            return QuantityType.AngularAcceleration
+    if base_shape == QuantityType.Wrench:
+        if subspace == SubSpace.Force:
+            return QuantityType.Force
+        if subspace == SubSpace.Torque:
+            return QuantityType.Torque
+    return None
 
 
 def _constraint_reference_shapes(constraint: ConstraintSpecification) -> list[tuple[ContextRef, QuantityType]]:
@@ -202,6 +228,22 @@ def validate_context_quantity_values(model: Model) -> None:
                 quantity = _resolved_context_quantity(item)
                 value = getattr(quantity, "value", None)
                 _validate_profile_quantity(quantity)
+                if isinstance(value, ReferenceValue):
+                    source_shape = _context_ref_shape(value.source)
+                    if not _types_match(quantity.type, source_shape):
+                        raise semantic_error(
+                            f"Reference '{quantity.name}' is declared as {quantity.type}, "
+                            f"but its source has type {source_shape}.",
+                            quantity,
+                        )
+                    if value.offset is not None:
+                        offset_shape = _context_ref_shape(value.offset)
+                        if not _types_match(quantity.type, offset_shape):
+                            raise semantic_error(
+                                f"Reference '{quantity.name}' is declared as {quantity.type}, "
+                                f"but its offset has type {offset_shape}.",
+                                quantity,
+                            )
                 if not isinstance(value, SnapshotValue):
                     continue
                 source_shape = _view_shape(value.source)

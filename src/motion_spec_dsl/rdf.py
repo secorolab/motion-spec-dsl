@@ -81,6 +81,7 @@ from motion_spec_dsl.domain import (
     AdmittanceSpec,
     QuantityType,
     PoseValue,
+    ReferenceValue,
     ScalarQuantity,
     SnapshotValue,
     SpecContextDecl,
@@ -263,12 +264,21 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
     QuantityType.Position: QUDT_QKIND.Position,
     QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
+    QuantityType.VelocityTwist: GEOM_REL.VelocityTwist,
+    QuantityType.AccelerationTwist: GEOM_REL.AccelerationTwist,
+    QuantityType.Wrench: RBDYN_ENT.Wrench,
     QuantityType.Direction: QUDT_QKIND.Dimensionless,
     QuantityType.FreeVector: QUDT_QKIND.FreeVector,
     QuantityType.Duration: QUDT_QKIND.Time,
     QuantityType.Trajectory: TRAJ.Trajectory,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
     QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
+}
+
+CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
+    QuantityType.Pose: WorldQuantityType.Pose,
+    QuantityType.VelocityTwist: WorldQuantityType.VelocityTwist,
+    QuantityType.Wrench: WorldQuantityType.Wrench,
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
@@ -1777,12 +1787,14 @@ class MotionSpecDatasetBuilder:
             if wrt_v:
                 self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty)))
             if rp_v:
+                ref_node = self._owned_uri(rp_v, qty)
+                self.graph.add((ref_node, RDF.type, GEOM_ENT.Point))
                 ref_predicate = (
                     RBDYN_ENT["reference-point"]
                     if qty.type == WorldQuantityType.Wrench
                     else GEOM_REL["reference-point"]
                 )
-                self.graph.add((node, ref_predicate, self._owned_uri(rp_v, qty)))
+                self.graph.add((node, ref_predicate, ref_node))
             elif qty.type in {WorldQuantityType.VelocityTwist, WorldQuantityType.Wrench}:
                 ref_predicate = (
                     RBDYN_ENT["reference-point"]
@@ -1908,11 +1920,14 @@ class MotionSpecDatasetBuilder:
         if isinstance(quantity, WorldQuantity):
             subspace_raw = getattr(view, "subspace", None)
             axis_raw = getattr(view, "axis", None)
-            if subspace_raw is None and quantity.type == WorldQuantityType.Pose:
-                return URIRef(quantity.uri)
-            if subspace_raw is None and quantity.type == WorldQuantityType.JointPosition:
-                return URIRef(quantity.uri)
-            if subspace_raw is None and quantity.type == WorldQuantityType.ExternalForceMagnitude:
+            if subspace_raw is None and quantity.type in {
+                WorldQuantityType.Pose,
+                WorldQuantityType.VelocityTwist,
+                WorldQuantityType.Wrench,
+                WorldQuantityType.ExternalForce,
+                WorldQuantityType.ExternalForceMagnitude,
+                WorldQuantityType.JointPosition,
+            }:
                 return URIRef(quantity.uri)
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
             if (
@@ -1939,6 +1954,16 @@ class MotionSpecDatasetBuilder:
                 and axis is None
             ):
                 self._register_pose_position_view(scalar_uri, quantity, owner)
+            elif (
+                quantity.type == WorldQuantityType.Pose
+                and mapped_subspace == "orientation"
+                and axis is None
+            ):
+                self._register_pose_orientation_view(scalar_uri, quantity, owner)
+            elif axis is not None:
+                self._register_world_component_view(
+                    scalar_uri, quantity, mapped_subspace, axis, owner
+                )
             return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
@@ -2017,6 +2042,252 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_uri, MAP.subspace, subspace_ns[view_subspace_uri]))
         self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
+    def _register_pose_orientation_view(
+        self,
+        scalar_uri: URIRef,
+        quantity: "WorldQuantity",
+        owner: Any,
+    ) -> None:
+        if (scalar_uri, RDF.type, GEOM_COORD.OrientationCoordinate) in self.graph:
+            return
+        props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+        of_frame = _geo_prop(props, "of") if props is not None else None
+        wrt_frame = _geo_prop(props, "wrt") if props is not None else None
+        if of_frame is None or wrt_frame is None:
+            return
+        as_seen_by = _geo_prop(props, "as-seen-by") or wrt_frame
+        self.graph.add((scalar_uri, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((scalar_uri, RDF.type, GEOM_REL.Orientation))
+        self.graph.add((scalar_uri, RDF.type, GEOM_COORD.OrientationCoordinate))
+        self.graph.add((scalar_uri, RDF.type, GEOM_COORD["EulerAngles"]))
+        self.graph.add((scalar_uri, GEOM_COORD["axes-sequence"], Literal("xyz")))
+        self.graph.add((scalar_uri, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+        self.graph.add((scalar_uri, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+        self.graph.add((scalar_uri, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
+        self.graph.add(
+            (scalar_uri, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, quantity))
+        )
+        self.graph.add(
+            (scalar_uri, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, quantity))
+        )
+        self.graph.add((URIRef(quantity.uri), GEOM_COORD["has-coordinate"], scalar_uri))
+
+        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'orientation', None)}", owner)
+        if (view_uri, RDF.type, MAP.View) not in self.graph:
+            self.graph.add((view_uri, RDF.type, MAP.View))
+            self.graph.add((view_uri, RDF.type, MAP_EXT.PoseOrientationView))
+            self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+            self.graph.add((view_uri, MAP.subobject, scalar_uri))
+            self.graph.add((view_uri, MAP.subspace, MAP_EXT.rotation))
+
+    def _register_world_component_view(
+        self,
+        scalar_uri: URIRef,
+        quantity: WorldQuantity,
+        mapped_subspace: str,
+        axis: str,
+        owner: Any,
+    ) -> None:
+        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
+        if prop is None or prop[4] is None:
+            return
+        view_subspace_uri, _, _, scalar_t, view_type = prop
+        self._add_quantity(scalar_uri, scalar_t)
+        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, axis)}", owner)
+        if (view_uri, RDF.type, MAP.View) in self.graph:
+            return
+        self.graph.add((view_uri, RDF.type, MAP.View))
+        self.graph.add((view_uri, RDF.type, view_type))
+        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+        self.graph.add((view_uri, MAP.subobject, scalar_uri))
+        self.graph.add((view_uri, MAP.subspace, MAP[view_subspace_uri]))
+        self.graph.add((view_uri, MAP.axis, MAP[axis]))
+
+    def _emit_context_composite_metadata(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+        constraints: list[ConstraintSpecification],
+        world_qtys: dict[str, WorldQuantity],
+    ) -> None:
+        world_type = CONTEXT_COMPOSITE_WORLD_TYPE.get(quantity.type)
+        if world_type is None and quantity.type != QuantityType.AccelerationTwist:
+            return
+
+        if world_type is not None:
+            rdf_types, qkinds, units, _ = WORLD_SPECS[world_type]
+            for rdf_type in rdf_types:
+                self.graph.add((node, RDF.type, rdf_type))
+            for qkind in qkinds:
+                self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+            for unit in units:
+                self.graph.add((node, QUDT_SCHEMA.unit, unit))
+        else:
+            self.graph.add((node, RDF.type, GEOM_REL.AccelerationTwist))
+            self.graph.add((node, RDF.type, GEOM_COORD.AccelerationTwistCoordinate))
+            self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AngularAcceleration))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearAcceleration))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD-PER-SEC2"]))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC2"]))
+
+        if quantity.type == QuantityType.Pose:
+            self._emit_declared_pose_frame_metadata(node, quantity, constraints, world_qtys)
+            return
+
+        props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+        source = getattr(quantity.value, "source", None)
+        source_qty = getattr(source, "quantity", None)
+        if props is None and isinstance(source_qty, WorldQuantity):
+            props = source_qty.props if isinstance(source_qty.props, GeometricProps) else None
+            owner = source_qty
+        else:
+            owner = quantity
+
+        if quantity.type in {QuantityType.VelocityTwist, QuantityType.AccelerationTwist}:
+            of_v = _geo_prop(props, "of")
+            wrt_v = _geo_prop(props, "wrt")
+            rp_v = _geo_prop(props, "ref-point")
+            asb_v = _geo_prop(props, "as-seen-by") or wrt_v
+            if of_v:
+                self.graph.add((node, GEOM_REL.of, self._owned_uri(of_v, owner)))
+            if wrt_v:
+                self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, owner)))
+            point_node = (
+                self._owned_uri(rp_v, owner)
+                if rp_v
+                else self._owned_uri(f"point-{quantity.name}-origin", quantity)
+            )
+            self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
+            self.graph.add((node, GEOM_REL["reference-point"], point_node))
+            if asb_v:
+                self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(asb_v, owner)))
+            return
+
+        if quantity.type == QuantityType.Wrench:
+            rp_v = _geo_prop(props, "ref-point")
+            asb_v = _geo_prop(props, "as-seen-by")
+            if rp_v:
+                point_node = self._owned_uri(rp_v, owner)
+                self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
+                self.graph.add((node, RBDYN_ENT["reference-point"], point_node))
+            else:
+                point_node = self._owned_uri(f"point-{quantity.name}-origin", quantity)
+                self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
+                self.graph.add((node, RBDYN_ENT["reference-point"], point_node))
+            if asb_v:
+                self.graph.add((node, RBDYN_COORD["as-seen-by"], self._owned_uri(asb_v, owner)))
+
+    def _context_ref_view_spec(
+        self,
+        quantity: ContextQuantity,
+        subspace_raw: str,
+        axis: str | None,
+    ) -> tuple[Any, Any, Any] | None:
+        if quantity.type in {QuantityType.Pose, QuantityType.Trajectory}:
+            if subspace_raw == "position":
+                return (
+                    QuantityType.Distance if axis is not None else QuantityType.Position,
+                    MAP.PoseCoordinateView if axis is not None else MAP_EXT.PosePositionView,
+                    MAP.position,
+                )
+            if subspace_raw == "orientation":
+                return (
+                    QuantityType.Angle if axis is not None else QuantityType.Orientation,
+                    MAP_EXT.PoseOrientationView,
+                    MAP_EXT.rotation,
+                )
+        if quantity.type == QuantityType.VelocityTwist:
+            return {
+                "linvel": (
+                    QuantityType.LinearVelocity,
+                    MAP.VelocityTwistCoordinateView,
+                    MAP["linear-velocity"],
+                ),
+                "angvel": (
+                    QuantityType.AngularVelocity,
+                    MAP.VelocityTwistCoordinateView,
+                    MAP["angular-velocity"],
+                ),
+            }.get(subspace_raw)
+        if quantity.type == QuantityType.AccelerationTwist:
+            return {
+                "linacc": (
+                    QuantityType.LinearAcceleration,
+                    MAP.AccelerationTwistCoordinateView,
+                    MAP["linear-acceleration"],
+                ),
+                "angacc": (
+                    QuantityType.AngularAcceleration,
+                    MAP.AccelerationTwistCoordinateView,
+                    MAP["angular-acceleration"],
+                ),
+            }.get(subspace_raw)
+        if quantity.type == QuantityType.Wrench:
+            return {
+                "force": (QuantityType.Force, MAP.WrenchCoordinateView, MAP.force),
+                "torque": (QuantityType.Torque, MAP.WrenchCoordinateView, MAP.torque),
+            }.get(subspace_raw)
+        return None
+
+    def _emit_context_ref_view_node(
+        self,
+        quantity: ContextQuantity,
+        subspace_raw: str,
+        axis: str | None,
+    ) -> URIRef:
+        view_spec = self._context_ref_view_spec(quantity, subspace_raw, axis)
+        if view_spec is None:
+            return URIRef(quantity.uri)
+        scalar_type, view_type, view_subspace = view_spec
+        suffix = f"{quantity.name}.{subspace_raw}" + (f".{axis}" if axis is not None else "")
+        node = self._owned_uri(suffix, quantity)
+        self._add_quantity(node, scalar_type)
+        super_node = URIRef(quantity.uri)
+        if quantity.type in {QuantityType.Pose, QuantityType.Trajectory} and subspace_raw == "position":
+            self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+            if axis is None:
+                self.graph.add((node, RDF.type, GEOM_REL.Position))
+                self.graph.add((node, RDF.type, GEOM_COORD.PositionCoordinate))
+                self.graph.add((super_node, GEOM_COORD["has-coordinate"], node))
+                pose_of = self.graph.value(super_node, GEOM_REL.of)
+                pose_wrt = self.graph.value(super_node, GEOM_REL["with-respect-to"])
+                pose_asb = self.graph.value(super_node, GEOM_COORD["as-seen-by"])
+                if pose_of and pose_wrt:
+                    self.graph.add((node, GEOM_REL.of, pose_of))
+                    self.graph.add((node, GEOM_REL["with-respect-to"], pose_wrt))
+                    self.graph.add((node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
+            else:
+                self.graph.add((node, RDF.type, QUDT_QKIND.Position))
+        elif (
+            quantity.type in {QuantityType.Pose, QuantityType.Trajectory}
+            and subspace_raw == "orientation"
+            and axis is None
+        ):
+            self.graph.add((node, RDF.type, GEOM_REL.Orientation))
+            self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
+            self.graph.add((node, RDF.type, GEOM_COORD["EulerAngles"]))
+            self.graph.add((node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+            self.graph.add((super_node, GEOM_COORD["has-coordinate"], node))
+            pose_of = self.graph.value(super_node, GEOM_REL.of)
+            pose_wrt = self.graph.value(super_node, GEOM_REL["with-respect-to"])
+            pose_asb = self.graph.value(super_node, GEOM_COORD["as-seen-by"])
+            if pose_of and pose_wrt:
+                self.graph.add((node, GEOM_REL.of, pose_of))
+                self.graph.add((node, GEOM_REL["with-respect-to"], pose_wrt))
+                self.graph.add((node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
+
+        view_node = self._owned_uri(f"view-{suffix}", quantity)
+        if (view_node, RDF.type, MAP.View) not in self.graph:
+            self.graph.add((view_node, RDF.type, MAP.View))
+            self.graph.add((view_node, RDF.type, view_type))
+            self.graph.add((view_node, MAP.superobject, super_node))
+            self.graph.add((view_node, MAP.subobject, node))
+            self.graph.add((view_node, MAP.subspace, view_subspace))
+            if axis is not None:
+                self.graph.add((view_node, MAP.axis, MAP[axis]))
+        return node
+
     def _emit_context_quantities(
         self,
         context_quantities: dict[str, ContextQuantity],
@@ -2047,7 +2318,32 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((node, RDF.type, qkind))
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+            if quantity.type == QuantityType.Orientation:
+                self.graph.add((node, RDF.type, GEOM_REL.Orientation))
+                self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
+                self.graph.add((node, RDF.type, GEOM_COORD["EulerAngles"]))
+                self.graph.add((node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+            self._emit_context_composite_metadata(node, quantity, constraints, world_qtys)
             if quantity.value is None:
+                continue
+            if isinstance(quantity.value, ReferenceValue):
+                source_node = self._emit_context_ref_node(quantity.value.source, quantity, "source")
+                self.graph.add((node, RDF.type, VALUE_ROLE.Reference))
+                self.graph.add(
+                    (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
+                )
+                if quantity.value.offset is not None:
+                    offset_ref_node = self._emit_context_ref_node(
+                        quantity.value.offset, quantity, "add-offset"
+                    )
+                    add_node = URIRef(f"{node}-add")
+                    self.graph.add((add_node, RDF.type, RBDYN_OP_EXT["AddQuantity"]))
+                    self.graph.add((add_node, RBDYN_OP["in1"], source_node))
+                    self.graph.add((add_node, RBDYN_OP["in2"], offset_ref_node))
+                    self.graph.add((add_node, RBDYN_OP["out"], node))
+                    self.graph.add((node, RDF.type, VALUE_ROLE.Computed))
+                else:
+                    self.graph.add((node, CSTR["reference-value"], source_node))
                 continue
             if isinstance(quantity.value, SnapshotValue):
                 self.graph.add((node, RDF.type, SNAP.Snapshot))
@@ -2469,10 +2765,17 @@ class MotionSpecDatasetBuilder:
         if not isinstance(quantity, ContextQuantity):
             return self._owned_uri(_node_name(quantity), owner)
 
+        quantity = _resolved_context_quantity(quantity)
         if ref.literal_value is None:
+            subspace_raw = getattr(ref, "subspace", None)
+            if subspace_raw is not None:
+                subspace = str(getattr(subspace_raw, "value", subspace_raw))
+                axis = semantic_axis_label(getattr(ref, "axis", None))
+                return self._emit_context_ref_view_node(quantity, subspace, axis)
+            if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
+                return self._emit_context_ref_node(quantity.value.source, owner, suffix)
             return URIRef(quantity.uri)
 
-        quantity = _resolved_context_quantity(quantity)
         node = self._owned_uri(f"{quantity.name}-{suffix}", owner)
         qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
         if qkind is None:
@@ -3012,14 +3315,7 @@ class MotionSpecDatasetBuilder:
                 key = (qty.name, subspace, None)
                 if key not in seen:
                     seen.add(key)
-                    sid = _scalar_id(qty, subspace, None)
-                    scalar_node = self._owned_uri(sid, motion)
-                    scalar_type = (
-                        QuantityType.Position
-                        if subspace == "position"
-                        else QuantityType.Orientation
-                    )
-                    self._add_quantity(scalar_node, scalar_type)
+                    self._view_node(spec.view, motion)
                 continue
 
             if axis is None or prop is None or prop[4] is None:
