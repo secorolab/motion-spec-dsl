@@ -15,7 +15,7 @@ Specification:
 EnvironmentSpec:
     "ENVIRONMENT" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "runtime" ":" runtime=EnvironmentRuntime
-        ("," "timestep" ":" timestep=BareScalar)?
+        ("," "timestep" ":" timestep=Measure)?
         ("," "ASSETS" "{" assets+=EnvironmentAsset[","] "}")?
         ("," "ASSEMBLY" "{" assembly+=EnvironmentAssembly[","] "}")?
         ("," "TRACE" trace=EnvironmentTrace)?
@@ -348,8 +348,10 @@ ReferenceValue:
 ;
 
 ScalarQuantity:
-    "=" value=FLOAT unit=Unit
+    "=" Measure
 ;
+
+Measure: value=FLOAT unit=Unit ;
 
 VectorQuantity:
     "{"
@@ -506,10 +508,8 @@ ContextRef:
     "[" quantity=[ContextQuantity:FQN] literal_value=QuantityValue? "]"
   | "<" quantity=[ContextQuantity|ScopedName] ">" ("." subspace=SubSpace ("." axis=Axis)?)?
   | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
-  | bare=BareScalar
+  | bare=Measure
 ;
-
-BareScalar: value=FLOAT unit=Unit ;
 
 ContextScope:
     "Pre" | "Spec" | "Post"
@@ -577,7 +577,7 @@ MonitorEntry:
     name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "and"
     (
         ("trigger" "event" event=EventName "when" "active"
-            ("for" debounce=BareScalar)?
+            ("for" debounce=Measure)?
             ("fallback" "<" fallback=[MotionSpec|IRI_TRUNK] ">")?) |
         ("set" "flag" flag=IRI_TRUNK "while" "active")
     )

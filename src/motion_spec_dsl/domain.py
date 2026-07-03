@@ -302,7 +302,7 @@ class EnvironmentSpec(IHasNamespaceDeclare):
     runtime: EnvironmentRuntime
     # Optional authored physics/control timestep (e.g. `timestep: 2.0 ms`).
     # Absent -> the backend default.
-    timestep: BareScalar | None = None
+    timestep: Measure | None = None
     assets: list[EnvironmentAsset] = field(default_factory=list)
     assembly: list[EnvironmentAssembly] = field(default_factory=list)
     trace: EnvironmentTrace | None = None
@@ -715,7 +715,7 @@ class ContextQuantity(NamedNamespaceObject):
     name: str
     type: QuantityType
     value: (
-        ScalarQuantity
+        Measure
         | VectorQuantity
         | ReferenceValue
         | SnapshotValue
@@ -777,15 +777,8 @@ class ContextQuantityAlias(ContextQuantity):
 
 
 @dataclass
-class ScalarQuantity:
-    value: float = 0.0
-    unit: str = ""
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-
-@dataclass
-class BareScalar:
-    """An anonymous literal magnitude+unit used directly as a threshold (e.g. `5.0 s`)."""
+class Measure:
+    """A dimensioned scalar literal (value+unit) — `= 5.0 N`, `5.0 s`, `timestep: 1.0 ms`."""
 
     value: float = 0.0
     unit: str = ""
@@ -968,8 +961,8 @@ class ContextRef:
     quantity: ContextQuantity | None = None
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
-    literal_value: ScalarQuantity | VectorQuantity | None = None
-    bare: BareScalar | None = None
+    literal_value: Measure | VectorQuantity | None = None
+    bare: Measure | None = None
     subspace: str | None = None
     axis: str | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1105,7 +1098,7 @@ class MonitorEntry(NamedNamespaceObject):
     # Optional `for <FLOAT> <Unit>` debounce clause: the monitored condition must
     # hold continuously for this long before the edge-triggered monitor fires.
     # Absent (None) == current byte-identical rising-edge behaviour.
-    debounce: BareScalar | None = None
+    debounce: Measure | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)

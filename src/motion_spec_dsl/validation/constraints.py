@@ -16,12 +16,12 @@ from motion_spec_dsl.domain import (
     EqualityConstraint,
     GreaterThanConstraint,
     LessThanConstraint,
+    Measure,
     Model,
     MotionSpec,
     ProfileSpec,
     QuantityType,
     ReferenceValue,
-    ScalarQuantity,
     SnapshotValue,
     SubSpace,
     WorldQuantity,
@@ -158,11 +158,11 @@ def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
     return right in compatible.get(left, {left})
 
 
-def _static_scalar(ref: ContextRef) -> ScalarQuantity | None:
+def _static_scalar(ref: ContextRef) -> Measure | None:
     value = context_ref_value(ref)
     value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
     scalar = getattr(value, "value", None)
-    return scalar if isinstance(scalar, ScalarQuantity) else None
+    return scalar if isinstance(scalar, Measure) else None
 
 
 def _check_profile_ref(

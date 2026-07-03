@@ -82,7 +82,7 @@ from motion_spec_dsl.domain import (
     QuantityType,
     PoseValue,
     ReferenceValue,
-    ScalarQuantity,
+    Measure,
     SnapshotValue,
     SpecContextDecl,
     ContextQuantity,
@@ -2398,7 +2398,7 @@ class MotionSpecDatasetBuilder:
                     self._emit_snapshot_position_metadata(node, quantity)
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
-            if isinstance(quantity.value, ScalarQuantity):
+            if isinstance(quantity.value, Measure):
                 self.graph.add(
                     (
                         node,
@@ -2787,7 +2787,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
-        if isinstance(ref.literal_value, ScalarQuantity):
+        if isinstance(ref.literal_value, Measure):
             self.graph.add(
                 (
                     node,
