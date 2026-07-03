@@ -305,7 +305,7 @@ GeoPropPair:
 ;
 
 GeoPropKey:
-    "of" | "wrt" | "ref-point" | "as-seen-by" | "ft-sensor" | "deadband"
+    "of" | "wrt" | "ref-point" | "as-seen-by" | "ft-sensor"
 ;
 
 ContextQuantity:
@@ -321,7 +321,7 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | ReferenceValue | NormValue
+    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | ReferenceValue
 ;
 
 // Admittance reference quantity: a virtual mass-damper(-spring) filter turning a
@@ -367,12 +367,6 @@ SnapshotValue:
 
 SnapshotClock:
     "task" | "entry"
-;
-
-// General vector-reduction operator: scalar magnitude of a vector-subspace view
-// (e.g. a Wrench's `.force`), with an optional deadband applied at codegen.
-NormValue:
-    "=" "Norm" "of" source=View ("{" "deadband" ":" deadband=ContextRef "}")?
 ;
 
 QuantityType:
@@ -483,6 +477,8 @@ View:
         "and"
         "<" distance_to=[WorldQuantity|FQN] ">"
     )
+    |
+    ("Norm" "of" norm_source=View)
     |
     is_elapsed?="elapsed"
     |
@@ -652,7 +648,7 @@ SolverEntry:
     name=IRI_TRUNK ":" "Solver" "{"
         "robot"     ":" robot=RobotRef ","
         "algorithm" ":" algorithm=SolverAlgorithm
-        ("," "damping" ":" damping=FLOAT)?
+        ("," "regularization" ":" regularization=FLOAT)?
         ("," "torque-limit" ":" torque_limit=FLOAT)?
         ("," "max-linear-accel" ":" max_linear_accel=FLOAT)?
         ("," "max-angular-accel" ":" max_angular_accel=FLOAT)?

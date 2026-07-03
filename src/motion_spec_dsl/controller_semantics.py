@@ -119,15 +119,20 @@ def infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
 
 
 def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
+    view = constraint.view
+    # `Norm of <inner>`: subspace is the reduced view's; unwrap for downstream callers.
+    while getattr(view, "norm_source", None) is not None:
+        view = view.norm_source
+
     if (
-        getattr(constraint.view, "distance_from", None) is not None
-        and getattr(constraint.view, "distance_to", None) is not None
+        getattr(view, "distance_from", None) is not None
+        and getattr(view, "distance_to", None) is not None
     ):
         return "distance"
 
-    subspace = constraint.view.subspace
+    subspace = view.subspace
     if subspace is None:
-        quantity = constraint.view.quantity
+        quantity = view.quantity
         if isinstance(quantity, WorldQuantity):
             quantity = _resolved_world_quantity(quantity)
             if quantity.type == WorldQuantityType.JointPosition:
@@ -137,12 +142,12 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
         return None
 
     raw = str(getattr(subspace, "value", subspace))
-    quantity = constraint.view.quantity
+    quantity = view.quantity
     if (
         isinstance(quantity, WorldQuantity)
         and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
         and raw in {"position", "orientation"}
-        and constraint.view.axis is None
+        and view.axis is None
     ):
         return raw
     return SUBSPACE_ALIAS.get(raw, raw)

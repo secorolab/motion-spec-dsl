@@ -647,7 +647,6 @@ class GeometricPropKey(StrEnum):
     RefPoint = "ref-point"
     AsSeenBy = "as-seen-by"
     FtSensor = "ft-sensor"
-    Deadband = "deadband"
 
 
 @dataclass
@@ -717,7 +716,6 @@ class ContextQuantity(NamedNamespaceObject):
         | VectorQuantity
         | ReferenceValue
         | SnapshotValue
-        | NormValue
         | TrajectoryValue
         | ProfileSpec
         | AdmittanceSpec
@@ -814,15 +812,6 @@ class SnapshotValue:
         # the default task clock so an omitted `on <clock>` == sampled-once.
         if not self.clock:
             self.clock = "task"
-
-
-@dataclass
-class NormValue:
-    """Scalar magnitude of a vector-subspace view — `= Norm of <ext-force>.force`."""
-
-    source: View
-    deadband: ContextRef | None = None
-    parent: object | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -956,6 +945,8 @@ class View:
     distance_from: WorldQuantity | None = None
     distance_to: WorldQuantity | None = None
     is_elapsed: bool = False
+    # `Norm of <inner>`: a read-time L2 reduction of a vector view to a scalar.
+    norm_source: "View | None" = None
 
     def __post_init__(self):
         if isinstance(self.subspace, str):
@@ -1254,11 +1245,11 @@ class SolverEntry(NamedNamespaceObject):
     name: str
     robot: RobotRef
     algorithm: str
-    # Optional control-loop tuning (DLS damping lambda, torque-limit override,
-    # Cartesian-accel "beta" clamp overrides). Unauthored FLOAT grammar attrs
+    # Optional control-loop tuning (DLS/Tikhonov regularization lambda, torque-limit
+    # override, Cartesian-accel "beta" clamp overrides). Unauthored FLOAT grammar attrs
     # default to 0.0, not None; 0.0 is never a valid authored value (SHACL
     # requires > 0), so it doubles as the "unauthored" sentinel downstream.
-    damping: float = 0.0
+    regularization: float = 0.0
     torque_limit: float = 0.0
     max_linear_accel: float = 0.0
     max_angular_accel: float = 0.0
@@ -1294,7 +1285,7 @@ class SolverAlias(SolverEntry):
     ref: SolverRef
     robot: RobotRef = field(init=False)
     algorithm: str = field(init=False)
-    damping: float = field(init=False, default=0.0)
+    regularization: float = field(init=False, default=0.0)
     torque_limit: float = field(init=False, default=0.0)
     max_linear_accel: float = field(init=False, default=0.0)
     max_angular_accel: float = field(init=False, default=0.0)
@@ -1310,7 +1301,7 @@ class SolverAlias(SolverEntry):
         self._uri = self.ref.solver.uri
         self.robot = self.ref.solver.robot
         self.algorithm = self.ref.solver.algorithm
-        self.damping = self.ref.solver.damping
+        self.regularization = self.ref.solver.regularization
         self.torque_limit = self.ref.solver.torque_limit
         self.max_linear_accel = self.ref.solver.max_linear_accel
         self.max_angular_accel = self.ref.solver.max_angular_accel

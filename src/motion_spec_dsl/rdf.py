@@ -82,7 +82,6 @@ from motion_spec_dsl.domain import (
     QuantityType,
     PoseValue,
     ReferenceValue,
-    NormValue,
     Measure,
     SnapshotValue,
     SpecContextDecl,
@@ -1732,16 +1731,10 @@ class MotionSpecDatasetBuilder:
             asb_v = _geo_prop(props, "as-seen-by")
 
             if qty.type == WorldQuantityType.Wrench:
-                # A Wrench carrying an `ft-sensor` prop is Measured from a plan-001
-                # FT sensor rather than Computed (e.g. via RNE support force).
-                # ir_gen reads ft-sensor-ref/deadband-ref to wire the runtime
-                # find_ft_sensor read; their absence means a computed Wrench.
+                # ft-sensor prop => Measured (FT sensor); absent => Computed wrench.
                 ft_ref = _geo_prop(props, "ft-sensor")
                 if ft_ref:
                     self.graph.add((node, MJ["ft-sensor-ref"], Literal(ft_ref)))
-                dead_ref = _geo_prop(props, "deadband")
-                if dead_ref:
-                    self.graph.add((node, MJ["deadband-ref"], Literal(dead_ref)))
 
             # geo-prop targets: walk up qty → WorldContextDecl → MotionSpec → motion_ns
             if of_v:
@@ -1868,6 +1861,20 @@ class MotionSpecDatasetBuilder:
             self.graph.add((op_node, RBDYN_OP["from"], source_node))
             self.graph.add((op_node, RBDYN_OP.to, target_node))
 
+    def _norm_scalar_type(self, view: Any) -> Any:
+        # Norm's scalar kind = the inner view's component kind (Wrench.force -> Force).
+        inner = getattr(view, "norm_source", None)
+        inner_qty = getattr(inner, "quantity", None)
+        inner_sub_raw = getattr(inner, "subspace", None)
+        inner_sub = str(getattr(inner_sub_raw, "value", inner_sub_raw))
+        if isinstance(inner_qty, WorldQuantity):
+            prop = WORLD_SPECS.get(inner_qty.type, (None, None, None, {}))[3].get(
+                SUBSPACE_ALIAS.get(inner_sub, inner_sub)
+            )
+            if prop is not None:
+                return prop[3]
+        return QuantityType.Force
+
     def _view_node(self, view: Any, owner: Any) -> URIRef:
         if (
             getattr(view, "distance_from", None) is not None
@@ -1877,6 +1884,24 @@ class MotionSpecDatasetBuilder:
                 f"distance-{_node_name(view.distance_from)}-{_node_name(view.distance_to)}",
                 owner,
             )
+
+        norm_source = getattr(view, "norm_source", None)
+        if norm_source is not None:
+            # `Norm of <inner>`: emit a Norm op (in1=inner vector, out=scalar); the
+            # scheduler picks it up as a closure.
+            inner_node = self._view_node(norm_source, owner)
+            inner_sub_raw = getattr(norm_source, "subspace", None)
+            inner_sub = str(getattr(inner_sub_raw, "value", inner_sub_raw))
+            scalar_uri = self._owned_uri(
+                f"norm-{_node_name(getattr(norm_source, 'quantity', None))}-{inner_sub}", owner
+            )
+            self._add_quantity(scalar_uri, self._norm_scalar_type(view))
+            self.graph.add((scalar_uri, RDF.type, VALUE_ROLE.Computed))
+            norm_node = URIRef(f"{scalar_uri}-op")
+            self.graph.add((norm_node, RDF.type, RBDYN_OP_EXT["Norm"]))
+            self.graph.add((norm_node, RBDYN_OP["in1"], inner_node))
+            self.graph.add((norm_node, RBDYN_OP["out"], scalar_uri))
+            return scalar_uri
 
         quantity = getattr(view, "quantity", None)
         if isinstance(quantity, WorldQuantity):
@@ -1924,16 +1949,37 @@ class MotionSpecDatasetBuilder:
                 self._register_world_component_view(
                     scalar_uri, quantity, mapped_subspace, axis, owner
                 )
-            elif quantity.type == WorldQuantityType.Wrench:
-                # Whole-subspace vector view, e.g. `<ext-force>.force` (no axis) —
-                # the Norm operator's vector input. Reuses the axis-based component
-                # view machinery with axis=None; cpp_access_expr drops the index.
-                self._register_world_component_view(
-                    scalar_uri, quantity, mapped_subspace, None, owner
-                )
+            elif quantity.type == WorldQuantityType.Wrench and mapped_subspace in {
+                "force",
+                "torque",
+            }:
+                # Whole force/torque 3-vector (no axis): map-ext:WrenchVectorView.
+                self._register_wrench_vector_view(scalar_uri, quantity, mapped_subspace, owner)
             return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
+
+    def _register_wrench_vector_view(
+        self,
+        scalar_uri: URIRef,
+        quantity: "WorldQuantity",
+        mapped_subspace: str,
+        owner: Any,
+    ) -> None:
+        # Whole force/torque 3-vector view (no axis); resolves to shared.<w>.force|.torque.
+        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
+        scalar_t = prop[3] if prop is not None else QuantityType.Force
+        self._add_quantity(scalar_uri, scalar_t)
+        view_uri = self._owned_uri(
+            f"view-{_scalar_id(quantity, mapped_subspace, None)}", owner
+        )
+        if (view_uri, RDF.type, MAP.View) in self.graph:
+            return
+        self.graph.add((view_uri, RDF.type, MAP.View))
+        self.graph.add((view_uri, RDF.type, MAP_EXT.WrenchVectorView))
+        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+        self.graph.add((view_uri, MAP.subobject, scalar_uri))
+        self.graph.add((view_uri, MAP.subspace, MAP[mapped_subspace]))
 
     def _register_pose_position_view(
         self,
@@ -2364,26 +2410,6 @@ class MotionSpecDatasetBuilder:
                     self._emit_declared_pose_frame_metadata(node, quantity, constraints, world_qtys)
                 elif quantity.type == QuantityType.Position:
                     self._emit_snapshot_position_metadata(node, quantity)
-                continue
-            if isinstance(quantity.value, NormValue):
-                # Scalar magnitude of a vector-subspace view (e.g. `= Norm of
-                # <ext-force>.force`): a Norm reduction operator whose input is the
-                # vector view node and whose output is this scalar quantity. Optional
-                # deadband zeroes the result below a threshold.
-                source_node = self._view_node(quantity.value.source, quantity)
-                norm_node = URIRef(f"{node}-norm")
-                self.graph.add((norm_node, RDF.type, RBDYN_OP_EXT["Norm"]))
-                self.graph.add((norm_node, RBDYN_OP["in1"], source_node))
-                self.graph.add((norm_node, RBDYN_OP["out"], node))
-                self.graph.add((node, RDF.type, VALUE_ROLE.Computed))
-                self.graph.add(
-                    (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
-                )
-                if quantity.value.deadband is not None:
-                    deadband_node = self._emit_context_ref_node(
-                        quantity.value.deadband, quantity, "deadband"
-                    )
-                    self.graph.add((norm_node, RBDYN_OP_EXT["deadband"], deadband_node))
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, Measure):
@@ -2855,6 +2881,39 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
         return ref_node
 
+    def _emit_constraint_threshold(
+        self, node: URIRef, spec: ConstraintSpecification, motion: MotionSpec
+    ) -> None:
+        # Comparison-constraint threshold emission (shared by the `Norm of` path).
+        # Equality isn't valid against a scalar reduction -> rejected.
+        expr = spec.expr
+        if isinstance(expr, GreaterThanConstraint):
+            self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
+            self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
+            thr = self._emit_context_ref_node(expr.threshold, motion, f"{spec.name}-threshold")
+            self.graph.add((node, CSTR.threshold, thr))
+        elif isinstance(expr, LessThanConstraint):
+            self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
+            self.graph.add((node, RDF.type, CSTR.LessThanConstraint))
+            thr = self._emit_context_ref_node(expr.threshold, motion, f"{spec.name}-threshold")
+            self.graph.add((node, CSTR.threshold, thr))
+        elif isinstance(expr, BilateralConstraint):
+            self.graph.add((node, RDF.type, CSTR.BilateralConstraint))
+            lo = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
+            up = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
+            self.graph.add((node, CSTR["lower-threshold"], lo))
+            self.graph.add((node, CSTR["upper-threshold"], up))
+        elif isinstance(expr, OutsideConstraint):
+            self.graph.add((node, RDF.type, CSTR_EXT.OutsideConstraint))
+            lo = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
+            up = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
+            self.graph.add((node, CSTR["lower-threshold"], lo))
+            self.graph.add((node, CSTR["upper-threshold"], up))
+        else:
+            raise ValueError(
+                f"Constraint '{spec.name}': 'Norm of' supports only comparison constraints."
+            )
+
     def _emit_constraints(
         self,
         motion: MotionSpec,
@@ -2872,6 +2931,20 @@ class MotionSpecDatasetBuilder:
 
             if getattr(spec.view, "is_elapsed", False):
                 self._emit_elapsed_constraint(node, spec, motion)
+                continue
+
+            if getattr(spec.view, "norm_source", None) is not None:
+                # `Norm of <inner>` LHS: the Norm's scalar output (from _view_node).
+                qty = None
+                subspace = None
+                axis = None
+                qty_node = self._view_node(spec.view, motion)
+                scalar_t = self._norm_scalar_type(spec.view)
+                type_name = CSTR_TYPE_NAME.get(scalar_t, scalar_t)
+                self.graph.add((node, RDF.type, CSTR.Constraint))
+                self.graph.add((node, RDF.type, _ns_term(CSTR, f"{type_name}Constraint")))
+                self.graph.add((node, CSTR.quantity, qty_node))
+                self._emit_constraint_threshold(node, spec, motion)
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
@@ -3944,6 +4017,14 @@ class MotionSpecDatasetBuilder:
 
             if getattr(spec.view, "is_elapsed", False):
                 error_node = self._elapsed_quantity_node(spec, cref.motion)
+            elif getattr(spec.view, "norm_source", None) is not None:
+                # `Norm of <inner>`: error is a plain scalar of the reduction's kind.
+                scalar_t = self._norm_scalar_type(spec.view)
+                error_id = f"{_evaluator_id(spec)}-err"
+                error_node = self._owned_uri(error_id, spec.parent)
+                if error_id not in seen_error_ids:
+                    seen_error_ids.add(error_id)
+                    self._add_quantity(error_node, scalar_t)
             else:
                 qty = self._resolve_constraint_quantity(spec, world_qtys)
                 if qty is None:
@@ -4170,16 +4251,16 @@ class MotionSpecDatasetBuilder:
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
 
-            # Optional control-loop tuning (DLS damping, torque-limit override, beta
-            # clamps). Unauthored FLOAT grammar attrs default to 0.0, not None; a
-            # truthy check is the correct "was this authored" test since SHACL
+            # Optional control-loop tuning (DLS/Tikhonov regularization, torque-limit
+            # override, beta clamps). Unauthored FLOAT grammar attrs default to 0.0, not
+            # None; a truthy check is the correct "was this authored" test since SHACL
             # requires these to be strictly positive when present.
-            if getattr(solver, "damping", None):
+            if getattr(solver, "regularization", None):
                 self.graph.add(
                     (
                         solver_node,
-                        SLV_EXT["damping"],
-                        Literal(float(solver.damping), datatype=XSD.double),
+                        SLV_EXT["regularization"],
+                        Literal(float(solver.regularization), datatype=XSD.double),
                     )
                 )
             if getattr(solver, "torque_limit", None):

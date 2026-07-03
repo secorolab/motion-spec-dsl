@@ -181,6 +181,19 @@ def validate_supported_solver_algorithms(model: Model) -> None:
                     )
 
 
+def validate_solver_regularization_algorithm(model: Model) -> None:
+    # `regularization` (DLS lambda) is only consumed by the RNE constraint-accel solve.
+    for handler in constraint_handlers(model):
+        for solver in handler.solvers:
+            resolved_solver = _resolved_solver(solver)
+            if resolved_solver.regularization and str(resolved_solver.algorithm) != "RNE":
+                raise semantic_error(
+                    f"Solver '{resolved_solver.name}' authors regularization with algorithm "
+                    f"{resolved_solver.algorithm}; it only applies to RNE.",
+                    solver,
+                )
+
+
 def validate_handler_control_mode_solver_compatibility(model: Model) -> None:
     for handler in constraint_handlers(model):
         for solver in handler.solvers:

@@ -341,14 +341,20 @@ def constraint_context_refs(constraint: ConstraintSpecification) -> list[Context
 
 
 def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[object | None]:
-    if constraint.view is None or getattr(constraint.view, "is_elapsed", False):
+    view = constraint.view
+    if view is None or getattr(view, "is_elapsed", False):
+        return []
+    # `Norm of <inner>` — unwrap to the reduced view's world quantity.
+    while getattr(view, "norm_source", None) is not None:
+        view = view.norm_source
+    if getattr(view, "is_elapsed", False):
         return []
     if (
-        getattr(constraint.view, "distance_from", None) is not None
-        and getattr(constraint.view, "distance_to", None) is not None
+        getattr(view, "distance_from", None) is not None
+        and getattr(view, "distance_to", None) is not None
     ):
-        return [constraint.view.distance_from, constraint.view.distance_to]
-    return [constraint.view.quantity]
+        return [view.distance_from, view.distance_to]
+    return [view.quantity]
 
 
 def validate_constraint_context_refs(model: Model) -> None:
