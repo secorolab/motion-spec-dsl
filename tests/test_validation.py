@@ -484,7 +484,7 @@ MOTION_SPEC (ns=app) comply {{
     CONTEXT {{
         world: World {{
             twist-ee: VelocityTwist {{ of: bracelet_link, wrt: base_link, as-seen-by: base_link }},
-            ext-force: ExternalForce {{ ft-sensor: wrist_ft, as-seen-by: base_link }}
+            ext-force: Wrench {{ ft-sensor: wrist_ft, as-seen-by: base_link }}
         }},
         spec: Spec {{
             admit-vx: Admittance {{ force: <world.ext-force>.force.x, {mass}damping = 60.0, stiffness = 0.0, max-velocity = 0.20 m/s }}

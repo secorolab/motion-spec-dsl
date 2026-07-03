@@ -71,11 +71,6 @@ def _view_shape(view) -> QuantityType | None:
             return QuantityType.Force
         if subspace == SubSpace.Torque:
             return QuantityType.Torque
-    if quantity.type == WorldQuantityType.ExternalForce:
-        if subspace is None:
-            return QuantityType.Force
-        if subspace == SubSpace.Force:
-            return QuantityType.Force
     if quantity.type == WorldQuantityType.Pose:
         if subspace is None:
             return QuantityType.Pose

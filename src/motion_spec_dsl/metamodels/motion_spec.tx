@@ -287,8 +287,6 @@ WorldQuantity:
 WorldQuantityType:
     "VelocityTwist"              |
     "Wrench"                     |
-    "ExternalForceMagnitude"     |
-    "ExternalForce"              |
     "Pose"                       |
     "JointPosition"              |
     "KinematicChain"             |
@@ -323,7 +321,7 @@ SnapshotQuantityType:
 ;
 
 ContextQuantityValue:
-    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | ReferenceValue
+    AdmittanceSpec | QuantityValue | SnapshotValue | TrajectoryValue | ProfileSpec | PoseValue | ReferenceValue | NormValue
 ;
 
 // Admittance reference quantity: a virtual mass-damper(-spring) filter turning a
@@ -369,6 +367,12 @@ SnapshotValue:
 
 SnapshotClock:
     "task" | "entry"
+;
+
+// General vector-reduction operator: scalar magnitude of a vector-subspace view
+// (e.g. a Wrench's `.force`), with an optional deadband applied at codegen.
+NormValue:
+    "=" "Norm" "of" source=View ("{" "deadband" ":" deadband=ContextRef "}")?
 ;
 
 QuantityType:

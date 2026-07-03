@@ -132,7 +132,7 @@ def test_reference_value_context_views_emit_map_views() -> None:
                     as-seen-by: frame-base
                 },
                 wrench-ee: Wrench { ref-point: point-ee, as-seen-by: frame-base },
-                external-force-ee: ExternalForce { ft-sensor: wrist-ft, as-seen-by: frame-base },
+                external-force-ee: Wrench { ft-sensor: wrist-ft, as-seen-by: frame-base },
                 gravity: Gravity
             },
             spec: Spec {
@@ -231,7 +231,7 @@ def test_reference_value_context_views_emit_map_views() -> None:
     world_expected = [
         ("snap-vx", "twist-ee-base", "linear", "x", MAP.VelocityTwistCoordinateView),
         ("snap-fx", "wrench-ee", "force", "x", MAP.WrenchCoordinateView),
-        ("snap-ext-fx", "external-force-ee", "force", "x", MJ.ExternalForceCoordinateView),
+        ("snap-ext-fx", "external-force-ee", "force", "x", MAP.WrenchCoordinateView),
     ]
     for snap_name, world_name, subspace, axis, view_type in world_expected:
         snap = quantities[snap_name]

@@ -477,7 +477,7 @@ class ProfileSpec:
 @dataclass
 class AdmittanceSpec:
     parent: object
-    force: object  # View onto an ExternalForce axis (force-in)
+    force: object  # View onto a measured-Wrench force axis (force-in)
     mass: float
     damping: float
     stiffness: float = 0.0
@@ -599,8 +599,6 @@ class WorldQuantityType(StrEnum):
     Pose = "Pose"
     VelocityTwist = "VelocityTwist"
     Wrench = "Wrench"
-    ExternalForceMagnitude = "ExternalForceMagnitude"
-    ExternalForce = "ExternalForce"
     JointPosition = "JointPosition"
     KinematicChain = "KinematicChain"
     Link = "Link"
@@ -719,6 +717,7 @@ class ContextQuantity(NamedNamespaceObject):
         | VectorQuantity
         | ReferenceValue
         | SnapshotValue
+        | NormValue
         | TrajectoryValue
         | ProfileSpec
         | AdmittanceSpec
@@ -815,6 +814,15 @@ class SnapshotValue:
         # the default task clock so an omitted `on <clock>` == sampled-once.
         if not self.clock:
             self.clock = "task"
+
+
+@dataclass
+class NormValue:
+    """Scalar magnitude of a vector-subspace view — `= Norm of <ext-force>.force`."""
+
+    source: View
+    deadband: ContextRef | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass

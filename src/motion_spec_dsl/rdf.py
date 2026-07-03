@@ -82,6 +82,7 @@ from motion_spec_dsl.domain import (
     QuantityType,
     PoseValue,
     ReferenceValue,
+    NormValue,
     Measure,
     SnapshotValue,
     SpecContextDecl,
@@ -174,30 +175,6 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.PlaneAngle,),
         (QUDT_UNIT.RAD,),
         {},
-    ),
-    # Measured external-force magnitude (Newtons). Scalar: the QUDT Quantity type
-    # makes it a `double` shared member; the MJ coordinate type lets ir_gen dispatch
-    # the per-step find_ft_sensor read. Sourced from a plan-001 ft-sensor (carried as
-    # an ft-sensor-ref property in _emit_world_quantities).
-    WorldQuantityType.ExternalForceMagnitude: (
-        # QUDT_QKIND.Force is also an rdf:type (not just hasQuantityKind) so the scalar
-        # `force greater than <Force-threshold>` monitor satisfies the cstr:quantity
-        # sh:class qudt_quant:Force shape, symmetric with the authored Force threshold.
-        (QUDT_SCHEMA.Quantity, MJ.ExternalForceMagnitudeCoordinate, QUDT_QKIND.Force),
-        (QUDT_QKIND.Force,),
-        (QUDT_UNIT.N,),
-        {},
-    ),
-    # Measured external-force VECTOR (plan 003): same FT source as the scalar
-    # magnitude, but a KDL::Vector shared member with x/y/z force-subspace views
-    # (mirror Wrench's force views). Feeds the Admittance reference filter.
-    WorldQuantityType.ExternalForce: (
-        (QUDT_SCHEMA.Quantity, MJ.ExternalForceCoordinate, QUDT_QKIND.Force),
-        (QUDT_QKIND.Force,),
-        (QUDT_UNIT.N,),
-        {
-            "force": ("force", None, None, QuantityType.Force, MJ.ExternalForceCoordinateView),
-        },
     ),
 }
 
@@ -349,19 +326,12 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
 def _view_subspace(constraint: ConstraintSpecification) -> str:
     subspace = constraint_view_subspace(constraint)
     if subspace is None:
-        # Bare-scalar external-force magnitude: monitored directly with no sub-view
-        # (like JointPosition). Synthesise a subspace so the scalar comparison emits.
-        # ponytail: the symmetric root fix lives in controller_semantics.constraint_view_subspace
-        # (out of this plan's scope); this keeps the change in rdf.py.
-        qty = getattr(getattr(constraint, "view", None), "quantity", None)
-        if getattr(qty, "type", None) == WorldQuantityType.ExternalForceMagnitude:
-            return "ext-force"
         raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
     return subspace
 
 
 def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
-    if quantity.type in (WorldQuantityType.JointPosition, WorldQuantityType.ExternalForceMagnitude):
+    if quantity.type == WorldQuantityType.JointPosition:
         return quantity.name
     if axis is None:
         return f"{quantity.name}.{subspace}"
@@ -407,8 +377,6 @@ def _pose_diff_measured_derivative_id(
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
-    if quantity.type == WorldQuantityType.ExternalForceMagnitude:
-        return QuantityType.Force
     if quantity.type == WorldQuantityType.Pose:
         if subspace == "pose":
             return QuantityType.Pose
@@ -1728,11 +1696,6 @@ class MotionSpecDatasetBuilder:
                 add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
             elif qty.type == WorldQuantityType.JointPosition:
                 add_implicit(_geo_prop(props, "of"), KC.Joint, qty)
-            elif qty.type in (
-                WorldQuantityType.ExternalForceMagnitude,
-                WorldQuantityType.ExternalForce,
-            ):
-                add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
 
         for node, rdf_type in implicit:
             self.graph.add((node, RDF.type, rdf_type))
@@ -1768,12 +1731,11 @@ class MotionSpecDatasetBuilder:
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by")
 
-            if qty.type in (
-                WorldQuantityType.ExternalForceMagnitude,
-                WorldQuantityType.ExternalForce,
-            ):
-                # Carry the source ft-sensor logical name (plan 001) and the optional
-                # authored deadband Spec name. ir_gen reads these to wire the runtime read.
+            if qty.type == WorldQuantityType.Wrench:
+                # A Wrench carrying an `ft-sensor` prop is Measured from a plan-001
+                # FT sensor rather than Computed (e.g. via RNE support force).
+                # ir_gen reads ft-sensor-ref/deadband-ref to wire the runtime
+                # find_ft_sensor read; their absence means a computed Wrench.
                 ft_ref = _geo_prop(props, "ft-sensor")
                 if ft_ref:
                     self.graph.add((node, MJ["ft-sensor-ref"], Literal(ft_ref)))
@@ -1924,8 +1886,6 @@ class MotionSpecDatasetBuilder:
                 WorldQuantityType.Pose,
                 WorldQuantityType.VelocityTwist,
                 WorldQuantityType.Wrench,
-                WorldQuantityType.ExternalForce,
-                WorldQuantityType.ExternalForceMagnitude,
                 WorldQuantityType.JointPosition,
             }:
                 return URIRef(quantity.uri)
@@ -1963,6 +1923,13 @@ class MotionSpecDatasetBuilder:
             elif axis is not None:
                 self._register_world_component_view(
                     scalar_uri, quantity, mapped_subspace, axis, owner
+                )
+            elif quantity.type == WorldQuantityType.Wrench:
+                # Whole-subspace vector view, e.g. `<ext-force>.force` (no axis) —
+                # the Norm operator's vector input. Reuses the axis-based component
+                # view machinery with axis=None; cpp_access_expr drops the index.
+                self._register_world_component_view(
+                    scalar_uri, quantity, mapped_subspace, None, owner
                 )
             return scalar_uri
 
@@ -2085,7 +2052,7 @@ class MotionSpecDatasetBuilder:
         scalar_uri: URIRef,
         quantity: WorldQuantity,
         mapped_subspace: str,
-        axis: str,
+        axis: str | None,
         owner: Any,
     ) -> None:
         prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
@@ -2101,7 +2068,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
         self.graph.add((view_uri, MAP.subobject, scalar_uri))
         self.graph.add((view_uri, MAP.subspace, MAP[view_subspace_uri]))
-        self.graph.add((view_uri, MAP.axis, MAP[axis]))
+        if axis is not None:
+            self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
     def _emit_context_composite_metadata(
         self,
@@ -2396,6 +2364,26 @@ class MotionSpecDatasetBuilder:
                     self._emit_declared_pose_frame_metadata(node, quantity, constraints, world_qtys)
                 elif quantity.type == QuantityType.Position:
                     self._emit_snapshot_position_metadata(node, quantity)
+                continue
+            if isinstance(quantity.value, NormValue):
+                # Scalar magnitude of a vector-subspace view (e.g. `= Norm of
+                # <ext-force>.force`): a Norm reduction operator whose input is the
+                # vector view node and whose output is this scalar quantity. Optional
+                # deadband zeroes the result below a threshold.
+                source_node = self._view_node(quantity.value.source, quantity)
+                norm_node = URIRef(f"{node}-norm")
+                self.graph.add((norm_node, RDF.type, RBDYN_OP_EXT["Norm"]))
+                self.graph.add((norm_node, RBDYN_OP["in1"], source_node))
+                self.graph.add((norm_node, RBDYN_OP["out"], node))
+                self.graph.add((node, RDF.type, VALUE_ROLE.Computed))
+                self.graph.add(
+                    (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
+                )
+                if quantity.value.deadband is not None:
+                    deadband_node = self._emit_context_ref_node(
+                        quantity.value.deadband, quantity, "deadband"
+                    )
+                    self.graph.add((norm_node, RBDYN_OP_EXT["deadband"], deadband_node))
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, Measure):
@@ -2905,12 +2893,7 @@ class MotionSpecDatasetBuilder:
                 )
 
             if qty is not None:
-                if (
-                    subspace == "pose" and axis is None and qty.type == WorldQuantityType.Pose
-                ) or qty.type == WorldQuantityType.ExternalForceMagnitude:
-                    # The world node carries the QUDT typing (qkind:Force, Measured) the
-                    # cstr:ForceConstraint shape needs and is the same node the solver-output
-                    # find_ft_sensor read fills (both `self.id()` to `ext_force`).
+                if subspace == "pose" and axis is None and qty.type == WorldQuantityType.Pose:
                     qty_node = URIRef(qty.uri)
                 else:
                     sid = _scalar_id(qty, subspace, axis)
@@ -4243,13 +4226,14 @@ class MotionSpecDatasetBuilder:
                             self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                     elif qty.type == WorldQuantityType.JointPosition:
                         self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
-                    elif qty.type in (
-                        WorldQuantityType.ExternalForceMagnitude,
-                        WorldQuantityType.ExternalForce,
-                    ):
-                        # Measured external-force quantity: register it as a solver output
-                        # (like JointPosition) so its per-step find_ft_sensor read emits.
-                        self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
+                    elif qty.type == WorldQuantityType.Wrench:
+                        props = qty.props if isinstance(qty.props, GeometricProps) else None
+                        if _geo_prop(props, "ft-sensor"):
+                            # Measured Wrench (FT sensor source): register it as a
+                            # solver output (like JointPosition) so its per-step
+                            # find_ft_sensor read emits. Computed Wrenches (no
+                            # ft-sensor prop) are not solver outputs here.
+                            self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(
                 handler,
