@@ -185,7 +185,9 @@ Attachment gripper using <gripper-mjcf> {
 }
 ```
 
-`attach-to` targets are `<assembly>.body(name)`, `.site(name)`, or `.frame(name)`.
+`attach-to` targets are `<assembly>.body(name)`, `.site(name)`, or `.frame(name)`. Other
+assembly fields are `tool-body` (the gripper body a tool is mounted on) and `free: true`
+(give an object a free joint so it can move in the scene).
 
 ### Traces
 
