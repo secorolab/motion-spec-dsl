@@ -207,10 +207,8 @@ def controller_command_record(
     raw_subspace = constraint.view.subspace
     axis = axis_label(getattr(constraint.view, "axis", None))
     view_subspace = constraint_view_subspace(constraint)
-    # `raw_subspace` is None for a `distance between <A> and <B>` view (it has no
-    # SubSpace enum, only distance_from/distance_to); fall back to the resolved
-    # string subspace ("distance") so it still infers a linear command without
-    # requiring an explicit 'as'.
+    # `raw_subspace` is None for a `distance between <A> and <B>` view (no SubSpace enum); fall
+    # back to the resolved string subspace ("distance") so it still infers a linear command.
     command_type = (
         resolved_controller.command_type
         or infer_command_type(raw_subspace)
@@ -248,10 +246,8 @@ def controller_command_record(
                 else ANGULAR_ACCELERATION_AXES
             )
         elif view_subspace == "distance" and raw_subspace is None:
-            # `distance between <A> and <B>` (real distance-between view, never the
-            # `.position.x` axis alias -- that always carries an axis and raw_subspace
-            # is None only for the former): a single direction-aligned linear
-            # acceleration constraint, driven by the runtime PoseToDirection direction.
+            # `distance between <A> and <B>` (never the `.position.x` axis alias): a single
+            # direction-aligned linear acceleration constraint, driven by the runtime direction.
             acceleration_constraints = (AccelerationConstraintRecord("linear-acceleration", "distance"),)
 
     return ControllerCommandRecord(

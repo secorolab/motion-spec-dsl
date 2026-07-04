@@ -1326,12 +1326,8 @@ class SolverEntry(NamedNamespaceObject):
     name: str
     robot: RobotRef
     algorithm: str
-    # Legacy scalar solver metadata. New saturation/clamp behavior is authored
-    # through `limits`; unauthored FLOAT grammar attrs default to 0.0, not None.
+    # DLS/Tikhonov regularization lambda; unauthored FLOAT defaults to 0.0, not None.
     regularization: float = 0.0
-    torque_limit: float = 0.0
-    max_linear_accel: float = 0.0
-    max_angular_accel: float = 0.0
     limits: SolverLimits | None = None
     root: RobotAnchorRef | None = None
     gravity: WorldQuantity | None = None
@@ -1366,9 +1362,6 @@ class SolverAlias(SolverEntry):
     robot: RobotRef = field(init=False)
     algorithm: str = field(init=False)
     regularization: float = field(init=False, default=0.0)
-    torque_limit: float = field(init=False, default=0.0)
-    max_linear_accel: float = field(init=False, default=0.0)
-    max_angular_accel: float = field(init=False, default=0.0)
     root: RobotAnchorRef | None = field(init=False, default=None)
     gravity: WorldQuantity | None = field(init=False, default=None)
     gravity_value: ContextRef | None = field(init=False, default=None)
@@ -1382,9 +1375,6 @@ class SolverAlias(SolverEntry):
         self.robot = self.ref.solver.robot
         self.algorithm = self.ref.solver.algorithm
         self.regularization = self.ref.solver.regularization
-        self.torque_limit = self.ref.solver.torque_limit
-        self.max_linear_accel = self.ref.solver.max_linear_accel
-        self.max_angular_accel = self.ref.solver.max_angular_accel
         self.root = self.ref.solver.root
         self.gravity = self.ref.solver.gravity
         self.gravity_value = self.ref.solver.gravity_value

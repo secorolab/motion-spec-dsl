@@ -688,9 +688,6 @@ SolverEntry:
         "robot"     ":" robot=RobotRef ","
         "algorithm" ":" algorithm=SolverAlgorithm
         ("," "regularization" ":" regularization=FLOAT)?
-        ("," "torque-limit" ":" torque_limit=FLOAT)?
-        ("," "max-linear-accel" ":" max_linear_accel=FLOAT)?
-        ("," "max-angular-accel" ":" max_angular_accel=FLOAT)?
         ("," limits=SolverLimits)?
         ("," "root"      ":" root=RobotAnchorRef
             ("," "end"  ":" end=RobotAnchorRef)?

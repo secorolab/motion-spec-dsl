@@ -491,12 +491,8 @@ class MotionSpecDatasetBuilder:
         self.graph = self.dataset.default_graph
         self._default_ns_owner: Any | None = next(iter(self.authored_handlers), None)
         self._relative_pose_plans: dict[tuple[Any, ...], _RelativePosePlan] = {}
-        # The relative-pose / distance computation between two world quantities lives in the shared
-        # (app) namespace, named by the quantities — so it is the same node no matter which motion
-        # asks for it. Emit it once across all motions; a second motion that needs the same distance
-        # just references the shared node (its schedule still discovers it via backward traversal).
-        # Without this, two handlers computing the same `distance between` duplicate the compose/op
-        # node's outputs and fail SHACL maxCount on geom-op:composite / geom-op:pose.
+        # The relative-pose / distance node is namespaced by its two quantities, so emit it once
+        # across motions -- re-emitting duplicates the compose/op outputs and fails SHACL maxCount.
         self._emitted_distance_ops: set[str] = set()
 
     def build(self) -> tuple[Dataset, dict[str, str]]:
@@ -694,10 +690,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add((instance_node, RDF.type, ENV.ModelledObject))
             if not is_attachment_instance:
                 self.graph.add((instance_node, RDF.type, ENV.RigidObject))
-                # Also a Pose of/wrt/as-seen-by Frame. Its origin Point and
-                # attached SimplicialComplex are separate, linked entities
-                # (_frame_origin_point / _frame_body), minted lazily wherever
-                # Position/Twist relations actually reference it.
+                # Also a Pose (of/wrt/as-seen-by Frame); its origin Point and SimplicialComplex body are
+                # separate entities, minted lazily where Position/Twist relations reference it.
                 self.graph.add((instance_node, RDF.type, GEOM_ENT.Frame))
             self.graph.add((instance_node, ENV["of-object"], URIRef(instance.asset.uri)))
             self.graph.add((instance_node, ENV["has-object-model"], model_node))
@@ -1791,12 +1785,8 @@ class MotionSpecDatasetBuilder:
                     explicit_structural_nodes.add(node)
                     self.graph.add((node, RDF.type, rdf_type))
                     if qty.type == WorldEntityType.SceneObject:
-                        # A scene object is also a Pose of/wrt/as-seen-by Frame.
-                        # Its origin Point and attached SimplicialComplex are
-                        # separate, linked entities (_frame_origin_point /
-                        # _frame_body), minted lazily wherever Position/Twist
-                        # relations actually reference it -- not fused onto this
-                        # node (a Frame is not a Point is not a body).
+                        # A scene object is a Pose (of/wrt/as-seen-by Frame); its origin Point and
+                        # SimplicialComplex body are separate entities, minted lazily where referenced.
                         self.graph.add((node, RDF.type, GEOM_ENT.Frame))
 
         # Implicit entities inferred from geo props. Emit them both where prop
@@ -1813,13 +1803,8 @@ class MotionSpecDatasetBuilder:
             if default_node not in explicit_structural_nodes:
                 implicit.setdefault((default_node, rdf_type), None)
 
-        # A name referenced only via geo-props (never independently declared as a
-        # Frame/Link/SceneObject) still needs `geom-ent:Frame` typing for
-        # SHACL conformance -- it really is a kinematic frame regardless of
-        # which relation refers to it. Its origin Point / attached
-        # SimplicialComplex are separate linked entities, minted lazily at the
-        # relation-emission site (_frame_origin_point / _frame_body), not typed
-        # onto this same node.
+        # A name referenced only via geo-props still needs geom-ent:Frame typing for SHACL. Its
+        # origin Point / body are separate entities, minted lazily at the relation-emission site.
         for qty in world_qtys.values():
             props = qty.props if isinstance(qty.props, GeometricProps) else None
             if qty.type == WorldQuantityType.Pose:
@@ -1878,10 +1863,8 @@ class MotionSpecDatasetBuilder:
                 if ft_ref:
                     self.graph.add((node, MJ["ft-sensor-ref"], Literal(ft_ref)))
 
-            # geo-prop targets: walk up qty → WorldContextDecl → MotionSpec → motion_ns
-            # geom-rel:Pose.of/wrt need the Frame itself; geom-rel:VelocityTwist.of/wrt
-            # need the Frame's attached body (SimplicialComplex) -- context-aware
-            # per relation type, not the same fused node for both.
+            # geo-prop targets: Pose.of/wrt need the Frame itself; VelocityTwist.of/wrt need the
+            # Frame's attached body (SimplicialComplex) -- per relation type, not one fused node.
             if of_v:
                 of_frame = self._owned_uri(of_v, qty)
                 of_target = (
@@ -2142,11 +2125,8 @@ class MotionSpecDatasetBuilder:
         quantity: "WorldQuantity",
         owner: Any,
     ) -> None:
-        # Promote `<pose>.position` to a Position-coordinate node so IR.position()
-        # picks it up as a Position record (KDL::Vector in shared) instead of a
-        # generic Quantity (double). Also register a MAP.View so access-expr
-        # resolves reads of the view to `shared.<pose>.p` at runtime — the
-        # subobject field itself is never assigned to. Idempotent.
+        # Promote `<pose>.position` to a Position-coordinate node (so IR emits a KDL::Vector, not a
+        # double) and register a MAP.View so reads resolve to `shared.<pose>.p`. Idempotent.
         if (scalar_uri, RDF.type, GEOM_COORD.PositionCoordinate) in self.graph:
             return
         props = quantity.props if isinstance(quantity.props, GeometricProps) else None
@@ -2536,10 +2516,8 @@ class MotionSpecDatasetBuilder:
                     offset_ref_node = self._emit_context_ref_node(
                         quantity.value.offset, quantity, "add-offset"
                     )
-                    # Own the op nodes by the quantity's (motion-qualified) URI, not the flat model
-                    # namespace: two motions that declare a same-named quantity with the same value
-                    # expression must not collapse into one shared op node that accumulates both
-                    # motions' inputs.
+                    # Own the op nodes by the quantity's motion-qualified URI (not the flat namespace) so two
+                    # motions declaring a same-named quantity don't collapse into one op accumulating both inputs.
                     add_node = URIRef(f"{node}-add")
                     out_node = URIRef(f"{node}-add-out")
                     qkind = (
@@ -3246,10 +3224,8 @@ class MotionSpecDatasetBuilder:
         admit_qty: ContextQuantity,
         scalar_t: Any,
     ) -> URIRef:
-        # Mirror _emit_velocity_profile_reference: emit a stateful reference-generating
-        # op whose `reference` output becomes the constraint's reference-value. The op's
-        # integrator state lives on the constraint's controller (state.<ctrl>), exactly
-        # like the VelocityProfile vp_* members on PIDControl.
+        # Mirror _emit_velocity_profile_reference: a stateful reference-generating op whose
+        # integrator state lives on the constraint's controller (state.<ctrl>).
         spec_val = admit_qty.value
         if not isinstance(spec_val, AdmittanceSpec):
             raise ValueError(f"Admittance quantity '{admit_qty.name}' has no filter spec.")
@@ -3838,10 +3814,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add((diff_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
             self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]))
             self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-            # geom-coord-ext:PoseDifferenceCoordinate requires its own linear/angular
-            # VectorXYZ sub-resources (min/max 1 each); the single KDL::Twist storage
-            # (shared-member-PoseDifference) is unaffected, these exist for RDF/SHACL
-            # conformance only, component views still address diff_node directly.
+            # geom-coord-ext:PoseDifferenceCoordinate needs its own linear/angular VectorXYZ sub-
+            # resources for SHACL only; the KDL::Twist storage and component views are unaffected.
             linear_node = self._owned_uri(f"{diff_id}-linear", spec.parent)
             angular_node = self._owned_uri(f"{diff_id}-angular", spec.parent)
             self.graph.add((diff_node, GEOM_COORD_EXT["linear"], linear_node))
@@ -3867,12 +3841,8 @@ class MotionSpecDatasetBuilder:
             for component in components:
                 err_id = _pose_diff_error_id(ctrl, component)
                 err_node = self._owned_uri(err_id, spec.parent)
-                # Pose-diff components are position-diff (Length) or orientation-diff
-                # (Angle), not accelerations. `component` is the neutral
-                # PoseDiffComponentRecord translated from the ACHD acceleration
-                # records at the call site; the real ACHD acceleration-constraint
-                # path (see SLV emission below) still uses AccelerationConstraintRecord
-                # with its own AngularAcceleration/LinearAcceleration quantity_type.
+                # Pose-diff components are position/orientation diffs (Length/Angle), not
+                # accelerations; the real ACHD path (SLV emission below) keeps its own records.
                 is_linear = component.part == "linear"
                 err_kind = QUDT_QKIND.Length if is_linear else QUDT_QKIND.Angle
                 err_unit = QUDT_UNIT.M if is_linear else QUDT_UNIT["RAD"]
@@ -4034,10 +4004,8 @@ class MotionSpecDatasetBuilder:
             ):
                 ref_uri = None
                 if subspace == "pose":
-                    # Full-pose equality: the constraint's reference-value already
-                    # encodes any frame conversion (e.g. a cube-relative trajectory
-                    # composed into the world frame via ComposePose). The diff must be
-                    # taken against that world-frame pose, not the raw reference frame.
+                    # Full-pose equality: the reference-value already encodes frame conversion, so the diff
+                    # must be taken against that world-frame pose, not the raw reference frame.
                     ref_uri = self.graph.value(URIRef(spec.uri), CSTR["reference-value"])
                 else:
                     # Position/orientation diffs extract components from the parent
@@ -4516,8 +4484,6 @@ class MotionSpecDatasetBuilder:
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
 
-            # Legacy scalar solver metadata. Explicit runtime limiting is emitted
-            # through solver.limits saturations below.
             if getattr(solver, "regularization", None):
                 self.graph.add(
                     (
@@ -4525,34 +4491,6 @@ class MotionSpecDatasetBuilder:
                         SLV_EXT["regularization"],
                         Literal(float(solver.regularization), datatype=XSD.double),
                     )
-                )
-            if getattr(solver, "torque_limit", None):
-                torque_limit_node = URIRef(f"{solver_node}-torque-limit")
-                self._emit_scalar_quantity(
-                    torque_limit_node, solver.torque_limit, QUDT_QKIND.Torque, QUDT_UNIT["N-M"]
-                )
-                self.graph.add((solver_node, SLV_EXT["torque-limit"], torque_limit_node))
-            if getattr(solver, "max_linear_accel", None):
-                max_linear_accel_node = URIRef(f"{solver_node}-max-linear-accel")
-                self._emit_scalar_quantity(
-                    max_linear_accel_node,
-                    solver.max_linear_accel,
-                    QUDT_QKIND.LinearAcceleration,
-                    QUDT_UNIT["M-PER-SEC2"],
-                )
-                self.graph.add(
-                    (solver_node, SLV_EXT["max-linear-accel"], max_linear_accel_node)
-                )
-            if getattr(solver, "max_angular_accel", None):
-                max_angular_accel_node = URIRef(f"{solver_node}-max-angular-accel")
-                self._emit_scalar_quantity(
-                    max_angular_accel_node,
-                    solver.max_angular_accel,
-                    QUDT_QKIND.AngularAcceleration,
-                    QUDT_UNIT["RAD-PER-SEC2"],
-                )
-                self.graph.add(
-                    (solver_node, SLV_EXT["max-angular-accel"], max_angular_accel_node)
                 )
 
             solver_limits_by_target = {
@@ -4594,10 +4532,8 @@ class MotionSpecDatasetBuilder:
                     elif qty.type == WorldQuantityType.Wrench:
                         props = qty.props if isinstance(qty.props, GeometricProps) else None
                         if _geo_prop(props, "ft-sensor"):
-                            # Measured Wrench (FT sensor source): register it as a
-                            # solver output (like JointPosition) so its per-step
-                            # find_ft_sensor read emits. Computed Wrenches (no
-                            # ft-sensor prop) are not solver outputs here.
+                            # Measured Wrench (FT sensor source): register as a solver output so its per-step
+                            # find_ft_sensor read emits. Computed Wrenches (no ft-sensor prop) are not.
                             self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
 
             self._emit_solver_interfaces(
