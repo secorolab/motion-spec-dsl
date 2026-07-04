@@ -136,9 +136,14 @@ def axis_label(axis: object | None) -> str | None:
     }.get(raw, raw)
 
 
-def infer_command_type(subspace: SubSpace | None) -> QuantityType | None:
+def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
     if subspace is None:
         return None
+    # A `distance between <A> and <B>` view has no raw SubSpace enum (it resolves
+    # via constraint_view_subspace to the string "distance"); it is control-wise a
+    # linear command, the same as SubSpace.Position.
+    if subspace == "distance":
+        return QuantityType.LinearVelocity
     return {
         SubSpace.LinVel: QuantityType.LinearVelocity,
         SubSpace.Position: QuantityType.LinearVelocity,
@@ -202,7 +207,15 @@ def controller_command_record(
     raw_subspace = constraint.view.subspace
     axis = axis_label(getattr(constraint.view, "axis", None))
     view_subspace = constraint_view_subspace(constraint)
-    command_type = resolved_controller.command_type or infer_command_type(raw_subspace)
+    # `raw_subspace` is None for a `distance between <A> and <B>` view (it has no
+    # SubSpace enum, only distance_from/distance_to); fall back to the resolved
+    # string subspace ("distance") so it still infers a linear command without
+    # requiring an explicit 'as'.
+    command_type = (
+        resolved_controller.command_type
+        or infer_command_type(raw_subspace)
+        or infer_command_type(view_subspace)
+    )
     if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
         command_type = QuantityType.Force
 
@@ -234,6 +247,12 @@ def controller_command_record(
                 if axis is not None
                 else ANGULAR_ACCELERATION_AXES
             )
+        elif view_subspace == "distance" and raw_subspace is None:
+            # `distance between <A> and <B>` (real distance-between view, never the
+            # `.position.x` axis alias -- that always carries an axis and raw_subspace
+            # is None only for the former): a single direction-aligned linear
+            # acceleration constraint, driven by the runtime PoseToDirection direction.
+            acceleration_constraints = (AccelerationConstraintRecord("linear-acceleration", "distance"),)
 
     return ControllerCommandRecord(
         controller=resolved_controller,

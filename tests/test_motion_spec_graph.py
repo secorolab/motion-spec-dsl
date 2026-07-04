@@ -12,6 +12,8 @@ from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
 from motion_spec.ir_gen import Parser
+from motion_spec.codegen import generate_code, write_json
+from motion_spec.ir_gen import generate_ir
 from motion_spec.namespace import (
     CSTR,
     CSTR_EXT,
@@ -38,6 +40,7 @@ from motion_spec.namespace import (
     RBDYN_COORD,
     RBDYN_OP,
     SLV,
+    SLV_EXT,
     TRAJ,
 )
 from motion_spec_dsl.rdf import (
@@ -106,6 +109,114 @@ def _build_string_dataset(source: str):
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
     return builder, dataset.default_graph, cast(dict[str, str], context)
+
+
+DISTANCE_ACHD_SOURCE = """
+ns app = "https://secorolab.github.io/models/test/"
+
+ENVIRONMENT (ns=app) world {
+    runtime: RealRobot,
+    ASSETS {
+        kinova-urdf: RobotAsset { model: KinovaGen3, urdf: "../robots/kg3.urdf" }
+    },
+    ASSEMBLY {
+        Robot kinova using <kinova-urdf> {
+            chain: { root: link-base, end: link-ee }
+        }
+    }
+}
+
+MOTION_SPEC (ns=app) move {
+    CONTEXT {
+        w: World {
+            pose-ee-base: Pose { of: link-ee, wrt: link-base, as-seen-by: link-base },
+            pose-target-base: Pose { of: link-target, wrt: link-base, as-seen-by: link-base }
+        },
+        s: Spec {
+            zero-gap: LinearDistance = 0.0 m
+        }
+    }
+
+    WHEN {}
+    WHILE {
+        gap: distance between <w.pose-ee-base> and <w.pose-target-base> equal to <s.zero-gap>
+    }
+    UNTIL {}
+}
+
+CONSTRAINT_HANDLER (ns=app) handler_move {
+    CONTEXT {
+        w: World { gravity: Gravity },
+        s: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 } }
+    }
+
+    MOTION: <move>
+    CONTROL_MODE: JointTorque
+    CONTROLLERS {
+        ctrl-gap: PID { constraint: <move.gap>, Kp = 30.0, Ki = 0.0, Kd = 4.0 }
+    }
+
+    SOLVERS {
+        arm-solver: Solver {
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <s.gravity-vec>
+        }
+    }
+}
+"""
+
+
+def test_distance_control_emits_direction_aligned_achd_constraint() -> None:
+    _, graph, _ = _build_string_dataset(DISTANCE_ACHD_SOURCE)
+
+    constraints = list(graph.subjects(RDF.type, SLV_EXT.DirectionAligned))
+    assert len(constraints) == 1
+    constraint = constraints[0]
+
+    direction = graph.value(constraint, SLV_EXT["direction"])
+    energy = graph.value(constraint, SLV["acceleration-energy"])
+    assert graph.value(constraint, SLV.subspace) == SLV["linear-acceleration"]
+    assert graph.value(constraint, SLV.axis) is None
+    assert direction is not None
+    assert energy is not None
+
+    controllers = list(graph.subjects(RDF.type, CSTR_HDL.Controller))
+    assert len(controllers) == 1
+    assert graph.value(controllers[0], CSTR_HDL["control-signal"]) == energy
+
+    direction_ops = list(graph.subjects(GEOM_OP.direction, direction))
+    assert len(direction_ops) == 1
+    assert (direction_ops[0], RDF.type, GEOM_OP.PoseToDirection) in graph
+    direction_pose = graph.value(direction_ops[0], GEOM_OP.pose)
+    assert direction_pose is not None
+    assert str(direction_pose).endswith("/pose-link-ee-link-target")
+
+
+def test_distance_control_codegen_feeds_direction_and_pid_energy_to_achd(tmp_path) -> None:
+    if shutil.which("stst") is None:
+        pytest.skip("requires stst")
+
+    _, dataset_graph, context = _build_string_dataset(DISTANCE_ACHD_SOURCE)
+    manifest = tmp_path / "distance-app.json"
+    manifest.write_text(
+        dataset_graph.serialize(format="json-ld", context=context, auto_compact=True)
+    )
+    ir = generate_ir(manifest)
+
+    ir_path = tmp_path / "ir.json"
+    write_json(ir_path, ir)
+    out_dir = tmp_path / "gen"
+    generate_code(ir_path=ir_path, output_dir=out_dir, stst_bin="stst")
+
+    motion_hpp = (out_dir / "headers" / "motion_move.hpp").read_text()
+    assert "shared.direction_ctrl_gap = shared.pose_link_ee_link_target.p;" in motion_hpp
+    assert "shared.direction_ctrl_gap.Normalize();" in motion_hpp
+    assert "state.arm_solver_move.f_cstr" in motion_hpp
+    assert "alpha_axis_arm_solver_move_0" in motion_hpp
+    assert "state.arm_solver_move.e_acc(0) = motion_spec::runtime::clamp_abs(shared.eacc_pose_link_target_link_ee_distance_move" in motion_hpp
 
 
 def test_reference_value_context_views_emit_map_views() -> None:

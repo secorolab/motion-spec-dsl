@@ -1111,6 +1111,37 @@ class MotionSpecDatasetBuilder:
     ) -> WorldQuantity:
         return self._distance_relative_pose_plan(spec, world_qtys).target
 
+    def _distance_direction_pose_for_solver(
+        self,
+        spec: ConstraintSpecification,
+        qty: WorldQuantity,
+        solver: Any,
+        motion: MotionSpec,
+        world_qtys: dict[str, WorldQuantity],
+        stem: str,
+    ) -> WorldQuantity:
+        plan = self._distance_relative_pose_plan(spec, world_qtys)
+        start_frame, _ = self._pose_frames(plan.start, f"Distance constraint '{spec.name}'")
+        robot_assembly = getattr(getattr(solver.robot, "environment_robot", None), "assembly_spec", None)
+        chain_end_name = getattr(robot_assembly, "end", "")
+        if chain_end_name and _body_name(chain_end_name) == _body_name(start_frame):
+            reverse_plan = self._relative_pose_plan(
+                start=plan.end,
+                end=plan.start,
+                world_qtys=world_qtys,
+                owner=getattr(getattr(spec, "parent", None), "parent", None),
+                cache_key=("distance-direction", id(spec), id(plan.end), id(plan.start)),
+                context=f"Distance constraint '{spec.name}'",
+            )
+            self._emit_relative_pose(
+                reverse_plan,
+                motion,
+                context=f"Distance constraint '{spec.name}'",
+                stem=stem,
+            )
+            return reverse_plan.target
+        return qty
+
     def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
         if quantity.type != WorldQuantityType.Pose or not isinstance(
             quantity.props, GeometricProps
@@ -1665,6 +1696,24 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RBDYN_ENT["reference-point"], reference_point))
         self.graph.add((node, RBDYN_COORD["as-seen-by"], as_seen_by))
 
+    def _emit_pose_to_direction(
+        self,
+        direction_node: URIRef,
+        pose_qty: WorldQuantity,
+        as_seen_by_node: URIRef,
+        motion: MotionSpec,
+        stem: str,
+    ) -> URIRef:
+        """Runtime unit geom-rel:Direction from a pose (geom-op:PoseToDirection),
+        as seen by `as_seen_by_node` -- shared by the force-command distance path
+        and the ACHD direction-aligned distance-control path."""
+        self._emit_direction_coordinate(direction_node, as_seen_by_node)
+        op_node = self._owned_uri(f"compute-direction-{stem}", motion)
+        self.graph.add((op_node, RDF.type, GEOM_OP.PoseToDirection))
+        self.graph.add((op_node, GEOM_OP.pose, URIRef(pose_qty.uri)))
+        self.graph.add((op_node, GEOM_OP.direction, direction_node))
+        return direction_node
+
     def _emit_force_command_wrench(
         self,
         ctrl: ControllerEntry,
@@ -1692,11 +1741,7 @@ class MotionSpecDatasetBuilder:
             and _view_subspace(spec) == "distance"
             and axis is None
         ):
-            self._emit_direction_coordinate(direction_node, as_seen_by_node)
-            op_node = self._owned_uri(f"compute-direction-{ctrl.name}", motion)
-            self.graph.add((op_node, RDF.type, GEOM_OP.PoseToDirection))
-            self.graph.add((op_node, GEOM_OP.pose, URIRef(qty.uri)))
-            self.graph.add((op_node, GEOM_OP.direction, direction_node))
+            self._emit_pose_to_direction(direction_node, qty, as_seen_by_node, motion, ctrl.name)
         else:
             if axis is None:
                 raise ValueError(
@@ -3606,6 +3651,11 @@ class MotionSpecDatasetBuilder:
                 raise ValueError(
                     f"Distance derivation for '{qty.name}' needs explicit 'of' and 'wrt' frames."
                 )
+            # A distance is a point-to-point quantity: mint the two endpoints' origin
+            # Points whenever a distance constraint is authored (not only when a
+            # Position view references the frame -- see _register_pose_position_view).
+            self._frame_origin_point(self._owned_uri(rel_of, qty))
+            self._frame_origin_point(self._owned_uri(rel_wrt, qty))
             distance_id = _scalar_id(qty, "distance", None)
             if distance_id in seen_distance_ops:
                 continue
@@ -3951,6 +4001,7 @@ class MotionSpecDatasetBuilder:
                 and axis is None
                 and command.acceleration_constraints
                 and isinstance(spec.expr, EqualityConstraint)
+                and not _is_distance_view(spec)
             ):
                 ref_uri = None
                 if subspace == "pose":
@@ -4309,11 +4360,13 @@ class MotionSpecDatasetBuilder:
         if qty is not None and command.is_force_command:
             return self._force_control_signal_node(ctrl, handler)
 
-        # Acceleration energy for dynamics solvers.
+        # Acceleration energy for dynamics solvers. A distance-between-poses control
+        # constraint has no axis (it's a single direction-aligned constraint, not a
+        # per-axis one) but is otherwise the same acceleration-energy PID signal.
         if (
             algorithm in {"ACHD", "RNE"}
             and qty is not None
-            and axis is not None
+            and (axis is not None or subspace == "distance")
             and accel_prefix is not None
             and accel_subspace_label is not None
             and command.acceleration_constraints
@@ -4570,6 +4623,45 @@ class MotionSpecDatasetBuilder:
                             (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
                         )
                     acc_constraint_nodes.append(acc_node)
+
+            if (
+                solver.algorithm in {"ACHD", "RNE"}
+                and subspace == "distance"
+                and axis is None
+                and command.acceleration_constraints
+            ):
+                # Direction-aligned ACHD acceleration constraint: the solver-consistent
+                # parallel to a per-axis AxisAligned constraint, but the Jacobian column
+                # is filled from a runtime unit direction (A->B) instead of a fixed axis.
+                sid = _scalar_id(qty, subspace, axis)
+                energy_stem = f"eacc-{sid}"
+                energy_id = energy_stem if shared else f"{energy_stem}-{motion.name}"
+                acc_stem = f"acc-cstr-{sid}"
+                acc_id = acc_stem if shared else f"{acc_stem}-{motion.name}"
+
+                axis_frame = _quantity_axis_frame(qty)
+                if axis_frame is None:
+                    raise ValueError(
+                        f"Distance controller '{ctrl.name}' needs an as-seen-by/wrt frame."
+                    )
+                as_seen_by_node = self._owned_uri(axis_frame, qty)
+                direction_node = self._owned_uri(f"direction-{ctrl.name}", motion)
+                direction_qty = self._distance_direction_pose_for_solver(
+                    spec, qty, solver, motion, world_qtys, f"{ctrl.name}-direction"
+                )
+                self._emit_pose_to_direction(
+                    direction_node, direction_qty, as_seen_by_node, motion, ctrl.name
+                )
+
+                acc_node = self._owned_uri(acc_id, motion)
+                energy_node = self._owned_uri(energy_id, motion)
+                self.graph.add((acc_node, RDF.type, SLV.AccelerationConstraint))
+                self.graph.add((acc_node, RDF.type, SLV_EXT.DirectionAligned))
+                self.graph.add((acc_node, SLV.subspace, SLV[command.acceleration_constraints[0].subspace]))
+                self.graph.add((acc_node, SLV_EXT.direction, direction_node))
+                self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                self.graph.add((acc_node, GEOM_COORD["as-seen-by"], as_seen_by_node))
+                acc_constraint_nodes.append(acc_node)
 
             if (
                 solver.algorithm in {"ACHD", "RNE"}

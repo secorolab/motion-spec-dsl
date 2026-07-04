@@ -8,6 +8,7 @@ from collections import defaultdict
 from motion_spec_dsl.controller_semantics import (
     SUBSPACE_ALIAS,
     axis_label,
+    constraint_view_subspace,
     controller_command_record,
     infer_command_type,
     pose_diff_components,
@@ -268,7 +269,14 @@ def validate_controller_commands(model: Model) -> None:
             # Remaining validation applies to controllers that map a scalar error to a scalar control signal.
             constraint_spec = resolved_controller.params.constraint.constraint
             subspace = constraint_spec.view.subspace
-            command_type = resolved_controller.command_type or infer_command_type(subspace)
+            # `distance between <A> and <B>` has no raw SubSpace (subspace is None);
+            # resolve through constraint_view_subspace ("distance") so it infers a
+            # linear command without requiring an explicit 'as', like SubSpace.Position.
+            command_type = (
+                resolved_controller.command_type
+                or infer_command_type(subspace)
+                or infer_command_type(constraint_view_subspace(constraint_spec))
+            )
             if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
                 command_type = QuantityType.Force
             quantity = constraint_spec.view.quantity
