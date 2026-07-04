@@ -96,19 +96,6 @@ print("ok")
 PY
 ```
 
-## Package Layout
-
-```text
-motion_spec_dsl/
-  domain.py               textX classes for parsed DSL objects
-  controller_semantics.py derived controller command semantics
-  namespaces.py           namespace-aware object helpers
-  validation/             semantic validation phases
-  rdf.py                  RDF dataset construction
-  registration.py         textX language and generator entry points
-  metamodels/             textX grammar
-```
-
 ## Examples
 
 Example `.robmot` files live in `models/` and `tests/fixtures/valid/`.

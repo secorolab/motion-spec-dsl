@@ -162,10 +162,10 @@ World quantity types include `VelocityTwist`, `Wrench`, `Pose`, and `JointPositi
 World entity/field declarations include `KinematicChain`, `Frame`, `SceneObject`,
 `Link`, and `Gravity`.
 
-Context quantity types include `AngularVelocity`, `LinearVelocity`, `Force`, `Torque`,
-`Distance`, `Angle`, `Direction`, `FreeVector`, `Pose`, `Position`, `Orientation`,
-`VelocityTwist`, `AccelerationTwist`, `Wrench`, `Dimensionless`, `Duration`, and
-`TrajectoryProgress`.
+Context quantity types include `AngularVelocity`, `LinearVelocity`, `LinearAcceleration`,
+`AngularAcceleration`, `Force`, `Torque`, `Distance`, `Angle`, `Direction`, `FreeVector`,
+`Pose`, `Position`, `Orientation`, `VelocityTwist`, `AccelerationTwist`, `Wrench`,
+`Dimensionless`, `Duration`, and `TrajectoryProgress`.
 `LinearDistance` and `AngularDistance` are accepted as aliases for `Distance` and
 `Angle`. Reference generator declarations include `Trajectory`, `VelocityProfile`,
 and `Admittance`.
@@ -368,6 +368,59 @@ Cross-handler solver references include the handler name:
 <handler_approach.arm-solver>
 ```
 
+## Clamps and Saturations
+
+Runtime limits are authored explicitly with a `Saturation`. Nothing is clamped unless
+you say so. A saturation is either symmetric around zero or an explicit range:
+
+```robmot
+Saturation { max: <s.limit> }              // clamp to [-limit, +limit]
+Saturation { lower: <s.lo>, upper: <s.hi> } // clamp to [lo, hi]
+```
+
+The bounds are context references, so the limit values live in a `Spec` like any other
+quantity and show up in the generated graph.
+
+Solvers limit their outputs with a `limits` block. Targets are `torque`,
+`linear-acceleration`, and `angular-acceleration`, each matched to its own quantity type:
+
+```robmot
+s: Spec {
+    tau-max:  Torque = 40.0 Nm,
+    lin-max:  LinearAcceleration = 6.0 m/s2,
+    ang-max:  AngularAcceleration = 8.0 rad/s2
+}
+
+arm-solver: Solver {
+    robot: <world.kinova>,
+    algorithm: ACHD,
+    limits {
+        torque: Saturation { max: <s.tau-max> },
+        linear-acceleration: Saturation { max: <s.lin-max> },
+        angular-acceleration: Saturation { max: <s.ang-max> }
+    },
+    root: <world.kinova.chain.root>,
+    end: <world.kinova.chain.end>,
+    gravity: <w.gravity> equal to <s.gravity-vec>
+}
+```
+
+`torque` clamps the per-joint command torques; the acceleration targets clamp the matching
+acceleration-energy constraints fed to the solver.
+
+Controllers clamp their own signals. `output-saturation` bounds the control signal (its
+type must match the controller's command type) and `integral-saturation` bounds a PID's
+integral state (anti-windup). Both come **before** the `Kp`/`Ki`/`Kd` terms:
+
+```robmot
+ctrl-j2: PID {
+    constraint: <m_move.keep-j2>,
+    output-saturation: Saturation { max: <s.out-max> },
+    integral-saturation: Saturation { max: <s.i-max> },
+    Kp = 10.0, Ki = 1.0, Kd = 0.5
+} as Torque
+```
+
 ## Trajectories
 
 Trajectory reference generators are declared in `Spec` and then used through pose
@@ -412,6 +465,9 @@ errors, including:
 - joint position constraints missing `as Torque`
 - controllers that need explicit `via <solver>` in multi-solver handlers
 - unsupported controller or solver mappings
+- saturation bounds whose quantity type does not match the target (e.g. a `torque` limit
+  that is not a `Torque`), duplicate solver limit targets, or `integral-saturation` on a
+  non-PID controller
 
 When generation fails, fix validation errors in the `.robmot` source first. Generated
 JSON-LD should be treated as output, not the place to patch model intent.
