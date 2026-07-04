@@ -285,9 +285,27 @@ def _canonicalize_jsonld(text: str) -> str:
     doc = json.loads(text)
     graph = doc.get("@graph") if isinstance(doc, dict) else None
     if isinstance(graph, list):
+        graph = [_sort_lists(node) for node in graph]
         doc["@graph"] = sorted(graph, key=lambda node: node.get("@id", ""))
         return json.dumps(doc, indent=2)
     return text
+
+
+def _sort_lists(value: Any) -> Any:
+    """Recursively order every list in a node so within-node emission is total.
+
+    JSON-LD arrays (``@type``, multi-valued properties) are unordered sets, so
+    sorting them by canonical form removes the last hash-seed dependence rdflib's
+    serializer leaves behind after the top-level ``@graph`` sort.
+    """
+    if isinstance(value, dict):
+        return {k: _sort_lists(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return sorted(
+            (_sort_lists(v) for v in value),
+            key=lambda v: json.dumps(v, sort_keys=True),
+        )
+    return value
 
 
 def _merged_context(context: Any) -> list[str | dict[str, str]]:

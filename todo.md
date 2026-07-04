@@ -10,26 +10,13 @@
   conform, so a proper context-aware `of`/`wrt` resolution (pose→frame, position→point,
   twist→body+reference-point) must preserve that conformance, not just refactor structure.
 
-- Stop using QUDT quantity-kinds as `rdf:type` (OWL punning). 12 sites in `rdf.py` assert
-  `a quantitykind:Position` / `Torque` / `AccelerationEnergy`, but quantity-kinds are *individuals* of
-  `qudt:QuantityKind`, not classes. It's also applied inconsistently — some quantity nodes carry only
-  `qudt:hasQuantityKind` (correct), others assert the kind as a type *and* link it. Use
-  `qudt:hasQuantityKind` uniformly and drop the type assertions (verify IR `quantity()`/`position()`
-  type checks first).
-
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
 - Add PID output clamp support as an authored controller parameter if clamps become part of the model.
-- Add a `motion-spec` regression suite and clean up its Ruff/Pyright findings.
-- Harden JSON-LD emission determinism (not a bottleneck now). `_canonicalize_jsonld`
-  (`registration.py`) sorts the `@graph` array by `@id` after rdflib serialization, which makes the
-  whole pipeline (IR + generated C++) reproducible — verified byte-identical across 4 `PYTHONHASHSEED`
-  values. Two known soft spots if it ever regresses: (1) only the top-level array is sorted; within-node
-  multi-valued/`@type` list order currently relies on rdflib staying stable — make the canonicalization
-  total by recursively sorting node lists; (2) `ir_gen` still depends on input `@graph` order, so a
-  raw `textx generate` outside this emitter could be non-deterministic — optionally `export
-  PYTHONHASHSEED=0` in `models/Makefile` as belt-and-suspenders, or sort `ir_gen` graph queries by id.
+- Clean up `motion-spec` Ruff/Pyright findings. (Regression suite now runs: `test_shacl_conformance.py`
+  exercises 4 conforming models end-to-end.) Ruff isn't installed in the venv; Pyright reports ~150 src
+  findings, almost all rdflib/textx stub gaps (`Node` not assignable to `float`) — a large low-value grind.
 
 ## Validation
 

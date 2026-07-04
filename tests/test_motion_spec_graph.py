@@ -728,7 +728,7 @@ CONSTRAINT_HANDLER (ns=app) handler_hold {
     assert len(constraint_nodes) == 6
     for constraint_node in constraint_nodes:
         energy_node = graph.value(constraint_node, SLV["acceleration-energy"])
-        assert (energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy) in graph
+        assert (energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy) in graph
 
 
 def test_sliding_table_emits_only_five_acceleration_constraints() -> None:

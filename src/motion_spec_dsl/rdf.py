@@ -231,13 +231,15 @@ DSL_UNIT: dict[str, Any] = {
 CONSTRAINT_PATH_BY_PREFIX = {
     "geom-rel": "https://comp-rob2b.github.io/metamodels/geometry/spatial-relations.ttl",
     "geom-coord": "https://comp-rob2b.github.io/metamodels/geometry/coordinates.ttl",
-    "geom-op": "https://comp-rob2b.github.io/metamodels/geometry/spatial-operators.ttl",
+    "geom-op": "https://secorolab.github.io/metamodels/geometry/spatial-operators.shacl.ttl",
     "rbdyn-op": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/operators.ttl",
-    "map": "https://comp-rob2b.github.io/metamodels/task/map.ttl",
-    "cstr": "https://comp-rob2b.github.io/metamodels/task/constraint.ttl",
+    # de-punned overrides in the secorolab layer (comp-rob2b bases pun quantity
+    # kinds as rdf:type via sh:class; these fork them to hasQuantityKind checks).
+    "map": "https://secorolab.github.io/metamodels/task/map.shacl.ttl",
+    "cstr": "https://secorolab.github.io/metamodels/task/constraint.shacl.ttl",
     "mot": "https://secorolab.github.io/metamodels/task/motion-specification.shacl.ttl",
     "cstr-hdl": "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
-    "slv": "https://comp-rob2b.github.io/metamodels/task/solver-specification.ttl",
+    "slv": "https://secorolab.github.io/metamodels/task/solver-specification.shacl.ttl",
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
@@ -258,6 +260,10 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.TrajectoryProgress: TRAJ.Progress,
     QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
 }
+
+# QUDT quantity-kinds are individuals, not classes; used to tell them apart from
+# structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) when emitting typing.
+_QKIND_PREFIX = str(QUDT_QKIND)
 
 CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
     QuantityType.Pose: WorldQuantityType.Pose,
@@ -894,11 +900,25 @@ class MotionSpecDatasetBuilder:
         """Emit a unit-bearing qudt:Quantity node wrapping a single float value."""
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         if qkind is not None:
-            self.graph.add((node, RDF.type, qkind))
-            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+            self._emit_quantity_kind(node, qkind)
         self.graph.add((node, QUDT_SCHEMA.unit, unit))
         self.graph.add((node, QUDT_SCHEMA.value, Literal(float(value), datatype=XSD.double)))
         return node
+
+    def _emit_quantity_kind(self, node: URIRef, qkind: URIRef) -> None:
+        # QUDT quantity-kinds are individuals, not classes: relate via
+        # hasQuantityKind only. Structural kinds (geom-rel:Pose, rbdyn-ent:Wrench,
+        # …) stay rdf:type.
+        if not str(qkind).startswith(_QKIND_PREFIX):
+            self.graph.add((node, RDF.type, qkind))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+
+    def _retag_as_position_kind(self, node: URIRef) -> None:
+        # PoseCoordinateView position subobjects must carry hasQuantityKind=Position
+        # (the shape checks it). _add_quantity(.., Distance) tagged Distance; replace
+        # it so ir_gen's single-valued g.value(hasQuantityKind) stays deterministic.
+        self.graph.remove((node, QUDT_SCHEMA["hasQuantityKind"], None))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
 
     def root_uri(self, name: str, *, owner: Any | None = None) -> URIRef:
         """Public wrapper for generated URIs kept for callers and tests."""
@@ -1575,7 +1595,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_REL.Position))
         self.graph.add((node, RDF.type, GEOM_COORD.PositionCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((node, RDF.type, QUDT_QKIND.Position))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self.graph.add((node, GEOM_REL.of, point_node))
@@ -2035,7 +2054,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((scalar_uri, RDF.type, GEOM_REL.Position))
         self.graph.add((scalar_uri, RDF.type, GEOM_COORD.PositionCoordinate))
         self.graph.add((scalar_uri, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((scalar_uri, RDF.type, QUDT_QKIND.Position))
         self.graph.add((scalar_uri, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
         self.graph.add((scalar_uri, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self.graph.add((scalar_uri, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
@@ -2077,7 +2095,7 @@ class MotionSpecDatasetBuilder:
         view_subspace_uri, _, _, scalar_t, view_type = props
         self._add_quantity(scalar_uri, scalar_t)
         if view_type == MAP.PoseCoordinateView:
-            self.graph.add((scalar_uri, RDF.type, QUDT_QKIND.Position))
+            self._retag_as_position_kind(scalar_uri)
         self.graph.add((view_uri, RDF.type, MAP.View))
         self.graph.add((view_uri, RDF.type, view_type))
         self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
@@ -2303,7 +2321,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((node, GEOM_REL["with-respect-to"], pose_wrt))
                     self.graph.add((node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
             else:
-                self.graph.add((node, RDF.type, QUDT_QKIND.Position))
+                self._retag_as_position_kind(node)
         elif (
             quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}
             and subspace_raw == "orientation"
@@ -2360,8 +2378,7 @@ class MotionSpecDatasetBuilder:
             if qkind is None:
                 qkind = QUDT_QKIND[quantity.type]
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((node, RDF.type, qkind))
-            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+            self._emit_quantity_kind(node, qkind)
             if quantity.type == QuantityType.Orientation:
                 self.graph.add((node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
@@ -2408,8 +2425,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((add_node, RBDYN_OP["in2"], offset_ref_node))
                     self.graph.add((add_node, RBDYN_OP["out"], out_node))
                     self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
-                    self.graph.add((out_node, RDF.type, qkind))
-                    self.graph.add((out_node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+                    self._emit_quantity_kind(out_node, qkind)
                     self.graph.add(
                         (
                             out_node,
@@ -2503,7 +2519,6 @@ class MotionSpecDatasetBuilder:
         if not isinstance(quantity.value, AdmittanceSpec):
             return
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((node, RDF.type, QUDT_QKIND.LinearVelocity))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]))
 
@@ -2529,7 +2544,6 @@ class MotionSpecDatasetBuilder:
         orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
         self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((position_node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((position_node, RDF.type, QUDT_QKIND.Position))
         self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
         self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -2554,7 +2568,7 @@ class MotionSpecDatasetBuilder:
             component_node = self._owned_uri(f"{quantity.name}.position.{term.axis}", quantity)
             view_node = self._owned_uri(f"view-{quantity.name}.position.{term.axis}", quantity)
             self._add_quantity(component_node, QuantityType.Distance)
-            self.graph.add((component_node, RDF.type, QUDT_QKIND.Position))
+            self._retag_as_position_kind(component_node)
             self.graph.add((position_node, GEOM_COORD["has-coordinate"], component_node))
             self.graph.add((view_node, RDF.type, MAP.View))
             self.graph.add((view_node, RDF.type, MAP.PoseCoordinateView))
@@ -2816,10 +2830,9 @@ class MotionSpecDatasetBuilder:
             qkind = QUDT_QKIND[quantity.type]
 
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((node, RDF.type, qkind))
         if quantity.type == QuantityType.Distance:
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+        self._emit_quantity_kind(node, qkind)
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
         if isinstance(ref.literal_value, Measure):
             self.graph.add(
@@ -2859,7 +2872,6 @@ class MotionSpecDatasetBuilder:
             if subspace == "position":
                 position_node = self._owned_uri(f"{quantity.name}.position", quantity)
                 self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
-                self.graph.add((position_node, RDF.type, QUDT_QKIND.Position))
                 self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
                 self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
                 return position_node
@@ -2889,7 +2901,6 @@ class MotionSpecDatasetBuilder:
         if quantity.type == ReferenceGeneratorType.Trajectory:
             if subspace == "position":
                 self.graph.add((ref_node, RDF.type, QUDT_SCHEMA.Quantity))
-                self.graph.add((ref_node, RDF.type, QUDT_QKIND.Position))
                 self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
                 self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
             elif subspace == "orientation":
@@ -3424,7 +3435,7 @@ class MotionSpecDatasetBuilder:
             scalar_node = self._owned_uri(sid, motion)
             self._add_quantity(scalar_node, scalar_t)
             if view_type == MAP.PoseCoordinateView:
-                self.graph.add((scalar_node, RDF.type, QUDT_QKIND.Position))
+                self._retag_as_position_kind(scalar_node)
 
             view_node = self._owned_uri(f"view-{sid}", motion)
             self.graph.add((view_node, RDF.type, MAP.View))
@@ -3613,7 +3624,6 @@ class MotionSpecDatasetBuilder:
 
     def _emit_acceleration_energy_quantity(self, energy_node: URIRef) -> None:
         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
         self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
         self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
 
@@ -3710,8 +3720,7 @@ class MotionSpecDatasetBuilder:
                 err_kind = QUDT_QKIND.Length if is_linear else QUDT_QKIND.Angle
                 err_unit = QUDT_UNIT.M if is_linear else QUDT_UNIT["RAD"]
                 self.graph.add((err_node, RDF.type, QUDT_SCHEMA.Quantity))
-                self.graph.add((err_node, RDF.type, err_kind))
-                self.graph.add((err_node, QUDT_SCHEMA["hasQuantityKind"], err_kind))
+                self._emit_quantity_kind(err_node, err_kind)
                 self.graph.add((err_node, QUDT_SCHEMA.unit, err_unit))
                 view_node = self._owned_uri(f"view-{err_id}", spec.parent)
                 self.graph.add((view_node, RDF.type, MAP.View))
@@ -4236,7 +4245,6 @@ class MotionSpecDatasetBuilder:
             energy_id = stem if shared else f"{stem}-{motion.name}"
             energy_node = self._owned_uri(energy_id, motion)
             self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
             self.graph.add(
                 (energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy)
             )
@@ -4253,14 +4261,12 @@ class MotionSpecDatasetBuilder:
             signal_id = f"tau-{ctrl.name}"
             signal_node = self._owned_uri(signal_id, handler)
             self.graph.add((signal_node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((signal_node, RDF.type, QUDT_QKIND.Torque))
             self.graph.add((signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque))
             self.graph.add((signal_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
             return signal_node
 
         energy_node = self._owned_uri(f"eacc-{ctrl.name}", motion)
         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((energy_node, RDF.type, QUDT_QKIND.AccelerationEnergy))
         self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
         self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
         return energy_node
@@ -4612,8 +4618,7 @@ class MotionSpecDatasetBuilder:
         if qkind is None:
             qkind = QUDT_QKIND[scalar_type]
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((node, RDF.type, qkind))
         if scalar_type == QuantityType.Distance:
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
+        self._emit_quantity_kind(node, qkind)
         self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))

@@ -24,7 +24,12 @@ WORKSPACE = Path(__file__).resolve().parents[3]
 MODELS_DIR = WORKSPACE / "src" / "bdd_collab_bhv_cpp" / "models"
 METAMODELS_DIR = WORKSPACE / "src" / "metamodels"
 
-EXAMPLES = ["pick_place", "pick_place_relative"]
+EXAMPLES = [
+    "pick_place_single",
+    "pick_place_single_rnea",
+    "pick_place_single_wait",
+    "admittance_arc_single",
+]
 
 
 def _comp_rob2b_reachable() -> bool:
