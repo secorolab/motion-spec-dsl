@@ -7,5 +7,6 @@ build/
 .eggs/
 .venv/
 .ruff_cache/
+docs/_build/
 
 comp-rob2b/

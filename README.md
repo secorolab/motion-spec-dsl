@@ -11,7 +11,8 @@ The repository contains:
 - RDF/JSON-LD graph generation
 - example models and pytest fixtures
 
-Language syntax is documented in [tutorial.md](tutorial.md).
+Language syntax is documented in the [tutorial](https://secorolab.github.io/motion-spec-dsl/tutorial.html)
+(source in [docs/](docs/); build locally with `sphinx-build -b html docs docs/_build/html`).
 
 ## Setup
 

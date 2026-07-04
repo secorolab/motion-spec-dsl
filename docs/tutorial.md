@@ -1,7 +1,7 @@
 # Motion Spec DSL Tutorial
 
 This tutorial explains the `.robmot` language. It focuses on what you author in a
-motion spec file; setup and generation commands are in [README.md](README.md).
+motion spec file; setup and generation commands are on the [home page](index.md).
 
 ## File Shape
 
