@@ -13,6 +13,7 @@ from motion_spec_dsl.domain import (
     ControllerAlias,
     HandlerControlMode,
     QuantityType,
+    ReferenceGeneratorType,
     SolverAlias,
     ContextQuantityAlias,
     WorldQuantityAlias,
@@ -29,6 +30,59 @@ STANDALONE_MANIPULATOR = "01_core_semantics/01_standalone_manipulator.robmot"
 POSTURE_CONTROLLER = "04_posture_control/01_posture_controller.robmot"
 JOINT_LIMIT_POSTURE = "04_posture_control/02_joint_limit_posture.robmot"
 IMPEDANCE_CONTROLLER = "01_core_semantics/08_impedance_controller.robmot"
+
+
+def _complete_model(
+    motion_name: str,
+    motion_spec: str,
+    *,
+    monitors: str,
+    controllers: str = "",
+) -> str:
+    return f"""ns app = "https://secorolab.github.io/models/tests/"
+
+ENVIRONMENT (ns=app) world {{
+    runtime: MuJoCo,
+    ASSETS {{
+        kinova-mjcf: RobotAsset {{ model: KinovaGen3, xml: "../robots/kg3.xml" }}
+    }},
+    ASSEMBLY {{
+        Robot kinova using <kinova-mjcf> {{
+            chain: {{ root: link-base, end: link-ee }}
+        }}
+    }}
+}}
+
+{motion_spec}
+
+CONSTRAINT_HANDLER (ns=app) handler_{motion_name} {{
+    CONTEXT {{
+        w: World {{
+            gravity: Gravity
+        }},
+        s: Spec {{
+            gravity-vec: FreeVector {{ x = 0.0, y = 0.0, z = -9.81 m/s2 }}
+        }}
+    }}
+    MOTION: <{motion_name}>
+    CONTROL_MODE: JointTorque
+    MONITORS {{
+{monitors}
+    }}
+    CONTROLLERS {{
+{controllers}
+    }}
+    SOLVERS {{
+        kinova-solver: Solver {{
+            robot: <world.kinova>,
+            algorithm: ACHD,
+            root: <world.kinova.chain.root>,
+            end: <world.kinova.chain.end>,
+            gravity: <w.gravity> equal to <s.gravity-vec>
+        }}
+    }}
+}}
+"""
 
 
 @pytest.mark.parametrize(
@@ -323,6 +377,144 @@ CONSTRAINT_HANDLER (ns=app) handler_move {
     assert handler.context == []
 
 
+def test_context_alias_types_canonicalize_to_quantity_types() -> None:
+    model = motion_spec_metamodel().model_from_str(
+        _complete_model(
+            "aliases",
+            """MOTION_SPEC (ns=app) aliases {
+    CONTEXT {
+        w: World {
+            joint: JointPosition { of: joint-1 }
+        },
+        s: Spec {
+            dx: LinearDistance = 1.0 m,
+            theta: AngularDistance = 0.5 rad
+        }
+    }
+    WHEN {}
+    WHILE { hold: keeping <w.joint> equal to <s.theta> }
+    UNTIL {}
+}
+""",
+            monitors="        mon-hold: monitor <aliases.hold> and set flag flag-hold while active",
+        )
+    )
+
+    motion = next(spec for spec in model.specs if getattr(spec, "name", "") == "aliases")
+    spec_ctx = next(ctx for ctx in motion.context if getattr(ctx, "name", "") == "s")
+    quantities = {item.name: item for item in spec_ctx.declaration}
+
+    assert quantities["dx"].type == QuantityType.Distance
+    assert quantities["theta"].type == QuantityType.Angle
+
+
+def test_trajectory_declarations_use_reference_generator_type() -> None:
+    model = motion_spec_metamodel().model_from_str(
+        _complete_model(
+            "follow",
+            """MOTION_SPEC (ns=app) follow {
+    CONTEXT {
+        w: World {
+            pose-ee: Pose { of: ee, wrt: base, as-seen-by: base }
+        },
+        s: Spec {
+            alpha: TrajectoryProgress,
+            start: Pose = Snapshot of <w.pose-ee>,
+            traj: Trajectory = Lerp {
+                start: <s.start>,
+                goal:  <s.start>,
+                alpha: <s.alpha>
+            }
+        }
+    }
+    WHEN {}
+    WHILE { track: keeping <w.pose-ee> equal to <s.traj> }
+    UNTIL {}
+}
+""",
+            monitors="        mon-track: monitor <follow.track> and set flag flag-track while active",
+        )
+    )
+
+    motion = next(spec for spec in model.specs if getattr(spec, "name", "") == "follow")
+    spec_ctx = next(ctx for ctx in motion.context if getattr(ctx, "name", "") == "s")
+    traj = next(item for item in spec_ctx.declaration if item.name == "traj")
+
+    assert traj.type == ReferenceGeneratorType.Trajectory
+
+
+def test_elapsed_view_is_an_explicit_domain_node() -> None:
+    model = motion_spec_metamodel().model_from_str(
+        _complete_model(
+            "wait",
+            """MOTION_SPEC (ns=app) wait {
+    CONTEXT {
+        w: World {
+            joint: JointPosition { of: joint-1 }
+        },
+        s: Spec {
+            target: Angle = 0.0 rad,
+            dwell: Duration = 1.0 s
+        }
+    }
+    WHEN {}
+    WHILE { hold: keeping <w.joint> equal to <s.target> }
+    UNTIL { timeout: elapsed greater than <s.dwell> }
+}
+""",
+            monitors="""        mon-hold: monitor <wait.hold> and set flag flag-hold while active,
+        mon-timeout: monitor <wait.timeout> and set flag flag-timeout while active""",
+        )
+    )
+
+    motion = next(spec for spec in model.specs if getattr(spec, "name", "") == "wait")
+    timeout = motion.until.constraints[0]
+
+    assert timeout.view.is_elapsed
+    assert timeout.view.elapsed.__class__.__name__ == "ElapsedTime"
+
+
+@pytest.mark.parametrize(
+    ("constraint", "message"),
+    [
+        (
+            "keeping <w.pose-ee>.position.roll equal to <s.dx>",
+            "does not support axis 'roll'",
+        ),
+        (
+            "keeping <w.pose-ee>.torque equal to <s.force>",
+            "Constraint 'bad' has an invalid view selector.",
+        ),
+        (
+            "keeping <w.pose-ee>.position.x equal to <s.pose-ref>.torque",
+            "Constraint 'bad' has an invalid reference selector.",
+        ),
+    ],
+)
+def test_invalid_selector_combinations_are_rejected(constraint: str, message: str) -> None:
+    model = f"""ns app = "https://secorolab.github.io/models/tests/"
+
+MOTION_SPEC (ns=app) bad_selector {{
+    CONTEXT {{
+        w: World {{
+            pose-ee: Pose {{ of: ee, wrt: base, as-seen-by: base }}
+        }},
+        s: Spec {{
+            dx: Distance = 0.1 m,
+            force: Force = 1.0 N,
+            pose-ref: Pose = Snapshot of <w.pose-ee>
+        }}
+    }}
+    WHEN {{}}
+    WHILE {{ bad: {constraint} }}
+    UNTIL {{}}
+}}
+"""
+
+    with pytest.raises(TextXSemanticError, match=re.escape(message)):
+        motion_spec_metamodel().model_from_str(model)
+
+
 def _profiled_distance_model(controller_block: str) -> str:
     return f"""ns app = "https://secorolab.github.io/models/tests/"
 
@@ -533,7 +725,7 @@ def test_admittance_quantity_binds_and_tracks_velocity_constraint() -> None:
         for item in ctx.declaration
         if getattr(item, "name", None) == "admit-vx"
     )
-    assert str(admit.type) == QuantityType.Admittance
+    assert admit.type == ReferenceGeneratorType.Admittance
     assert admit.value.__class__.__name__ == "AdmittanceSpec"
     assert admit.value.mass == 6.0
     assert admit.value.damping == 60.0

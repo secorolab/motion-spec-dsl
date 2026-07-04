@@ -595,27 +595,42 @@ class UntilSection(ConstraintSection):
 
 
 class WorldQuantityType(StrEnum):
-    Frame = "Frame"
     Pose = "Pose"
     VelocityTwist = "VelocityTwist"
     Wrench = "Wrench"
     JointPosition = "JointPosition"
+
+
+class WorldEntityType(StrEnum):
+    Frame = "Frame"
     KinematicChain = "KinematicChain"
     Link = "Link"
     SceneObject = "SceneObject"
+
+
+class WorldFieldType(StrEnum):
     Gravity = "Gravity"
+
+
+WorldDeclarationType = WorldQuantityType | WorldEntityType | WorldFieldType
 
 
 @dataclass
 class WorldQuantity(NamedNamespaceObject):
     parent: object
     name: str
-    type: WorldQuantityType
+    type: WorldDeclarationType
     props: GeometricProps | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-        self.type = WorldQuantityType(self.type)
+        raw_type = str(self.type)
+        if raw_type in WorldQuantityType._value2member_map_:
+            self.type = WorldQuantityType(raw_type)
+        elif raw_type in WorldEntityType._value2member_map_:
+            self.type = WorldEntityType(raw_type)
+        else:
+            self.type = WorldFieldType(raw_type)
 
 
 @dataclass(kw_only=True)
@@ -623,7 +638,7 @@ class WorldQuantityAlias(WorldQuantity):
     parent: object
     name: str
     ref: WorldQuantity
-    type: WorldQuantityType = field(init=False)
+    type: WorldDeclarationType = field(init=False)
     props: GeometricProps | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -670,7 +685,6 @@ class QuantityType(StrEnum):
     Distance = "Distance"
     Angle = "Angle"
     PlaneAngle = "PlaneAngle"
-    AngularDistance = "AngularDistance"
     LinearVelocity = "LinearVelocity"
     AngularVelocity = "AngularVelocity"
     LinearAcceleration = "LinearAcceleration"
@@ -680,10 +694,22 @@ class QuantityType(StrEnum):
     Torque = "Torque"
     FreeVector = "FreeVector"
     Duration = "Duration"
-    Trajectory = "Trajectory"
     TrajectoryProgress = "TrajectoryProgress"
+
+
+class ReferenceGeneratorType(StrEnum):
+    Trajectory = "Trajectory"
     VelocityProfile = "VelocityProfile"
     Admittance = "Admittance"
+
+
+ContextDeclarationType = QuantityType | ReferenceGeneratorType
+
+QUANTITY_TYPE_ALIASES = {
+    "LinearDistance": QuantityType.Distance,
+    "AngularDistance": QuantityType.Angle,
+    "PlaneAngle": QuantityType.Angle,
+}
 
 
 class HandlerControlMode(StrEnum):
@@ -710,7 +736,7 @@ class ControllerParamName(StrEnum):
 class ContextQuantity(NamedNamespaceObject):
     parent: object
     name: str
-    type: QuantityType
+    type: ContextDeclarationType
     value: (
         Measure
         | VectorQuantity
@@ -738,19 +764,14 @@ class ContextQuantity(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-        if self.type == "LinearDistance":
-            self.type = QuantityType.Distance
-        elif self.type == "Trajectory":
-            self.type = QuantityType.Trajectory
-        elif self.type == "TrajectoryProgress":
-            self.type = QuantityType.TrajectoryProgress
-        elif self.type == "VelocityProfile":
-            self.type = QuantityType.VelocityProfile
-        elif self.type == "Admittance":
-            self.type = QuantityType.Admittance
+        raw_type = str(self.type)
+        if raw_type in QUANTITY_TYPE_ALIASES:
+            self.type = QUANTITY_TYPE_ALIASES[raw_type]
+        elif raw_type in ReferenceGeneratorType._value2member_map_:
+            self.type = ReferenceGeneratorType(raw_type)
         else:
-            self.type = QuantityType(self.type)
-        if self.props is not None and str(self.type) in self._SCALAR_TYPES:
+            self.type = QuantityType(raw_type)
+        if self.props is not None and raw_type in self._SCALAR_TYPES:
             raise ValueError(
                 f"geometric props block is not valid for scalar quantity type '{self.type}'"
             )
@@ -761,7 +782,7 @@ class ContextQuantityAlias(ContextQuantity):
     parent: object
     name: str
     ref: ContextQuantity
-    type: QuantityType = field(init=False)
+    type: ContextDeclarationType = field(init=False)
     value: object | None = field(init=False, default=None)
 
     def __post_init__(self):
@@ -937,16 +958,16 @@ class Axis(StrEnum):
 
 
 @dataclass
-class View:
-    parent: object
-    quantity: WorldQuantity | None = None
-    subspace: SubSpace | None = None
+class ElapsedTime:
+    marker: bool = False
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class SelectorTail:
+    subspace: SubSpace
     axis: Axis | None = None
-    distance_from: WorldQuantity | None = None
-    distance_to: WorldQuantity | None = None
-    is_elapsed: bool = False
-    # `Norm of <inner>`: a read-time L2 reduction of a vector view to a scalar.
-    norm_source: "View | None" = None
+    parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if isinstance(self.subspace, str):
@@ -956,17 +977,52 @@ class View:
 
 
 @dataclass
+class View:
+    parent: object
+    quantity: WorldQuantity | None = None
+    subspace: SubSpace | None = None
+    axis: Axis | None = None
+    selector: SelectorTail | None = None
+    distance_from: WorldQuantity | None = None
+    distance_to: WorldQuantity | None = None
+    elapsed: ElapsedTime | None = None
+    # `Norm of <inner>`: a read-time L2 reduction of a vector view to a scalar.
+    norm_source: "View | None" = None
+
+    def __post_init__(self):
+        if self.selector is not None:
+            self.subspace = self.selector.subspace
+            self.axis = self.selector.axis
+        if isinstance(self.subspace, str):
+            self.subspace = SubSpace(self.subspace)
+        if self.axis is not None and isinstance(self.axis, str):
+            self.axis = Axis(self.axis)
+
+    @property
+    def is_elapsed(self) -> bool:
+        return self.elapsed is not None
+
+
+@dataclass
 class ContextRef:
     quantity: ContextQuantity | None = None
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
     literal_value: Measure | VectorQuantity | None = None
     bare: Measure | None = None
-    subspace: str | None = None
-    axis: str | None = None
+    subspace: SubSpace | None = None
+    axis: Axis | None = None
+    selector: SelectorTail | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
+        if self.selector is not None:
+            self.subspace = self.selector.subspace
+            self.axis = self.selector.axis
+        if isinstance(self.subspace, str):
+            self.subspace = SubSpace(self.subspace)
+        if self.axis is not None and isinstance(self.axis, str):
+            self.axis = Axis(self.axis)
         if self.quantity is None:
             self.quantity = self.inline_quantity
 
@@ -1103,7 +1159,7 @@ class MonitorEntry(NamedNamespaceObject):
         super().__init__(parent=self.parent, name=self.name)
 
     @property
-    def debounce_seconds(self) -> float | None:
+    def debounce_duration(self) -> float | None:
         if self.debounce is None:
             return None
         scale = _DURATION_UNIT_SECONDS.get(self.debounce.unit)

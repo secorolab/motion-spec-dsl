@@ -280,19 +280,29 @@ ContextQuantityAlias:
 ;
 
 WorldQuantity:
-    name=IRI_TRUNK ":" type=WorldQuantityType
+    name=IRI_TRUNK ":" type=WorldDeclarationType
     ("{" props=GeometricProps "}")?
+;
+
+WorldDeclarationType:
+    WorldQuantityType | WorldEntityType | WorldFieldType
 ;
 
 WorldQuantityType:
     "VelocityTwist"              |
     "Wrench"                     |
     "Pose"                       |
-    "JointPosition"              |
+    "JointPosition"
+;
+
+WorldEntityType:
     "KinematicChain"             |
     "Frame"                      |
     "SceneObject"                |
-    "Link"                       |
+    "Link"
+;
+
+WorldFieldType:
     "Gravity"
 ;
 
@@ -313,11 +323,15 @@ ContextQuantity:
 ;
 
 ContextQuantityType:
-    QuantityType | SnapshotQuantityType | "Trajectory" | "TrajectoryProgress" | "VelocityProfile" | "Admittance"
+    QuantityType | QuantityAliasType | ReferenceGeneratorType
 ;
 
-SnapshotQuantityType:
-    "Pose" | "Position" | "Orientation" | "VelocityTwist" | "AccelerationTwist" | "Wrench"
+ReferenceGeneratorType:
+    "Trajectory" | "VelocityProfile" | "Admittance"
+;
+
+QuantityAliasType:
+    "LinearDistance" | "AngularDistance"
 ;
 
 ContextQuantityValue:
@@ -370,6 +384,12 @@ SnapshotClock:
 ;
 
 QuantityType:
+    "Pose"                |
+    "Position"            |
+    "Orientation"         |
+    "VelocityTwist"       |
+    "AccelerationTwist"   |
+    "Wrench"              |
     "AngularVelocity"     |
     "LinearVelocity"      |
     "LinearAcceleration"  |
@@ -377,12 +397,11 @@ QuantityType:
     "Force"               |
     "Torque"              |
     "Distance"            |
-    "LinearDistance"      |
     "Angle"               |
-    "AngularDistance"     |
     "Direction"           |
     "FreeVector"          |
-    "Duration"
+    "Duration"            |
+    "TrajectoryProgress"
 ;
 
 TrajectoryValue:
@@ -480,12 +499,20 @@ View:
     |
     ("Norm" "of" norm_source=View)
     |
-    is_elapsed?="elapsed"
+    elapsed=ElapsedTime
     |
     (
         "<" quantity=[WorldQuantity|FQN] ">"
-        ("." subspace=SubSpace ("." axis=Axis)?)?
+        selector=SelectorTail?
     )
+;
+
+ElapsedTime:
+    marker?="elapsed"
+;
+
+SelectorTail:
+    "." subspace=SubSpace ("." axis=Axis)?
 ;
 
 SubSpace:
@@ -495,7 +522,6 @@ SubSpace:
     "linvel"      |
     "torque"      |
     "force"       |
-    "pose"        |
     "orientation" |
     "position"
 ;
@@ -506,7 +532,7 @@ Axis:
 
 ContextRef:
     "[" quantity=[ContextQuantity:FQN] literal_value=QuantityValue? "]"
-  | "<" quantity=[ContextQuantity|ScopedName] ">" ("." subspace=SubSpace ("." axis=Axis)?)?
+  | "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
   | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
   | bare=Measure
 ;

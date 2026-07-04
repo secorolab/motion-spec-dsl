@@ -158,12 +158,16 @@ s: Spec {
 }
 ```
 
-World quantity types include `VelocityTwist`, `Wrench`, `Pose`, `JointPosition`,
-`KinematicChain`, `Frame`, `SceneObject`, `Link`, and `Gravity`.
+World quantity types include `VelocityTwist`, `Wrench`, `Pose`, and `JointPosition`.
+World entity/field declarations include `KinematicChain`, `Frame`, `SceneObject`,
+`Link`, and `Gravity`.
 
 Context quantity types include `AngularVelocity`, `LinearVelocity`, `Force`, `Torque`,
-`Distance`, `LinearDistance`, `Angle`, `AngularDistance`, `Direction`, `FreeVector`,
-`Pose`, `Position`, `Orientation`, `Trajectory`, and `TrajectoryProgress`.
+`Distance`, `Angle`, `Direction`, `FreeVector`, `Pose`, `Position`, `Orientation`,
+`VelocityTwist`, `AccelerationTwist`, `Wrench`, `Duration`, and `TrajectoryProgress`.
+`LinearDistance` and `AngularDistance` are accepted as aliases for `Distance` and
+`Angle`. Reference generator declarations include `Trajectory`, `VelocityProfile`,
+and `Admittance`.
 
 ## Constraints
 
@@ -365,7 +369,8 @@ Cross-handler solver references include the handler name:
 
 ## Trajectories
 
-Trajectory quantities are declared in `Spec` and then used through pose subspaces.
+Trajectory reference generators are declared in `Spec` and then used through pose
+subspaces.
 
 ```robmot
 s: Spec {

@@ -10,6 +10,7 @@ from motion_spec_dsl.controller_semantics import (
     axis_label,
     controller_command_record,
     infer_command_type,
+    pose_diff_components,
 )
 from motion_spec_dsl.domain import (
     ControllerAlias,
@@ -20,7 +21,9 @@ from motion_spec_dsl.domain import (
     Model,
     ProfileSpec,
     QuantityType,
+    ReferenceGeneratorType,
     SubSpace,
+    WorldEntityType,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
@@ -106,9 +109,11 @@ def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_cont
             measured_derivative,
         )
 
+    # This is the pose-diff measured_derivative check, not ACHD acceleration-constraint
+    # validation (that's `_achd_acceleration_axis_keys` below) - translate to the
+    # neutral pose-diff vocabulary before testing (D4).
     required_subspaces = {
-        "linear" if component.subspace == "linear-acceleration" else "angular"
-        for component in command.acceleration_constraints
+        component.part for component in pose_diff_components(command.acceleration_constraints)
     }
     measured_subspace = _authored_subspace(measured_derivative)
     if measured_subspace is not None and measured_subspace not in required_subspaces:
@@ -173,7 +178,7 @@ def validate_controller_commands(model: Model) -> None:
                             f"Controller '{controller.name}' profile must reference a VelocityProfile.",
                             params.profile,
                         )
-                    if profile_qty.type != QuantityType.VelocityProfile or not isinstance(profile_qty.value, ProfileSpec):
+                    if profile_qty.type != ReferenceGeneratorType.VelocityProfile or not isinstance(profile_qty.value, ProfileSpec):
                         raise semantic_error(
                             f"Controller '{controller.name}' profile must reference a VelocityProfile.",
                             params.profile,
@@ -332,7 +337,7 @@ def validate_controller_commands(model: Model) -> None:
                 )
             if (
                 resolved_controller.apply_at is not None
-                and resolved_controller.apply_at.type != WorldQuantityType.Link
+                and resolved_controller.apply_at.type != WorldEntityType.Link
             ):
                 raise semantic_error(
                     f"Controller '{controller.name}' apply at target must be a Link.",

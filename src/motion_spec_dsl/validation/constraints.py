@@ -21,6 +21,7 @@ from motion_spec_dsl.domain import (
     MotionSpec,
     ProfileSpec,
     QuantityType,
+    ReferenceGeneratorType,
     ReferenceValue,
     SnapshotValue,
     SubSpace,
@@ -42,6 +43,30 @@ def _is_orientation_axis(axis: str | None) -> bool:
     return axis in {"x", "y", "z", "roll", "pitch", "yaw"}
 
 
+_LINEAR_AXES = {"x", "y", "z"}
+_SUBSPACE_AXES = {
+    SubSpace.Position: _LINEAR_AXES,
+    SubSpace.LinVel: _LINEAR_AXES,
+    SubSpace.LinAcc: _LINEAR_AXES,
+    SubSpace.Force: _LINEAR_AXES,
+    SubSpace.AngVel: _LINEAR_AXES,
+    SubSpace.AngAcc: _LINEAR_AXES,
+    SubSpace.Torque: _LINEAR_AXES,
+    SubSpace.Orientation: {"x", "y", "z", "roll", "pitch", "yaw"},
+}
+
+
+def _validate_axis(subspace: object, axis: str | None, owner: object) -> None:
+    if axis is None:
+        return
+    allowed = _SUBSPACE_AXES.get(subspace)
+    if allowed is None or axis not in allowed:
+        raise semantic_error(
+            f"Selector subspace '{subspace}' does not support axis '{axis}'.",
+            owner,
+        )
+
+
 def _view_shape(view) -> QuantityType | None:
     if getattr(view, "is_elapsed", False):
         return QuantityType.Duration
@@ -53,7 +78,10 @@ def _view_shape(view) -> QuantityType | None:
         return None
     quantity = _resolved_world_quantity(quantity)
     subspace = getattr(view, "subspace", None)
-    axis = axis_label(getattr(view, "axis", None))
+    raw_axis = getattr(view, "axis", None)
+    raw_axis_value = str(getattr(raw_axis, "value", raw_axis)) if raw_axis is not None else None
+    _validate_axis(subspace, raw_axis_value, view)
+    axis = axis_label(raw_axis)
 
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
@@ -81,22 +109,30 @@ def _view_shape(view) -> QuantityType | None:
     return None
 
 
-def _context_quantity_shape(quantity: ContextQuantity) -> QuantityType:
+def _context_quantity_shape(quantity: ContextQuantity) -> QuantityType | ReferenceGeneratorType:
     quantity = _resolved_context_quantity(quantity)
     return quantity.type
 
 
-def _context_ref_shape(ref: ContextRef) -> QuantityType | None:
+def _context_ref_shape(ref: ContextRef) -> QuantityType | ReferenceGeneratorType | None:
     value = context_ref_value(ref)
     if not isinstance(value, ContextQuantity):
         return None
     base_shape = _context_quantity_shape(value)
     subspace_raw = getattr(ref, "subspace", None)
-    axis = axis_label(getattr(ref, "axis", None))
+    raw_axis = getattr(ref, "axis", None)
+    raw_axis_value = str(getattr(raw_axis, "value", raw_axis)) if raw_axis is not None else None
+    axis = axis_label(raw_axis)
     if subspace_raw is None:
         return base_shape
-    subspace = str(getattr(subspace_raw, "value", subspace_raw))
-    if base_shape in {QuantityType.Pose, QuantityType.Trajectory}:
+    subspace_value = str(getattr(subspace_raw, "value", subspace_raw))
+    subspace = (
+        SubSpace(subspace_value)
+        if subspace_value in SubSpace._value2member_map_
+        else subspace_value
+    )
+    _validate_axis(subspace, raw_axis_value, ref)
+    if base_shape in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}:
         if subspace == SubSpace.Position:
             return QuantityType.Distance if axis is not None else QuantityType.Position
         if subspace == SubSpace.Orientation:
@@ -119,36 +155,52 @@ def _context_ref_shape(ref: ContextRef) -> QuantityType | None:
     return None
 
 
-def _constraint_reference_shapes(constraint: ConstraintSpecification) -> list[tuple[ContextRef, QuantityType]]:
+def _require_shape(shape: object | None, owner: object, message: str) -> object:
+    if shape is None:
+        raise semantic_error(message, owner)
+    return shape
+
+
+def _constraint_reference_shapes(
+    constraint: ConstraintSpecification,
+) -> list[tuple[ContextRef, QuantityType | ReferenceGeneratorType]]:
     refs = constraint_context_refs(constraint)
-    pairs: list[tuple[ContextRef, QuantityType]] = []
+    pairs: list[tuple[ContextRef, QuantityType | ReferenceGeneratorType]] = []
     for ref in refs:
         bare = getattr(ref, "bare", None)
         if bare is not None:
             if getattr(bare, "unit", None) in {"s", "ms"}:
                 pairs.append((ref, QuantityType.Duration))
             continue
-        ref_shape = _context_ref_shape(ref)
-        if ref_shape is not None:
-            pairs.append((ref, ref_shape))
+        ref_shape = _require_shape(
+            _context_ref_shape(ref),
+            ref,
+            f"Constraint '{constraint.name}' has an invalid reference selector.",
+        )
+        pairs.append((ref, ref_shape))
     return pairs
 
 
-def _types_match(left: QuantityType | None, right: QuantityType | None) -> bool:
+def _types_match(
+    left: QuantityType | ReferenceGeneratorType | None,
+    right: QuantityType | ReferenceGeneratorType | None,
+) -> bool:
     if left is None or right is None:
         return True
     compatible = {
-        QuantityType.Angle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
-        QuantityType.AngularDistance: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
-        QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.AngularDistance, QuantityType.PlaneAngle},
+        QuantityType.Angle: {QuantityType.Angle, QuantityType.PlaneAngle},
+        QuantityType.PlaneAngle: {QuantityType.Angle, QuantityType.PlaneAngle},
         QuantityType.Distance: {QuantityType.Distance},
         QuantityType.Position: {QuantityType.Position},
         QuantityType.Orientation: {QuantityType.Orientation},
-        QuantityType.Pose: {QuantityType.Pose, QuantityType.Trajectory},
+        QuantityType.Pose: {QuantityType.Pose, ReferenceGeneratorType.Trajectory},
         QuantityType.Duration: {QuantityType.Duration},
         # An Admittance quantity is a per-axis velocity reference: a velocity
         # constraint may track it exactly like a plain LinearVelocity setpoint.
-        QuantityType.LinearVelocity: {QuantityType.LinearVelocity, QuantityType.Admittance},
+        QuantityType.LinearVelocity: {
+            QuantityType.LinearVelocity,
+            ReferenceGeneratorType.Admittance,
+        },
     }
     return right in compatible.get(left, {left})
 
@@ -187,7 +239,7 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
     value = getattr(quantity, "value", None)
     if not isinstance(value, ProfileSpec):
         return
-    if quantity.type != QuantityType.VelocityProfile:
+    if quantity.type != ReferenceGeneratorType.VelocityProfile:
         raise semantic_error(
             f"Profile '{quantity.name}' must be declared as VelocityProfile.",
             quantity,
@@ -224,7 +276,11 @@ def validate_context_quantity_values(model: Model) -> None:
                 value = getattr(quantity, "value", None)
                 _validate_profile_quantity(quantity)
                 if isinstance(value, ReferenceValue):
-                    source_shape = _context_ref_shape(value.source)
+                    source_shape = _require_shape(
+                        _context_ref_shape(value.source),
+                        value.source,
+                        f"Reference '{quantity.name}' has an invalid source selector.",
+                    )
                     if not _types_match(quantity.type, source_shape):
                         raise semantic_error(
                             f"Reference '{quantity.name}' is declared as {quantity.type}, "
@@ -232,7 +288,11 @@ def validate_context_quantity_values(model: Model) -> None:
                             quantity,
                         )
                     if value.offset is not None:
-                        offset_shape = _context_ref_shape(value.offset)
+                        offset_shape = _require_shape(
+                            _context_ref_shape(value.offset),
+                            value.offset,
+                            f"Reference '{quantity.name}' has an invalid offset selector.",
+                        )
                         if not _types_match(quantity.type, offset_shape):
                             raise semantic_error(
                                 f"Reference '{quantity.name}' is declared as {quantity.type}, "
@@ -241,7 +301,11 @@ def validate_context_quantity_values(model: Model) -> None:
                             )
                 if not isinstance(value, SnapshotValue):
                     continue
-                source_shape = _view_shape(value.source)
+                source_shape = _require_shape(
+                    _view_shape(value.source),
+                    value.source,
+                    f"Snapshot '{quantity.name}' has an invalid source selector.",
+                )
                 if not _types_match(quantity.type, source_shape):
                     raise semantic_error(
                         f"Snapshot '{quantity.name}' is declared as {quantity.type}, "
@@ -259,7 +323,11 @@ def validate_context_quantity_values(model: Model) -> None:
 def validate_constraint_value_types(model: Model) -> None:
     for motion in motion_specs(model):
         for constraint in motion_constraints(motion):
-            view_shape = _view_shape(constraint.view)
+            view_shape = _require_shape(
+                _view_shape(constraint.view),
+                constraint.view,
+                f"Constraint '{constraint.name}' has an invalid view selector.",
+            )
             for ref, ref_shape in _constraint_reference_shapes(constraint):
                 if not _types_match(view_shape, ref_shape):
                     raise semantic_error(

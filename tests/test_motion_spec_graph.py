@@ -14,21 +14,24 @@ from textx.exceptions import TextXSemanticError
 from motion_spec.ir_gen import Parser
 from motion_spec.namespace import (
     CSTR,
+    CSTR_EXT,
     SNAP,
     CSTR_HDL,
     CSTR_HDL_EXT,
     EL,
     GEOM_COORD,
+    GEOM_COORD_EXT,
     GEOM_ENT,
     GEOM_OP,
+    GEOM_OP_EXT,
     GEOM_REL,
+    GEOM_REL_EXT,
     KC,
     KC_STAT,
     MAP,
     MAP_EXT,
     MJ,
     MOT,
-    MOT_EXT,
     QUDT_QKIND,
     QUDT_SCHEMA,
     QUDT_UNIT,
@@ -36,7 +39,6 @@ from motion_spec.namespace import (
     RBDYN_OP,
     SLV,
     TRAJ,
-    VALUE_ROLE,
 )
 from motion_spec_dsl.rdf import (
     MotionSpecDatasetBuilder,
@@ -221,7 +223,7 @@ def test_reference_value_context_views_emit_map_views() -> None:
     assert (orientation_view, RDF.type, MAP_EXT.PoseOrientationView) in graph
     assert (orientation_view, MAP.superobject, URIRef(quantities["task-pose"].uri)) in graph
     assert (orientation_view, MAP.subobject, orientation_subobject) in graph
-    assert (orientation_view, MAP.subspace, MAP_EXT.rotation) in graph
+    assert (orientation_view, MAP.subspace, MAP_EXT.orientation) in graph
     assert (orientation_view, MAP.axis, None) not in graph
     assert (URIRef(orientation.uri), CSTR["reference-value"], orientation_subobject) in graph
 
@@ -391,12 +393,12 @@ def test_velocity_profile_pid_rewires_distance_reference() -> None:
     measured_node = graph.value(constraint_node, CSTR.quantity)
 
     assert (constraint_node, CSTR["reference-value"], ref_node) in graph
-    assert (ref_node, RDF.type, VALUE_ROLE.Computed) in graph
     assert (op_node, RDF.type, CSTR_HDL_EXT.VelocityProfile) in graph
+    assert (op_node, RDF.type, TRAJ.VelocityProfile) in graph
     assert (op_node, CSTR_HDL_EXT["measured"], measured_node) in graph
     assert (op_node, CSTR_HDL_EXT["controller"], URIRef(controller.uri)) in graph
     assert (op_node, CSTR_HDL_EXT["reference"], ref_node) in graph
-    assert (op_node, CSTR_HDL_EXT["shape"], Literal("SCurve")) in graph
+    assert (op_node, TRAJ["shape"], Literal("SCurve")) in graph
     assert (URIRef(controller.uri), CSTR_HDL_EXT["velocity-profile"], URIRef(profile.uri)) in graph
 
 
@@ -730,7 +732,9 @@ def test_pose_diff_supports_position_and_orientation_component_subsets() -> None
     for controller_name, components in expected.items():
         diff_node = builder.root_uri(f"pose-diff-{controller_name}", owner=motion.while_)
         eval_node = builder.root_uri(f"eval-pose-diff-{controller_name}", owner=motion.while_)
-        assert (eval_node, GEOM_OP.out, diff_node) in graph
+        assert (eval_node, GEOM_OP_EXT.out, diff_node) in graph
+        assert (diff_node, RDF.type, GEOM_REL_EXT.PoseDifference) in graph
+        assert (diff_node, RDF.type, GEOM_COORD_EXT.PoseDifferenceCoordinate) in graph
         for suffix, subspace, axis in components:
             err_node = builder.root_uri(f"{controller_name}-err-{suffix}", owner=motion.while_)
             view_node = builder.root_uri(
@@ -738,9 +742,12 @@ def test_pose_diff_supports_position_and_orientation_component_subsets() -> None
             )
             energy_node = builder.root_uri(f"eacc-{controller_name}-{suffix}", owner=motion)
             acc_node = builder.root_uri(f"acc-cstr-{controller_name}-{suffix}", owner=motion)
+            expected_subspace = (
+                GEOM_COORD_EXT["linear"] if subspace == "linear-acceleration" else GEOM_COORD_EXT["angular"]
+            )
             assert (view_node, MAP.superobject, diff_node) in graph
             assert (view_node, MAP.subobject, err_node) in graph
-            assert (view_node, MAP.subspace, MAP[subspace]) in graph
+            assert (view_node, MAP.subspace, expected_subspace) in graph
             assert (view_node, MAP.axis, MAP[axis]) in graph
             assert (acc_node, SLV["acceleration-energy"], energy_node) in graph
             assert acc_node in constraint_nodes
@@ -1089,7 +1096,6 @@ def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> N
     wait_node = URIRef(wait5s.uri)
     wait_qty = graph.value(wait_node, CSTR.quantity)
     assert (wait_qty, RDF.type, QUDT_SCHEMA.Quantity) in graph
-    assert (wait_qty, RDF.type, VALUE_ROLE.Measured) in graph
     assert (wait_qty, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time) in graph
     assert (wait_qty, QUDT_SCHEMA.unit, QUDT_UNIT.SEC) in graph
 
@@ -1104,9 +1110,9 @@ def test_elapsed_until_supports_duration_literals_and_individual_monitors() -> N
     # `UNTIL any` emits an OR: the three constraints hang off one ConstraintDisjunction
     # node linked from the motion via MOT.until -- not three direct MOT.until triples.
     far = _resolved_spec(handler.motion.until.constraints[2])
-    disjunction = graph.value(predicate=RDF.type, object=MOT_EXT.ConstraintDisjunction)
+    disjunction = graph.value(predicate=RDF.type, object=CSTR_EXT.ConstraintDisjunction)
     assert disjunction is not None
-    assert set(graph.objects(disjunction, MOT_EXT["has-constraint"])) == {
+    assert set(graph.objects(disjunction, CSTR_EXT["has-constraint"])) == {
         URIRef(wait5s.uri),
         URIRef(inline5s.uri),
         URIRef(far.uri),
@@ -1255,7 +1261,7 @@ def test_frame_aware_trajectory_reference_composes_cube_trajectory_into_base_fra
         if getattr(item, "name", None) == "pose-ee-base"
     )
     eval_node = builder.root_uri("eval-pose-diff-ctrl-follow", owner=motion)
-    assert (eval_node, RDF.type, GEOM_OP["PoseDiffEvaluator"]) in graph
+    assert (eval_node, RDF.type, GEOM_OP_EXT["PoseDiffEvaluator"]) in graph
     assert (eval_node, GEOM_OP.in1, URIRef(ee_pose_quantity.uri)) in graph
     assert (eval_node, GEOM_OP.in2, transformed_node) in graph
     assert (eval_node, GEOM_OP.in2, traj_node) not in graph

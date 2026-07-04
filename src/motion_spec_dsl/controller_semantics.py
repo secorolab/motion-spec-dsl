@@ -54,6 +54,37 @@ class AccelerationConstraintRecord:
 
 
 @dataclass(frozen=True)
+class PoseDiffComponentRecord:
+    """Neutral linear/angular axis component for the pose-diff evaluator/controller
+    path. Distinct from `AccelerationConstraintRecord`: a pose-diff component is a
+    position/orientation error term (Length/Angle), not an acceleration, even though
+    it is derived from the same ACHD acceleration-constraint axis enumeration."""
+
+    part: str  # "linear" | "angular"
+    axis: str
+
+    @property
+    def suffix(self) -> str:
+        # Must match AccelerationConstraintRecord.suffix: the pose-diff controller's
+        # energy/control-signal node and the ACHD acceleration-constraint's
+        # acceleration-energy node are the same shared URI.
+        prefix = {"linear": "lin", "angular": "ang"}[self.part]
+        return f"{prefix}-{self.axis}"
+
+
+def pose_diff_components(
+    acceleration_constraints: tuple["AccelerationConstraintRecord", ...],
+) -> tuple[PoseDiffComponentRecord, ...]:
+    """Translate shared ACHD acceleration-constraint records into the neutral
+    linear/angular vocabulary the pose-diff path actually means."""
+    part_by_subspace = {"linear-acceleration": "linear", "angular-acceleration": "angular"}
+    return tuple(
+        PoseDiffComponentRecord(part_by_subspace[record.subspace], record.axis)
+        for record in acceleration_constraints
+    )
+
+
+@dataclass(frozen=True)
 class ControllerCommandRecord:
     controller: ControllerEntry
     constraint: ConstraintSpecification
