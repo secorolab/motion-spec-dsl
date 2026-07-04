@@ -1050,6 +1050,14 @@ class ContextRef:
 
 
 @dataclass
+class SaturationSpec:
+    parent: object
+    maximum: ContextRef | None = None
+    lower: ContextRef | None = None
+    upper: ContextRef | None = None
+
+
+@dataclass
 class EqualityConstraint:
     reference: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1249,6 +1257,8 @@ class ControllerParams:
     constraint: ConstraintRef
     profile: ContextRef | None = None
     measured_derivative: View | None = None
+    output_saturation: SaturationSpec | None = None
+    integral_saturation: SaturationSpec | None = None
     terms: list[ControllerParam] = field(default_factory=list)
     kp: float | None = field(init=False, default=None)
     ki: float | None = field(init=False, default=None)
@@ -1298,19 +1308,31 @@ class ControllerParams:
 
 
 @dataclass
+class SolverLimitEntry:
+    parent: object
+    target: str
+    saturation: SaturationSpec
+
+
+@dataclass
+class SolverLimits:
+    parent: object
+    entries: list[SolverLimitEntry] = field(default_factory=list)
+
+
+@dataclass
 class SolverEntry(NamedNamespaceObject):
     parent: object
     name: str
     robot: RobotRef
     algorithm: str
-    # Optional control-loop tuning (DLS/Tikhonov regularization lambda, torque-limit
-    # override, Cartesian-accel "beta" clamp overrides). Unauthored FLOAT grammar attrs
-    # default to 0.0, not None; 0.0 is never a valid authored value (SHACL
-    # requires > 0), so it doubles as the "unauthored" sentinel downstream.
+    # Legacy scalar solver metadata. New saturation/clamp behavior is authored
+    # through `limits`; unauthored FLOAT grammar attrs default to 0.0, not None.
     regularization: float = 0.0
     torque_limit: float = 0.0
     max_linear_accel: float = 0.0
     max_angular_accel: float = 0.0
+    limits: SolverLimits | None = None
     root: RobotAnchorRef | None = None
     gravity: WorldQuantity | None = None
     gravity_value: ContextRef | None = None

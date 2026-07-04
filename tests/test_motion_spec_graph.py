@@ -216,7 +216,138 @@ def test_distance_control_codegen_feeds_direction_and_pid_energy_to_achd(tmp_pat
     assert "shared.direction_ctrl_gap.Normalize();" in motion_hpp
     assert "state.arm_solver_move.f_cstr" in motion_hpp
     assert "alpha_axis_arm_solver_move_0" in motion_hpp
-    assert "state.arm_solver_move.e_acc(0) = motion_spec::runtime::clamp_abs(shared.eacc_pose_link_target_link_ee_distance_move" in motion_hpp
+    assert "state.arm_solver_move.e_acc(0) = shared.eacc_pose_link_target_link_ee_distance_move;" in motion_hpp
+    assert "clamp_abs(shared.eacc_pose_link_target_link_ee_distance_move" not in motion_hpp
+
+
+def test_solver_acceleration_saturation_is_authored_and_codegen_clamps(tmp_path) -> None:
+    if shutil.which("stst") is None:
+        pytest.skip("requires stst")
+
+    source = DISTANCE_ACHD_SOURCE.replace(
+        "s: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 } }",
+        "s: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }, lin-accel-limit: LinearAcceleration = 2.0 m/s2 }",
+    ).replace(
+        "algorithm: ACHD,",
+        "algorithm: ACHD, limits { linear-acceleration: Saturation { max: <s.lin-accel-limit> } },",
+    )
+    _, dataset_graph, context = _build_string_dataset(source)
+
+    saturations = list(dataset_graph.subjects(RDF.type, SLV_EXT.AccelerationSaturation))
+    assert len(saturations) == 1
+    saturation = saturations[0]
+    assert dataset_graph.value(saturation, CSTR_HDL_EXT["maximum-absolute-value"]) is not None
+
+    manifest = tmp_path / "distance-app.json"
+    manifest.write_text(
+        dataset_graph.serialize(format="json-ld", context=context, auto_compact=True)
+    )
+    ir = generate_ir(manifest)
+
+    ir_path = tmp_path / "ir.json"
+    write_json(ir_path, ir)
+    out_dir = tmp_path / "gen"
+    generate_code(ir_path=ir_path, output_dir=out_dir, stst_bin="stst")
+
+    motion_hpp = (out_dir / "headers" / "motion_move.hpp").read_text()
+    assert "state.arm_solver_move.e_acc(0) = motion_spec::runtime::clamp_range(shared.eacc_pose_link_target_link_ee_distance_move, -2.0, 2.0);" in motion_hpp
+
+
+def test_torque_control_signal_and_integral_saturation_codegen_clamps(tmp_path) -> None:
+    if shutil.which("stst") is None:
+        pytest.skip("requires stst")
+
+    source = (VALID_FIXTURES / POSTURE_CONTROLLER).read_text()
+    source = source.replace(
+        "gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }",
+        "gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 },\n"
+        "            tau-max: Torque = 40.0 Nm,\n"
+        "            out-max: Torque = 30.0 Nm,\n"
+        "            i-max: Torque = 5.0 Nm",
+    ).replace(
+        "ctrl-j2-posture: PID { constraint: <m_posture.keep-j2-safe>, Kp = 10.0, Ki = 0.0, Kd = 0.5 } as Torque",
+        "ctrl-j2-posture: PID { constraint: <m_posture.keep-j2-safe>, "
+        "output-saturation: Saturation { max: <c2.out-max> }, "
+        "integral-saturation: Saturation { max: <c2.i-max> }, "
+        "Kp = 10.0, Ki = 1.0, Kd = 0.5 } as Torque",
+    ).replace(
+        "algorithm: ACHD,",
+        "algorithm: ACHD, limits { torque: Saturation { max: <c2.tau-max> } },",
+    )
+    _, dataset_graph, context = _build_string_dataset(source)
+
+    assert len(list(dataset_graph.subjects(RDF.type, SLV_EXT.TorqueSaturation))) == 1
+
+    manifest = tmp_path / "posture-app.json"
+    manifest.write_text(
+        dataset_graph.serialize(format="json-ld", context=context, auto_compact=True)
+    )
+    ir = generate_ir(manifest)
+
+    ir_path = tmp_path / "ir.json"
+    write_json(ir_path, ir)
+    out_dir = tmp_path / "gen"
+    generate_code(ir_path=ir_path, output_dir=out_dir, stst_bin="stst")
+
+    motion_hpp = (out_dir / "headers" / "motion_m_posture.hpp").read_text()
+    # command-torque clamp on the solver output (authored torque-max)
+    assert (
+        "robot.arm_solver_m_posture.robot->jnt_trq_cmd[i] = motion_spec::runtime::clamp_range("
+        "state.arm_solver_m_posture.tau_ctrl(i), -40.0, 40.0);" in motion_hpp
+    )
+    # control-signal clamp on the controller output (authored output-saturation)
+    assert (
+        "shared.tau_ctrl_j2_posture = motion_spec::runtime::clamp_range(_control_signal, -30.0, 30.0);"
+        in motion_hpp
+    )
+    # integral clamp wired into the PID controller (authored integral-saturation)
+    assert "motion_spec::runtime::kControlPeriodS, true, -5.0, 5.0}" in motion_hpp
+
+
+def test_linear_and_angular_acceleration_saturation_codegen_clamps(tmp_path) -> None:
+    if shutil.which("stst") is None:
+        pytest.skip("requires stst")
+
+    source = (
+        VALID_FIXTURES / "02_acceleration_constraints/05_pose_component_subsets.robmot"
+    ).read_text()
+    source = source.replace(
+        "gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 }",
+        "gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 },\n"
+        "            lin-max: LinearAcceleration = 3.0 m/s2,\n"
+        "            ang-max: AngularAcceleration = 7.0 rad/s2",
+    ).replace(
+        "algorithm: ACHD,",
+        "algorithm: ACHD, limits { linear-acceleration: Saturation { max: <c2.lin-max> }, "
+        "angular-acceleration: Saturation { max: <c2.ang-max> } },",
+    )
+    _, dataset_graph, context = _build_string_dataset(source)
+
+    # one saturation per clamped e_acc component: 3 linear + 3 angular axes
+    assert len(list(dataset_graph.subjects(RDF.type, SLV_EXT.AccelerationSaturation))) == 6
+
+    manifest = tmp_path / "pose-parts-app.json"
+    manifest.write_text(
+        dataset_graph.serialize(format="json-ld", context=context, auto_compact=True)
+    )
+    ir = generate_ir(manifest)
+
+    ir_path = tmp_path / "ir.json"
+    write_json(ir_path, ir)
+    out_dir = tmp_path / "gen"
+    generate_code(ir_path=ir_path, output_dir=out_dir, stst_bin="stst")
+
+    motion_hpp = (out_dir / "headers" / "motion_m_pose_parts.hpp").read_text()
+    # linear-acceleration constraints clamp to the authored LinearAcceleration bound
+    assert (
+        "state.arm_solver_m_pose_parts.e_acc(0) = motion_spec::runtime::clamp_range("
+        "shared.eacc_ctrl_position_lin_x, -3.0, 3.0);" in motion_hpp
+    )
+    # angular-acceleration constraints clamp to the authored AngularAcceleration bound
+    assert (
+        "state.arm_solver_m_pose_parts.e_acc(3) = motion_spec::runtime::clamp_range("
+        "shared.eacc_ctrl_orientation_ang_x, -7.0, 7.0);" in motion_hpp
+    )
 
 
 def test_reference_value_context_views_emit_map_views() -> None:

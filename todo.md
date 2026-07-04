@@ -3,7 +3,6 @@
 ## Later
 
 - Add prioritization support for mixed ACHD motion drivers, including `joint-force`.
-- Add PID output clamp support as an authored controller parameter if clamps become part of the model.
 - Clean up `motion-spec` Ruff/Pyright findings. (Regression suite now runs: `test_shacl_conformance.py`
   exercises 4 conforming models end-to-end.) Pyright reports ~150 src findings, almost all rdflib/textx
   stub gaps (`Node` not assignable to `float`) — a large low-value grind.

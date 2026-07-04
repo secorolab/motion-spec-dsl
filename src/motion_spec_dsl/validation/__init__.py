@@ -35,6 +35,7 @@ from motion_spec_dsl.validation.solvers import (
     validate_handler_control_mode_solver_compatibility,
     validate_mixed_solver_domains,
     validate_solver_refs,
+    validate_solver_limits,
     validate_solver_regularization_algorithm,
     validate_supported_solver_algorithms,
 )
@@ -66,6 +67,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_control_mode_solver_compatibility(model)
     validate_supported_solver_algorithms(model)
     validate_solver_regularization_algorithm(model)
+    validate_solver_limits(model)
     validate_mixed_solver_domains(model)
     validate_controller_commands(model)
     validate_achd_acceleration_constraints(model)

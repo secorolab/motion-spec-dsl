@@ -20,6 +20,7 @@ from motion_spec_dsl.domain import (
     _resolved_solver,
 )
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
+from motion_spec_dsl.validation.constraints import validate_saturation_spec
 
 
 SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
@@ -191,6 +192,41 @@ def validate_solver_regularization_algorithm(model: Model) -> None:
                     f"Solver '{resolved_solver.name}' authors regularization with algorithm "
                     f"{resolved_solver.algorithm}; it only applies to RNE.",
                     solver,
+                )
+
+
+def validate_solver_limits(model: Model) -> None:
+    expected_by_target = {
+        "torque": QuantityType.Torque,
+        "linear-acceleration": QuantityType.LinearAcceleration,
+        "angular-acceleration": QuantityType.AngularAcceleration,
+    }
+    for handler in constraint_handlers(model):
+        for solver in handler.solvers:
+            resolved_solver = _resolved_solver(solver)
+            limits = getattr(resolved_solver, "limits", None)
+            if limits is None:
+                continue
+            seen: set[str] = set()
+            for entry in limits.entries:
+                target = str(entry.target)
+                if target in seen:
+                    raise semantic_error(
+                        f"Solver '{resolved_solver.name}' repeats saturation target '{target}'.",
+                        entry,
+                    )
+                seen.add(target)
+                expected = expected_by_target.get(target)
+                if expected is None:
+                    raise semantic_error(
+                        f"Solver '{resolved_solver.name}' has unsupported saturation target '{target}'.",
+                        entry,
+                    )
+                validate_saturation_spec(
+                    entry.saturation,
+                    expected=expected,
+                    owner=entry,
+                    label=f"Solver '{resolved_solver.name}' {target}",
                 )
 
 

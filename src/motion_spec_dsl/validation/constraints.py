@@ -24,6 +24,7 @@ from motion_spec_dsl.domain import (
     QuantityType,
     ReferenceGeneratorType,
     ReferenceValue,
+    SaturationSpec,
     SnapshotValue,
     SubSpace,
     TrajectoryValue,
@@ -243,6 +244,35 @@ def _check_profile_ref(
     scalar = _static_scalar(ref)
     if scalar is not None and scalar.value <= 0:
         raise semantic_error(f"VelocityProfile {attr} must be positive.", ref)
+
+
+def validate_saturation_spec(
+    saturation: SaturationSpec,
+    *,
+    expected: QuantityType | None,
+    owner: object,
+    label: str,
+) -> None:
+    refs = []
+    if saturation.maximum is not None:
+        refs.append(("max", saturation.maximum))
+    else:
+        if saturation.lower is None or saturation.upper is None:
+            raise semantic_error(f"{label} saturation must specify max or lower and upper.", owner)
+        refs.extend([("lower", saturation.lower), ("upper", saturation.upper)])
+
+    for name, ref in refs:
+        actual = _context_ref_shape(ref)
+        if actual is None:
+            raise semantic_error(f"{label} saturation {name} must reference a quantity.", ref)
+        if expected is not None and actual != expected:
+            raise semantic_error(
+                f"{label} saturation {name} must reference {expected}, got {actual}.",
+                ref,
+            )
+        scalar = _static_scalar(ref)
+        if name == "max" and scalar is not None and scalar.value <= 0:
+            raise semantic_error(f"{label} saturation max must be positive.", ref)
 
 
 def _validate_profile_quantity(quantity: ContextQuantity) -> None:

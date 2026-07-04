@@ -347,7 +347,7 @@ AdmittanceSpec:
         "mass" "=" mass=FLOAT ","
         "damping" "=" damping=FLOAT
         ("," "stiffness" "=" stiffness=FLOAT)?
-        ("," "max-velocity" "=" max_velocity=FLOAT (max_velocity_unit=Unit)?)?
+        "," "max-velocity" "=" max_velocity=FLOAT (max_velocity_unit=Unit)?
     "}"
 ;
 
@@ -393,6 +393,7 @@ QuantityType:
     "AngularVelocity"     |
     "LinearVelocity"      |
     "LinearAcceleration"  |
+    "AngularAcceleration" |
     "LinearJerk"          |
     "Force"               |
     "Torque"              |
@@ -562,6 +563,15 @@ OutsideConstraint:
     "outside" lower=ContextRef "and" upper=ContextRef
 ;
 
+SaturationSpec:
+    "Saturation" "{"
+        (
+            "max" ":" maximum=ContextRef |
+            "lower" ":" lower=ContextRef "," "upper" ":" upper=ContextRef
+        )
+    "}"
+;
+
 
 // Constraint Handler
 
@@ -632,6 +642,8 @@ ControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">"
     ("," "profile" ":" profile=ContextRef)?
     ("," "measured_derivative" ":" measured_derivative=View)?
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+    ("," "integral-saturation" ":" integral_saturation=SaturationSpec)?
     ("," terms*=ControllerParam[","])?
 ;
 
@@ -679,11 +691,24 @@ SolverEntry:
         ("," "torque-limit" ":" torque_limit=FLOAT)?
         ("," "max-linear-accel" ":" max_linear_accel=FLOAT)?
         ("," "max-angular-accel" ":" max_angular_accel=FLOAT)?
+        ("," limits=SolverLimits)?
         ("," "root"      ":" root=RobotAnchorRef
             ("," "end"  ":" end=RobotAnchorRef)?
             "," "gravity" ":" "<" gravity=[WorldQuantity|ScopedName] ">" "equal to" gravity_value=ContextRef
         )?
     "}"
+;
+
+SolverLimits:
+    "limits" "{" entries+=SolverLimitEntry[","] "}"
+;
+
+SolverLimitEntry:
+    target=SolverLimitTarget ":" saturation=SaturationSpec
+;
+
+SolverLimitTarget:
+    "torque" | "linear-acceleration" | "angular-acceleration"
 ;
 
 RobotRef:
@@ -710,7 +735,7 @@ SolverAlgorithm:
 // Compact DSL unit spellings only. Verbose QUDT spellings belong in JSON-LD,
 // not authored .rob_mot files.
 Unit:
-    "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
+    "rad/s2" | "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
     "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N" | "1"
 ;
 

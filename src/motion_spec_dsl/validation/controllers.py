@@ -32,6 +32,7 @@ from motion_spec_dsl.domain import (
     _resolved_world_quantity,
 )
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
+from motion_spec_dsl.validation.constraints import validate_saturation_spec
 from motion_spec_dsl.validation.solvers import handler_controller_solver
 
 
@@ -172,6 +173,13 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
                 _validate_pid_measured_derivative(controller, resolved_controller)
+                if params.integral_saturation is not None:
+                    validate_saturation_spec(
+                        params.integral_saturation,
+                        expected=None,
+                        owner=controller,
+                        label=f"Controller '{controller.name}' integral",
+                    )
                 profile_qty = _profile_quantity(resolved_controller)
                 if params.profile is not None:
                     if profile_qty is None:
@@ -209,6 +217,11 @@ def validate_controller_commands(model: Model) -> None:
                         )
                     profiled_constraints[spec_id] = controller.name
             elif resolved_controller.type == ControllerType.Impedance:
+                if params.integral_saturation is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' integral-saturation is only supported on PID controllers.",
+                        controller,
+                    )
                 if params.measured_derivative is not None:
                     raise semantic_error(
                         f"Controller '{controller.name}' measured_derivative is only supported on PID controllers.",
@@ -235,6 +248,11 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
             elif resolved_controller.type == ControllerType.FeedForward:
+                if params.integral_saturation is not None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' integral-saturation is only supported on PID controllers.",
+                        controller,
+                    )
                 if params.measured_derivative is not None:
                     raise semantic_error(
                         f"Controller '{controller.name}' measured_derivative is only supported on PID controllers.",
@@ -337,6 +355,18 @@ def validate_controller_commands(model: Model) -> None:
                     f"Controller '{controller.name}' requires explicit 'as' for "
                     f"constraint subspace '{subspace}'.",
                     controller,
+                )
+            if params.output_saturation is not None:
+                if command_type is None:
+                    raise semantic_error(
+                        f"Controller '{controller.name}' output-saturation requires a scalar command type.",
+                        controller,
+                    )
+                validate_saturation_spec(
+                    params.output_saturation,
+                    expected=command_type,
+                    owner=controller,
+                    label=f"Controller '{controller.name}' output",
                 )
             if command_type == QuantityType.Force and resolved_controller.apply_at is None:
                 raise semantic_error(

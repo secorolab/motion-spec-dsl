@@ -86,6 +86,7 @@ from motion_spec_dsl.domain import (
     ReferenceGeneratorType,
     PoseValue,
     ReferenceValue,
+    SaturationSpec,
     Measure,
     SnapshotValue,
     SpecContextDecl,
@@ -223,6 +224,7 @@ DSL_UNIT: dict[str, Any] = {
     "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
     "cm": QUDT_UNIT["CentiM"],
     "m/s2": QUDT_UNIT["M-PER-SEC2"],
+    "rad/s2": QUDT_UNIT["RAD-PER-SEC2"],
     "s": QUDT_UNIT["SEC"],
     "ms": QUDT_UNIT["MilliSEC"],
     "1": QUDT_UNIT.UNITLESS,
@@ -3750,6 +3752,33 @@ class MotionSpecDatasetBuilder:
                 "which is not supported for graph emission."
             )
 
+    def _emit_saturation(
+        self,
+        owner_node: URIRef,
+        node: URIRef,
+        saturation: SaturationSpec,
+        input_signal: URIRef,
+        output_signal: URIRef,
+        limit_type: URIRef,
+        owner: Any,
+    ) -> URIRef:
+        self.graph.add((node, RDF.type, CSTR_HDL_EXT.SignalLimiter))
+        self.graph.add((node, RDF.type, CSTR_HDL_EXT.Saturation))
+        self.graph.add((node, RDF.type, limit_type))
+        self.graph.add((node, CSTR_HDL_EXT["input-signal"], input_signal))
+        self.graph.add((node, CSTR_HDL_EXT["output-signal"], output_signal))
+        if saturation.maximum is not None:
+            limit_node = self._emit_context_ref_node(saturation.maximum, owner, "max")
+            self.graph.add((node, CSTR_HDL_EXT["maximum-absolute-value"], limit_node))
+        else:
+            assert saturation.lower is not None and saturation.upper is not None
+            lower_node = self._emit_context_ref_node(saturation.lower, owner, "lower")
+            upper_node = self._emit_context_ref_node(saturation.upper, owner, "upper")
+            self.graph.add((node, CSTR_HDL_EXT["lower-limit"], lower_node))
+            self.graph.add((node, CSTR_HDL_EXT["upper-limit"], upper_node))
+        self.graph.add((owner_node, CSTR_HDL_EXT["limits"], node))
+        return node
+
     def _emit_acceleration_energy_quantity(self, energy_node: URIRef) -> None:
         self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
@@ -4080,6 +4109,28 @@ class MotionSpecDatasetBuilder:
             control_signal_node = self._decode_control_signal(
                 ctrl, qty, subspace, axis, motion, handler, shared
             )
+            if ctrl.params.output_saturation is not None:
+                self._emit_saturation(
+                    ctrl_node,
+                    self._owned_uri(f"sat-output-{ctrl.name}", handler),
+                    ctrl.params.output_saturation,
+                    control_signal_node,
+                    control_signal_node,
+                    CSTR_HDL_EXT.Saturation,
+                    ctrl,
+                )
+            if ctrl.params.integral_saturation is not None:
+                integral_node = self._owned_uri(f"integral-state-{ctrl.name}", handler)
+                self.graph.add((integral_node, RDF.type, QUDT_SCHEMA.Quantity))
+                self._emit_saturation(
+                    ctrl_node,
+                    self._owned_uri(f"sat-integral-{ctrl.name}", handler),
+                    ctrl.params.integral_saturation,
+                    integral_node,
+                    integral_node,
+                    CSTR_HDL_EXT.IntegralSaturation,
+                    ctrl,
+                )
             self.graph.add((ctrl_node, CSTR_HDL["control-signal"], control_signal_node))
             self.graph.add((handler_node, CSTR_HDL.controllers, ctrl_node))
 
@@ -4465,10 +4516,8 @@ class MotionSpecDatasetBuilder:
             if gravity_value is not None:
                 self.graph.add((solver_node, SLV_EXT["gravity-value"], URIRef(gravity_value.uri)))
 
-            # Optional control-loop tuning (DLS/Tikhonov regularization, torque-limit
-            # override, beta clamps). Unauthored FLOAT grammar attrs default to 0.0, not
-            # None; a truthy check is the correct "was this authored" test since SHACL
-            # requires these to be strictly positive when present.
+            # Legacy scalar solver metadata. Explicit runtime limiting is emitted
+            # through solver.limits saturations below.
             if getattr(solver, "regularization", None):
                 self.graph.add(
                     (
@@ -4504,6 +4553,23 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add(
                     (solver_node, SLV_EXT["max-angular-accel"], max_angular_accel_node)
+                )
+
+            solver_limits_by_target = {
+                str(entry.target): entry.saturation
+                for entry in getattr(getattr(solver, "limits", None), "entries", [])
+            }
+            if "torque" in solver_limits_by_target:
+                torque_signal = self._owned_uri(f"torque-output-{solver.name}", handler)
+                self._add_quantity(torque_signal, QuantityType.Torque)
+                self._emit_saturation(
+                    solver_node,
+                    self._owned_uri(f"sat-torque-{solver.name}", handler),
+                    solver_limits_by_target["torque"],
+                    torque_signal,
+                    torque_signal,
+                    SLV_EXT.TorqueSaturation,
+                    solver,
                 )
 
             robot_assembly = getattr(
@@ -4557,6 +4623,34 @@ class MotionSpecDatasetBuilder:
         shared_spec_ids: frozenset[int],
     ) -> None:
         acc_constraint_nodes: list[URIRef] = []
+        solver_limits_by_target = {
+            str(entry.target): entry.saturation
+            for entry in getattr(getattr(solver, "limits", None), "entries", [])
+        }
+
+        def emit_acceleration_saturation(
+            acc_node: URIRef,
+            energy_node: URIRef,
+            accel_subspace: str,
+            name: str,
+        ) -> None:
+            target = (
+                "linear-acceleration"
+                if accel_subspace == "linear-acceleration"
+                else "angular-acceleration"
+            )
+            saturation = solver_limits_by_target.get(target)
+            if saturation is None:
+                return
+            self._emit_saturation(
+                acc_node,
+                self._owned_uri(f"sat-{name}", motion),
+                saturation,
+                energy_node,
+                energy_node,
+                SLV_EXT.AccelerationSaturation,
+                solver,
+            )
 
         for ctrl_item in getattr(handler, "controllers", []):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
@@ -4618,6 +4712,12 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((acc_node, SLV.subspace, SLV[component.subspace]))
                     self.graph.add((acc_node, SLV.axis, SLV[component.axis]))
                     self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                    emit_acceleration_saturation(
+                        acc_node,
+                        energy_node,
+                        component.subspace,
+                        f"{ctrl.name}-{component.suffix}",
+                    )
                     if axis_frame:
                         self.graph.add(
                             (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
@@ -4660,6 +4760,12 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((acc_node, SLV.subspace, SLV[command.acceleration_constraints[0].subspace]))
                 self.graph.add((acc_node, SLV_EXT.direction, direction_node))
                 self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                emit_acceleration_saturation(
+                    acc_node,
+                    energy_node,
+                    command.acceleration_constraints[0].subspace,
+                    acc_id,
+                )
                 self.graph.add((acc_node, GEOM_COORD["as-seen-by"], as_seen_by_node))
                 acc_constraint_nodes.append(acc_node)
 
@@ -4681,6 +4787,12 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((acc_node, SLV.subspace, SLV[axis_acceleration.subspace]))
                 self.graph.add((acc_node, SLV.axis, SLV[axis]))
                 self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
+                emit_acceleration_saturation(
+                    acc_node,
+                    energy_node,
+                    axis_acceleration.subspace,
+                    acc_id,
+                )
                 axis_frame = _quantity_axis_frame(qty)
                 if axis_frame:
                     self.graph.add(
