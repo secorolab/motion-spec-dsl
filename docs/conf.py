@@ -7,6 +7,8 @@ copyright = "secorolab"
 
 extensions = ["myst_parser"]
 myst_enable_extensions = ["colon_fence", "deflist"]
+# Generate anchors for h1-h3 so in-page [text](#slug) links resolve.
+myst_heading_anchors = 3
 
 html_theme = "furo"
 html_title = "motion-spec-dsl"
