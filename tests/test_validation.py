@@ -443,6 +443,65 @@ def test_trajectory_declarations_use_reference_generator_type() -> None:
     assert traj.type == ReferenceGeneratorType.Trajectory
 
 
+def _trajectory_semantics_model(extra_spec: str, trajectory: str) -> str:
+    return f"""ns app = "https://secorolab.github.io/models/tests/"
+
+MOTION_SPEC (ns=app) follow {{
+    CONTEXT {{
+        w: World {{
+            pose-ee: Pose {{ of: ee, wrt: base, as-seen-by: base }}
+        }},
+        s: Spec {{
+            alpha: TrajectoryProgress,
+            start: Pose = Snapshot of <w.pose-ee>,
+            center: Position = Snapshot of <w.pose-ee>.position,
+            plane-normal: Direction {{ as-seen-by: base }} {{ x = 0.0, y = 0.0, z = 1.0 }},
+            pitch: Distance = 0.04 m,
+{extra_spec}
+            traj: Trajectory = {trajectory}
+        }}
+    }}
+    WHEN {{}}
+    WHILE {{ track: keeping <w.pose-ee> equal to <s.traj> }}
+    UNTIL {{}}
+}}
+"""
+
+
+def test_lerp_trajectory_requires_pose_start_and_goal() -> None:
+    model = _trajectory_semantics_model(
+        "            dx: Distance = 0.1 m,\n",
+        """Lerp {
+                start: <s.dx>,
+                goal:  <s.start>,
+                alpha: <s.alpha>
+            }""",
+    )
+
+    with pytest.raises(TextXSemanticError, match="start must reference Pose, got Distance"):
+        motion_spec_metamodel().model_from_str(model)
+
+
+def test_helix_revolutions_must_be_dimensionless() -> None:
+    model = _trajectory_semantics_model(
+        "            revolutions: Distance = 2.0 m,\n",
+        """Helix {
+                start:       <s.start>,
+                center:      <s.center>,
+                axis:        <s.plane-normal>,
+                pitch:       <s.pitch>,
+                revolutions: <s.revolutions>,
+                alpha:       <s.alpha>
+            }""",
+    )
+
+    with pytest.raises(
+        TextXSemanticError,
+        match="revolutions must reference Dimensionless, got Distance",
+    ):
+        motion_spec_metamodel().model_from_str(model)
+
+
 def test_elapsed_view_is_an_explicit_domain_node() -> None:
     model = motion_spec_metamodel().model_from_str(
         _complete_model(
@@ -735,3 +794,40 @@ def test_admittance_quantity_binds_and_tracks_velocity_constraint() -> None:
 def test_admittance_missing_mass_is_rejected() -> None:
     with pytest.raises(TextXSyntaxError):
         motion_spec_metamodel().model_from_str(_ADMITTANCE_MODEL.format(mass=""))
+
+
+def test_admittance_force_input_must_be_wrench_force_axis() -> None:
+    model = _ADMITTANCE_MODEL.format(mass="mass = 6.0, ").replace(
+        "force: <world.ext-force>.force.x",
+        "force: <world.twist-ee>.linvel.x",
+    )
+
+    with pytest.raises(TextXSemanticError, match="force must reference a Wrench force axis"):
+        motion_spec_metamodel().model_from_str(model)
+
+
+def test_admittance_force_axis_must_match_velocity_axis() -> None:
+    model = _ADMITTANCE_MODEL.format(mass="mass = 6.0, ").replace(
+        "keeping <world.twist-ee>.linvel.x equal to <spec.admit-vx>",
+        "keeping <world.twist-ee>.linvel.y equal to <spec.admit-vx>",
+    )
+
+    with pytest.raises(TextXSemanticError, match="force axis must match"):
+        motion_spec_metamodel().model_from_str(model)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("mass = 6.0", "mass = -6.0", "mass must be positive"),
+        ("damping = 60.0", "damping = -60.0", "damping must be non-negative"),
+        ("stiffness = 0.0", "stiffness = -1.0", "stiffness must be non-negative"),
+        ("max-velocity = 0.20", "max-velocity = -0.20", "max-velocity must be positive"),
+        ("max-velocity = 0.20 m/s", "max-velocity = 0.20 deg/s", "must use m/s or cm/s"),
+    ],
+)
+def test_admittance_tuning_values_are_validated(old: str, new: str, message: str) -> None:
+    model = _ADMITTANCE_MODEL.format(mass="mass = 6.0, ").replace(old, new)
+
+    with pytest.raises(TextXSemanticError, match=message):
+        motion_spec_metamodel().model_from_str(model)

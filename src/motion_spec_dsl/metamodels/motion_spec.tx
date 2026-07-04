@@ -400,6 +400,7 @@ QuantityType:
     "Angle"               |
     "Direction"           |
     "FreeVector"          |
+    "Dimensionless"       |
     "Duration"            |
     "TrajectoryProgress"
 ;
@@ -710,7 +711,7 @@ SolverAlgorithm:
 // not authored .rob_mot files.
 Unit:
     "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
-    "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N"
+    "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N" | "1"
 ;
 
 

@@ -7,6 +7,7 @@ from collections import defaultdict
 
 from motion_spec_dsl.controller_semantics import axis_label
 from motion_spec_dsl.domain import (
+    AdmittanceSpec,
     BilateralConstraint,
     ConstraintSpecification,
     ContextQuantity,
@@ -25,6 +26,7 @@ from motion_spec_dsl.domain import (
     ReferenceValue,
     SnapshotValue,
     SubSpace,
+    TrajectoryValue,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
@@ -72,6 +74,13 @@ def _view_shape(view) -> QuantityType | None:
         return QuantityType.Duration
     if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
         return QuantityType.Distance
+    norm_source = getattr(view, "norm_source", None)
+    if norm_source is not None:
+        inner_shape = _view_shape(norm_source)
+        return {
+            QuantityType.Position: QuantityType.Distance,
+            QuantityType.Orientation: QuantityType.Angle,
+        }.get(inner_shape, inner_shape)
 
     quantity = getattr(view, "quantity", None)
     if not isinstance(quantity, WorldQuantity):
@@ -195,6 +204,7 @@ def _types_match(
         QuantityType.Orientation: {QuantityType.Orientation},
         QuantityType.Pose: {QuantityType.Pose, ReferenceGeneratorType.Trajectory},
         QuantityType.Duration: {QuantityType.Duration},
+        QuantityType.Dimensionless: {QuantityType.Dimensionless},
         # An Admittance quantity is a per-axis velocity reference: a velocity
         # constraint may track it exactly like a plain LinearVelocity setpoint.
         QuantityType.LinearVelocity: {
@@ -265,6 +275,190 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
         )
 
 
+def _axis_value(axis: object | None) -> str | None:
+    return axis_label(axis)
+
+
+def _geo_prop(obj: object, key: str) -> str | None:
+    props = getattr(obj, "props", None)
+    for pair in getattr(props, "pairs", []):
+        if str(getattr(pair, "key", "")) == key:
+            return getattr(pair, "value", None)
+    return None
+
+
+def _max_velocity_unit(value: AdmittanceSpec) -> str:
+    unit = getattr(value, "max_velocity_unit", None)
+    return str(getattr(unit, "value", unit)) if unit else "m/s"
+
+
+def _validate_admittance_quantity(quantity: ContextQuantity) -> None:
+    value = getattr(quantity, "value", None)
+    if not isinstance(value, AdmittanceSpec):
+        return
+    if quantity.type != ReferenceGeneratorType.Admittance:
+        raise semantic_error(
+            f"Admittance '{quantity.name}' must be declared as Admittance.",
+            quantity,
+        )
+    if value.mass <= 0:
+        raise semantic_error(f"Admittance '{quantity.name}' mass must be positive.", value)
+    if value.damping < 0:
+        raise semantic_error(f"Admittance '{quantity.name}' damping must be non-negative.", value)
+    if value.stiffness < 0:
+        raise semantic_error(f"Admittance '{quantity.name}' stiffness must be non-negative.", value)
+    if value.max_velocity <= 0:
+        raise semantic_error(f"Admittance '{quantity.name}' max-velocity must be positive.", value)
+    if _max_velocity_unit(value) not in {"m/s", "cm/s"}:
+        raise semantic_error(
+            f"Admittance '{quantity.name}' max-velocity must use m/s or cm/s.",
+            value,
+        )
+    force = value.force
+    force_shape = _require_shape(
+        _view_shape(force),
+        force,
+        f"Admittance '{quantity.name}' has an invalid force selector.",
+    )
+    force_quantity = getattr(force, "quantity", None)
+    if isinstance(force_quantity, WorldQuantity):
+        force_quantity = _resolved_world_quantity(force_quantity)
+    if (
+        force_shape != QuantityType.Force
+        or not isinstance(force_quantity, WorldQuantity)
+        or force_quantity.type != WorldQuantityType.Wrench
+        or getattr(force, "subspace", None) != SubSpace.Force
+        or getattr(force, "axis", None) is None
+    ):
+        raise semantic_error(
+            f"Admittance '{quantity.name}' force must reference a Wrench force axis.",
+            force,
+        )
+
+
+def _validate_admittance_tracking(
+    constraint: ConstraintSpecification,
+    ref: ContextRef,
+) -> None:
+    admit_qty = context_ref_value(ref)
+    if not isinstance(admit_qty, ContextQuantity):
+        return
+    admit_qty = _resolved_context_quantity(admit_qty)
+    if admit_qty.type != ReferenceGeneratorType.Admittance:
+        return
+    value = getattr(admit_qty, "value", None)
+    if not isinstance(value, AdmittanceSpec):
+        return
+    view = constraint.view
+    if (
+        _view_shape(view) != QuantityType.LinearVelocity
+        or getattr(view, "subspace", None) != SubSpace.LinVel
+        or getattr(view, "axis", None) is None
+    ):
+        raise semantic_error(
+            f"Constraint '{constraint.name}' must track Admittance with a linear velocity axis.",
+            constraint,
+        )
+    if _axis_value(getattr(view, "axis", None)) != _axis_value(getattr(value.force, "axis", None)):
+        raise semantic_error(
+            f"Constraint '{constraint.name}' Admittance force axis must match the tracked velocity axis.",
+            ref,
+        )
+    velocity_quantity = getattr(view, "quantity", None)
+    force_quantity = getattr(value.force, "quantity", None)
+    if isinstance(velocity_quantity, WorldQuantity):
+        velocity_quantity = _resolved_world_quantity(velocity_quantity)
+    if isinstance(force_quantity, WorldQuantity):
+        force_quantity = _resolved_world_quantity(force_quantity)
+    velocity_frame = _geo_prop(velocity_quantity, "as-seen-by")
+    force_frame = _geo_prop(force_quantity, "as-seen-by")
+    if velocity_frame and force_frame and velocity_frame != force_frame:
+        raise semantic_error(
+            f"Constraint '{constraint.name}' Admittance force and velocity must use the same as-seen-by frame.",
+            ref,
+        )
+
+
+def _check_trajectory_ref(
+    quantity: ContextQuantity,
+    attr: str,
+    ref: ContextRef,
+    expected: QuantityType,
+) -> None:
+    actual = _require_shape(
+        _context_ref_shape(ref),
+        ref,
+        f"Trajectory '{quantity.name}' {attr} has an invalid selector.",
+    )
+    if actual != expected:
+        raise semantic_error(
+            f"Trajectory '{quantity.name}' {attr} must reference {expected}, got {actual}.",
+            ref,
+        )
+
+
+def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
+    value = getattr(quantity, "value", None)
+    if not isinstance(value, TrajectoryValue):
+        return
+    if quantity.type != ReferenceGeneratorType.Trajectory:
+        raise semantic_error(
+            f"Trajectory '{quantity.name}' must be declared as Trajectory.",
+            quantity,
+        )
+    if value.lerp is not None:
+        _check_trajectory_ref(quantity, "start", value.lerp.start, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "goal", value.lerp.goal, QuantityType.Pose)
+        _check_trajectory_ref(
+            quantity, "alpha", value.lerp.alpha, QuantityType.TrajectoryProgress
+        )
+        return
+    if value.circle is not None:
+        _check_trajectory_ref(quantity, "start", value.circle.start, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "center", value.circle.center, QuantityType.Position)
+        _check_trajectory_ref(
+            quantity, "plane-normal", value.circle.plane_normal, QuantityType.Direction
+        )
+        _check_trajectory_ref(
+            quantity, "alpha", value.circle.alpha, QuantityType.TrajectoryProgress
+        )
+        return
+    if value.arc is not None:
+        _check_trajectory_ref(quantity, "start", value.arc.start, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "end", value.arc.end, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "amplitude", value.arc.amplitude, QuantityType.Distance)
+        _check_trajectory_ref(
+            quantity, "plane-normal", value.arc.plane_normal, QuantityType.Direction
+        )
+        _check_trajectory_ref(
+            quantity, "alpha", value.arc.alpha, QuantityType.TrajectoryProgress
+        )
+        return
+    if value.helix is not None:
+        _check_trajectory_ref(quantity, "start", value.helix.start, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "center", value.helix.center, QuantityType.Position)
+        _check_trajectory_ref(quantity, "axis", value.helix.axis, QuantityType.Direction)
+        _check_trajectory_ref(quantity, "pitch", value.helix.pitch, QuantityType.Distance)
+        _check_trajectory_ref(
+            quantity, "revolutions", value.helix.revolutions, QuantityType.Dimensionless
+        )
+        _check_trajectory_ref(
+            quantity, "alpha", value.helix.alpha, QuantityType.TrajectoryProgress
+        )
+        return
+    if value.figure8 is not None:
+        _check_trajectory_ref(quantity, "anchor", value.figure8.anchor, QuantityType.Pose)
+        _check_trajectory_ref(quantity, "radius", value.figure8.radius, QuantityType.Distance)
+        _check_trajectory_ref(
+            quantity, "plane-normal", value.figure8.plane_normal, QuantityType.Direction
+        )
+        _check_trajectory_ref(
+            quantity, "alpha", value.figure8.alpha, QuantityType.TrajectoryProgress
+        )
+        return
+    raise semantic_error(f"Trajectory '{quantity.name}' has no populated spec.", quantity)
+
+
 def validate_context_quantity_values(model: Model) -> None:
     for motion in motion_specs(model):
         for ctx in motion.context:
@@ -275,6 +469,8 @@ def validate_context_quantity_values(model: Model) -> None:
                 quantity = _resolved_context_quantity(item)
                 value = getattr(quantity, "value", None)
                 _validate_profile_quantity(quantity)
+                _validate_admittance_quantity(quantity)
+                _validate_trajectory_quantity(quantity)
                 if isinstance(value, ReferenceValue):
                     source_shape = _require_shape(
                         _context_ref_shape(value.source),
@@ -317,7 +513,10 @@ def validate_context_quantity_values(model: Model) -> None:
             ctx = _resolved_context_decl(ctx)
             for item in getattr(ctx, "declaration", []):
                 if isinstance(item, ContextQuantity):
-                    _validate_profile_quantity(_resolved_context_quantity(item))
+                    quantity = _resolved_context_quantity(item)
+                    _validate_profile_quantity(quantity)
+                    _validate_admittance_quantity(quantity)
+                    _validate_trajectory_quantity(quantity)
 
 
 def validate_constraint_value_types(model: Model) -> None:
@@ -335,6 +534,7 @@ def validate_constraint_value_types(model: Model) -> None:
                         f"with {ref_shape}.",
                         ref,
                     )
+                _validate_admittance_tracking(constraint, ref)
 
 
 def validate_unique_constraint_names(model: Model) -> None:

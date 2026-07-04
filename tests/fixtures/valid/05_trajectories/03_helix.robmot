@@ -22,7 +22,7 @@ MOTION_SPEC (ns=app) m_helix {
         c2: Spec {
             alpha:       TrajectoryProgress,
             pitch:       LinearDistance = 0.04 m,
-            revolutions: Distance       = 2.0 m,
+            revolutions: Dimensionless  = 2.0 1,
             axis:        Direction { as-seen-by: link-base } { x = 0.0, y = 0.0, z = -1.0 },
             radius-vec:  FreeVector { as-seen-by: link-base } { x = 0.08, y = 0.0, z = 0.0 m },
             start-pose:  Pose = Snapshot of <c1.pose-ee-base>,

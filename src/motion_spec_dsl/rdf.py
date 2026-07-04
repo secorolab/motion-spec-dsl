@@ -205,6 +205,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.LinearJerk: QUDT_UNIT["M-PER-SEC3"],
     QuantityType.Force: QUDT_UNIT.N,
     QuantityType.Torque: QUDT_UNIT["N-M"],
+    QuantityType.Dimensionless: QUDT_UNIT.UNITLESS,
     QuantityType.TrajectoryProgress: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
 }
@@ -224,6 +225,7 @@ DSL_UNIT: dict[str, Any] = {
     "m/s2": QUDT_UNIT["M-PER-SEC2"],
     "s": QUDT_UNIT["SEC"],
     "ms": QUDT_UNIT["MilliSEC"],
+    "1": QUDT_UNIT.UNITLESS,
 }
 
 CONSTRAINT_PATH_BY_PREFIX = {
@@ -251,6 +253,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Wrench: RBDYN_ENT.Wrench,
     QuantityType.Direction: QUDT_QKIND.Dimensionless,
     QuantityType.FreeVector: QUDT_QKIND.FreeVector,
+    QuantityType.Dimensionless: QUDT_QKIND.Dimensionless,
     QuantityType.Duration: QUDT_QKIND.Time,
     QuantityType.TrajectoryProgress: TRAJ.Progress,
     QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
@@ -425,6 +428,15 @@ def _time_unit(unit_name: str) -> Any:
     if unit_name not in {"s", "ms"}:
         raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
     return _dsl_unit(unit_name)
+
+
+def _linear_velocity_mps(value: float, unit: object | None) -> float:
+    unit_name = str(getattr(unit, "value", unit)) if unit else "m/s"
+    if unit_name == "m/s":
+        return value
+    if unit_name == "cm/s":
+        return value / 100.0
+    raise ValueError(f"Linear velocity unit must be 'm/s' or 'cm/s', not '{unit_name}'.")
 
 
 def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
@@ -2490,7 +2502,6 @@ class MotionSpecDatasetBuilder:
         # mirroring how VelocityProfile's op is emitted from the controller path.
         if not isinstance(quantity.value, AdmittanceSpec):
             return
-        self.graph.add((node, RDF.type, CSTR_HDL_EXT.Admittance))
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, QUDT_QKIND.LinearVelocity))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
@@ -3135,7 +3146,7 @@ class MotionSpecDatasetBuilder:
         max_velocity_node = URIRef(f"{op_node}-max-velocity")
         self._emit_scalar_quantity(
             max_velocity_node,
-            spec_val.max_velocity,
+            _linear_velocity_mps(spec_val.max_velocity, spec_val.max_velocity_unit),
             QUDT_QKIND.LinearVelocity,
             QUDT_UNIT["M-PER-SEC"],
         )
@@ -3798,6 +3809,13 @@ class MotionSpecDatasetBuilder:
         )
         self.graph.add(
             (handler_node, CSTR_HDL["control-mode"], CSTR_HDL[handler.control_mode.value])
+        )
+        self.graph.add(
+            (
+                handler_node,
+                CSTR_HDL_EXT["control-mode"],
+                CSTR_HDL_EXT[handler.control_mode.value],
+            )
         )
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
         self.graph.add((event_loop_node, RDF.type, EL.EventLoop))

@@ -693,6 +693,7 @@ class QuantityType(StrEnum):
     Force = "Force"
     Torque = "Torque"
     FreeVector = "FreeVector"
+    Dimensionless = "Dimensionless"
     Duration = "Duration"
     TrajectoryProgress = "TrajectoryProgress"
 
@@ -758,6 +759,7 @@ class ContextQuantity(NamedNamespaceObject):
             "PlaneAngle",
             "AngularDistance",
             "TrajectoryProgress",
+            "Dimensionless",
             "Duration",
         }
     )

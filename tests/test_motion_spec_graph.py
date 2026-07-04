@@ -371,6 +371,7 @@ def test_standalone_builder_emits_motion_constraint_and_evaluator_nodes() -> Non
 
     assert context["app"] == motion.ns.uri
     assert (motion_node, MOT["while"], URIRef(constraint.uri)) in graph
+    assert (URIRef(handler.uri), CSTR_HDL_EXT["control-mode"], CSTR_HDL_EXT.JointTorque) in graph
     assert (evaluator_node, CSTR_HDL.constraint, URIRef(constraint.uri)) in graph
     assert (evaluator_node, CSTR_HDL.error, error_node) in graph
     assert (error_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity) in graph
@@ -400,6 +401,78 @@ def test_velocity_profile_pid_rewires_distance_reference() -> None:
     assert (op_node, CSTR_HDL_EXT["reference"], ref_node) in graph
     assert (op_node, TRAJ["shape"], Literal("SCurve")) in graph
     assert (URIRef(controller.uri), CSTR_HDL_EXT["velocity-profile"], URIRef(profile.uri)) in graph
+
+
+def test_admittance_emits_filter_operator_and_converts_max_velocity() -> None:
+    builder, graph, _ = _build_string_dataset(
+        """
+        ns app = "https://secorolab.github.io/models/admit-test/"
+
+        ENVIRONMENT (ns=app) world {
+            runtime: MuJoCo,
+            ASSETS {
+                kinova-asset: RobotAsset { model: KinovaGen3, xml: "../robots/kg3.xml" }
+            },
+            ASSEMBLY {
+                Robot kinova using <kinova-asset> {
+                    ft-sensor: wrist_ft frame-site wrist_ft_site,
+                    chain: { root: base_link, end: bracelet_link }
+                }
+            }
+        }
+
+        MOTION_SPEC (ns=app) comply {
+            CONTEXT {
+                world: World {
+                    twist-ee: VelocityTwist { of: bracelet_link, wrt: base_link, as-seen-by: base_link },
+                    ext-force: Wrench { ft-sensor: wrist_ft, as-seen-by: base_link }
+                },
+                spec: Spec {
+                    admit-vx: Admittance { force: <world.ext-force>.force.x, mass = 6.0, damping = 60.0, stiffness = 0.0, max-velocity = 20.0 cm/s }
+                }
+            }
+            WHEN {}
+            WHILE {
+                comply-x: keeping <world.twist-ee>.linvel.x equal to <spec.admit-vx>
+            }
+            UNTIL {}
+        }
+
+        CONSTRAINT_HANDLER (ns=app) handler-comply {
+            CONTEXT {
+                world: World { gravity: Gravity },
+                spec: Spec { gravity-vec: FreeVector { x = 0.0, y = 0.0, z = -9.81 m/s2 } }
+            }
+            MOTION: <comply>
+            CONTROL_MODE: JointTorque
+            MONITORS {}
+            CONTROLLERS {
+                ctrl-comply-x: PID { constraint: <comply.comply-x>, Kp = 12, Ki = 0, Kd = 0 }
+            }
+            SOLVERS {
+                arm-solver: Solver {
+                    robot: <world.kinova>,
+                    algorithm: ACHD,
+                    root: <world.kinova.chain.root>,
+                    end: <world.kinova.chain.end>,
+                    gravity: <world.gravity> equal to <spec.gravity-vec>
+                }
+            }
+        }
+        """
+    )
+
+    motion = next(spec for spec in builder.model.specs if getattr(spec, "name", "") == "comply")
+    spec_ctx = next(ctx for ctx in motion.context if getattr(ctx, "name", "") == "spec")
+    admit = next(item for item in spec_ctx.declaration if item.name == "admit-vx")
+    op_node = builder.root_uri("admit-comply-x-ctrl-comply-x", owner=motion)
+    max_velocity_node = URIRef(f"{op_node}-max-velocity")
+
+    assert (URIRef(admit.uri), RDF.type, CSTR_HDL_EXT.Admittance) not in graph
+    assert (op_node, RDF.type, CSTR_HDL_EXT.Admittance) in graph
+    assert (op_node, CSTR_HDL_EXT["reference"], builder.root_uri("comply-x-ctrl-comply-x-admit-ref", owner=motion)) in graph
+    assert float(graph.value(max_velocity_node, QUDT_SCHEMA.value)) == 0.2
+    assert (max_velocity_node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]) in graph
 
 
 def test_pid_gain_variants_emit_all_three_gains() -> None:
@@ -1396,7 +1469,10 @@ def test_helix_trajectory_emits_operator_and_input_edges() -> None:
     assert (op_node, TRAJ.center, URIRef(_trajectory_quantity(motion, "center-pos").uri)) in graph
     assert (op_node, TRAJ.axis, URIRef(_trajectory_quantity(motion, "axis").uri)) in graph
     assert (op_node, TRAJ.pitch, URIRef(_trajectory_quantity(motion, "pitch").uri)) in graph
-    assert (op_node, TRAJ.revolutions, URIRef(_trajectory_quantity(motion, "revolutions").uri)) in graph
+    revolutions = URIRef(_trajectory_quantity(motion, "revolutions").uri)
+    assert (op_node, TRAJ.revolutions, revolutions) in graph
+    assert (revolutions, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Dimensionless) in graph
+    assert (revolutions, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS) in graph
     assert (op_node, TRAJ.alpha, URIRef(_trajectory_quantity(motion, "alpha").uri)) in graph
     assert (op_node, TRAJ.trajectory, traj_node) in graph
     assert (traj_node, RDF.type, TRAJ.Trajectory) in graph

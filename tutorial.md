@@ -164,7 +164,8 @@ World entity/field declarations include `KinematicChain`, `Frame`, `SceneObject`
 
 Context quantity types include `AngularVelocity`, `LinearVelocity`, `Force`, `Torque`,
 `Distance`, `Angle`, `Direction`, `FreeVector`, `Pose`, `Position`, `Orientation`,
-`VelocityTwist`, `AccelerationTwist`, `Wrench`, `Duration`, and `TrajectoryProgress`.
+`VelocityTwist`, `AccelerationTwist`, `Wrench`, `Dimensionless`, `Duration`, and
+`TrajectoryProgress`.
 `LinearDistance` and `AngularDistance` are accepted as aliases for `Distance` and
 `Angle`. Reference generator declarations include `Trajectory`, `VelocityProfile`,
 and `Admittance`.
