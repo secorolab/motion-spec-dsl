@@ -259,11 +259,12 @@ def test_reference_value_context_views_emit_map_views() -> None:
         GEOM_COORD.AccelerationTwistCoordinate,
     ) in graph
     assert (URIRef(quantities["task-wrench"].uri), RDF.type, RBDYN_COORD.WrenchCoordinate) in graph
-    assert (
-        builder.root_uri("point-ee", owner=world_quantities["wrench-ee"]),
-        RDF.type,
-        GEOM_ENT.Point,
-    ) in graph
+    # "ref-point: point-ee" names a frame; its origin Point is a separate,
+    # linked entity (not point-ee itself, which stays a bare Frame).
+    point_ee_frame = builder.root_uri("point-ee", owner=world_quantities["wrench-ee"])
+    point_ee_origin = URIRef(f"{point_ee_frame}.origin")
+    assert (point_ee_frame, GEOM_ENT.origin, point_ee_origin) in graph
+    assert (point_ee_origin, RDF.type, GEOM_ENT.Point) in graph
 
 
 
@@ -288,9 +289,13 @@ def test_env_position_orientation_zero_defaults_are_intentional() -> None:
     )
 
     cube = URIRef("https://secorolab.github.io/models/test/world/cube")
+    cube_origin = URIRef("https://secorolab.github.io/models/test/world/cube.origin")
     position = URIRef("https://secorolab.github.io/models/test/world/cube.position")
 
-    assert (position, GEOM_REL.of, cube) in graph
+    # geom-rel:Position.of needs geom-ent:Point: the object's origin, linked
+    # from (not fused onto) its Frame node.
+    assert (cube, GEOM_ENT.origin, cube_origin) in graph
+    assert (position, GEOM_REL.of, cube_origin) in graph
     assert (position, GEOM_COORD.x, Literal(1.25)) in graph
     assert (position, GEOM_COORD.y, Literal(0.0)) in graph
     assert (position, GEOM_COORD.z, Literal(0.0)) in graph

@@ -639,7 +639,6 @@ class MotionSpecDatasetBuilder:
         world_node = URIRef(f"{env.uri}.world")
         self.graph.add((env_node, RDF.type, ENV.Workspace))
         self.graph.add((world_node, RDF.type, GEOM_ENT.Frame))
-        self.graph.add((world_node, RDF.type, GEOM_ENT.Point))
         if env.runtime == EnvironmentRuntime.MuJoCo:
             self.graph.add((env_node, RT["uses-runtime"], RT.MuJoCoRuntime))
         elif env.runtime == EnvironmentRuntime.RealRobot:
@@ -693,9 +692,11 @@ class MotionSpecDatasetBuilder:
             self.graph.add((instance_node, RDF.type, ENV.ModelledObject))
             if not is_attachment_instance:
                 self.graph.add((instance_node, RDF.type, ENV.RigidObject))
+                # Also a Pose of/wrt/as-seen-by Frame. Its origin Point and
+                # attached SimplicialComplex are separate, linked entities
+                # (_frame_origin_point / _frame_body), minted lazily wherever
+                # Position/Twist relations actually reference it.
                 self.graph.add((instance_node, RDF.type, GEOM_ENT.Frame))
-                self.graph.add((instance_node, RDF.type, GEOM_ENT.Point))
-                self.graph.add((instance_node, RDF.type, GEOM_ENT.SimplicialComplex))
             self.graph.add((instance_node, ENV["of-object"], URIRef(instance.asset.uri)))
             self.graph.add((instance_node, ENV["has-object-model"], model_node))
             if is_attachment_instance and len(robot_instances) == 1:
@@ -715,8 +716,14 @@ class MotionSpecDatasetBuilder:
                     # Position-specific semantics layered on the shared VectorXYZ core.
                     self.graph.add((pos_node, RDF.type, GEOM_REL.Position))
                     self.graph.add((pos_node, RDF.type, GEOM_COORD.PositionCoordinate))
-                    self.graph.add((pos_node, GEOM_REL.of, instance_node))
-                    self.graph.add((pos_node, GEOM_REL["with-respect-to"], world_node))
+                    self.graph.add((pos_node, GEOM_REL.of, self._frame_origin_point(instance_node)))
+                    self.graph.add(
+                        (
+                            pos_node,
+                            GEOM_REL["with-respect-to"],
+                            self._frame_origin_point(world_node),
+                        )
+                    )
                     self.graph.add((pos_node, GEOM_COORD["as-seen-by"], world_node))
                     self.graph.add((pos_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
                     self.graph.add((pos_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
@@ -893,6 +900,36 @@ class MotionSpecDatasetBuilder:
         """Create a URI in the nearest namespace owned by owner or its parents."""
         ns_owner = self._namespace_owner(owner)
         return URIRef(Namespace(ns_owner.ns.uri)[name])
+
+    def _frame_origin_point(self, frame_node: URIRef) -> URIRef:
+        """The origin geom-ent:Point of a kinematic frame, linked via geom-ent:origin.
+
+        geom-rel:Position.of/with-respect-to require geom-ent:Point, not
+        geom-ent:Frame -- minting a stable derived node (rather than typing the
+        frame node itself as Point) keeps Frame/Point as distinct entities.
+        ir_gen.point() follows the geom-ent:origin link back to frame_node so the
+        generated identifier still matches the frame's physical id.
+        """
+        point_node = URIRef(f"{frame_node}.origin")
+        if (frame_node, GEOM_ENT.origin, point_node) not in self.graph:
+            self.graph.add((frame_node, GEOM_ENT.origin, point_node))
+            self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
+        return point_node
+
+    def _frame_body(self, frame_node: URIRef) -> URIRef:
+        """The attached geom-ent:SimplicialComplex (rigid body) of a kinematic frame.
+
+        Same rationale as _frame_origin_point, for geom-rel:VelocityTwist/
+        AccelerationTwist.of/with-respect-to (which require
+        geom-ent:SimplicialComplex) and slv:AccelerationConstraintSpecification
+        attached-to. Linked via mj:attached-body -- a project bridge predicate
+        (like mj:body-name), not a comp-rob2b/SHACL-governed term.
+        """
+        body_node = URIRef(f"{frame_node}.body")
+        if (frame_node, MJ["attached-body"], body_node) not in self.graph:
+            self.graph.add((frame_node, MJ["attached-body"], body_node))
+            self.graph.add((body_node, RDF.type, GEOM_ENT.SimplicialComplex))
+        return body_node
 
     def _emit_scalar_quantity(
         self, node: URIRef, value: float, qkind: URIRef | None, unit: URIRef
@@ -1389,8 +1426,16 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_REL.Position))
         self.graph.add((node, RDF.type, GEOM_COORD.PositionCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-        self.graph.add((node, GEOM_REL.of, self._owned_uri(of_frame, source_qty)))
-        self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, source_qty)))
+        self.graph.add(
+            (node, GEOM_REL.of, self._frame_origin_point(self._owned_uri(of_frame, source_qty)))
+        )
+        self.graph.add(
+            (
+                node,
+                GEOM_REL["with-respect-to"],
+                self._frame_origin_point(self._owned_uri(wrt_frame, source_qty)),
+            )
+        )
         self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, source_qty)))
 
     def _emit_declared_pose_frame_metadata(
@@ -1699,9 +1744,13 @@ class MotionSpecDatasetBuilder:
                     explicit_structural_nodes.add(node)
                     self.graph.add((node, RDF.type, rdf_type))
                     if qty.type == WorldEntityType.SceneObject:
+                        # A scene object is also a Pose of/wrt/as-seen-by Frame.
+                        # Its origin Point and attached SimplicialComplex are
+                        # separate, linked entities (_frame_origin_point /
+                        # _frame_body), minted lazily wherever Position/Twist
+                        # relations actually reference it -- not fused onto this
+                        # node (a Frame is not a Point is not a body).
                         self.graph.add((node, RDF.type, GEOM_ENT.Frame))
-                        self.graph.add((node, RDF.type, GEOM_ENT.Point))
-                        self.graph.add((node, RDF.type, GEOM_ENT.SimplicialComplex))
 
         # Implicit entities inferred from geo props. Emit them both where prop
         # references resolve and in the handler-root namespace.
@@ -1717,33 +1766,28 @@ class MotionSpecDatasetBuilder:
             if default_node not in explicit_structural_nodes:
                 implicit.setdefault((default_node, rdf_type), None)
 
-        # A frame referenced as a pose/twist `of`/`wrt` also acts as the origin
-        # Point and attached SimplicialComplex when derived Position / twist nodes
-        # reuse it (e.g. `<pose>.position` with-respect-to a base frame). Type it
-        # as the full Frame+Point+SimplicialComplex trio, matching the fusion
-        # already applied to scene objects and `world`, so those reuses conform to
-        # the geometry SHACL shapes (Position.of=Point, Twist.wrt=SimplicialComplex).
-        frame_trio = (GEOM_ENT.Frame, GEOM_ENT.Point, GEOM_ENT.SimplicialComplex)
-
+        # A name referenced only via geo-props (never independently declared as a
+        # Frame/Link/SceneObject) still needs `geom-ent:Frame` typing for
+        # SHACL conformance -- it really is a kinematic frame regardless of
+        # which relation refers to it. Its origin Point / attached
+        # SimplicialComplex are separate linked entities, minted lazily at the
+        # relation-emission site (_frame_origin_point / _frame_body), not typed
+        # onto this same node.
         for qty in world_qtys.values():
             props = qty.props if isinstance(qty.props, GeometricProps) else None
             if qty.type == WorldQuantityType.Pose:
-                for key in ("of", "wrt"):
-                    for rdf_type in frame_trio:
-                        add_implicit(_geo_prop(props, key), rdf_type, qty)
+                add_implicit(_geo_prop(props, "of"), GEOM_ENT.Frame, qty)
+                add_implicit(_geo_prop(props, "wrt"), GEOM_ENT.Frame, qty)
                 add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
             elif qty.type == WorldQuantityType.VelocityTwist:
-                for key in ("of", "wrt"):
-                    for rdf_type in frame_trio:
-                        add_implicit(_geo_prop(props, key), rdf_type, qty)
-                add_implicit(_geo_prop(props, "ref-point"), GEOM_ENT.Point, qty)
+                add_implicit(_geo_prop(props, "of"), GEOM_ENT.Frame, qty)
+                add_implicit(_geo_prop(props, "wrt"), GEOM_ENT.Frame, qty)
                 add_implicit(
                     _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt"),
                     GEOM_ENT.Frame,
                     qty,
                 )
             elif qty.type == WorldQuantityType.Wrench:
-                add_implicit(_geo_prop(props, "ref-point"), GEOM_ENT.Point, qty)
                 add_implicit(_geo_prop(props, "as-seen-by"), GEOM_ENT.Frame, qty)
             elif qty.type == WorldQuantityType.JointPosition:
                 add_implicit(_geo_prop(props, "of"), KC.Joint, qty)
@@ -1788,13 +1832,27 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((node, MJ["ft-sensor-ref"], Literal(ft_ref)))
 
             # geo-prop targets: walk up qty → WorldContextDecl → MotionSpec → motion_ns
+            # geom-rel:Pose.of/wrt need the Frame itself; geom-rel:VelocityTwist.of/wrt
+            # need the Frame's attached body (SimplicialComplex) -- context-aware
+            # per relation type, not the same fused node for both.
             if of_v:
-                self.graph.add((node, GEOM_REL.of, self._owned_uri(of_v, qty)))
+                of_frame = self._owned_uri(of_v, qty)
+                of_target = (
+                    self._frame_body(of_frame)
+                    if qty.type == WorldQuantityType.VelocityTwist
+                    else of_frame
+                )
+                self.graph.add((node, GEOM_REL.of, of_target))
             if wrt_v:
-                self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty)))
+                wrt_frame = self._owned_uri(wrt_v, qty)
+                wrt_target = (
+                    self._frame_body(wrt_frame)
+                    if qty.type == WorldQuantityType.VelocityTwist
+                    else wrt_frame
+                )
+                self.graph.add((node, GEOM_REL["with-respect-to"], wrt_target))
             if rp_v:
-                ref_node = self._owned_uri(rp_v, qty)
-                self.graph.add((ref_node, RDF.type, GEOM_ENT.Point))
+                ref_node = self._frame_origin_point(self._owned_uri(rp_v, qty))
                 ref_predicate = (
                     RBDYN_ENT["reference-point"]
                     if qty.type == WorldQuantityType.Wrench
@@ -2056,9 +2114,17 @@ class MotionSpecDatasetBuilder:
         self.graph.add((scalar_uri, RDF.type, GEOM_COORD.VectorXYZ))
         self.graph.add((scalar_uri, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
         self.graph.add((scalar_uri, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-        self.graph.add((scalar_uri, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
+        # geom-rel:Position.of/with-respect-to need geom-ent:Point (the frames'
+        # origins), not the Frame nodes themselves.
         self.graph.add(
-            (scalar_uri, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, quantity))
+            (scalar_uri, GEOM_REL.of, self._frame_origin_point(self._owned_uri(of_frame, quantity)))
+        )
+        self.graph.add(
+            (
+                scalar_uri,
+                GEOM_REL["with-respect-to"],
+                self._frame_origin_point(self._owned_uri(wrt_frame, quantity)),
+            )
         )
         self.graph.add(
             (scalar_uri, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, quantity))
@@ -2212,12 +2278,20 @@ class MotionSpecDatasetBuilder:
             wrt_v = _geo_prop(props, "wrt")
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by") or wrt_v
+            # geom-rel:VelocityTwist/AccelerationTwist.of/wrt need the frame's
+            # attached body (SimplicialComplex), not the Frame node itself.
             if of_v:
-                self.graph.add((node, GEOM_REL.of, self._owned_uri(of_v, owner)))
+                self.graph.add((node, GEOM_REL.of, self._frame_body(self._owned_uri(of_v, owner))))
             if wrt_v:
-                self.graph.add((node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, owner)))
+                self.graph.add(
+                    (
+                        node,
+                        GEOM_REL["with-respect-to"],
+                        self._frame_body(self._owned_uri(wrt_v, owner)),
+                    )
+                )
             point_node = (
-                self._owned_uri(rp_v, owner)
+                self._frame_origin_point(self._owned_uri(rp_v, owner))
                 if rp_v
                 else self._owned_uri(f"point-{quantity.name}-origin", quantity)
             )
@@ -2231,7 +2305,7 @@ class MotionSpecDatasetBuilder:
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by")
             if rp_v:
-                point_node = self._owned_uri(rp_v, owner)
+                point_node = self._frame_origin_point(self._owned_uri(rp_v, owner))
                 self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
                 self.graph.add((node, RBDYN_ENT["reference-point"], point_node))
             else:
@@ -2317,8 +2391,12 @@ class MotionSpecDatasetBuilder:
                 pose_wrt = self.graph.value(super_node, GEOM_REL["with-respect-to"])
                 pose_asb = self.graph.value(super_node, GEOM_COORD["as-seen-by"])
                 if pose_of and pose_wrt:
-                    self.graph.add((node, GEOM_REL.of, pose_of))
-                    self.graph.add((node, GEOM_REL["with-respect-to"], pose_wrt))
+                    # geom-rel:Position.of/wrt need the frames' origin Points, not
+                    # the Pose's Frame nodes copied verbatim.
+                    self.graph.add((node, GEOM_REL.of, self._frame_origin_point(pose_of)))
+                    self.graph.add(
+                        (node, GEOM_REL["with-respect-to"], self._frame_origin_point(pose_wrt))
+                    )
                     self.graph.add((node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
             else:
                 self._retag_as_position_kind(node)
@@ -4528,7 +4606,15 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((spec_node, SLV.force, wrench_node))
                 apply_at = getattr(ctrl, "apply_at", None)
                 if apply_at is not None and hasattr(apply_at, "uri"):
-                    self.graph.add((spec_node, SLV["attached-to"], URIRef(apply_at.uri)))
+                    # slv:CartesianForceSpecification.attached-to needs
+                    # geom:SimplicialComplex -- the frame's attached body.
+                    self.graph.add(
+                        (
+                            spec_node,
+                            SLV["attached-to"],
+                            self._frame_body(URIRef(apply_at.uri)),
+                        )
+                    )
                 self.graph.add((driver_node, SLV["cartesian-force"], spec_node))
 
             if (
@@ -4587,8 +4673,7 @@ class MotionSpecDatasetBuilder:
                 )
                 target_name = _geo_prop(props, "of")
                 if target_name:
-                    attached_to = self._owned_uri(target_name, qty)
-                    self.graph.add((attached_to, RDF.type, GEOM_ENT.SimplicialComplex))
+                    attached_to = self._frame_body(self._owned_uri(target_name, qty))
                     break
             if attached_to is not None:
                 self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
