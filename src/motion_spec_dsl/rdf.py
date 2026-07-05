@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 from rdflib.graph import Dataset
@@ -337,6 +338,7 @@ def _body_name(name: str) -> str:
     return name
 
 
+@lru_cache(maxsize=2048)
 def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
     """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
     if props is None:
@@ -355,6 +357,7 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     )
 
 
+@lru_cache(maxsize=2048)
 def _view_subspace(constraint: ConstraintSpecification) -> str:
     """The constraint's resolved view subspace; raises if it declares none."""
     subspace = constraint_view_subspace(constraint)
@@ -418,6 +421,7 @@ def _pose_diff_measured_derivative_id(
     return f"{ctrl.name}-measured-derivative-{component.suffix}"
 
 
+@lru_cache(maxsize=2048)
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
     (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
@@ -546,6 +550,9 @@ class MotionSpecDatasetBuilder:
         # None until built lazily; the spec is also the future live-swap patch address.
         self._controller_by_spec: dict[ConstraintSpecification, ControllerEntry] | None = None
         self._profiled_controller_by_spec: dict[ConstraintSpecification, ControllerEntry] = {}
+
+        # (namespace uri, name) -> URIRef, avoids re-minting the same owned node.
+        self._owned_uri_cache: dict[tuple[str, str], URIRef] = {}
 
         # Emitted-node registries for idempotency (keep emission write-only).
         self._emitted_distance_ops: set[str] = set()
@@ -969,8 +976,13 @@ class MotionSpecDatasetBuilder:
 
     def _owned_uri(self, name: str, owner: Any | None) -> URIRef:
         """Create a URI in the nearest namespace owned by owner or its parents."""
-        ns_owner = self._namespace_owner(owner)
-        return URIRef(Namespace(ns_owner.ns.uri)[name])
+        ns_uri = str(self._namespace_owner(owner).ns.uri)
+        key = (ns_uri, name)
+        cached = self._owned_uri_cache.get(key)
+        if cached is None:
+            cached = URIRef(Namespace(ns_uri)[name])
+            self._owned_uri_cache[key] = cached
+        return cached
 
     def _frame_origin_point(self, frame_node: URIRef) -> URIRef:
         """The origin geom-ent:Point of a kinematic frame, linked via geom-ent:origin.

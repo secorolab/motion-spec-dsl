@@ -670,7 +670,9 @@ class WorldQuantityAlias(WorldQuantity):
         self.props = self.ref.props
 
 
-@dataclass
+# eq=False: identity semantics (a props bag is owned by its parent, like the other model
+# entities) -- also makes it hashable so `_geo_prop` lookups can be memoized.
+@dataclass(eq=False)
 class GeometricProps:
     pairs: list[GeoPropPair]
     parent: object | None = field(default=None, repr=False, compare=False)
