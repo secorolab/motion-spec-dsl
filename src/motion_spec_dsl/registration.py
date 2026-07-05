@@ -7,11 +7,17 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import importlib.metadata
+from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from rdflib.graph import Dataset
+from rdflib.namespace import DCTERMS, Namespace, RDF, XSD
+from rdflib.term import Literal, URIRef
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
 
@@ -113,6 +119,8 @@ from motion_spec_dsl.rdf import (
 from motion_spec_dsl.validation import motion_constraint_items, validate_model
 
 GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"))
+PROV = Namespace("http://www.w3.org/ns/prov#")
+DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 
 LANGUAGE_CLASSES = [
     Model,
@@ -348,6 +356,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
     local_constraint_paths = {
         "https://secorolab.github.io/metamodels/behaviour/event_loop.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/environment.shacl.ttl",
+        "https://secorolab.github.io/metamodels/prov.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/polytope.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
@@ -366,7 +375,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
     try:
         metamodels_root = Path(os.environ["METAMODELS_PATH"])
     except KeyError:
-        raise RuntimeError("METAMODELS_PATH environment variable is not set")
+        raise RuntimeError("METAMODELS_PATH environment variable is not set") from None
     comp_rob2b_metamodels = metamodels_root.parent / "comp-rob2b" / "metamodels"
     iri_map = {
         "https://secorolab.github.io/metamodels/": {"path": str(metamodels_root)},
@@ -404,6 +413,83 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
             }
         ],
     }
+
+
+def _add_generation_provenance(
+    dataset: Dataset,
+    context: dict[str, str],
+    model: Model,
+    *,
+    graph_name: str,
+    manifest_name: str,
+) -> None:
+    """Record DSL source-to-JSON-LD provenance in the generated graph."""
+    graph = dataset.default_graph
+    dataset.bind("prov", PROV)
+    dataset.bind("dslprov", DSLPROV)
+    context.setdefault("prov", str(PROV))
+    context.setdefault("dslprov", str(DSLPROV))
+    context.setdefault("dcterms", str(DCTERMS))
+
+    activity = DSLPROV[f"activity/jsonld_generation/{quote(Path(model._tx_filename).stem)}"]
+    agent = DSLPROV["agent/motion_spec_dsl"]
+    graph_entity = DSLPROV[f"entity/generated_graph/{quote(graph_name)}"]
+    manifest_entity = DSLPROV[f"entity/app_manifest/{quote(manifest_name)}"]
+    generated_at = Literal(datetime.now(timezone.utc).isoformat(), datatype=XSD.dateTime)
+
+    graph.add((activity, RDF.type, PROV.Activity))
+    graph.add((activity, PROV.wasAssociatedWith, agent))
+    graph.add((activity, PROV.startedAtTime, generated_at))
+    graph.add((activity, PROV.endedAtTime, generated_at))
+    graph.add((agent, RDF.type, PROV.SoftwareAgent))
+    graph.add((agent, RDF.type, PROV.Agent))
+    version = _package_version()
+    if version:
+        graph.add((agent, DCTERMS.hasVersion, Literal(version, datatype=XSD.string)))
+
+    for source in _source_paths(model):
+        entity = DSLPROV[f"entity/source/{quote(source.name)}"]
+        graph.add((entity, RDF.type, PROV.Entity))
+        graph.add((entity, PROV.atLocation, URIRef(source.resolve().as_uri())))
+        graph.add((activity, PROV.used, entity))
+        if source.exists():
+            graph.add((entity, DSLPROV.sha256, Literal(_sha256_file(source), datatype=XSD.string)))
+
+    for entity, name in ((graph_entity, graph_name), (manifest_entity, manifest_name)):
+        graph.add((entity, RDF.type, PROV.Entity))
+        graph.add((entity, PROV.wasGeneratedBy, activity))
+        graph.add((entity, PROV.generatedAtTime, generated_at))
+        graph.add((entity, PROV.atLocation, URIRef(name)))
+
+
+def _source_paths(model: Model) -> list[Path]:
+    paths: dict[Path, None] = {}
+
+    def visit(item: Any) -> None:
+        filename = getattr(item, "_tx_filename", None)
+        if filename:
+            paths[Path(filename).resolve()] = None
+        for imp in getattr(item, "imports", []):
+            for loaded in getattr(imp, "_tx_loaded_models", []):
+                visit(loaded)
+
+    visit(model)
+    return list(paths)
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _package_version() -> str | None:
+    try:
+        return importlib.metadata.version("motion_spec_dsl")
+    except importlib.metadata.PackageNotFoundError:
+        return None
 
 
 def _gen_fsm(model, output_dir: Path) -> None:
@@ -445,6 +531,14 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     stem = Path(model._tx_filename).stem
 
     graph_path = output_dir / f"{stem}.json"
+    manifest_path = output_dir / f"{stem}-app.json"
+    _add_generation_provenance(
+        dataset,
+        context,
+        model,
+        graph_name=graph_path.name,
+        manifest_name=manifest_path.name,
+    )
     serialized = dataset.default_graph.serialize(
         format="json-ld", indent=2, context=_merged_context(context)
     )
@@ -453,7 +547,6 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
-    manifest_path = output_dir / f"{stem}-app.json"
     manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name]), indent=2))
     print(f"  wrote {manifest_path}")
 

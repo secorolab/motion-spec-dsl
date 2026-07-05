@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import shutil
+import json
 from pathlib import Path
 from typing import cast
 
 import pytest
-from rdflib import Literal, URIRef
+from rdflib import Graph, Literal, Namespace, URIRef
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
@@ -50,6 +51,7 @@ from motion_spec_dsl.rdf import (
 )
 from motion_spec_dsl.domain import _resolved_spec
 from motion_spec_dsl.registration import (
+    _gen_graph,
     _canonicalize_jsonld,
     motion_spec_metamodel,
 )
@@ -58,6 +60,7 @@ from motion_spec_dsl.registration import (
 FIXTURES = Path(__file__).parent / "fixtures"
 VALID_FIXTURES = FIXTURES / "valid"
 MODELS = Path(__file__).parents[1] / "models"
+METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 
 CIRCLE_TRAJECTORY = "05_trajectories/01_circle.robmot"
 ARC_TRAJECTORY = "05_trajectories/02_arc.robmot"
@@ -109,6 +112,56 @@ def _build_string_dataset(source: str):
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
     return builder, dataset.default_graph, cast(dict[str, str], context)
+
+
+def test_jsonld_generation_records_dsl_source_provenance(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    source = MODELS / "pick_place_single.robmot"
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(source)
+
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+
+    graph_path = tmp_path / "pick_place_single.json"
+    manifest_path = tmp_path / "pick_place_single-app.json"
+    prov = Namespace("http://www.w3.org/ns/prov#")
+    dslprov = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
+    dcterms = Namespace("http://purl.org/dc/terms/")
+    graph = Graph().parse(graph_path, format="json-ld")
+    activity = dslprov["activity/jsonld_generation/pick_place_single"]
+    agent = dslprov["agent/motion_spec_dsl"]
+
+    assert (activity, RDF.type, prov.Activity) in graph
+    assert (activity, prov.wasAssociatedWith, agent) in graph
+    assert (activity, prov.startedAtTime, None) in graph
+    assert (activity, prov.endedAtTime, None) in graph
+    assert (agent, RDF.type, prov.SoftwareAgent) in graph
+    assert (agent, dcterms.hasVersion, None) in graph
+    assert (
+        dslprov["entity/generated_graph/pick_place_single.json"],
+        prov.wasGeneratedBy,
+        activity,
+    ) in graph
+    assert (dslprov["entity/generated_graph/pick_place_single.json"], prov.generatedAtTime, None) in graph
+    assert (
+        dslprov["entity/app_manifest/pick_place_single-app.json"],
+        prov.wasGeneratedBy,
+        activity,
+    ) in graph
+    assert (dslprov["entity/app_manifest/pick_place_single-app.json"], prov.generatedAtTime, None) in graph
+    used_locations = {
+        str(location)
+        for source_entity in graph.objects(activity, prov.used)
+        for location in graph.objects(source_entity, prov.atLocation)
+    }
+    assert any(location.endswith("pick_place_single.robmot") for location in used_locations)
+    assert any(location.endswith("pick_place_single.fsm") for location in used_locations)
+    assert (None, dslprov.sha256, None) in graph
+
+    manifest = json.loads(manifest_path.read_text())
+    assert "https://secorolab.github.io/metamodels/prov.shacl.ttl" in manifest["@graph"][0][
+        "constraints"
+    ]
 
 
 DISTANCE_ACHD_SOURCE = """
