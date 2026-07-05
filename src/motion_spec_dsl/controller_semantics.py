@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
 """Derived controller semantics shared by RDF generation and validation."""
 
 from __future__ import annotations

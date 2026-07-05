@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
 """textX registration and JSON-LD file generation for the motion-spec DSL."""
 
 from __future__ import annotations

@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
 """Domain classes for the motion_spec DSL grammar constructs."""
 
 from __future__ import annotations

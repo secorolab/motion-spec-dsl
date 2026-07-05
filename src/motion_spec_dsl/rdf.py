@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
 """Emit the motion-specification RDF/JSON-LD graph from a parsed DSL model.
 
 `MotionSpecDatasetBuilder` walks the authored `ConstraintHandler`s and their motions
@@ -1575,7 +1577,7 @@ class MotionSpecDatasetBuilder:
         quantity: ContextQuantity,
     ) -> None:
         """Tag a snapshot of a `<pose>.position` with Position-coordinate metadata so the IR
-        surfaces it as a Position (KDL::Vector) rather than a plain double.
+        surfaces it as a Position vector rather than a plain scalar.
         """
         source = getattr(quantity.value, "source", None)
         source_qty = getattr(source, "quantity", None) if source is not None else None
@@ -2325,8 +2327,6 @@ class MotionSpecDatasetBuilder:
         """Promote `<pose>.position` to a Position coordinate and register its whole-3-vector
         PosePositionView. Idempotent.
         """
-        # Promote `<pose>.position` to a Position-coordinate node (so IR emits a KDL::Vector, not a
-        # double) and register a MAP.View so reads resolve to `shared.<pose>.p`. Idempotent.
         if scalar_uri in self._emitted_position_coords:
             return
         props = quantity.props if isinstance(quantity.props, GeometricProps) else None
@@ -2755,8 +2755,7 @@ class MotionSpecDatasetBuilder:
                         )
                     )
                     # A vector-valued (Position) offset result is a 3-vector: tag it with
-                    # Position-coordinate metadata so the IR types it as KDL::Vector, not a
-                    # scalar double. (Scalar offsets, e.g. LinearDistance, stay double.)
+                    # Position-coordinate metadata so the IR types it as a 3-vector, not a scalar. (Scalar offsets, e.g. LinearDistance, stay scalar.)
                     if quantity.type == QuantityType.Position:
                         self._emit_snapshot_position_metadata(out_node, quantity)
                     snap_source = out_node
@@ -3139,7 +3138,6 @@ class MotionSpecDatasetBuilder:
         """Emit a geometric trajectory op (circle/arc/helix/figure-8) with its input references
         and literals. All geometric trajectories output a Pose.
         """
-        # All geometric trajectories output a Pose (KDL::Frame).
         self._emit_trajectory_pose_metadata(node, quantity, GEOM_REL.Pose, constraints, world_qtys)
         op_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
         self.graph.add((op_node, RDF.type, spec_type))
@@ -4104,7 +4102,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]))
             self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
             # geom-coord-ext:PoseDifferenceCoordinate needs its own linear/angular VectorXYZ sub-
-            # resources for SHACL only; the KDL::Twist storage and component views are unaffected.
+            # resources for SHACL only; the twist storage and component views are unaffected.
             linear_node = self._owned_uri(f"{diff_id}-linear", spec.parent)
             angular_node = self._owned_uri(f"{diff_id}-angular", spec.parent)
             self.graph.add((diff_node, GEOM_COORD_EXT["linear"], linear_node))

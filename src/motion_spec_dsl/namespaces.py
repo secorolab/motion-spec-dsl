@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Minh Nguyen
+"""Namespace declaration protocols and mixins for URI-bearing DSL objects."""
 
 from __future__ import annotations
 
