@@ -2,10 +2,9 @@ name: docs
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "docs/**"
-      - ".github/workflows/docs.yml"
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
   workflow_dispatch:
 
 permissions:
@@ -31,8 +30,10 @@ jobs:
         with:
           path: docs/_build/html
 
+  # Build on every branch/PR (so the badge reflects doc health); publish only from main.
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
