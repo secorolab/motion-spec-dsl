@@ -1,0 +1,126 @@
+ns pp = "https://secorolab.github.io/models/pick-place-single/fsm/"
+
+FSM (ns=pp) pick_place_single_fsm {
+DESCRIPTION: "Single-arm pick&place; trajectory only home->pick_above, geometric setpoints elsewhere. Grasp-loss during transport (lift/place_above/place) routes to S_RECOVER, which captures and holds the current pose."
+
+STATES:
+    S_START,
+    S_HOME,
+    S_PICK_ABOVE,
+    S_PICK,
+    S_GRASP,
+    S_LIFT,
+    S_PLACE_ABOVE,
+    S_PLACE,
+    S_OPEN,
+    S_RETREAT,
+    S_DONE,
+    S_RECOVER
+
+START_STATE: @S_START
+END_STATE: @S_DONE
+
+EVENTS:
+    E_STEP,
+    E_PICK_ABOVE_READY,
+    E_PICK_READY,
+    E_GRASP_READY,
+    E_LIFT_READY,
+    E_PLACE_ABOVE_READY,
+    E_PLACE_READY,
+    E_OPEN_READY,
+    E_RETREAT_READY,
+    E_RETREAT_SETTLED,
+    E_GRASP_LOST_LIFT,
+    E_GRASP_LOST_PLACE_ABOVE,
+    E_GRASP_LOST_PLACE,
+    E_RECOVER
+
+TRANSITIONS:
+    T_START_HOME:
+        FROM: @S_START
+        TO: @S_HOME
+    T_HOME_PICK_ABOVE:
+        FROM: @S_HOME
+        TO: @S_PICK_ABOVE
+    T_PICK_ABOVE_PICK:
+        FROM: @S_PICK_ABOVE
+        TO: @S_PICK
+    T_PICK_GRASP:
+        FROM: @S_PICK
+        TO: @S_GRASP
+    T_GRASP_LIFT:
+        FROM: @S_GRASP
+        TO: @S_LIFT
+    T_LIFT_PLACE_ABOVE:
+        FROM: @S_LIFT
+        TO: @S_PLACE_ABOVE
+    T_PLACE_ABOVE_PLACE:
+        FROM: @S_PLACE_ABOVE
+        TO: @S_PLACE
+    T_PLACE_OPEN:
+        FROM: @S_PLACE
+        TO: @S_OPEN
+    T_OPEN_RETREAT:
+        FROM: @S_OPEN
+        TO: @S_RETREAT
+    T_RETREAT_DONE:
+        FROM: @S_RETREAT
+        TO: @S_DONE
+    T_LIFT_RECOVER:
+        FROM: @S_LIFT
+        TO: @S_RECOVER
+    T_PLACE_ABOVE_RECOVER:
+        FROM: @S_PLACE_ABOVE
+        TO: @S_RECOVER
+    T_PLACE_RECOVER:
+        FROM: @S_PLACE
+        TO: @S_RECOVER
+    T_RECOVER_HOLD:
+        FROM: @S_RECOVER
+        TO: @S_RECOVER
+
+REACTIONS:
+    R_STEP_START:
+        WHEN: @E_STEP
+        DO: @T_START_HOME
+    R_PICK_ABOVE_READY:
+        WHEN: @E_PICK_ABOVE_READY
+        DO: @T_HOME_PICK_ABOVE
+    R_PICK_READY:
+        WHEN: @E_PICK_READY
+        DO: @T_PICK_ABOVE_PICK
+    R_GRASP_READY:
+        WHEN: @E_GRASP_READY
+        DO: @T_PICK_GRASP
+    R_LIFT_READY:
+        WHEN: @E_LIFT_READY
+        DO: @T_GRASP_LIFT
+    R_PLACE_ABOVE_READY:
+        WHEN: @E_PLACE_ABOVE_READY
+        DO: @T_LIFT_PLACE_ABOVE
+    R_PLACE_READY:
+        WHEN: @E_PLACE_READY
+        DO: @T_PLACE_ABOVE_PLACE
+    R_OPEN_READY:
+        WHEN: @E_OPEN_READY
+        DO: @T_PLACE_OPEN
+    R_RETREAT_READY:
+        WHEN: @E_RETREAT_READY
+        DO: @T_OPEN_RETREAT
+    R_RETREAT_SETTLED:
+        WHEN: @E_RETREAT_SETTLED
+        DO: @T_RETREAT_DONE
+    R_LIFT_GRASP_LOST:
+        WHEN: @E_GRASP_LOST_LIFT
+        DO: @T_LIFT_RECOVER
+    R_PLACE_ABOVE_GRASP_LOST:
+        WHEN: @E_GRASP_LOST_PLACE_ABOVE
+        DO: @T_PLACE_ABOVE_RECOVER
+    R_PLACE_GRASP_LOST:
+        WHEN: @E_GRASP_LOST_PLACE
+        DO: @T_PLACE_RECOVER
+    R_RECOVER_HOLD:
+        WHEN: @E_RECOVER
+        DO: @T_RECOVER_HOLD
+}

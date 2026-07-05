@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 WORKSPACE = Path(__file__).resolve().parents[3]
-MODELS_DIR = WORKSPACE / "src" / "bdd_collab_bhv_cpp" / "models"
+MODELS_DIR = WORKSPACE / "src" / "motion-spec-dsl" / "models"
 METAMODELS_DIR = WORKSPACE / "src" / "metamodels"
 
 EXAMPLES = [
