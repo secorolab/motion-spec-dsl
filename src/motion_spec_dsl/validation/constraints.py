@@ -45,6 +45,7 @@ from motion_spec_dsl.validation.common import (
 
 
 def _is_orientation_axis(axis: str | None) -> bool:
+    """Whether `axis` is a valid axis token (x/y/z or roll/pitch/yaw)."""
     return axis in {"x", "y", "z", "roll", "pitch", "yaw"}
 
 
@@ -62,6 +63,7 @@ _SUBSPACE_AXES = {
 
 
 def _validate_axis(subspace: object, axis: str | None, owner: object) -> None:
+    """Raise if `axis` is not permitted for `subspace`."""
     if axis is None:
         return
     allowed = _SUBSPACE_AXES.get(subspace)
@@ -73,6 +75,9 @@ def _validate_axis(subspace: object, axis: str | None, owner: object) -> None:
 
 
 def _view_shape(view) -> QuantityType | None:
+    """The QuantityType a constraint view resolves to (elapsed/distance/Norm or
+    quantity subspace/axis), or None.
+    """
     if getattr(view, "is_elapsed", False):
         return QuantityType.Duration
     if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
@@ -122,11 +127,15 @@ def _view_shape(view) -> QuantityType | None:
 
 
 def _context_quantity_shape(quantity: ContextQuantity) -> QuantityType | ReferenceGeneratorType:
+    """The resolved type of a context quantity."""
     quantity = _resolved_context_quantity(quantity)
     return quantity.type
 
 
 def _context_ref_shape(ref: ContextRef) -> QuantityType | ReferenceGeneratorType | None:
+    """The QuantityType/generator a context reference resolves to for its subspace/axis,
+    or None.
+    """
     value = context_ref_value(ref)
     if not isinstance(value, ContextQuantity):
         return None
@@ -168,6 +177,7 @@ def _context_ref_shape(ref: ContextRef) -> QuantityType | ReferenceGeneratorType
 
 
 def _require_shape(shape: object | None, owner: object, message: str) -> object:
+    """Return `shape`, raising `message` when it is None."""
     if shape is None:
         raise semantic_error(message, owner)
     return shape
@@ -176,6 +186,9 @@ def _require_shape(shape: object | None, owner: object, message: str) -> object:
 def _constraint_reference_shapes(
     constraint: ConstraintSpecification,
 ) -> list[tuple[ContextRef, QuantityType | ReferenceGeneratorType]]:
+    """The (ref, resolved-shape) pairs for a constraint's context references, including
+    bare duration literals.
+    """
     refs = constraint_context_refs(constraint)
     pairs: list[tuple[ContextRef, QuantityType | ReferenceGeneratorType]] = []
     for ref in refs:
@@ -197,6 +210,7 @@ def _types_match(
     left: QuantityType | ReferenceGeneratorType | None,
     right: QuantityType | ReferenceGeneratorType | None,
 ) -> bool:
+    """Whether two constraint operand types are comparable (with the allowed equivalences)."""
     if left is None or right is None:
         return True
     compatible = {
@@ -219,6 +233,7 @@ def _types_match(
 
 
 def _static_scalar(ref: ContextRef) -> Measure | None:
+    """The static Measure a reference resolves to, or None."""
     value = context_ref_value(ref)
     value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
     scalar = getattr(value, "value", None)
@@ -232,6 +247,7 @@ def _check_profile_ref(
     *,
     required: bool = True,
 ) -> None:
+    """Raise if a velocity profile's `attr` reference is missing, mis-typed, or non-positive."""
     ref = getattr(profile, attr)
     if ref is None:
         if required:
@@ -255,6 +271,7 @@ def validate_saturation_spec(
     owner: object,
     label: str,
 ) -> None:
+    """Raise if a saturation spec is malformed or its limit references have the wrong type."""
     refs = []
     if saturation.maximum is not None:
         refs.append(("max", saturation.maximum))
@@ -278,6 +295,9 @@ def validate_saturation_spec(
 
 
 def _validate_profile_quantity(quantity: ContextQuantity) -> None:
+    """Raise if a velocity-profile quantity is mis-declared, has an unsupported shape, or
+    invalid velocity/acceleration/jerk references.
+    """
     value = getattr(quantity, "value", None)
     if not isinstance(value, ProfileSpec):
         return
@@ -308,10 +328,12 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
 
 
 def _axis_value(axis: object | None) -> str | None:
+    """Normalize an axis token to x/y/z (alias of axis_label)."""
     return axis_label(axis)
 
 
 def _geo_prop(obj: object, key: str) -> str | None:
+    """The value of geometric prop `key` on `obj`'s props, or None."""
     props = getattr(obj, "props", None)
     for pair in getattr(props, "pairs", []):
         if str(getattr(pair, "key", "")) == key:
@@ -320,11 +342,15 @@ def _geo_prop(obj: object, key: str) -> str | None:
 
 
 def _max_velocity_unit(value: AdmittanceSpec) -> str:
+    """The admittance spec's max-velocity unit string (default m/s)."""
     unit = getattr(value, "max_velocity_unit", None)
     return str(getattr(unit, "value", unit)) if unit else "m/s"
 
 
 def _validate_admittance_quantity(quantity: ContextQuantity) -> None:
+    """Raise if an admittance quantity is mis-declared, has non-positive mass/velocity or
+    negative damping/stiffness, or a force selector that is not a Wrench force axis.
+    """
     value = getattr(quantity, "value", None)
     if not isinstance(value, AdmittanceSpec):
         return
@@ -372,6 +398,9 @@ def _validate_admittance_tracking(
     constraint: ConstraintSpecification,
     ref: ContextRef,
 ) -> None:
+    """Raise unless `constraint` tracks the admittance reference on a matching
+    linear-velocity axis and as-seen-by frame.
+    """
     admit_qty = context_ref_value(ref)
     if not isinstance(admit_qty, ContextQuantity):
         return
@@ -417,6 +446,7 @@ def _check_trajectory_ref(
     ref: ContextRef,
     expected: QuantityType,
 ) -> None:
+    """Raise if a trajectory's `attr` reference is missing or not `expected`."""
     actual = _require_shape(
         _context_ref_shape(ref),
         ref,
@@ -430,6 +460,7 @@ def _check_trajectory_ref(
 
 
 def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
+    """Raise if a trajectory quantity is mis-declared or its shape inputs are invalid."""
     value = getattr(quantity, "value", None)
     if not isinstance(value, TrajectoryValue):
         return
@@ -492,6 +523,9 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
 
 
 def validate_context_quantity_values(model: Model) -> None:
+    """Validate every context quantity's value: profile/admittance/trajectory specs and
+    reference/snapshot source-type matching.
+    """
     for motion in motion_specs(model):
         for ctx in motion.context:
             ctx = _resolved_context_decl(ctx)
@@ -552,6 +586,9 @@ def validate_context_quantity_values(model: Model) -> None:
 
 
 def validate_constraint_value_types(model: Model) -> None:
+    """Raise if a constraint compares operands of incompatible types, or mis-tracks an
+    admittance reference.
+    """
     for motion in motion_specs(model):
         for constraint in motion_constraints(motion):
             view_shape = _require_shape(
@@ -570,6 +607,7 @@ def validate_constraint_value_types(model: Model) -> None:
 
 
 def validate_unique_constraint_names(model: Model) -> None:
+    """Raise if a motion has duplicate constraint names across WHEN/WHILE/UNTIL."""
     for motion in motion_specs(model):
         items_by_name: dict[str, list[object]] = defaultdict(list)
         for item in motion_constraint_items(motion):
@@ -587,30 +625,36 @@ def validate_unique_constraint_names(model: Model) -> None:
 
 
 def validate_constraint_aliases(model: Model) -> None:
+    """Placeholder: constraint alias resolution is handled by the scope providers."""
     del model
 
 
 def validate_context_aliases(model: Model) -> None:
+    """Placeholder: context alias resolution is handled by the scope providers."""
     del model
 
 
 def _decl_motion(obj: object) -> MotionSpec | None:
+    """The MotionSpec a context declaration belongs to, or None."""
     context = getattr(obj, "parent", None)
     motion = getattr(context, "parent", None)
     return motion if isinstance(motion, MotionSpec) else None
 
 
 def _decl_context_spec(obj: object) -> ContextSpec | None:
+    """The ContextSpec a context declaration belongs to, or None."""
     context = getattr(obj, "parent", None)
     spec = getattr(context, "parent", None)
     return spec if isinstance(spec, ContextSpec) else None
 
 
 def _resolved_context_decl(ctx: object) -> object:
+    """Dereference a context-decl reference to its target, or return `ctx` unchanged."""
     return ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
+    """The ContextQuantity a reference points at (named or inline), or None for a bare literal."""
     if getattr(ref, "bare", None) is not None:
         return None
     value = (
@@ -622,6 +666,7 @@ def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
 
 
 def _is_inline_context_value(value: ContextQuantity) -> bool:
+    """Whether a context quantity was declared inline inside a reference."""
     return isinstance(getattr(value, "parent", None), ContextRef) and getattr(
         value.parent,
         "context_scope",
@@ -630,6 +675,7 @@ def _is_inline_context_value(value: ContextQuantity) -> bool:
 
 
 def constraint_context_refs(constraint: ConstraintSpecification) -> list[ContextRef]:
+    """The context references a constraint compares against (reference / threshold / bounds)."""
     expr = constraint.expr
     if isinstance(expr, EqualityConstraint):
         return [expr.reference]
@@ -641,6 +687,9 @@ def constraint_context_refs(constraint: ConstraintSpecification) -> list[Context
 
 
 def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[object | None]:
+    """The world quantities a constraint's view reads (Norm unwrapped; both endpoints for a
+    distance view).
+    """
     view = constraint.view
     if view is None or getattr(view, "is_elapsed", False):
         return []
@@ -658,6 +707,7 @@ def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[obj
 
 
 def validate_constraint_context_refs(model: Model) -> None:
+    """Raise if a constraint's view quantities or context references fail to resolve."""
     for motion in motion_specs(model):
         for constraint in motion_constraints(motion):
             for quantity in _constraint_view_quantities(constraint):

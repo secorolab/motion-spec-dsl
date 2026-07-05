@@ -33,16 +33,19 @@ SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] 
 
 
 def _solver_component(solver: SolverEntry):
+    """The kinematic-chain component a solver drives, or None."""
     assembly = solver.robot.environment_robot.assembly_spec
     return assembly.chain if assembly is not None else None
 
 
 def _solver_component_anchor(solver: SolverEntry, anchor: str) -> str:
+    """The named anchor (root/end) frame of a solver's chain, or empty string."""
     assembly = solver.robot.environment_robot.assembly_spec
     return getattr(assembly, anchor, "") if assembly is not None else ""
 
 
 def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) -> bool:
+    """Whether `anchor` refers to `solver`'s robot chain at `expected_anchor`."""
     return (
         anchor.environment_robot is not None
         and anchor.environment_robot.assembly_spec is solver.robot.environment_robot.assembly_spec
@@ -51,6 +54,7 @@ def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) ->
 
 
 def validate_solver_refs(model: Model) -> None:
+    """Raise if a solver's robot/component or its root/end anchors are unknown or mismatched."""
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
             if str(_resolved_solver(solver).algorithm) == "CommandForwarding":
@@ -104,6 +108,9 @@ def _implicit_solver_for_controller(
     handler: ConstraintHandler,
     controller: ControllerEntry | ControllerAlias,
 ) -> SolverEntry | None:
+    """The sole solver matching a controller's command-forwarding vs dynamics role, or None
+    if ambiguous.
+    """
     solvers = [_resolved_solver(item) for item in handler.solvers]
     resolved_controller = _resolved_controller(controller)
     if resolved_controller.type == ControllerType.FeedForward:
@@ -114,6 +121,9 @@ def _implicit_solver_for_controller(
 
 
 def validate_controller_solver_refs(model: Model) -> None:
+    """Raise if a controller omits a solver where the handler has several, or references a
+    solver the handler does not assemble.
+    """
     for handler in constraint_handlers(model):
         resolved_handler_solvers = [_resolved_solver(solver) for solver in handler.solvers]
         for controller in handler.controllers:
@@ -137,6 +147,7 @@ def validate_controller_solver_refs(model: Model) -> None:
 
 
 def controller_solver(controller: ControllerEntry | ControllerAlias) -> SolverEntry | None:
+    """The solver a controller explicitly references, or None."""
     solver_ref = getattr(controller, "solver", None)
     if isinstance(solver_ref, SolverRef):
         return solver_ref.solver
@@ -147,6 +158,9 @@ def handler_controller_solver(
     handler: ConstraintHandler,
     controller: ControllerEntry | ControllerAlias,
 ) -> SolverEntry | None:
+    """The solver that runs `controller`: explicit, the handler's sole solver, or the
+    implicit role match.
+    """
     solver = controller_solver(controller)
     if solver is not None:
         return solver
@@ -157,6 +171,7 @@ def handler_controller_solver(
 
 
 def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
+    """A controller's control domain: `force` or `pose`."""
     resolved_controller = _resolved_controller(controller)
     subspace = resolved_controller.params.constraint.constraint.view.subspace
     command = controller_command_record(controller)
@@ -169,6 +184,7 @@ def _controller_domain(controller: ControllerEntry | ControllerAlias) -> str:
 
 
 def validate_supported_solver_algorithms(model: Model) -> None:
+    """Raise on unsupported solver algorithms (e.g. standalone RNE off the MuJoCo backend)."""
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
             resolved_solver = _resolved_solver(solver)
@@ -185,6 +201,7 @@ def validate_supported_solver_algorithms(model: Model) -> None:
 
 
 def validate_solver_regularization_algorithm(model: Model) -> None:
+    """Raise if regularization is authored on a solver whose algorithm is not RNE."""
     # `regularization` (DLS lambda) is only consumed by the RNE constraint-accel solve.
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
@@ -198,6 +215,7 @@ def validate_solver_regularization_algorithm(model: Model) -> None:
 
 
 def validate_solver_limits(model: Model) -> None:
+    """Raise on repeated, unsupported, or wrong-typed solver saturation limits."""
     expected_by_target = {
         "torque": QuantityType.Torque,
         "linear-acceleration": QuantityType.LinearAcceleration,
@@ -233,6 +251,7 @@ def validate_solver_limits(model: Model) -> None:
 
 
 def validate_handler_control_mode_solver_compatibility(model: Model) -> None:
+    """Raise if a handler's control mode is unsupported by its solver's algorithm."""
     for handler in constraint_handlers(model):
         for solver in handler.solvers:
             resolved_solver = _resolved_solver(solver)
@@ -249,6 +268,7 @@ def validate_handler_control_mode_solver_compatibility(model: Model) -> None:
 
 
 def validate_mixed_solver_domains(model: Model) -> None:
+    """Raise on incompatible mixing of ACHD and RNE controller domains within one handler."""
     for handler in constraint_handlers(model):
         domains_by_algorithm: dict[str, set[str]] = {}
         for controller in handler.controllers:

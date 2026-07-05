@@ -21,10 +21,14 @@ from motion_spec_dsl.validation.common import (
 
 
 def validate_handler_aliases(model: Model) -> None:
+    """Placeholder: handler alias resolution is handled by the scope providers."""
     del model
 
 
 def validate_handler_constraint_assembly(model: Model) -> None:
+    """Raise if a handler's monitors or controllers reference constraints its primary motion
+    does not assemble.
+    """
     for handler in constraint_handlers(model):
         assembled_specs = {
             id(_resolved_spec(item)) for item in motion_constraint_items(handler.motion)
@@ -60,10 +64,14 @@ def validate_handler_constraint_assembly(model: Model) -> None:
 
 
 def validate_handler_constraint_refs(model: Model) -> None:
+    """Placeholder: handler constraint references are resolved by the scope providers."""
     del model
 
 
 def validate_handler_requirements(model: Model) -> None:
+    """Raise if a handler lacks the controllers/monitors its WHILE/WHEN/UNTIL constraints
+    require, mixes aggregate and individual UNTIL/WHEN monitors, or leaves guards unmonitored.
+    """
     for handler in constraint_handlers(model):
         if handler.motion.while_.constraints and not (handler.controllers or handler.monitors):
             raise semantic_error(
@@ -137,6 +145,7 @@ def validate_handler_requirements(model: Model) -> None:
 
 
 def validate_motion_spec_coverage(model: Model) -> None:
+    """Raise if any MotionSpec is not bound to a ConstraintHandler."""
     referenced = {
         handler.motion.name
         for handler in constraint_handlers(model)

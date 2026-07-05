@@ -18,17 +18,20 @@ from motion_spec_dsl.namespaces import (
 
 
 class NamespaceDeclare:
+    """A namespace declaration: a prefix `name` and its `uri`."""
     def __init__(self, name: str = "", uri: str = "", **_):
         self.name = name
         self.uri = uri
 
 
 class Import:
+    """An `importURI` reference to another model or FSM file."""
     def __init__(self, importURI: str = "", **_):
         self.importURI = importURI
 
 
 class Model:
+    """Root of a parsed motion-spec model: its imports, namespaces and top-level specs."""
     def __init__(
         self,
         imports: list[Import] | None = None,
@@ -90,6 +93,7 @@ class OrientationValue:
 
 @dataclass
 class EnvironmentAsset(NamedNamespaceObject):
+    """An environment asset: a robot/attachment/scene-object model file."""
     parent: object
     name: str
     type: EnvironmentAssetType
@@ -142,6 +146,7 @@ class EnvironmentAttachTargetRef:
 
 @dataclass
 class EnvironmentAttachTargetEntry:
+    """An assembly's attach-to target (a body or site on another assembly)."""
     parent: object
     target: EnvironmentAttachTargetRef
 
@@ -242,6 +247,7 @@ class EnvironmentChainEntry:
 
 @dataclass
 class EnvironmentAssembly(NamedNamespaceObject):
+    """An instance placed in the environment (robot/object/attachment) and its entries."""
     parent: object
     type: EnvironmentAssemblyType
     name: str
@@ -298,6 +304,7 @@ class EnvironmentTrace:
 
 @dataclass
 class EnvironmentSpec(IHasNamespaceDeclare):
+    """An environment/workspace: its runtime, timestep, assets and assembly instances."""
     parent: object
     ns: NamespaceDeclLike
     name: str
@@ -327,6 +334,7 @@ class EnvironmentSpec(IHasNamespaceDeclare):
 
 @dataclass
 class EnvironmentRobotRef:
+    """A reference to a robot assembly declared in the environment."""
     parent: object
     environment: EnvironmentSpec
     assembly: str
@@ -347,6 +355,7 @@ class EnvironmentRobotRef:
 
 @dataclass
 class ContextSpec(IHasNamespaceDeclare):
+    """A named context block declaring world and context quantities."""
     parent: object
     ns: NamespaceDeclLike
     name: str
@@ -358,6 +367,7 @@ class ContextSpec(IHasNamespaceDeclare):
 
 @dataclass
 class RobotRef:
+    """A reference to a robot assembly by name."""
     environment_robot: EnvironmentRobotRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -379,6 +389,7 @@ class RobotRef:
 
 @dataclass
 class RobotAnchorRef:
+    """A reference to a robot chain anchor (its root or end frame)."""
     anchor: str
     environment_robot: EnvironmentRobotRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -502,6 +513,7 @@ class TrajectorySpec:
 
 @dataclass
 class MotionSpec(IHasNamespaceDeclare):
+    """A guarded motion: its when/while/until constraint sections and context."""
     parent: object
     ns: NamespaceDeclLike
     name: str
@@ -530,6 +542,7 @@ class MotionSpec(IHasNamespaceDeclare):
 
 @dataclass
 class QuantityContextDecl(NamedNamespaceObject):
+    """A context declaration of quantities (world or context)."""
     kind = None
 
     parent: object
@@ -571,6 +584,7 @@ class ContextDeclReference:
 
 @dataclass
 class ConstraintSection(NamedNamespaceObject):
+    """A when/while/until section holding constraint items and its combination logic."""
     kind = ""
 
     parent: object
@@ -621,6 +635,7 @@ WorldDeclarationType = WorldQuantityType | WorldEntityType | WorldFieldType
 # cyclic anyway); identity equality is also what makes it usable as a dict/set key.
 @dataclass(eq=False)
 class WorldQuantity(NamedNamespaceObject):
+    """A physical world quantity (pose/twist/wrench/joint-position/...) with geometric props."""
     parent: object
     name: str
     type: WorldDeclarationType
@@ -639,6 +654,7 @@ class WorldQuantity(NamedNamespaceObject):
 
 @dataclass(kw_only=True)
 class WorldQuantityAlias(WorldQuantity):
+    """An alias referring to a WorldQuantity."""
     parent: object
     name: str
     ref: WorldQuantity
@@ -670,6 +686,7 @@ class GeometricPropKey(StrEnum):
 
 @dataclass
 class GeoPropPair:
+    """A geometric-property key/value pair (of/wrt/as-seen-by/ref-point/...)."""
     key: GeometricPropKey
     value: str = ""
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -739,6 +756,7 @@ class ControllerParamName(StrEnum):
 
 @dataclass
 class ContextQuantity(NamedNamespaceObject):
+    """A context quantity: a reference, snapshot, profile, trajectory, or literal value."""
     parent: object
     name: str
     type: ContextDeclarationType
@@ -785,6 +803,7 @@ class ContextQuantity(NamedNamespaceObject):
 
 @dataclass(kw_only=True)
 class ContextQuantityAlias(ContextQuantity):
+    """An alias referring to a ContextQuantity."""
     parent: object
     name: str
     ref: ContextQuantity
@@ -827,6 +846,7 @@ class ReferenceValue:
 
 @dataclass
 class SnapshotValue:
+    """A snapshot value: a source view sampled on a clock, with an optional offset."""
     source: View
     offset: ContextRef | None = None
     # Sampling clock (snap:sampled-on): "task" = sampled once, held for the run
@@ -844,6 +864,7 @@ class SnapshotValue:
 # eq=False: identity semantics (see WorldQuantity) -- also makes it a valid dict/set key.
 @dataclass(eq=False)
 class ConstraintSpecification(NamedNamespaceObject):
+    """A single constraint: a view (LHS) compared against a reference by an expression."""
     parent: object
     name: str
     view: View | None = None
@@ -863,6 +884,7 @@ class ConstraintSpecification(NamedNamespaceObject):
 
 @dataclass
 class ConstraintRef:
+    """A reference to a constraint declared within a motion."""
     motion: MotionSpec
     constraint: ConstraintSpecification
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -881,6 +903,7 @@ class ConstraintRef:
 
 @dataclass
 class UntilMonitorRef:
+    """A monitor reference to a motion's whole `until` section."""
     motion: MotionSpec
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -898,6 +921,7 @@ class UntilMonitorRef:
 
 @dataclass
 class WhenMonitorRef:
+    """A monitor reference to a motion's whole `when` section."""
     motion: MotionSpec
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -972,6 +996,7 @@ class ElapsedTime:
 
 @dataclass
 class SelectorTail:
+    """The subspace/axis selector applied to a quantity in a view or reference."""
     subspace: SubSpace
     axis: Axis | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -985,6 +1010,7 @@ class SelectorTail:
 
 @dataclass
 class View:
+    """The left-hand side of a constraint: a quantity (with subspace/axis), a distance, or a Norm."""
     parent: object
     quantity: WorldQuantity | None = None
     subspace: SubSpace | None = None
@@ -1012,6 +1038,7 @@ class View:
 
 @dataclass
 class ContextRef:
+    """A reference to a context value, optionally with a subspace/axis or a bare literal."""
     quantity: ContextQuantity | None = None
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
@@ -1064,6 +1091,7 @@ class SaturationSpec:
 
 @dataclass
 class EqualityConstraint:
+    """An equality constraint against a reference value."""
     reference: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -1073,6 +1101,7 @@ class EqualityConstraint:
 
 @dataclass
 class GreaterThanConstraint:
+    """A greater-than comparison against a threshold."""
     threshold: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -1082,6 +1111,7 @@ class GreaterThanConstraint:
 
 @dataclass
 class LessThanConstraint:
+    """A less-than comparison against a threshold."""
     threshold: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -1091,6 +1121,7 @@ class LessThanConstraint:
 
 @dataclass
 class BilateralConstraint:
+    """A within-bounds (lower..upper) constraint."""
     lower: ContextRef
     upper: ContextRef
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1116,6 +1147,7 @@ class OutsideConstraint:
 
 @dataclass
 class ConstraintHandler(IHasNamespaceDeclare):
+    """Binds a motion to the controllers, monitors and solvers that realize it."""
     parent: object
     ns: NamespaceDeclLike
     name: str
@@ -1133,6 +1165,7 @@ class ConstraintHandler(IHasNamespaceDeclare):
 
 @dataclass
 class EventName:
+    """A named FSM event referenced by a monitor."""
     parent: object
     # Qualified form: `ns.EventName`  →  event is the resolved fsm.Event object
     event: object = None
@@ -1159,6 +1192,7 @@ _DURATION_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}
 
 @dataclass
 class MonitorEntry(NamedNamespaceObject):
+    """A monitor watching a constraint and emitting an event when it triggers."""
     parent: object
     name: str
     constraint: ConstraintRef | UntilMonitorRef
@@ -1195,6 +1229,7 @@ class MonitorEntry(NamedNamespaceObject):
 
 @dataclass
 class ControllerEntry(NamedNamespaceObject):
+    """A controller (PID / impedance / feed-forward) driving a constraint."""
     parent: object
     name: str
     type: ControllerType
@@ -1212,6 +1247,7 @@ class ControllerEntry(NamedNamespaceObject):
 
 @dataclass
 class ControllerRef:
+    """A reference to a controller by name."""
     handler: ConstraintHandler
     controller: ControllerEntry
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1226,6 +1262,7 @@ class ControllerRef:
 
 @dataclass(kw_only=True)
 class ControllerAlias(ControllerEntry):
+    """An alias referring to a ControllerEntry."""
     parent: object
     name: str
     ref: ControllerRef
@@ -1249,6 +1286,7 @@ class ControllerAlias(ControllerEntry):
 
 @dataclass
 class ControllerParam:
+    """A single controller parameter term."""
     name: ControllerParamName
     value: float
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1259,6 +1297,7 @@ class ControllerParam:
 
 @dataclass
 class ControllerParams:
+    """The resolved parameters of a controller (gains, constraint, profile, limits, ...)."""
     constraint: ConstraintRef
     profile: ContextRef | None = None
     measured_derivative: View | None = None
@@ -1327,6 +1366,7 @@ class SolverLimits:
 
 @dataclass
 class SolverEntry(NamedNamespaceObject):
+    """A motion driver/solver (ACHD/RNE/...) over a robot kinematic chain."""
     parent: object
     name: str
     robot: RobotRef
@@ -1345,6 +1385,7 @@ class SolverEntry(NamedNamespaceObject):
 
 @dataclass
 class SolverRef:
+    """A reference to a solver by name."""
     solver: SolverEntry
     handler: ConstraintHandler | None = field(default=None)
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -1361,6 +1402,7 @@ class SolverRef:
 
 @dataclass(kw_only=True)
 class SolverAlias(SolverEntry):
+    """An alias referring to a SolverEntry."""
     parent: object
     name: str
     ref: SolverRef

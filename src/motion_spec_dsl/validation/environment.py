@@ -20,6 +20,9 @@ _ASSET_TYPE_BY_ASSEMBLY_TYPE = {
 
 
 def validate_environment_assembly_types(model: Model) -> None:
+    """Raise if an assembly's declared type disagrees with its asset type, or an attach-to
+    target is not part of the same environment.
+    """
     for spec in model.specs:
         if not isinstance(spec, EnvironmentSpec):
             continue

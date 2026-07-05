@@ -41,11 +41,13 @@ from motion_spec_dsl.validation.solvers import handler_controller_solver
 def _achd_acceleration_axis_keys(
     controller: ControllerEntry | ControllerAlias,
 ) -> list[tuple[str, str]]:
+    """The (subspace, axis) keys of a controller's ACHD acceleration constraints."""
     command = controller_command_record(controller)
     return [(record.subspace, record.axis) for record in command.acceleration_constraints]
 
 
 def _profile_quantity(controller: ControllerEntry) -> ContextQuantity | None:
+    """The resolved velocity-profile ContextQuantity a controller references, or None."""
     ref = getattr(controller.params, "profile", None)
     if ref is None:
         return None
@@ -54,6 +56,9 @@ def _profile_quantity(controller: ControllerEntry) -> ContextQuantity | None:
 
 
 def _supports_velocity_profile(spec) -> bool:
+    """Whether a constraint's view can be driven by a velocity profile (a distance view, or a
+    per-axis pose position).
+    """
     view = spec.view
     if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
         return True
@@ -67,6 +72,7 @@ def _supports_velocity_profile(spec) -> bool:
 
 
 def _requires_measured_velocity(spec) -> bool:
+    """Whether a profiled constraint needs measured-velocity feedback (all but distance views)."""
     view = spec.view
     return not (
         getattr(view, "distance_from", None) is not None
@@ -75,6 +81,7 @@ def _requires_measured_velocity(spec) -> bool:
 
 
 def _authored_subspace(view) -> str | None:
+    """The canonical subspace string authored on a view, or None."""
     subspace = getattr(view, "subspace", None)
     if subspace is None:
         return None
@@ -83,6 +90,9 @@ def _authored_subspace(view) -> str | None:
 
 
 def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_controller: ControllerEntry) -> None:
+    """Raise unless a PID measured_derivative is used on a pose-equality controller and
+    references a VelocityTwist with a matching subspace and axis.
+    """
     measured_derivative = getattr(resolved_controller.params, "measured_derivative", None)
     if measured_derivative is None:
         return
@@ -142,6 +152,9 @@ def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_cont
 
 
 def validate_controller_commands(model: Model) -> None:
+    """Raise on invalid controller commands: duplicate terms, unsupported velocity profiles,
+    missing measured velocities, or invalid measured derivatives.
+    """
     for handler in constraint_handlers(model):
         profiled_constraints: dict[int, str] = {}
         for controller in handler.controllers:
@@ -386,6 +399,9 @@ def validate_controller_commands(model: Model) -> None:
 
 
 def validate_achd_acceleration_constraints(model: Model) -> None:
+    """Raise if an ACHD solver has multiple acceleration constraints on the same Cartesian
+    axis, or more than the solver's supported number of constraints.
+    """
     for handler in constraint_handlers(model):
         axes_by_solver: dict[int, dict[tuple[str, str], list[str]]] = defaultdict(
             lambda: defaultdict(list)

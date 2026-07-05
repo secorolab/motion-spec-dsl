@@ -25,6 +25,7 @@ from motion_spec_dsl.domain import (
 
 
 def semantic_error(message: str, obj: object | None = None) -> TextXSemanticError:
+    """Build a TextXSemanticError, attaching `obj`'s source location when available."""
     if obj is None:
         return TextXSemanticError(message)
     try:
@@ -34,10 +35,12 @@ def semantic_error(message: str, obj: object | None = None) -> TextXSemanticErro
 
 
 def motion_specs(model: Model) -> Iterable[MotionSpec]:
+    """The MotionSpecs declared in `model`."""
     return (spec for spec in model.specs if isinstance(spec, MotionSpec))
 
 
 def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
+    """The ConstraintHandlers declared in `model`."""
     return (spec for spec in model.specs if isinstance(spec, ConstraintHandler))
 
 
@@ -52,8 +55,10 @@ def motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
 
 
 def handler_controller_items(handler: ConstraintHandler) -> list[ControllerEntry | ControllerAlias]:
+    """A handler's controller entries and aliases."""
     return list(handler.controllers)
 
 
 def handler_solver_items(handler: ConstraintHandler) -> list[SolverEntry | SolverAlias]:
+    """A handler's solver entries and aliases."""
     return list(handler.solvers)

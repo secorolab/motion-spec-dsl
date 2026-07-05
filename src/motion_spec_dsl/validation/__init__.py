@@ -52,6 +52,9 @@ __all__ = [
 
 
 def validate_model(model: Model, metamodel=None) -> None:
+    """Run every semantic validator for `model` (the textx model processor); raises on the
+    first violation.
+    """
     del metamodel
     validate_environment_assembly_types(model)
     validate_unique_constraint_names(model)
