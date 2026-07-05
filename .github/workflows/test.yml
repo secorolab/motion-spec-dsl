@@ -1,0 +1,35 @@
+name: test
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # This package is a workspace component: its runtime siblings (motion_spec,
+      # coord_dsl) and a patched rdflib are not on PyPI, so they are installed from
+      # git. Assumes the secorolab repos are public; add a token secret otherwise.
+      - name: Install workspace siblings
+        run: |
+          pip install pytest textX pyshacl
+          pip install "git+https://github.com/secorolab/motion-spec.git@dev"
+          pip install "git+https://github.com/secorolab/coord-dsl.git@main"
+          # patched rdflib must win over any version the siblings pulled in
+          pip install --force-reinstall --no-deps \
+            "git+https://github.com/secorolab/rdflib.git@7.6.0-fix-multi-type-scoped-context"
+
+      - name: Install motion_spec_dsl
+        run: pip install -e . --no-deps
+
+      - name: Run tests
+        run: pytest -q
