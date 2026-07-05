@@ -16,8 +16,6 @@ registries rather than graph-membership checks.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from rdflib.graph import Dataset
@@ -63,11 +61,9 @@ from motion_spec.namespace import (
     SLV_EXT,
 )
 from motion_spec_dsl.controller_semantics import (
-    AccelerationConstraintRecord,
     PoseDiffComponentRecord,
     SUBSPACE_ALIAS,
     axis_label as semantic_axis_label,
-    constraint_view_subspace,
     controller_command_record,
     pose_diff_components,
 )
@@ -119,404 +115,40 @@ from motion_spec_dsl.domain import (
     _resolved_world_quantity,
 )
 
-# Each entry: (rdf_types, qkinds, units, prop_map)
-# prop_map[subspace] = (view_subspace_uri, accel_subspace_uri, accel_prefix, scalar_type, view_rdf_type)
-WORLD_SPECS: dict[WorldQuantityType, tuple] = {
-    WorldQuantityType.VelocityTwist: (
-        (
-            QUDT_SCHEMA.Quantity,
-            GEOM_REL.VelocityTwist,
-            GEOM_COORD.VelocityTwistCoordinate,
-            GEOM_COORD.VectorXYZ,
-        ),
-        (QUDT_QKIND.AngularVelocity, QUDT_QKIND.LinearVelocity),
-        (QUDT_UNIT["RAD-PER-SEC"], QUDT_UNIT["M-PER-SEC"]),
-        {
-            "angular": (
-                "angular-velocity",
-                "angular-acceleration",
-                "ang",
-                QuantityType.AngularVelocity,
-                MAP.VelocityTwistCoordinateView,
-            ),
-            "linear": (
-                "linear-velocity",
-                "linear-acceleration",
-                "lin",
-                QuantityType.LinearVelocity,
-                MAP.VelocityTwistCoordinateView,
-            ),
-        },
-    ),
-    WorldQuantityType.Wrench: (
-        (
-            QUDT_SCHEMA.Quantity,
-            RBDYN_ENT.Wrench,
-            RBDYN_COORD.WrenchCoordinate,
-            GEOM_COORD.VectorXYZ,
-        ),
-        (QUDT_QKIND.Torque, QUDT_QKIND.Force),
-        (QUDT_UNIT["N-M"], QUDT_UNIT.N),
-        {
-            "torque": ("torque", None, None, QuantityType.Torque, MAP.WrenchCoordinateView),
-            "force": ("force", None, None, QuantityType.Force, MAP.WrenchCoordinateView),
-        },
-    ),
-    WorldQuantityType.Pose: (
-        (
-            QUDT_SCHEMA.Quantity,
-            GEOM_REL.Pose,
-            GEOM_COORD.PoseCoordinate,
-            GEOM_COORD.DirectionCosineXYZ,
-            GEOM_COORD.VectorXYZ,
-        ),
-        (QUDT_QKIND.PlaneAngle, QUDT_QKIND.Length),
-        (QUDT_UNIT.UNITLESS, QUDT_UNIT.M),
-        {
-            "rotation": (
-                "rotation",
-                "angular-acceleration",
-                "ang",
-                QuantityType.PlaneAngle,
-                MAP_EXT.PoseOrientationView,
-            ),
-            "distance": (
-                "position",
-                "linear-acceleration",
-                "lin",
-                QuantityType.Distance,
-                MAP.PoseCoordinateView,
-            ),
-        },
-    ),
-    WorldQuantityType.JointPosition: (
-        (QUDT_SCHEMA.Quantity, KC_STAT.JointPositionCoordinate),
-        (QUDT_QKIND.PlaneAngle,),
-        (QUDT_UNIT.RAD,),
-        {},
-    ),
-}
-
-WORLD_STRUCTURE_TYPES: dict[Any, Any] = {
-    WorldEntityType.Frame: GEOM_ENT.Frame,
-    WorldEntityType.Link: GEOM_ENT.SimplicialComplex,
-    WorldEntityType.SceneObject: ENV.RigidObject,
-    WorldEntityType.KinematicChain: GEOM_ENT.KinematicChain,
-    WorldFieldType.Gravity: GEOM_ENT.UniformGravitationalField,
-}
-
-SCALAR_UNIT: dict[Any, Any] = {
-    QuantityType.Pose: QUDT_UNIT.UNITLESS,
-    QuantityType.Position: QUDT_UNIT.M,
-    QuantityType.Orientation: QUDT_UNIT["RAD"],
-    QuantityType.Distance: QUDT_UNIT.M,
-    QuantityType.Angle: QUDT_UNIT["RAD"],
-    QuantityType.PlaneAngle: QUDT_UNIT["RAD"],
-    QuantityType.LinearVelocity: QUDT_UNIT["M-PER-SEC"],
-    QuantityType.AngularVelocity: QUDT_UNIT["RAD-PER-SEC"],
-    QuantityType.LinearAcceleration: QUDT_UNIT["M-PER-SEC2"],
-    QuantityType.AngularAcceleration: QUDT_UNIT["RAD-PER-SEC2"],
-    QuantityType.LinearJerk: QUDT_UNIT["M-PER-SEC3"],
-    QuantityType.Force: QUDT_UNIT.N,
-    QuantityType.Torque: QUDT_UNIT["N-M"],
-    QuantityType.Dimensionless: QUDT_UNIT.UNITLESS,
-    QuantityType.TrajectoryProgress: QUDT_UNIT.UNITLESS,
-    QuantityType.Duration: QUDT_UNIT["SEC"],
-}
-
-DSL_UNIT: dict[str, Any] = {
-    "rad/s": QUDT_UNIT["RAD-PER-SEC"],
-    "rad": QUDT_UNIT["RAD"],
-    "m/s": QUDT_UNIT["M-PER-SEC"],
-    "m/s3": QUDT_UNIT["M-PER-SEC3"],
-    "m": QUDT_UNIT.M,
-    "Nm": QUDT_UNIT["N-M"],
-    "N": QUDT_UNIT.N,
-    "deg/s": QUDT_UNIT["DEG-PER-SEC"],
-    "deg": QUDT_UNIT["DEG"],
-    "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
-    "cm": QUDT_UNIT["CentiM"],
-    "m/s2": QUDT_UNIT["M-PER-SEC2"],
-    "rad/s2": QUDT_UNIT["RAD-PER-SEC2"],
-    "s": QUDT_UNIT["SEC"],
-    "ms": QUDT_UNIT["MilliSEC"],
-    "1": QUDT_UNIT.UNITLESS,
-}
-
-CONSTRAINT_PATH_BY_PREFIX = {
-    "geom-rel": "https://comp-rob2b.github.io/metamodels/geometry/spatial-relations.ttl",
-    "geom-coord": "https://comp-rob2b.github.io/metamodels/geometry/coordinates.ttl",
-    "geom-op": "https://secorolab.github.io/metamodels/geometry/spatial-operators.shacl.ttl",
-    "rbdyn-op": "https://comp-rob2b.github.io/metamodels/newtonian-rigid-body-dynamics/operators.ttl",
-    # de-punned overrides in the secorolab layer (comp-rob2b bases pun quantity
-    # kinds as rdf:type via sh:class; these fork them to hasQuantityKind checks).
-    "map": "https://secorolab.github.io/metamodels/task/map.shacl.ttl",
-    "cstr": "https://secorolab.github.io/metamodels/task/constraint.shacl.ttl",
-    "mot": "https://secorolab.github.io/metamodels/task/motion-specification.shacl.ttl",
-    "cstr-hdl": "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
-    "slv": "https://secorolab.github.io/metamodels/task/solver-specification.shacl.ttl",
-}
-
-CSTR_TYPE_NAME: dict[Any, str] = {
-    QuantityType.PlaneAngle: QuantityType.Angle,
-}
-
-QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
-    QuantityType.Pose: GEOM_REL.Pose,
-    QuantityType.Position: QUDT_QKIND.Position,
-    QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
-    QuantityType.VelocityTwist: GEOM_REL.VelocityTwist,
-    QuantityType.AccelerationTwist: GEOM_REL.AccelerationTwist,
-    QuantityType.Wrench: RBDYN_ENT.Wrench,
-    QuantityType.Direction: QUDT_QKIND.Dimensionless,
-    QuantityType.FreeVector: QUDT_QKIND.FreeVector,
-    QuantityType.Dimensionless: QUDT_QKIND.Dimensionless,
-    QuantityType.Duration: QUDT_QKIND.Time,
-    QuantityType.TrajectoryProgress: TRAJ.Progress,
-    QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
-}
-
-# QUDT quantity-kinds are individuals, not classes; used to tell them apart from
-# structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) when emitting typing.
-_QKIND_PREFIX = str(QUDT_QKIND)
-
-CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
-    QuantityType.Pose: WorldQuantityType.Pose,
-    QuantityType.VelocityTwist: WorldQuantityType.VelocityTwist,
-    QuantityType.Wrench: WorldQuantityType.Wrench,
-}
-
-GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
-    ("kc", KC),
-    ("kc-stat", KC_STAT),
-    ("geom-ent", GEOM_ENT),
-    ("geom-rel", GEOM_REL),
-    ("geom-coord", GEOM_COORD),
-    ("geom-op", GEOM_OP),
-    ("geom-op-ext", GEOM_OP_EXT),
-    ("env", ENV),
-    ("exec", EXEC),
-    ("el", EL),
-    ("rt", RT),
-    ("mj", MJ),
-    ("poly", POLY),
-    ("snap", SNAP),
-    ("rbdyn-ent", RBDYN_ENT),
-    ("rbdyn-coord", RBDYN_COORD),
-    ("rbdyn-op", RBDYN_OP),
-    ("rbdyn-op-ext", RBDYN_OP_EXT),
-    ("qudt", QUDT_SCHEMA),
-    ("qkind", QUDT_QKIND),
-    ("unit", QUDT_UNIT),
-    ("map", MAP),
-    ("cstr", CSTR),
-    ("cstr-ext", CSTR_EXT),
-    ("map-ext", MAP_EXT),
-    ("mot", MOT),
-    ("cstr-hdl", CSTR_HDL),
-    ("cstr-hdl-ext", CSTR_HDL_EXT),
-    ("slv", SLV),
-    ("slv-ext", SLV_EXT),
+from motion_spec_dsl.rdf._specs import (
+    WORLD_SPECS,
+    WORLD_STRUCTURE_TYPES,
+    SCALAR_UNIT,
+    CSTR_TYPE_NAME,
+    QUDT_KIND_BY_QUANTITY_TYPE,
+    _QKIND_PREFIX,
+    CONTEXT_COMPOSITE_WORLD_TYPE,
+    GRAPH_BINDINGS,
 )
-
-
-def _ns_term(namespace: Any, name: str) -> URIRef:
-    """URI for `name` in `namespace` (the namespace's base IRI concatenated with `name`)."""
-    return URIRef(str(namespace._NS) + name)
-
-
-def _node_name(value: Any) -> str:
-    """The `name` attribute of `value`, falling back to `str(value)`."""
-    return value.name if hasattr(value, "name") else str(value)
-
-
-def _body_name(name: str) -> str:
-    """`name` with a leading `frame-`/`link-` prefix stripped."""
-    for prefix in ("frame-", "link-"):
-        if name.startswith(prefix):
-            return name[len(prefix) :]
-    return name
-
-
-@lru_cache(maxsize=2048)
-def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
-    """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
-    if props is None:
-        return None
-    for pair in props.pairs:
-        if isinstance(pair, GeoPropPair) and pair.key == key:
-            return pair.value
-    return None
-
-
-def _is_distance_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `distance between A and B` form."""
-    return (
-        getattr(constraint.view, "distance_from", None) is not None
-        and getattr(constraint.view, "distance_to", None) is not None
-    )
-
-
-@lru_cache(maxsize=2048)
-def _view_subspace(constraint: ConstraintSpecification) -> str:
-    """The constraint's resolved view subspace; raises if it declares none."""
-    subspace = constraint_view_subspace(constraint)
-    if subspace is None:
-        raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
-    return subspace
-
-
-def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
-    """Id stem for a scalar view of `quantity`: `<name>.<subspace>[.<axis>]`
-    (bare `<name>` for joint positions)."""
-    if quantity.type == WorldQuantityType.JointPosition:
-        return quantity.name
-    if axis is None:
-        return f"{quantity.name}.{subspace}"
-    return f"{quantity.name}.{subspace}.{axis}"
-
-
-def _axis_vector(axis: str) -> tuple[float, float, float]:
-    """Unit vector for axis `'x'|'y'|'z'`."""
-    return {
-        "x": (1.0, 0.0, 0.0),
-        "y": (0.0, 1.0, 0.0),
-        "z": (0.0, 0.0, 1.0),
-    }[axis]
-
-
-def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
-    """Frame the quantity's axes are expressed in: its `as-seen-by`, or `wrt` for a Pose."""
-    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-    axis_frame = _geo_prop(props, "as-seen-by")
-    if axis_frame is not None:
-        return axis_frame
-    if quantity.type == WorldQuantityType.Pose:
-        return _geo_prop(props, "wrt")
-    return None
-
-
-def _pose_diff_error_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
-    return f"{ctrl.name}-err-{component.suffix}"
-
-
-def _pose_diff_controller_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
-    return f"{ctrl.name}-{component.suffix}"
-
-
-def _pose_diff_energy_id(
-    ctrl: ControllerEntry, component: AccelerationConstraintRecord | PoseDiffComponentRecord
-) -> str:
-    """Id of the acceleration-energy node linking control-signal to acceleration-energy.
-
-    Shared by the pose-diff component controller (neutral record) and the ACHD
-    acceleration-constraint emission (acceleration record): both must agree on this URI.
-    """
-    return f"eacc-{ctrl.name}-{component.suffix}"
-
-
-def _pose_diff_measured_derivative_id(
-    ctrl: ControllerEntry, component: PoseDiffComponentRecord
-) -> str:
-    return f"{ctrl.name}-measured-derivative-{component.suffix}"
-
-
-@lru_cache(maxsize=2048)
-def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
-    """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
-    (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
-    if quantity.type == WorldQuantityType.JointPosition:
-        return QuantityType.Angle
-    if quantity.type == WorldQuantityType.Pose:
-        if subspace == "pose":
-            return QuantityType.Pose
-        if subspace == "position":
-            return QuantityType.Position if axis is None else QuantityType.Distance
-        if subspace == "orientation":
-            return QuantityType.Orientation if axis is None else QuantityType.Angle
-        if subspace == "distance":
-            return QuantityType.Distance
-        if subspace == "rotation":
-            return QuantityType.PlaneAngle
-    spec = WORLD_SPECS.get(quantity.type)
-    if spec is None:
-        return subspace
-    prop = spec[3].get(subspace)
-    return prop[3] if prop else subspace
-
-
-def _evaluator_id(spec: ConstraintSpecification) -> str:
-    """Stable id for a constraint's monitor evaluator, qualified by motion + section kind."""
-    section = getattr(spec, "parent", None)
-    motion = getattr(section, "parent", None) if section is not None else None
-    section_kind = getattr(section, "kind", None)
-    motion_name = getattr(motion, "name", None)
-    if motion_name and section_kind:
-        return f"eval-{motion_name}-{section_kind}-{spec.name}"
-    return f"eval-{spec.name}"
-
-
-def _dsl_unit(unit_name: str) -> Any:
-    """Map a DSL unit token to its QUDT unit URI; raises on an unsupported token."""
-    try:
-        return DSL_UNIT[unit_name]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
-
-
-def _time_unit(unit_name: str) -> Any:
-    """QUDT unit for a timing value, restricted to `'s'` or `'ms'`."""
-    if unit_name not in {"s", "ms"}:
-        raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
-    return _dsl_unit(unit_name)
-
-
-def _linear_velocity_mps(value: float, unit: object | None) -> float:
-    """Convert a linear velocity to m/s (accepts `'m/s'` or `'cm/s'`, default m/s)."""
-    unit_name = str(getattr(unit, "value", unit)) if unit else "m/s"
-    if unit_name == "m/s":
-        return value
-    if unit_name == "cm/s":
-        return value / 100.0
-    raise ValueError(f"Linear velocity unit must be 'm/s' or 'cm/s', not '{unit_name}'.")
-
-
-def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
-    """The ContextQuantity a ref points at, whether named or declared inline."""
-    return getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
-
-
-def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecification]:
-    """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
-    out = []
-    for section in (motion.when, motion.while_, motion.until):
-        for item in section.constraints:
-            spec = _resolved_spec(item)
-            if not spec.disabled:
-                out.append(spec)
-    return out
-
-
-@dataclass(frozen=True)
-class _PosePathStep:
-    """One hop along a transform path: a Pose quantity, used inverted or not."""
-
-    quantity: WorldQuantity
-    inverted: bool
-
-
-@dataclass(frozen=True)
-class _RelativePosePlan:
-    """Plan for expressing `end`'s pose relative to `start`'s frame.
-
-    `target` is the (existing or synthetic) relative-pose quantity; `reference_path`
-    is the chain of pose steps composed to move between the two reference frames.
-    """
-
-    start: WorldQuantity
-    end: WorldQuantity
-    target: WorldQuantity
-    reference_path: tuple[_PosePathStep, ...]
+from motion_spec_dsl.rdf._helpers import (
+    _ns_term,
+    _node_name,
+    _body_name,
+    _geo_prop,
+    _is_distance_view,
+    _view_subspace,
+    _scalar_id,
+    _axis_vector,
+    _quantity_axis_frame,
+    _pose_diff_error_id,
+    _pose_diff_controller_id,
+    _pose_diff_energy_id,
+    _pose_diff_measured_derivative_id,
+    _scalar_type,
+    _evaluator_id,
+    _dsl_unit,
+    _time_unit,
+    _linear_velocity_mps,
+    _context_quantity,
+    _resolved_constraint_items,
+    _PosePathStep,
+    _RelativePosePlan,
+)
 
 
 class MotionSpecDatasetBuilder:
@@ -5169,3 +4801,4 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
         self._emit_quantity_kind(node, qkind)
         self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_type, QUDT_UNIT.UNITLESS)))
+

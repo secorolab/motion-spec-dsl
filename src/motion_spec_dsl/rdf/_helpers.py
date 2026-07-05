@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
+"""Pure helper functions and path/plan records for RDF emission."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
+
+from rdflib.term import URIRef
+
+
+from motion_spec_dsl.controller_semantics import (
+    AccelerationConstraintRecord,
+    PoseDiffComponentRecord,
+    constraint_view_subspace,
+)
+from motion_spec_dsl.domain import (
+    ConstraintSpecification,
+    ControllerEntry,
+    ContextRef,
+    GeoPropPair,
+    GeometricProps,
+    MotionSpec,
+    QuantityType,
+    ContextQuantity,
+    WorldQuantity,
+    WorldQuantityType,
+    _resolved_spec,
+)
+
+from motion_spec_dsl.rdf._specs import DSL_UNIT, WORLD_SPECS
+
+
+def _ns_term(namespace: Any, name: str) -> URIRef:
+    """URI for `name` in `namespace` (the namespace's base IRI concatenated with `name`)."""
+    return URIRef(str(namespace._NS) + name)
+
+
+def _node_name(value: Any) -> str:
+    """The `name` attribute of `value`, falling back to `str(value)`."""
+    return value.name if hasattr(value, "name") else str(value)
+
+
+def _body_name(name: str) -> str:
+    """`name` with a leading `frame-`/`link-` prefix stripped."""
+    for prefix in ("frame-", "link-"):
+        if name.startswith(prefix):
+            return name[len(prefix) :]
+    return name
+
+
+@lru_cache(maxsize=2048)
+def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
+    """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
+    if props is None:
+        return None
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            return pair.value
+    return None
+
+
+def _is_distance_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `distance between A and B` form."""
+    return (
+        getattr(constraint.view, "distance_from", None) is not None
+        and getattr(constraint.view, "distance_to", None) is not None
+    )
+
+
+@lru_cache(maxsize=2048)
+def _view_subspace(constraint: ConstraintSpecification) -> str:
+    """The constraint's resolved view subspace; raises if it declares none."""
+    subspace = constraint_view_subspace(constraint)
+    if subspace is None:
+        raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
+    return subspace
+
+
+def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
+    """Id stem for a scalar view of `quantity`: `<name>.<subspace>[.<axis>]`
+    (bare `<name>` for joint positions)."""
+    if quantity.type == WorldQuantityType.JointPosition:
+        return quantity.name
+    if axis is None:
+        return f"{quantity.name}.{subspace}"
+    return f"{quantity.name}.{subspace}.{axis}"
+
+
+def _axis_vector(axis: str) -> tuple[float, float, float]:
+    """Unit vector for axis `'x'|'y'|'z'`."""
+    return {
+        "x": (1.0, 0.0, 0.0),
+        "y": (0.0, 1.0, 0.0),
+        "z": (0.0, 0.0, 1.0),
+    }[axis]
+
+
+def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
+    """Frame the quantity's axes are expressed in: its `as-seen-by`, or `wrt` for a Pose."""
+    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+    axis_frame = _geo_prop(props, "as-seen-by")
+    if axis_frame is not None:
+        return axis_frame
+    if quantity.type == WorldQuantityType.Pose:
+        return _geo_prop(props, "wrt")
+    return None
+
+
+def _pose_diff_error_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
+    return f"{ctrl.name}-err-{component.suffix}"
+
+
+def _pose_diff_controller_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
+    return f"{ctrl.name}-{component.suffix}"
+
+
+def _pose_diff_energy_id(
+    ctrl: ControllerEntry, component: AccelerationConstraintRecord | PoseDiffComponentRecord
+) -> str:
+    """Id of the acceleration-energy node linking control-signal to acceleration-energy.
+
+    Shared by the pose-diff component controller (neutral record) and the ACHD
+    acceleration-constraint emission (acceleration record): both must agree on this URI.
+    """
+    return f"eacc-{ctrl.name}-{component.suffix}"
+
+
+def _pose_diff_measured_derivative_id(
+    ctrl: ControllerEntry, component: PoseDiffComponentRecord
+) -> str:
+    return f"{ctrl.name}-measured-derivative-{component.suffix}"
+
+
+@lru_cache(maxsize=2048)
+def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
+    """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
+    (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
+    if quantity.type == WorldQuantityType.JointPosition:
+        return QuantityType.Angle
+    if quantity.type == WorldQuantityType.Pose:
+        if subspace == "pose":
+            return QuantityType.Pose
+        if subspace == "position":
+            return QuantityType.Position if axis is None else QuantityType.Distance
+        if subspace == "orientation":
+            return QuantityType.Orientation if axis is None else QuantityType.Angle
+        if subspace == "distance":
+            return QuantityType.Distance
+        if subspace == "rotation":
+            return QuantityType.PlaneAngle
+    spec = WORLD_SPECS.get(quantity.type)
+    if spec is None:
+        return subspace
+    prop = spec[3].get(subspace)
+    return prop[3] if prop else subspace
+
+
+def _evaluator_id(spec: ConstraintSpecification) -> str:
+    """Stable id for a constraint's monitor evaluator, qualified by motion + section kind."""
+    section = getattr(spec, "parent", None)
+    motion = getattr(section, "parent", None) if section is not None else None
+    section_kind = getattr(section, "kind", None)
+    motion_name = getattr(motion, "name", None)
+    if motion_name and section_kind:
+        return f"eval-{motion_name}-{section_kind}-{spec.name}"
+    return f"eval-{spec.name}"
+
+
+def _dsl_unit(unit_name: str) -> Any:
+    """Map a DSL unit token to its QUDT unit URI; raises on an unsupported token."""
+    try:
+        return DSL_UNIT[unit_name]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
+
+
+def _time_unit(unit_name: str) -> Any:
+    """QUDT unit for a timing value, restricted to `'s'` or `'ms'`."""
+    if unit_name not in {"s", "ms"}:
+        raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
+    return _dsl_unit(unit_name)
+
+
+def _linear_velocity_mps(value: float, unit: object | None) -> float:
+    """Convert a linear velocity to m/s (accepts `'m/s'` or `'cm/s'`, default m/s)."""
+    unit_name = str(getattr(unit, "value", unit)) if unit else "m/s"
+    if unit_name == "m/s":
+        return value
+    if unit_name == "cm/s":
+        return value / 100.0
+    raise ValueError(f"Linear velocity unit must be 'm/s' or 'cm/s', not '{unit_name}'.")
+
+
+def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
+    """The ContextQuantity a ref points at, whether named or declared inline."""
+    return getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+
+
+def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecification]:
+    """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
+    out = []
+    for section in (motion.when, motion.while_, motion.until):
+        for item in section.constraints:
+            spec = _resolved_spec(item)
+            if not spec.disabled:
+                out.append(spec)
+    return out
+
+
+@dataclass(frozen=True)
+class _PosePathStep:
+    """One hop along a transform path: a Pose quantity, used inverted or not."""
+
+    quantity: WorldQuantity
+    inverted: bool
+
+
+@dataclass(frozen=True)
+class _RelativePosePlan:
+    """Plan for expressing `end`'s pose relative to `start`'s frame.
+
+    `target` is the (existing or synthetic) relative-pose quantity; `reference_path`
+    is the chain of pose steps composed to move between the two reference frames.
+    """
+
+    start: WorldQuantity
+    end: WorldQuantity
+    target: WorldQuantity
+    reference_path: tuple[_PosePathStep, ...]
