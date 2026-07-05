@@ -2,7 +2,7 @@
 
 [![build](https://github.com/secorolab/motion-spec-dsl/actions/workflows/build.yml/badge.svg)](https://github.com/secorolab/motion-spec-dsl/actions/workflows/build.yml)
 [![test](https://github.com/secorolab/motion-spec-dsl/actions/workflows/test.yml/badge.svg)](https://github.com/secorolab/motion-spec-dsl/actions/workflows/test.yml)
-[![docs](https://github.com/secorolab/motion-spec-dsl/actions/workflows/docs.yml/badge.svg)](https://secorolab.github.io/motion-spec-dsl/)
+[![docs](https://github.com/secorolab/motion-spec-dsl/actions/workflows/docs.yml/badge.svg)](https://secoro.uni-bremen.de/motion-spec-dsl/)
 
 `motion-spec-dsl` is a [textX](https://textx.github.io/textX/) language for writing
 guarded robot motion specifications in `.robmot` files and generating RDF motion-spec
@@ -19,7 +19,7 @@ The Python package is organized as `motion_spec_dsl/{rdf, validation}` plus the 
 `controller_semantics` and `domain` modules. `rdf` is a package: `builder.py` holds the
 graph builder, with its constant tables and pure helpers split into `_specs.py`/`_helpers.py`.
 
-Language syntax is documented in the [tutorial](https://secorolab.github.io/motion-spec-dsl/tutorial.html)
+Language syntax is documented in the [tutorial](https://secoro.uni-bremen.de/motion-spec-dsl/tutorial.html)
 (source in [docs/](docs/); build locally with `sphinx-build -b html docs docs/_build/html`).
 
 ## Setup
