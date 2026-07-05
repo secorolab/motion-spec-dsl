@@ -36,11 +36,15 @@ SUBSPACE_ALIAS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class AccelerationConstraintRecord:
+    """One ACHD acceleration-constraint axis: a linear/angular acceleration subspace
+    and its x/y/z axis."""
+
     subspace: str
     axis: str
 
     @property
     def suffix(self) -> str:
+        """Compact id suffix, `lin-<axis>` or `ang-<axis>`."""
         prefix = {
             "linear-acceleration": "lin",
             "angular-acceleration": "ang",
@@ -49,6 +53,7 @@ class AccelerationConstraintRecord:
 
     @property
     def quantity_type(self) -> QuantityType:
+        """The matching linear/angular AccelerationTwist QuantityType."""
         return {
             "linear-acceleration": QuantityType.LinearAcceleration,
             "angular-acceleration": QuantityType.AngularAcceleration,
@@ -67,9 +72,11 @@ class PoseDiffComponentRecord:
 
     @property
     def suffix(self) -> str:
-        # Must match AccelerationConstraintRecord.suffix: the pose-diff controller's
-        # energy/control-signal node and the ACHD acceleration-constraint's
-        # acceleration-energy node are the same shared URI.
+        """Compact id suffix `lin-<axis>`/`ang-<axis>`.
+
+        Must equal AccelerationConstraintRecord.suffix: the pose-diff controller's
+        energy/control-signal node and the ACHD acceleration-energy node share this URI.
+        """
         prefix = {"linear": "lin", "angular": "ang"}[self.part]
         return f"{prefix}-{self.axis}"
 
@@ -88,6 +95,10 @@ def pose_diff_components(
 
 @dataclass(frozen=True)
 class ControllerCommandRecord:
+    """Resolved control-command shape for a controller+constraint: the commanded
+    quantity, its view subspace/axis, the command type, and the acceleration-constraint
+    axes the command expands into."""
+
     controller: ControllerEntry
     constraint: ConstraintSpecification
     quantity: WorldQuantity | None
@@ -98,10 +109,12 @@ class ControllerCommandRecord:
 
     @property
     def is_force_command(self) -> bool:
+        """Whether this commands a force (by command type or a force view)."""
         return self.command_type == QuantityType.Force or self.view_subspace == "force"
 
     @property
     def is_posture_torque_command(self) -> bool:
+        """Whether this commands a joint-space posture torque."""
         return (
             self.command_type == QuantityType.Torque
             and self.quantity is not None
@@ -128,6 +141,7 @@ POSE_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
 
 
 def axis_label(axis: object | None) -> str | None:
+    """Map a roll/pitch/yaw (or already-x/y/z) axis token to `x`/`y`/`z`."""
     if axis is None:
         return None
     raw = str(getattr(axis, "value", axis))
@@ -139,6 +153,9 @@ def axis_label(axis: object | None) -> str | None:
 
 
 def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
+    """The command QuantityType (linear/angular velocity, force or torque) implied by a
+    view subspace, or None.
+    """
     if subspace is None:
         return None
     # A `distance between <A> and <B>` view has no raw SubSpace enum (it resolves
@@ -157,6 +174,9 @@ def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
 
 
 def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
+    """The constraint's controlled subspace as a canonical string, unwrapping `Norm of` and
+    resolving distance / joint-position / pose views. None if it has no subspace.
+    """
     view = constraint.view
     # `Norm of <inner>`: subspace is the reduced view's; unwrap for downstream callers.
     while getattr(view, "norm_source", None) is not None:
@@ -194,6 +214,7 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
 def resolved_constraint_quantity(
     constraint: ConstraintSpecification,
 ) -> WorldQuantity | None:
+    """The resolved WorldQuantity a constraint's view targets, or None."""
     quantity = getattr(constraint.view, "quantity", None)
     if isinstance(quantity, WorldQuantity):
         return _resolved_world_quantity(quantity)
@@ -203,6 +224,10 @@ def resolved_constraint_quantity(
 def controller_command_record(
     controller: ControllerEntry | ControllerAlias,
 ) -> ControllerCommandRecord:
+    """Derive a controller's command record: resolve its command type (impedance forces a
+    Force command) and the acceleration-constraint axes it drives -- whole-pose 6D, a
+    single axis, or one distance-direction constraint.
+    """
     resolved_controller = _resolved_controller(controller)
     constraint = resolved_controller.params.constraint.constraint
     quantity = resolved_constraint_quantity(constraint)

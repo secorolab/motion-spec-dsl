@@ -12,17 +12,23 @@ from rdflib.term import URIRef
 
 
 class NamespaceDeclLike(Protocol):
+    """Structural type for a namespace declaration: a `name` (prefix) and a `uri`."""
+
     name: str
     uri: str
 
 
 class IHasNamespace(object):
+    """Base mixin for DSL objects that live under a parent object's namespace."""
+
     def __init__(self, **kwargs) -> None:
         self.parent = kwargs.get("parent", None)
         assert self.parent is not None, f"'parent' not handled for type '{self.__class__.__name__}'"
 
 
 class IHasNamespaceDeclare(IHasNamespace):
+    """A DSL object that declares its own namespace (`ns`), exposing its prefix and URI."""
+
     ns: NamespaceDeclLike
     name: str
     uri: Any
@@ -49,6 +55,8 @@ class IHasNamespaceDeclare(IHasNamespace):
 
 
 class NamedNamespaceObject(IHasNamespace):
+    """A named DSL object whose URI is derived from its parent's namespace and its name."""
+
     name: str
     _uri: URIRef | str
 

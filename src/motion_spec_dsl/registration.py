@@ -208,6 +208,7 @@ class MotionConstraintScopeProvider:
     """Resolve the constraint part of refs authored as motion.constraint."""
 
     def __call__(self, obj: ConstraintRef, attr, obj_ref):
+        """Resolve `obj_ref` to a constraint declared in the ref's motion."""
         del attr
         motion = obj.motion
         if motion is None or not isinstance(motion, MotionSpec):
@@ -224,6 +225,7 @@ class HandlerControllerScopeProvider:
     """Resolve controller refs against controllers declared in the target handler."""
 
     def __call__(self, obj: ControllerRef, attr, obj_ref):
+        """Resolve `obj_ref` to a controller declared in the ref's handler."""
         del attr
         handler = obj.handler
         if handler is None or not isinstance(handler, ConstraintHandler):
@@ -238,6 +240,7 @@ class CrossHandlerSolverScopeProvider:
     """Resolve solver refs: cross-handler when handler is set, else local handler via parent chain."""
 
     def __call__(self, obj: SolverRef, attr, obj_ref):
+        """Resolve `obj_ref` to a solver in the target (or ancestor) handler."""
         del attr
         handler = obj.handler
         if not isinstance(handler, ConstraintHandler):
@@ -257,6 +260,9 @@ class CrossHandlerSolverScopeProvider:
 
 
 def motion_spec_metamodel():
+    """Build the textx metamodel for the motion_spec DSL with its scope providers and
+    model-validation processor.
+    """
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
     metamodel.register_scope_providers(
         {
@@ -317,6 +323,7 @@ def _sort_lists(value: Any) -> Any:
 
 
 def _merged_context(context: Any) -> list[str | dict[str, str]]:
+    """Merge the JSON-LD @context prefix bindings into the list form rdflib expects."""
     context_urls: set[str] = set()
     local_context: dict[str, str] = {}
     if isinstance(context, list):
@@ -331,6 +338,7 @@ def _merged_context(context: Any) -> list[str | dict[str, str]]:
 
 
 def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, Any]:
+    """Build the app manifest (namespace prefixes and imported graph files) for a dataset."""
     constraint_paths: set[str] = set()
     for prefix, _ in dataset.namespaces():
         path = CONSTRAINT_PATH_BY_PREFIX.get(prefix)
@@ -424,6 +432,9 @@ def _gen_fsm(model, output_dir: Path) -> None:
 
 
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
+    """textx generator: build the dataset for `model` and write its JSON-LD, app manifest
+    and FSM outputs.
+    """
     del metamodel, overwrite, debug, kwargs
 
     builder = MotionSpecDatasetBuilder(model)
