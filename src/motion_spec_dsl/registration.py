@@ -530,8 +530,8 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(model._tx_filename).stem
 
-    graph_path = output_dir / f"{stem}.json"
-    manifest_path = output_dir / f"{stem}-app.json"
+    graph_path = output_dir / f"{stem}.jsonld"
+    manifest_path = output_dir / f"{stem}-app.jsonld"
     _add_generation_provenance(
         dataset,
         context,

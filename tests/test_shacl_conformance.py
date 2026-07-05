@@ -61,7 +61,7 @@ def test_example_model_conforms_to_shacl(tmp_path, model):
     )
     assert gen.returncode == 0, f"generation failed:\n{gen.stdout}\n{gen.stderr}"
 
-    manifest = gen_dir / f"{model}-app.json"
+    manifest = gen_dir / f"{model}-app.jsonld"
     assert manifest.exists(), f"manifest not generated: {manifest}"
 
     check = subprocess.run(

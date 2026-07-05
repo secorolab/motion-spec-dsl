@@ -73,8 +73,8 @@ The normal pipeline has two authored inputs and two generated outputs.
 
    This writes:
 
-   - `build/ex.json`: the generated motion-spec graph serialized as JSON-LD
-   - `build/ex-app.json`: an application manifest listing the generated graph,
+   - `build/ex.jsonld`: the generated motion-spec graph serialized as JSON-LD
+   - `build/ex-app.jsonld`: an application manifest listing the generated graph,
      required SHACL/ontology constraint files, and local IRI mappings
 
 4. Feed the generated graph and manifest into downstream code generation or runtime

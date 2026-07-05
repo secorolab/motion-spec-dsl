@@ -122,8 +122,8 @@ def test_jsonld_generation_records_dsl_source_provenance(tmp_path: Path, monkeyp
 
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
 
-    graph_path = tmp_path / "pick_place_single.json"
-    manifest_path = tmp_path / "pick_place_single-app.json"
+    graph_path = tmp_path / "pick_place_single.jsonld"
+    manifest_path = tmp_path / "pick_place_single-app.jsonld"
     prov = Namespace("http://www.w3.org/ns/prov#")
     dslprov = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
     dcterms = Namespace("http://purl.org/dc/terms/")
@@ -138,17 +138,25 @@ def test_jsonld_generation_records_dsl_source_provenance(tmp_path: Path, monkeyp
     assert (agent, RDF.type, prov.SoftwareAgent) in graph
     assert (agent, dcterms.hasVersion, None) in graph
     assert (
-        dslprov["entity/generated_graph/pick_place_single.json"],
+        dslprov["entity/generated_graph/pick_place_single.jsonld"],
         prov.wasGeneratedBy,
         activity,
     ) in graph
-    assert (dslprov["entity/generated_graph/pick_place_single.json"], prov.generatedAtTime, None) in graph
     assert (
-        dslprov["entity/app_manifest/pick_place_single-app.json"],
+        dslprov["entity/generated_graph/pick_place_single.jsonld"],
+        prov.generatedAtTime,
+        None,
+    ) in graph
+    assert (
+        dslprov["entity/app_manifest/pick_place_single-app.jsonld"],
         prov.wasGeneratedBy,
         activity,
     ) in graph
-    assert (dslprov["entity/app_manifest/pick_place_single-app.json"], prov.generatedAtTime, None) in graph
+    assert (
+        dslprov["entity/app_manifest/pick_place_single-app.jsonld"],
+        prov.generatedAtTime,
+        None,
+    ) in graph
     used_locations = {
         str(location)
         for source_entity in graph.objects(activity, prov.used)

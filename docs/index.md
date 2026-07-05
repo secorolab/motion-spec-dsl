@@ -41,8 +41,8 @@ textx generate models/ex.robmot --target jsonld -o build/
 
 This writes:
 
-- `build/ex.json` — the motion-spec graph as JSON-LD
-- `build/ex-app.json` — an application manifest listing the graph, its SHACL/ontology
+- `build/ex.jsonld` — the motion-spec graph as JSON-LD
+- `build/ex-app.jsonld` — an application manifest listing the graph, its SHACL/ontology
   constraints, and local IRI mappings
 
 The DSL stops at graph generation; code generation consumes the JSON-LD and manifest.
