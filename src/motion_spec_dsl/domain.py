@@ -615,7 +615,9 @@ class WorldFieldType(StrEnum):
 WorldDeclarationType = WorldQuantityType | WorldEntityType | WorldFieldType
 
 
-@dataclass
+# eq=False: a model entity has identity semantics (its `parent` back-ref makes value-eq
+# cyclic anyway); identity equality is also what makes it usable as a dict/set key.
+@dataclass(eq=False)
 class WorldQuantity(NamedNamespaceObject):
     parent: object
     name: str
@@ -837,7 +839,8 @@ class SnapshotValue:
             self.clock = "task"
 
 
-@dataclass
+# eq=False: identity semantics (see WorldQuantity) -- also makes it a valid dict/set key.
+@dataclass(eq=False)
 class ConstraintSpecification(NamedNamespaceObject):
     parent: object
     name: str
