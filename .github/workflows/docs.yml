@@ -30,10 +30,11 @@ jobs:
         with:
           path: docs/_build/html
 
-  # Build on every branch/PR (so the badge reflects doc health); publish only from main.
+  # Build on every branch/PR (so the badge reflects doc health); publish from main or
+  # dev for now (not PRs).
   deploy:
     needs: build
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     environment:
       name: github-pages
