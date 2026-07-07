@@ -7,17 +7,15 @@ from __future__ import annotations
 
 import json
 import os
-import hashlib
-import importlib.metadata
 from datetime import datetime, timezone
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
+import pyshacl
+from rdf_utils.resolver import IriToFileResolver, install_resolver
 from rdflib.graph import Dataset
-from rdflib.namespace import DCTERMS, Namespace, RDF, XSD
-from rdflib.term import Literal, URIRef
+from rdflib.namespace import Namespace
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
 
@@ -372,17 +370,15 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
     }
-    try:
-        metamodels_root = Path(os.environ["METAMODELS_PATH"])
-    except KeyError:
-        raise RuntimeError("METAMODELS_PATH environment variable is not set") from None
-    comp_rob2b_metamodels = metamodels_root.parent / "comp-rob2b" / "metamodels"
+    # The manifest's iri-map only declares where *this model's* imported graphs live
+    # (relative to the manifest). Metamodel/ontology prefixes are deliberately NOT
+    # baked in here: they resolve through rdf-utils' IriToFileResolver against the
+    # local metamodels checkout (motion_spec.manifest.metamodel_url_map), so the
+    # generated manifest stays free of machine-specific absolute paths and is
+    # portable into run archives.
     iri_map = {
-        "https://secorolab.github.io/metamodels/": {"path": str(metamodels_root)},
         "https://secorolab.github.io/": {"path": "models/"},
     }
-    if comp_rob2b_metamodels.exists():
-        iri_map["https://comp-rob2b.github.io/metamodels/"] = {"path": str(comp_rob2b_metamodels)}
 
     return {
         "license": "https://github.com/aws/mit-0",
@@ -415,51 +411,99 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
     }
 
 
-def _add_generation_provenance(
-    dataset: Dataset,
-    context: dict[str, str],
-    model: Model,
-    *,
-    graph_name: str,
-    manifest_name: str,
-) -> None:
-    """Record DSL source-to-JSON-LD provenance in the generated graph."""
-    graph = dataset.default_graph
-    dataset.bind("prov", PROV)
-    dataset.bind("dslprov", DSLPROV)
-    context.setdefault("prov", str(PROV))
-    context.setdefault("dslprov", str(DSLPROV))
-    context.setdefault("dcterms", str(DCTERMS))
+def _artifact_role(name: str) -> str:
+    if name.endswith("-app.jsonld"):
+        return "app_manifest"
+    if name == "provenance/dsl.jsonld":
+        return "provenance"
+    if name == "fsm_ir.json":
+        return "fsm_ir"
+    if name.endswith("_fsm.hpp"):
+        return "fsm_header"
+    return "generated_graph"
 
-    activity = DSLPROV[f"activity/jsonld_generation/{quote(Path(model._tx_filename).stem)}"]
-    agent = DSLPROV["agent/motion_spec_dsl"]
-    graph_entity = DSLPROV[f"entity/generated_graph/{quote(graph_name)}"]
-    manifest_entity = DSLPROV[f"entity/app_manifest/{quote(manifest_name)}"]
-    generated_at = Literal(datetime.now(timezone.utc).isoformat(), datatype=XSD.dateTime)
 
-    graph.add((activity, RDF.type, PROV.Activity))
-    graph.add((activity, PROV.wasAssociatedWith, agent))
-    graph.add((activity, PROV.startedAtTime, generated_at))
-    graph.add((activity, PROV.endedAtTime, generated_at))
-    graph.add((agent, RDF.type, PROV.SoftwareAgent))
-    graph.add((agent, RDF.type, PROV.Agent))
-    version = _package_version()
-    if version:
-        graph.add((agent, DCTERMS.hasVersion, Literal(version, datatype=XSD.string)))
+def _write_provenance_artifact(model: Model, artifact_names: list[str], output_dir: Path, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_build_provenance_document(model, artifact_names, output_dir), indent=2) + "\n")
+    _validate_provenance_artifact(path)
+    print(f"  wrote {path}")
 
+
+def _build_provenance_document(model: Model, artifact_names: list[str], output_dir: Path) -> dict[str, Any]:
+    stem = Path(model._tx_filename).stem
+    activity = f"dslprov:activity/jsonld_generation/{_slug(stem)}"
+    generated_at = datetime.now(timezone.utc).isoformat()
+    graph = [
+        {"@id": "dslprov:bundle/dsl-provenance", "@type": "prov:Bundle"},
+        {
+            "@id": activity,
+            "@type": ["prov:Activity"],
+            "used": [
+                f"dslprov:entity/source/{_slug(source.name)}"
+                for source in _source_paths(model)
+            ],
+            "wasAssociatedWith": "dslprov:agent/motion_spec_dsl",
+            "startedAtTime": generated_at,
+            "endedAtTime": generated_at,
+        },
+    ]
     for source in _source_paths(model):
-        entity = DSLPROV[f"entity/source/{quote(source.name)}"]
-        graph.add((entity, RDF.type, PROV.Entity))
-        graph.add((entity, PROV.atLocation, URIRef(source.resolve().as_uri())))
-        graph.add((activity, PROV.used, entity))
-        if source.exists():
-            graph.add((entity, DSLPROV.sha256, Literal(_sha256_file(source), datatype=XSD.string)))
+        node = {
+            "@id": f"dslprov:entity/source/{_slug(source.name)}",
+            "@type": ["prov:Entity"],
+            "atLocation": source.resolve().as_uri(),
+        }
+        graph.append(node)
+    for name in artifact_names:
+        graph.append(
+            {
+                "@id": f"dslprov:entity/{_artifact_role(name)}/{_slug(name)}",
+                "@type": ["prov:Entity"],
+                "atLocation": (output_dir / name).resolve().as_uri(),
+                "wasGeneratedBy": activity,
+                "generatedAtTime": generated_at,
+            }
+        )
+    agent = {
+        "@id": "dslprov:agent/motion_spec_dsl",
+        "@type": ["prov:SoftwareAgent", "prov:Agent"],
+    }
+    graph.append(agent)
+    return {
+        "schema_version": 1,
+        "@context": [
+            "https://secorolab.github.io/metamodels/prov.json",
+            _provenance_context(),
+        ],
+        "@graph": graph,
+    }
 
-    for entity, name in ((graph_entity, graph_name), (manifest_entity, manifest_name)):
-        graph.add((entity, RDF.type, PROV.Entity))
-        graph.add((entity, PROV.wasGeneratedBy, activity))
-        graph.add((entity, PROV.generatedAtTime, generated_at))
-        graph.add((entity, PROV.atLocation, URIRef(name)))
+
+def _slug(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value).strip("_") or "item"
+
+
+def _provenance_context() -> dict[str, Any]:
+    return {
+        "dslprov": str(DSLPROV),
+    }
+
+
+def _validate_provenance_artifact(path: Path) -> None:
+    metamodels = Path(os.environ.get("METAMODELS_PATH", ""))
+    if not (metamodels / "prov.shacl.ttl").exists():
+        raise RuntimeError("METAMODELS_PATH must point to metamodels containing prov.shacl.ttl")
+    install_resolver(
+        IriToFileResolver({"https://secorolab.github.io/metamodels/": str(metamodels)}, download=False)
+    )
+    conforms, _graph, report = pyshacl.validate(
+        data_graph=str(path),
+        data_graph_format="json-ld",
+        shacl_graph=str(metamodels / "prov.shacl.ttl"),
+    )
+    if not conforms:
+        raise RuntimeError(f"{path}: PROV SHACL validation failed\n{report}")
 
 
 def _source_paths(model: Model) -> list[Path]:
@@ -477,19 +521,12 @@ def _source_paths(model: Model) -> list[Path]:
     return list(paths)
 
 
-def _sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
-def _package_version() -> str | None:
-    try:
-        return importlib.metadata.version("motion_spec_dsl")
-    except importlib.metadata.PackageNotFoundError:
-        return None
+def _fsm_output_names(model) -> list[str]:
+    names = []
+    for imp in getattr(model, "imports", []):
+        if imp.importURI.endswith(".fsm"):
+            names.extend([Path(imp.importURI).stem + "_fsm.hpp", "fsm_ir.json"])
+    return names
 
 
 def _gen_fsm(model, output_dir: Path) -> None:
@@ -532,13 +569,9 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
 
     graph_path = output_dir / f"{stem}.jsonld"
     manifest_path = output_dir / f"{stem}-app.jsonld"
-    _add_generation_provenance(
-        dataset,
-        context,
-        model,
-        graph_name=graph_path.name,
-        manifest_name=manifest_path.name,
-    )
+    provenance_name = "provenance/dsl.jsonld"
+    provenance_path = output_dir / provenance_name
+    artifact_names = [graph_path.name, manifest_path.name, provenance_name, *_fsm_output_names(model)]
     serialized = dataset.default_graph.serialize(
         format="json-ld", indent=2, context=_merged_context(context)
     )
@@ -547,10 +580,11 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
-    manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name]), indent=2))
+    manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name, provenance_name]), indent=2))
     print(f"  wrote {manifest_path}")
 
     _gen_fsm(model, output_dir)
+    _write_provenance_artifact(model, artifact_names, output_dir, provenance_path)
 
 
 motion_spec_gen = GeneratorDesc(
