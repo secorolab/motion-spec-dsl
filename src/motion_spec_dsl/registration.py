@@ -529,10 +529,26 @@ def _fsm_output_names(model) -> list[str]:
     return names
 
 
-def _gen_fsm(model, output_dir: Path) -> None:
-    """Generate FSM C++ header and IR JSON for any .fsm files imported by the model."""
+def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
+    """Serialize the FSM rdflib graph as a JSON-LD *named graph* (@id = the FSM IRI) so
+    it stays a distinct graph when ir_gen unions it into the model dataset."""
+    body = graph.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
+    body = body.decode() if isinstance(body, bytes) else body
+    doc = json.loads(body)
+    nodes = doc.get("@graph", [doc] if "@id" in doc else [])
+    return json.dumps(
+        {"@context": doc.get("@context", context), "@id": str(fsm_ref), "@graph": nodes},
+        indent=2,
+    )
+
+
+def _gen_fsm(model, output_dir: Path) -> list[str]:
+    """Generate FSM C++ header, IR JSON, and a named-graph JSON-LD for any .fsm files
+    imported by the model. Returns the JSON-LD filenames to add to the app manifest so
+    ir_gen derives the FSM wiring from the combined graph (the .hpp stays standalone)."""
     from coord_dsl.generators.fsm_graph import gen_cpp_header, gen_json, get_fsm_graph
 
+    jsonld_names: list[str] = []
     for imp in getattr(model, "imports", []):
         if not imp.importURI.endswith(".fsm"):
             continue
@@ -540,9 +556,9 @@ def _gen_fsm(model, output_dir: Path) -> None:
         if not loaded:
             continue
         fsm_model = loaded[0]
-        graph, _, fsm_ref = get_fsm_graph(fsm_model)
+        graph, context, fsm_ref = get_fsm_graph(fsm_model)
         ir = gen_json(graph, fsm_ref)
-        # Add the namespace URI so codegen can match event IRIs without re-parsing the .fsm.
+        # Add the namespace URI so it also travels with the framed IR / header.
         ir["namespace_uri"] = fsm_model.fsm.ns.uri
 
         hpp_path = output_dir / f"{ir['name']}.hpp"
@@ -552,6 +568,13 @@ def _gen_fsm(model, output_dir: Path) -> None:
         ir_path = output_dir / "fsm_ir.json"
         ir_path.write_text(json.dumps(ir, indent=2))
         print(f"  wrote {ir_path}")
+
+        jsonld_name = f"{ir['name']}.jsonld"
+        jsonld_path = output_dir / jsonld_name
+        jsonld_path.write_text(_fsm_named_graph_jsonld(graph, context, fsm_ref))
+        print(f"  wrote {jsonld_path}")
+        jsonld_names.append(jsonld_name)
+    return jsonld_names
 
 
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
@@ -571,7 +594,6 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     manifest_path = output_dir / f"{stem}-app.jsonld"
     provenance_name = "provenance/dsl.jsonld"
     provenance_path = output_dir / provenance_name
-    artifact_names = [graph_path.name, manifest_path.name, provenance_name, *_fsm_output_names(model)]
     serialized = dataset.default_graph.serialize(
         format="json-ld", indent=2, context=_merged_context(context)
     )
@@ -580,10 +602,18 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
-    manifest_path.write_text(json.dumps(_build_manifest(dataset, [graph_path.name, provenance_name]), indent=2))
+    # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
+    # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
+    # combined graph (no fsm_ir.json read at codegen time).
+    fsm_jsonld_names = _gen_fsm(model, output_dir)
+    artifact_names = [
+        graph_path.name, manifest_path.name, provenance_name,
+        *_fsm_output_names(model), *fsm_jsonld_names,
+    ]
+    manifest_imports = [graph_path.name, provenance_name, *fsm_jsonld_names]
+    manifest_path.write_text(json.dumps(_build_manifest(dataset, manifest_imports), indent=2))
     print(f"  wrote {manifest_path}")
 
-    _gen_fsm(model, output_dir)
     _write_provenance_artifact(model, artifact_names, output_dir, provenance_path)
 
 
