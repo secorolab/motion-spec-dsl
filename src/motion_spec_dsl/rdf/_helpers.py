@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from rdflib.term import URIRef
@@ -17,13 +16,13 @@ from motion_spec_dsl.controller_semantics import (
     PoseDiffComponentRecord,
     constraint_view_subspace,
 )
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     ConstraintSpecification,
     ControllerEntry,
     ContextRef,
     GeoPropPair,
     GeometricProps,
-    MotionSpec,
+    GuardedMotion,
     QuantityType,
     ContextQuantity,
     WorldQuantity,
@@ -44,22 +43,14 @@ def _node_name(value: Any) -> str:
     return value.name if hasattr(value, "name") else str(value)
 
 
-def _body_name(name: str) -> str:
-    """`name` with a leading `frame-`/`link-` prefix stripped."""
-    for prefix in ("frame-", "link-"):
-        if name.startswith(prefix):
-            return name[len(prefix) :]
-    return name
-
-
-@lru_cache(maxsize=2048)
 def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
     """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
     if props is None:
         return None
     for pair in props.pairs:
         if isinstance(pair, GeoPropPair) and pair.key == key:
-            return pair.value
+            value = pair.frame or pair.joint or pair.sensor or pair.value
+            return str(getattr(value, "uri", value))
     return None
 
 
@@ -71,7 +62,6 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     )
 
 
-@lru_cache(maxsize=2048)
 def _view_subspace(constraint: ConstraintSpecification) -> str:
     """The constraint's resolved view subspace; raises if it declares none."""
     subspace = constraint_view_subspace(constraint)
@@ -135,7 +125,6 @@ def _pose_diff_measured_derivative_id(
     return f"{ctrl.name}-measured-derivative-{component.suffix}"
 
 
-@lru_cache(maxsize=2048)
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
     (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
@@ -200,7 +189,7 @@ def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
     return getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
 
 
-def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecification]:
+def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecification]:
     """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
     out = []
     for section in (motion.when, motion.while_, motion.until):
@@ -212,22 +201,9 @@ def _resolved_constraint_items(motion: MotionSpec) -> list[ConstraintSpecificati
 
 
 @dataclass(frozen=True)
-class _PosePathStep:
-    """One hop along a transform path: a Pose quantity, used inverted or not."""
-
-    quantity: WorldQuantity
-    inverted: bool
-
-
-@dataclass(frozen=True)
-class _RelativePosePlan:
-    """Plan for expressing `end`'s pose relative to `start`'s frame.
-
-    `target` is the (existing or synthetic) relative-pose quantity; `reference_path`
-    is the chain of pose steps composed to move between the two reference frames.
-    """
+class _DistancePlan:
+    """Resolved endpoints and scalar-view carrier for an authored distance relation."""
 
     start: WorldQuantity
     end: WorldQuantity
     target: WorldQuantity
-    reference_path: tuple[_PosePathStep, ...]

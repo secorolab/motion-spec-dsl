@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+
+reference coord_dsl_fsm as fsm
+reference scenex as scene
+
+FQN: ReferenceName+["."];
+ScopedName: ReferenceName+["."];
+Import: "import" importURI=STRING;
+Comment: /\/\/.*$/;
+NamespaceDeclare: "ns" name=IRI_TRUNK "=" uri=STRING ;
+ReferenceName: /[^\d\W][\w-]*(?<![- ])/;
+IRI_TRUNK: /[^\d\W][\w-]*(?<![- ])/;

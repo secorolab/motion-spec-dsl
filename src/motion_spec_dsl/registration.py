@@ -14,12 +14,11 @@ from typing import Any
 
 import pyshacl
 from rdf_utils.resolver import IriToFileResolver, install_resolver
-from rdflib.graph import Dataset
 from rdflib.namespace import Namespace
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
 
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     BilateralConstraint,
     OutsideConstraint,
     ConstraintAlias,
@@ -34,33 +33,14 @@ from motion_spec_dsl.domain import (
     ControllerParam,
     ControllerRef,
     ControllerParams,
-    EnvironmentAssembly,
-    EnvironmentAttachTargetEntry,
-    EnvironmentAttachTargetRef,
-    EnvironmentAsset,
-    EnvironmentAttachmentActuatorEntry,
-    EnvironmentAttachmentPrefixEntry,
-    EnvironmentChainEntry,
-    EnvironmentFrictionEntry,
-    EnvironmentFreeEntry,
-    EnvironmentMassEntry,
-    EnvironmentOrientationEntry,
-    EnvironmentPositionEntry,
-    EnvironmentRobotRef,
-    EnvironmentShapeEntry,
-    EnvironmentSizeEntry,
-    EnvironmentSpec,
-    EnvironmentFtSensorEntry,
-    EnvironmentTcpSiteEntry,
-    EnvironmentToolBodyEntry,
-    EnvironmentTrace,
     ElapsedTime,
-    FrictionTerm,
-    FrictionValue,
+    ExecutionContext,
     EqualityConstraint,
     Figure8Spec,
     GeoPropPair,
     GeometricProps,
+    GravityValue,
+    GravityVector,
     GreaterThanConstraint,
     EventName,
     Import,
@@ -68,7 +48,7 @@ from motion_spec_dsl.domain import (
     LerpSpec,
     Model,
     MonitorEntry,
-    MotionSpec,
+    GuardedMotion,
     NamespaceDeclare,
     OrientationTerm,
     OrientationValue,
@@ -81,8 +61,6 @@ from motion_spec_dsl.domain import (
     ReferenceValue,
     AdmittanceSpec,
     Measure,
-    RobotAnchorRef,
-    RobotRef,
     SaturationSpec,
     SelectorTail,
     SolverAlias,
@@ -94,6 +72,7 @@ from motion_spec_dsl.domain import (
     SpecContextDecl,
     ContextQuantityAlias,
     ContextQuantity,
+    ContextTrajectory,
     TrajectorySpec,
     TrajectoryValue,
     VectorQuantity,
@@ -110,51 +89,25 @@ from motion_spec_dsl.domain import (
     _resolved_spec,
     _resolved_solver,
 )
-from motion_spec_dsl.rdf import (
-    CONSTRAINT_PATH_BY_PREFIX,
-    MotionSpecDatasetBuilder,
-)
+from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
+from motion_spec_dsl.scoping import SceneRefProvider, finalize_imported_scenes
 from motion_spec_dsl.validation import motion_constraint_items, validate_model
 
-GRAMMAR_PATH = str(files("motion_spec_dsl.metamodels").joinpath("motion_spec.tx"))
-PROV = Namespace("http://www.w3.org/ns/prov#")
+GRAMMAR_PATH = str(files("motion_spec_dsl.grammars").joinpath("model.tx"))
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 
 LANGUAGE_CLASSES = [
     Model,
     NamespaceDeclare,
     Import,
-    EnvironmentSpec,
+    ExecutionContext,
     ContextSpec,
-    EnvironmentAsset,
-    EnvironmentAssembly,
-    EnvironmentAttachTargetRef,
-    EnvironmentAttachTargetEntry,
-    EnvironmentRobotRef,
-    EnvironmentAttachmentPrefixEntry,
-    EnvironmentAttachmentActuatorEntry,
-    EnvironmentPositionEntry,
-    EnvironmentOrientationEntry,
-    EnvironmentFreeEntry,
-    EnvironmentToolBodyEntry,
-    EnvironmentTcpSiteEntry,
-    EnvironmentFtSensorEntry,
-    EnvironmentShapeEntry,
-    EnvironmentSizeEntry,
-    EnvironmentMassEntry,
-    EnvironmentFrictionEntry,
-    EnvironmentChainEntry,
-    EnvironmentTrace,
-    FrictionValue,
-    FrictionTerm,
     PositionValue,
     PositionTerm,
     OrientationValue,
     OrientationTerm,
     PoseValue,
-    RobotRef,
-    RobotAnchorRef,
-    MotionSpec,
+    GuardedMotion,
     TrajectorySpec,
     TrajectoryValue,
     LerpSpec,
@@ -171,8 +124,11 @@ LANGUAGE_CLASSES = [
     WorldQuantityAlias,
     GeometricProps,
     GeoPropPair,
+    GravityValue,
+    GravityVector,
     ContextQuantity,
     ContextQuantityAlias,
+    ContextTrajectory,
     Measure,
     VectorQuantity,
     ReferenceValue,
@@ -217,7 +173,7 @@ class MotionConstraintScopeProvider:
         """Resolve `obj_ref` to a constraint declared in the ref's motion."""
         del attr
         motion = obj.motion
-        if motion is None or not isinstance(motion, MotionSpec):
+        if motion is None or not isinstance(motion, GuardedMotion):
             return None
 
         for item in motion_constraint_items(motion):
@@ -272,7 +228,7 @@ def motion_spec_metamodel():
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
     metamodel.register_scope_providers(
         {
-            "*.*": scoping_providers.FQNImportURI(),
+            "*.*": SceneRefProvider(),
             # FSM events are flat (not FQN-nested) — resolve by plain name across
             # all models loaded via importURI (including any imported .fsm).
             "EventName.event": scoping_providers.PlainNameImportURI(),
@@ -281,6 +237,8 @@ def motion_spec_metamodel():
             "SolverRef.solver": CrossHandlerSolverScopeProvider(),
         }
     )
+    # Fill imported scene instance trees before anything walks scene objects.
+    metamodel.register_model_processor(finalize_imported_scenes)
     metamodel.register_model_processor(validate_model)
     return metamodel
 
@@ -328,45 +286,21 @@ def _sort_lists(value: Any) -> Any:
     return value
 
 
-def _merged_context(context: Any) -> list[str | dict[str, str]]:
-    """Merge the JSON-LD @context prefix bindings into the list form rdflib expects."""
-    context_urls: set[str] = set()
-    local_context: dict[str, str] = {}
-    if isinstance(context, list):
-        for item in context:
-            if isinstance(item, str):
-                context_urls.add(item)
-            elif isinstance(item, dict):
-                local_context.update(item)
-    elif isinstance(context, dict):
-        local_context.update(context)
-    return [*sorted(context_urls), local_context]
-
-
-def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, Any]:
+def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
     """Build the app manifest (namespace prefixes and imported graph files) for a dataset."""
-    constraint_paths: set[str] = set()
-    for prefix, _ in dataset.namespaces():
-        path = CONSTRAINT_PATH_BY_PREFIX.get(prefix)
-        if path:
-            constraint_paths.add(path)
-
     local_constraint_paths = {
+        "https://secorolab.github.io/metamodels/algorithm-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/behaviour/event_loop.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/environment.shacl.ttl",
         "https://secorolab.github.io/metamodels/prov.shacl.ttl",
-        "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl",
-        "https://secorolab.github.io/metamodels/geometry/polytope.shacl.ttl",
+        "https://secorolab.github.io/metamodels/robot/sensors.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
-        "https://secorolab.github.io/metamodels/runtime/runtime.shacl.ttl",
-        "https://secorolab.github.io/metamodels/simulation/mujoco.shacl.ttl",
+        "https://secorolab.github.io/metamodels/geometry/spatial-relations-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/execution-context.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/snapshot.shacl.ttl",
-        "https://secorolab.github.io/metamodels/task/constraint-handler.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/map-extension.shacl.ttl",
-        "https://secorolab.github.io/metamodels/task/motion-specification.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
     }
@@ -404,7 +338,7 @@ def _build_manifest(dataset: Dataset, imported_files: list[str]) -> dict[str, An
         "@graph": [
             {
                 "import": imported_files,
-                "constraints": sorted(constraint_paths | local_constraint_paths),
+                "constraints": sorted(local_constraint_paths),
                 "iri-map": iri_map,
             }
         ],
@@ -423,14 +357,20 @@ def _artifact_role(name: str) -> str:
     return "generated_graph"
 
 
-def _write_provenance_artifact(model: Model, artifact_names: list[str], output_dir: Path, path: Path) -> None:
+def _write_provenance_artifact(
+    model: Model, artifact_names: list[str], output_dir: Path, path: Path
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_build_provenance_document(model, artifact_names, output_dir), indent=2) + "\n")
+    path.write_text(
+        json.dumps(_build_provenance_document(model, artifact_names, output_dir), indent=2) + "\n"
+    )
     _validate_provenance_artifact(path)
     print(f"  wrote {path}")
 
 
-def _build_provenance_document(model: Model, artifact_names: list[str], output_dir: Path) -> dict[str, Any]:
+def _build_provenance_document(
+    model: Model, artifact_names: list[str], output_dir: Path
+) -> dict[str, Any]:
     stem = Path(model._tx_filename).stem
     activity = f"dslprov:activity/jsonld_generation/{_slug(stem)}"
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -440,8 +380,7 @@ def _build_provenance_document(model: Model, artifact_names: list[str], output_d
             "@id": activity,
             "@type": ["prov:Activity"],
             "used": [
-                f"dslprov:entity/source/{_slug(source.name)}"
-                for source in _source_paths(model)
+                f"dslprov:entity/source/{_slug(source.name)}" for source in _source_paths(model)
             ],
             "wasAssociatedWith": "dslprov:agent/motion_spec_dsl",
             "startedAtTime": generated_at,
@@ -474,7 +413,7 @@ def _build_provenance_document(model: Model, artifact_names: list[str], output_d
         "schema_version": 1,
         "@context": [
             "https://secorolab.github.io/metamodels/prov.json",
-            _provenance_context(),
+            {"dslprov": str(DSLPROV)},
         ],
         "@graph": graph,
     }
@@ -484,18 +423,14 @@ def _slug(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value).strip("_") or "item"
 
 
-def _provenance_context() -> dict[str, Any]:
-    return {
-        "dslprov": str(DSLPROV),
-    }
-
-
 def _validate_provenance_artifact(path: Path) -> None:
     metamodels = Path(os.environ.get("METAMODELS_PATH", ""))
     if not (metamodels / "prov.shacl.ttl").exists():
         raise RuntimeError("METAMODELS_PATH must point to metamodels containing prov.shacl.ttl")
     install_resolver(
-        IriToFileResolver({"https://secorolab.github.io/metamodels/": str(metamodels)}, download=False)
+        IriToFileResolver(
+            {"https://secorolab.github.io/metamodels/": str(metamodels)}, download=False
+        )
     )
     conforms, _graph, report = pyshacl.validate(
         data_graph=str(path),
@@ -542,11 +477,35 @@ def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     )
 
 
+def _gen_scenex(model, output_dir: Path) -> list[str]:
+    """Generate JSON-LD for directly imported executable scenes."""
+    from scene_dsl.rdf.scenex import create_scenex_model_graph
+
+    jsonld_names: list[str] = []
+    for imp in getattr(model, "imports", []):
+        if not imp.importURI.endswith(".scenex"):
+            continue
+        loaded = getattr(imp, "_tx_loaded_models", [])
+        if not loaded:
+            continue
+
+        jsonld_name = f"{Path(imp.importURI).stem}.scenex.jsonld"
+        jsonld_path = output_dir / jsonld_name
+        serialized = create_scenex_model_graph(loaded[0]).serialize(
+            format="json-ld", auto_compact=True, indent=2
+        )
+        serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
+        jsonld_path.write_text(_canonicalize_jsonld(serialized))
+        print(f"  wrote {jsonld_path}")
+        jsonld_names.append(jsonld_name)
+    return jsonld_names
+
+
 def _gen_fsm(model, output_dir: Path) -> list[str]:
     """Generate FSM C++ header, IR JSON, and a named-graph JSON-LD for any .fsm files
     imported by the model. Returns the JSON-LD filenames to add to the app manifest so
     ir_gen derives the FSM wiring from the combined graph (the .hpp stays standalone)."""
-    from coord_dsl.generators.fsm_graph import gen_cpp_header, gen_json, get_fsm_graph
+    from coord_dsl.generators.fsm.graph import gen_cpp_header, gen_json, get_fsm_graph
 
     jsonld_names: list[str] = []
     for imp in getattr(model, "imports", []):
@@ -594,24 +553,33 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     manifest_path = output_dir / f"{stem}-app.jsonld"
     provenance_name = "provenance/dsl.jsonld"
     provenance_path = output_dir / provenance_name
-    serialized = dataset.default_graph.serialize(
-        format="json-ld", indent=2, context=_merged_context(context)
-    )
+    serialized = dataset.default_graph.serialize(format="json-ld", indent=2, context=context)
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
     serialized = _canonicalize_jsonld(serialized)
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
+
+    scene_jsonld_names = _gen_scenex(model, output_dir)
 
     # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
     # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
     # combined graph (no fsm_ir.json read at codegen time).
     fsm_jsonld_names = _gen_fsm(model, output_dir)
     artifact_names = [
-        graph_path.name, manifest_path.name, provenance_name,
-        *_fsm_output_names(model), *fsm_jsonld_names,
+        graph_path.name,
+        manifest_path.name,
+        provenance_name,
+        *_fsm_output_names(model),
+        *scene_jsonld_names,
+        *fsm_jsonld_names,
     ]
-    manifest_imports = [graph_path.name, provenance_name, *fsm_jsonld_names]
-    manifest_path.write_text(json.dumps(_build_manifest(dataset, manifest_imports), indent=2))
+    manifest_imports = [
+        graph_path.name,
+        provenance_name,
+        *scene_jsonld_names,
+        *fsm_jsonld_names,
+    ]
+    manifest_path.write_text(json.dumps(_build_manifest(manifest_imports), indent=2))
     print(f"  wrote {manifest_path}")
 
     _write_provenance_artifact(model, artifact_names, output_dir, provenance_path)

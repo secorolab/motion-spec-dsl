@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     ConstraintSpecification,
     ControllerAlias,
     ControllerEntry,
@@ -50,14 +50,6 @@ class AccelerationConstraintRecord:
             "angular-acceleration": "ang",
         }[self.subspace]
         return f"{prefix}-{self.axis}"
-
-    @property
-    def quantity_type(self) -> QuantityType:
-        """The matching linear/angular AccelerationTwist QuantityType."""
-        return {
-            "linear-acceleration": QuantityType.LinearAcceleration,
-            "angular-acceleration": QuantityType.AngularAcceleration,
-        }[self.subspace]
 
 
 @dataclass(frozen=True)
@@ -174,13 +166,8 @@ def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
 
 
 def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
-    """The constraint's controlled subspace as a canonical string, unwrapping `Norm of` and
-    resolving distance / joint-position / pose views. None if it has no subspace.
-    """
+    """The constraint's canonical distance, joint-position, or pose subspace."""
     view = constraint.view
-    # `Norm of <inner>`: subspace is the reduced view's; unwrap for downstream callers.
-    while getattr(view, "norm_source", None) is not None:
-        view = view.norm_source
 
     if (
         getattr(view, "distance_from", None) is not None
@@ -275,7 +262,9 @@ def controller_command_record(
         elif view_subspace == "distance" and raw_subspace is None:
             # `distance between <A> and <B>` (never the `.position.x` axis alias): a single
             # direction-aligned linear acceleration constraint, driven by the runtime direction.
-            acceleration_constraints = (AccelerationConstraintRecord("linear-acceleration", "distance"),)
+            acceleration_constraints = (
+                AccelerationConstraintRecord("linear-acceleration", "distance"),
+            )
 
     return ControllerCommandRecord(
         controller=resolved_controller,

@@ -18,9 +18,11 @@ requires-python = ">=3.10"
 dependencies = [
     "textX>=4.1.0",
     "rdflib>=8.0.0",
+    "rdf-utils",
     "motion_spec",
     "pyshacl>=0.25.0",
     "coord_dsl",
+    "scene-dsl",
 ]
 
 [project.optional-dependencies]
@@ -41,8 +43,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "motion_spec_dsl" = [
-    "metamodels/*.tx",
+    "grammars/*.tx",
 ]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning"]

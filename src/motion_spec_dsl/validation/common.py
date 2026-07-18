@@ -10,16 +10,12 @@ from collections.abc import Iterable
 from textx import get_location
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     ConstraintAlias,
     ConstraintHandler,
     ConstraintSpecification,
-    ControllerAlias,
-    ControllerEntry,
+    GuardedMotion,
     Model,
-    MotionSpec,
-    SolverAlias,
-    SolverEntry,
     _resolved_spec,
 )
 
@@ -34,9 +30,9 @@ def semantic_error(message: str, obj: object | None = None) -> TextXSemanticErro
         return TextXSemanticError(message)
 
 
-def motion_specs(model: Model) -> Iterable[MotionSpec]:
+def motion_specs(model: Model) -> Iterable[GuardedMotion]:
     """The MotionSpecs declared in `model`."""
-    return (spec for spec in model.specs if isinstance(spec, MotionSpec))
+    return (spec for spec in model.specs if isinstance(spec, GuardedMotion))
 
 
 def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
@@ -44,21 +40,11 @@ def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
     return (spec for spec in model.specs if isinstance(spec, ConstraintHandler))
 
 
-def motion_constraint_items(spec: MotionSpec) -> list[ConstraintSpecification | ConstraintAlias]:
+def motion_constraint_items(spec: GuardedMotion) -> list[ConstraintSpecification | ConstraintAlias]:
     """All section items (inline specs and aliases) by their local name."""
     return [item for section in spec.sections for item in section.constraints]
 
 
-def motion_constraints(spec: MotionSpec) -> list[ConstraintSpecification]:
+def motion_constraints(spec: GuardedMotion) -> list[ConstraintSpecification]:
     """All resolved ConstraintSpecification objects for this motion."""
     return [_resolved_spec(item) for item in motion_constraint_items(spec)]
-
-
-def handler_controller_items(handler: ConstraintHandler) -> list[ControllerEntry | ControllerAlias]:
-    """A handler's controller entries and aliases."""
-    return list(handler.controllers)
-
-
-def handler_solver_items(handler: ConstraintHandler) -> list[SolverEntry | SolverAlias]:
-    """A handler's solver entries and aliases."""
-    return list(handler.solvers)

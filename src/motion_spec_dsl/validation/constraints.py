@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from motion_spec_dsl.controller_semantics import axis_label
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     AdmittanceSpec,
     BilateralConstraint,
     ConstraintSpecification,
@@ -21,7 +21,7 @@ from motion_spec_dsl.domain import (
     LessThanConstraint,
     Measure,
     Model,
-    MotionSpec,
+    GuardedMotion,
     ProfileSpec,
     QuantityType,
     ReferenceGeneratorType,
@@ -75,21 +75,14 @@ def _validate_axis(subspace: object, axis: str | None, owner: object) -> None:
 
 
 def _view_shape(view) -> QuantityType | None:
-    """The QuantityType a constraint view resolves to (elapsed/distance/Norm or
-    quantity subspace/axis), or None.
-    """
+    """The QuantityType a constraint view resolves to, or None."""
     if getattr(view, "is_elapsed", False):
         return QuantityType.Duration
-    if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
+    if (
+        getattr(view, "distance_from", None) is not None
+        and getattr(view, "distance_to", None) is not None
+    ):
         return QuantityType.Distance
-    norm_source = getattr(view, "norm_source", None)
-    if norm_source is not None:
-        inner_shape = _view_shape(norm_source)
-        return {
-            QuantityType.Position: QuantityType.Distance,
-            QuantityType.Orientation: QuantityType.Angle,
-        }.get(inner_shape, inner_shape)
-
     quantity = getattr(view, "quantity", None)
     if not isinstance(quantity, WorldQuantity):
         return None
@@ -308,7 +301,9 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
         )
     shape = value.shape or "Trapezoidal"
     if shape not in {"Trapezoidal", "SCurve"}:
-        raise semantic_error(f"VelocityProfile '{quantity.name}' has unsupported shape '{shape}'.", quantity)
+        raise semantic_error(
+            f"VelocityProfile '{quantity.name}' has unsupported shape '{shape}'.", quantity
+        )
     _check_profile_ref(value, "max_velocity", QuantityType.LinearVelocity)
     _check_profile_ref(value, "max_acceleration", QuantityType.LinearAcceleration)
     if value.measured_velocity is not None:
@@ -472,9 +467,7 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
     if value.lerp is not None:
         _check_trajectory_ref(quantity, "start", value.lerp.start, QuantityType.Pose)
         _check_trajectory_ref(quantity, "goal", value.lerp.goal, QuantityType.Pose)
-        _check_trajectory_ref(
-            quantity, "alpha", value.lerp.alpha, QuantityType.TrajectoryProgress
-        )
+        _check_trajectory_ref(quantity, "alpha", value.lerp.alpha, QuantityType.PathParameter)
         return
     if value.circle is not None:
         _check_trajectory_ref(quantity, "start", value.circle.start, QuantityType.Pose)
@@ -482,9 +475,7 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
         _check_trajectory_ref(
             quantity, "plane-normal", value.circle.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(
-            quantity, "alpha", value.circle.alpha, QuantityType.TrajectoryProgress
-        )
+        _check_trajectory_ref(quantity, "alpha", value.circle.alpha, QuantityType.PathParameter)
         return
     if value.arc is not None:
         _check_trajectory_ref(quantity, "start", value.arc.start, QuantityType.Pose)
@@ -493,9 +484,7 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
         _check_trajectory_ref(
             quantity, "plane-normal", value.arc.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(
-            quantity, "alpha", value.arc.alpha, QuantityType.TrajectoryProgress
-        )
+        _check_trajectory_ref(quantity, "alpha", value.arc.alpha, QuantityType.PathParameter)
         return
     if value.helix is not None:
         _check_trajectory_ref(quantity, "start", value.helix.start, QuantityType.Pose)
@@ -505,9 +494,7 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
         _check_trajectory_ref(
             quantity, "revolutions", value.helix.revolutions, QuantityType.Dimensionless
         )
-        _check_trajectory_ref(
-            quantity, "alpha", value.helix.alpha, QuantityType.TrajectoryProgress
-        )
+        _check_trajectory_ref(quantity, "alpha", value.helix.alpha, QuantityType.PathParameter)
         return
     if value.figure8 is not None:
         _check_trajectory_ref(quantity, "anchor", value.figure8.anchor, QuantityType.Pose)
@@ -515,9 +502,7 @@ def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
         _check_trajectory_ref(
             quantity, "plane-normal", value.figure8.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(
-            quantity, "alpha", value.figure8.alpha, QuantityType.TrajectoryProgress
-        )
+        _check_trajectory_ref(quantity, "alpha", value.figure8.alpha, QuantityType.PathParameter)
         return
     raise semantic_error(f"Trajectory '{quantity.name}' has no populated spec.", quantity)
 
@@ -599,8 +584,7 @@ def validate_constraint_value_types(model: Model) -> None:
             for ref, ref_shape in _constraint_reference_shapes(constraint):
                 if not _types_match(view_shape, ref_shape):
                     raise semantic_error(
-                        f"Constraint '{constraint.name}' compares {view_shape} "
-                        f"with {ref_shape}.",
+                        f"Constraint '{constraint.name}' compares {view_shape} with {ref_shape}.",
                         ref,
                     )
                 _validate_admittance_tracking(constraint, ref)
@@ -624,21 +608,11 @@ def validate_unique_constraint_names(model: Model) -> None:
             )
 
 
-def validate_constraint_aliases(model: Model) -> None:
-    """Placeholder: constraint alias resolution is handled by the scope providers."""
-    del model
-
-
-def validate_context_aliases(model: Model) -> None:
-    """Placeholder: context alias resolution is handled by the scope providers."""
-    del model
-
-
-def _decl_motion(obj: object) -> MotionSpec | None:
-    """The MotionSpec a context declaration belongs to, or None."""
+def _decl_motion(obj: object) -> GuardedMotion | None:
+    """The GuardedMotion a context declaration belongs to, or None."""
     context = getattr(obj, "parent", None)
     motion = getattr(context, "parent", None)
-    return motion if isinstance(motion, MotionSpec) else None
+    return motion if isinstance(motion, GuardedMotion) else None
 
 
 def _decl_context_spec(obj: object) -> ContextSpec | None:
@@ -667,11 +641,15 @@ def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
 
 def _is_inline_context_value(value: ContextQuantity) -> bool:
     """Whether a context quantity was declared inline inside a reference."""
-    return isinstance(getattr(value, "parent", None), ContextRef) and getattr(
-        value.parent,
-        "context_scope",
-        None,
-    ) is not None
+    return (
+        isinstance(getattr(value, "parent", None), ContextRef)
+        and getattr(
+            value.parent,
+            "context_scope",
+            None,
+        )
+        is not None
+    )
 
 
 def constraint_context_refs(constraint: ConstraintSpecification) -> list[ContextRef]:
@@ -687,16 +665,9 @@ def constraint_context_refs(constraint: ConstraintSpecification) -> list[Context
 
 
 def _constraint_view_quantities(constraint: ConstraintSpecification) -> list[object | None]:
-    """The world quantities a constraint's view reads (Norm unwrapped; both endpoints for a
-    distance view).
-    """
+    """The world quantities read by a constraint view."""
     view = constraint.view
     if view is None or getattr(view, "is_elapsed", False):
-        return []
-    # `Norm of <inner>` — unwrap to the reduced view's world quantity.
-    while getattr(view, "norm_source", None) is not None:
-        view = view.norm_source
-    if getattr(view, "is_elapsed", False):
         return []
     if (
         getattr(view, "distance_from", None) is not None
@@ -727,13 +698,21 @@ def validate_constraint_context_refs(model: Model) -> None:
                 if getattr(ref, "bare", None) is not None:
                     continue
                 value = context_ref_value(ref)
-                value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
+                value = (
+                    _resolved_context_quantity(value)
+                    if isinstance(value, ContextQuantity)
+                    else value
+                )
                 if value is None:
                     raise semantic_error(
                         f"Constraint '{constraint.name}' has an unresolved context reference.",
                         constraint,
                     )
-                if _decl_motion(value) is None and _decl_context_spec(value) is None and _is_inline_context_value(value):
+                if (
+                    _decl_motion(value) is None
+                    and _decl_context_spec(value) is None
+                    and _is_inline_context_value(value)
+                ):
                     continue
                 if _decl_motion(value) is None and _decl_context_spec(value) is None:
                     raise semantic_error(

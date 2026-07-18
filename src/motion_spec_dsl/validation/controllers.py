@@ -15,7 +15,7 @@ from motion_spec_dsl.controller_semantics import (
     infer_command_type,
     pose_diff_components,
 )
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     ControllerAlias,
     ControllerEntry,
     ControllerType,
@@ -26,7 +26,6 @@ from motion_spec_dsl.domain import (
     QuantityType,
     ReferenceGeneratorType,
     SubSpace,
-    WorldEntityType,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
@@ -60,7 +59,10 @@ def _supports_velocity_profile(spec) -> bool:
     per-axis pose position).
     """
     view = spec.view
-    if getattr(view, "distance_from", None) is not None and getattr(view, "distance_to", None) is not None:
+    if (
+        getattr(view, "distance_from", None) is not None
+        and getattr(view, "distance_to", None) is not None
+    ):
         return True
     quantity = getattr(view, "quantity", None)
     return (
@@ -89,7 +91,9 @@ def _authored_subspace(view) -> str | None:
     return SUBSPACE_ALIAS.get(raw, raw)
 
 
-def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_controller: ControllerEntry) -> None:
+def _validate_pid_measured_derivative(
+    controller: ControllerEntry, resolved_controller: ControllerEntry
+) -> None:
     """Raise unless a PID measured_derivative is used on a pose-equality controller and
     references a VelocityTwist with a matching subspace and axis.
     """
@@ -144,7 +148,9 @@ def _validate_pid_measured_derivative(controller: ControllerEntry, resolved_cont
 
     required_axes = {component.axis for component in command.acceleration_constraints}
     measured_axis = axis_label(getattr(measured_derivative, "axis", None))
-    if measured_axis is not None and (len(required_axes) != 1 or measured_axis not in required_axes):
+    if measured_axis is not None and (
+        len(required_axes) != 1 or measured_axis not in required_axes
+    ):
         raise semantic_error(
             f"Controller '{controller.name}' measured_derivative axis must match the controlled axis.",
             measured_derivative,
@@ -173,7 +179,8 @@ def validate_controller_commands(model: Model) -> None:
                 )
             if resolved_controller.type == ControllerType.PID:
                 missing_gains = [
-                    name for name, val in (("Kp", params.kp), ("Ki", params.ki), ("Kd", params.kd))
+                    name
+                    for name, val in (("Kp", params.kp), ("Ki", params.ki), ("Kd", params.kd))
                     if val is None
                 ]
                 if missing_gains:
@@ -202,7 +209,9 @@ def validate_controller_commands(model: Model) -> None:
                             f"Controller '{controller.name}' profile must reference a VelocityProfile.",
                             params.profile,
                         )
-                    if profile_qty.type != ReferenceGeneratorType.VelocityProfile or not isinstance(profile_qty.value, ProfileSpec):
+                    if profile_qty.type != ReferenceGeneratorType.VelocityProfile or not isinstance(
+                        profile_qty.value, ProfileSpec
+                    ):
                         raise semantic_error(
                             f"Controller '{controller.name}' profile must reference a VelocityProfile.",
                             params.profile,
@@ -218,7 +227,10 @@ def validate_controller_commands(model: Model) -> None:
                             f"Controller '{controller.name}' profile is only supported for distance constraints.",
                             controller,
                         )
-                    if _requires_measured_velocity(spec) and profile_qty.value.measured_velocity is None:
+                    if (
+                        _requires_measured_velocity(spec)
+                        and profile_qty.value.measured_velocity is None
+                    ):
                         raise semantic_error(
                             f"Controller '{controller.name}' profile must specify measured_velocity for pose-axis constraints.",
                             params.profile,
@@ -253,8 +265,7 @@ def validate_controller_commands(model: Model) -> None:
                         controller,
                     )
                 disallowed_gains = [
-                    name for name, val in (("Kp", params.kp), ("Kd", params.kd))
-                    if val is not None
+                    name for name, val in (("Kp", params.kp), ("Kd", params.kd)) if val is not None
                 ]
                 if disallowed_gains:
                     raise semantic_error(
@@ -310,7 +321,10 @@ def validate_controller_commands(model: Model) -> None:
                 or infer_command_type(subspace)
                 or infer_command_type(constraint_view_subspace(constraint_spec))
             )
-            if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
+            if (
+                resolved_controller.type == ControllerType.Impedance
+                and command_type != QuantityType.Force
+            ):
                 command_type = QuantityType.Force
             quantity = constraint_spec.view.quantity
             solver = handler_controller_solver(handler, controller)
@@ -323,7 +337,7 @@ def validate_controller_commands(model: Model) -> None:
                 if str(solver.algorithm) == "CommandForwarding":
                     quantity_props = getattr(quantity, "props", None)
                     if quantity_props is None or not any(
-                        getattr(pair, "key", None) == "of" and getattr(pair, "value", "")
+                        getattr(pair, "key", None) in {"of", "joint"} and getattr(pair, "value", "")
                         for pair in getattr(quantity_props, "pairs", [])
                     ):
                         raise semantic_error(
@@ -350,7 +364,10 @@ def validate_controller_commands(model: Model) -> None:
                         "'as Torque' is only supported for JointPosition controllers.",
                         controller,
                     )
-            if isinstance(quantity, WorldQuantity) and quantity.type == WorldQuantityType.JointPosition:
+            if (
+                isinstance(quantity, WorldQuantity)
+                and quantity.type == WorldQuantityType.JointPosition
+            ):
                 if command_type != QuantityType.Torque:
                     raise semantic_error(
                         f"Controller '{controller.name}' targets JointPosition and must use 'as Torque'.",
@@ -358,7 +375,7 @@ def validate_controller_commands(model: Model) -> None:
                     )
                 quantity_props = getattr(quantity, "props", None)
                 if quantity_props is None or not any(
-                    getattr(pair, "key", None) == "of" and getattr(pair, "value", "")
+                    getattr(pair, "key", None) in {"of", "joint"} and getattr(pair, "value", "")
                     for pair in getattr(quantity_props, "pairs", [])
                 ):
                     raise semantic_error(
@@ -388,14 +405,6 @@ def validate_controller_commands(model: Model) -> None:
                     f"Controller '{controller.name}' produces Force and must specify 'apply at <link>'.",
                     controller,
                 )
-            if (
-                resolved_controller.apply_at is not None
-                and resolved_controller.apply_at.type != WorldEntityType.Link
-            ):
-                raise semantic_error(
-                    f"Controller '{controller.name}' apply at target must be a Link.",
-                    controller,
-                )
 
 
 def validate_achd_acceleration_constraints(model: Model) -> None:
@@ -419,9 +428,7 @@ def validate_achd_acceleration_constraints(model: Model) -> None:
 
         for sid, axes in axes_by_solver.items():
             duplicate_axes = {
-                axis: controllers
-                for axis, controllers in axes.items()
-                if len(controllers) > 1
+                axis: controllers for axis, controllers in axes.items() if len(controllers) > 1
             }
             if duplicate_axes:
                 solver = solver_by_id[sid]

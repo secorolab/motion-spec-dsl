@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     Model,
     UntilMonitorRef,
     WhenMonitorRef,
@@ -18,11 +18,6 @@ from motion_spec_dsl.validation.common import (
     motion_specs,
     semantic_error,
 )
-
-
-def validate_handler_aliases(model: Model) -> None:
-    """Placeholder: handler alias resolution is handled by the scope providers."""
-    del model
 
 
 def validate_handler_constraint_assembly(model: Model) -> None:
@@ -63,11 +58,6 @@ def validate_handler_constraint_assembly(model: Model) -> None:
                 )
 
 
-def validate_handler_constraint_refs(model: Model) -> None:
-    """Placeholder: handler constraint references are resolved by the scope providers."""
-    del model
-
-
 def validate_handler_requirements(model: Model) -> None:
     """Raise if a handler lacks the controllers/monitors its WHILE/WHEN/UNTIL constraints
     require, mixes aggregate and individual UNTIL/WHEN monitors, or leaves guards unmonitored.
@@ -90,7 +80,9 @@ def validate_handler_requirements(model: Model) -> None:
             )
 
         until_items = [_resolved_spec(item) for item in handler.motion.until.constraints]
-        until_monitor_refs = [mon for mon in handler.monitors if isinstance(mon.constraint, UntilMonitorRef)]
+        until_monitor_refs = [
+            mon for mon in handler.monitors if isinstance(mon.constraint, UntilMonitorRef)
+        ]
         if until_items:
             individual_until_monitors = [
                 mon
@@ -145,16 +137,14 @@ def validate_handler_requirements(model: Model) -> None:
 
 
 def validate_motion_spec_coverage(model: Model) -> None:
-    """Raise if any MotionSpec is not bound to a ConstraintHandler."""
+    """Raise if any GuardedMotion is not bound to a ConstraintHandler."""
     referenced = {
-        handler.motion.name
-        for handler in constraint_handlers(model)
-        if handler.motion is not None
+        handler.motion.name for handler in constraint_handlers(model) if handler.motion is not None
     }
     for motion in motion_specs(model):
         if motion.name not in referenced:
             raise semantic_error(
-                f"MotionSpec '{motion.name}' is not referenced by any ConstraintHandler. "
-                "Every MotionSpec must be bound to exactly one ConstraintHandler.",
+                f"GuardedMotion '{motion.name}' is not referenced by any ConstraintHandler. "
+                "Every GuardedMotion must be bound to exactly one ConstraintHandler.",
                 motion,
             )

@@ -6,12 +6,12 @@
 from __future__ import annotations
 
 from motion_spec_dsl.controller_semantics import controller_command_record
-from motion_spec_dsl.domain import (
+from motion_spec_dsl.classes import (
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
     ControllerType,
-    EnvironmentRuntime,
+    ExecutionContext,
     HandlerControlMode,
     Model,
     QuantityType,
@@ -30,78 +30,6 @@ SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] 
     "RNE": {HandlerControlMode.JointTorque},
     "CommandForwarding": {HandlerControlMode.JointTorque},
 }
-
-
-def _solver_component(solver: SolverEntry):
-    """The kinematic-chain component a solver drives, or None."""
-    assembly = solver.robot.environment_robot.assembly_spec
-    return assembly.chain if assembly is not None else None
-
-
-def _solver_component_anchor(solver: SolverEntry, anchor: str) -> str:
-    """The named anchor (root/end) frame of a solver's chain, or empty string."""
-    assembly = solver.robot.environment_robot.assembly_spec
-    return getattr(assembly, anchor, "") if assembly is not None else ""
-
-
-def _anchor_matches_solver(anchor, solver: SolverEntry, expected_anchor: str) -> bool:
-    """Whether `anchor` refers to `solver`'s robot chain at `expected_anchor`."""
-    return (
-        anchor.environment_robot is not None
-        and anchor.environment_robot.assembly_spec is solver.robot.environment_robot.assembly_spec
-        and anchor.anchor == expected_anchor
-    )
-
-
-def validate_solver_refs(model: Model) -> None:
-    """Raise if a solver's robot/component or its root/end anchors are unknown or mismatched."""
-    for handler in constraint_handlers(model):
-        for solver in handler.solvers:
-            if str(_resolved_solver(solver).algorithm) == "CommandForwarding":
-                continue
-            component = _solver_component(solver)
-            if component is None:
-                raise semantic_error(
-                    f"Solver '{solver.name}' references unknown robot or component '{solver.robot}'.",
-                    solver,
-                )
-
-            expected_root = _solver_component_anchor(solver, "root")
-            if not _anchor_matches_solver(solver.root, solver, "root"):
-                expected = f"{solver.robot}.chain.root"
-                raise semantic_error(
-                    f"Solver '{solver.name}' root must reference '{expected}'.",
-                    solver,
-                )
-            root_assembly = (
-                solver.root.environment_robot.assembly_spec
-                if solver.root.environment_robot is not None
-                else None
-            )
-            actual_root = getattr(root_assembly, solver.root.anchor, "")
-            if expected_root and expected_root != actual_root:
-                raise semantic_error(
-                    f"Solver '{solver.name}' root does not match robot '{solver.robot}'.",
-                    solver,
-                )
-
-            requires_end = getattr(component, "end", "") != ""
-            if requires_end and solver.end is None:
-                raise semantic_error(
-                    f"Solver '{solver.name}' for robot '{solver.robot}' requires end.",
-                    solver,
-                )
-            if not requires_end and solver.end is not None:
-                raise semantic_error(
-                    f"Solver '{solver.name}' for robot '{solver.robot}' must not define end.",
-                    solver,
-                )
-            if solver.end is not None and not _anchor_matches_solver(solver.end, solver, "end"):
-                expected = f"{solver.robot}.chain.end"
-                raise semantic_error(
-                    f"Solver '{solver.name}' end must reference '{expected}'.",
-                    solver,
-                )
 
 
 def _implicit_solver_for_controller(
@@ -191,27 +119,18 @@ def validate_supported_solver_algorithms(model: Model) -> None:
             if str(resolved_solver.algorithm) == "CommandForwarding":
                 continue
             if str(resolved_solver.algorithm) == "RNE":
-                runtime = resolved_solver.robot.environment_robot.environment.runtime
-                if runtime != EnvironmentRuntime.MuJoCo:
+                is_mujoco = any(
+                    getattr(context.platform, "kind", None) == "simulation"
+                    and getattr(context.platform, "name", None) == "MuJoCo"
+                    for context in model.specs
+                    if isinstance(context, ExecutionContext)
+                )
+                if not is_mujoco:
                     raise semantic_error(
                         f"Solver '{resolved_solver.name}' in handler '{handler.name}' uses RNE, "
                         "but standalone RNE is only supported on the MuJoCo backend.",
                         solver,
                     )
-
-
-def validate_solver_regularization_algorithm(model: Model) -> None:
-    """Raise if regularization is authored on a solver whose algorithm is not RNE."""
-    # `regularization` (DLS lambda) is only consumed by the RNE constraint-accel solve.
-    for handler in constraint_handlers(model):
-        for solver in handler.solvers:
-            resolved_solver = _resolved_solver(solver)
-            if resolved_solver.regularization and str(resolved_solver.algorithm) != "RNE":
-                raise semantic_error(
-                    f"Solver '{resolved_solver.name}' authors regularization with algorithm "
-                    f"{resolved_solver.algorithm}; it only applies to RNE.",
-                    solver,
-                )
 
 
 def validate_solver_limits(model: Model) -> None:
