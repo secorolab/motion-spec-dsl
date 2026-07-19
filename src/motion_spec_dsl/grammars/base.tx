@@ -12,3 +12,8 @@ Comment: /\/\/.*$/;
 NamespaceDeclare: "ns" name=IRI_TRUNK "=" uri=STRING ;
 ReferenceName: /[^\d\W][\w-]*(?<![- ])/;
 IRI_TRUNK: /[^\d\W][\w-]*(?<![- ])/;
+
+EventName:
+    (ns=[NamespaceDeclare|IRI_TRUNK] "." event=[fsm.Event|IRI_TRUNK]) |
+    standalone=IRI_TRUNK
+;

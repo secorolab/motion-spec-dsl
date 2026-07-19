@@ -1359,9 +1359,19 @@ class MotionSpecDatasetBuilder:
                     snap_source = view_node
                 self.graph.add((snapshot_node, SNAP["snapshot-of"], snap_source))
                 self.graph.add((snapshot_node, _ns_term(SNAP, "output"), node))
+                trigger = quantity.value.trigger
                 self.graph.add(
-                    (snapshot_node, _ns_term(SNAP, "sampling"), _ns_term(SNAP, "initial-sampling"))
+                    (
+                        snapshot_node,
+                        _ns_term(SNAP, "sampling"),
+                        _ns_term(
+                            SNAP,
+                            "event-triggered-sampling" if trigger else "initial-sampling",
+                        ),
+                    )
                 )
+                if trigger is not None:
+                    self.graph.add((snapshot_node, _ns_term(SNAP, "trigger"), URIRef(trigger.uri)))
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
@@ -2327,6 +2337,8 @@ class MotionSpecDatasetBuilder:
                 MAP_EXT.orientation
                 if qty.type == WorldQuantityType.Pose and subspace == "rotation"
                 else MAP_EXT.position
+                if qty.type == WorldQuantityType.Pose
+                else MAP[view_subspace_uri]
             )
             self.graph.add((view_node, MAP.subspace, subspace_value))
             self.graph.add((view_node, MAP.axis, MAP[axis]))

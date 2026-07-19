@@ -44,11 +44,6 @@ MonitorEntry:
     )
 ;
 
-EventName:
-    (ns=[NamespaceDeclare|IRI_TRUNK] "." event=[fsm.Event|IRI_TRUNK]) |
-    standalone=IRI_TRUNK
-;
-
 ControllerEntry:
     type=ControllerType name=IRI_TRUNK "{"
         params=ControllerParams

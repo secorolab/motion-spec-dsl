@@ -559,6 +559,15 @@ def validate_context_quantity_values(model: Model) -> None:
                         f"but its source has type {source_shape}.",
                         quantity,
                     )
+                # An event-triggered snapshot re-samples on a declared FSM event, so the
+                # trigger must name one: the standalone form mints a monitor-owned event.
+                if value.trigger is not None and value.trigger.event is None:
+                    raise semantic_error(
+                        f"Snapshot '{quantity.name}' triggers on "
+                        f"'{value.trigger.standalone}', which is not a declared FSM event. "
+                        "Use the namespace-qualified form, e.g. 'on event ns.E_NAME'.",
+                        quantity,
+                    )
     for handler in constraint_handlers(model):
         for ctx in handler.context:
             ctx = _resolved_context_decl(ctx)

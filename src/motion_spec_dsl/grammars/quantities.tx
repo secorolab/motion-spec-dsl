@@ -170,6 +170,7 @@ AdmittanceSpec:
 
 SnapshotValue:
     "=" "snapshot" "of" source=View ("+" offset=ContextRef)?
+    ("on" "event" trigger=EventName)?
 ;
 
 PoseValue:

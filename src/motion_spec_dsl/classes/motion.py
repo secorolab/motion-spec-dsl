@@ -547,10 +547,13 @@ class ReferenceValue:
 
 @dataclass
 class SnapshotValue:
-    """A quantity view sampled when its owning motion starts, with an optional offset."""
+    """A quantity view sampled with an optional offset. Sampled once when its owning motion
+    starts, or re-sampled on every occurrence of `trigger` when one is given.
+    """
 
     source: View
     offset: ContextRef | None = None
+    trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
