@@ -46,7 +46,9 @@ context (ns=app) shared {
         force force-threshold                 = 10.0 N,
         force neg-force-threshold             = -10.0 N,
         force release-threshold               = 3.0 N,
-        force neg-release-threshold           = -3.0 N
+        force neg-release-threshold           = -3.0 N,
+        linear-distance comply-int-max         = 0.02 m,
+        linear-distance neg-comply-int-max     = -0.02 m
     }
 }
 
@@ -337,9 +339,21 @@ constraint-handler (ns=app) handler-admittance {
         mon-table-contact: monitor <compliance.table-contact> on activation trigger event aas.E_TABLE_CONTACT after active for 0.3 s
     }
     controllers {
-        pid ctrl-comply-x { constraint: <compliance.comply-x>, Kp: 150, Ki: 0, Kd: 0, decay: 0 },
-        pid ctrl-comply-y { constraint: <compliance.comply-y>, Kp: 150, Ki: 0, Kd: 0, decay: 0 },
-        pid ctrl-comply-z { constraint: <compliance.comply-z>, Kp: 150, Ki: 0, Kd: 0, decay: 0 },
+        pid ctrl-comply-x {
+            constraint: <compliance.comply-x>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
+        pid ctrl-comply-y {
+            constraint: <compliance.comply-y>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
+        pid ctrl-comply-z {
+            constraint: <compliance.comply-z>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
         pid ctrl-comply-ori {
             constraint: <compliance.comply-ori>,
             measured-derivative: <shared.world.twist-ee-base>.angvel,
