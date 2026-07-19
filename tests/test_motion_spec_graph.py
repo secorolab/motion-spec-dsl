@@ -21,6 +21,7 @@ from motion_spec.namespace import (
     EXEC,
     GEOM_OP,
     GEOM_REL,
+    MAP,
     MAP_EXT,
     SLV,
     SLV_EXT,
@@ -144,6 +145,26 @@ def test_reduced_shacl_contract_conforms(generated_model: Path) -> None:
         location.startswith("https://comp-rob2b.github.io/metamodels/geometry/")
         for location in constraint_locations
     )
+
+
+def test_non_pose_component_views_keep_their_subspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Wrench and twist axes retain their authored non-pose subspaces."""
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(
+        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    )
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    graph = _load_graph(tmp_path / "admittance_arc_single-app.jsonld")[1]
+    wrench_views = set(graph.subjects(RDF.type, MAP_EXT.WrenchCoordinateView))
+    twist_views = set(graph.subjects(RDF.type, MAP_EXT.VelocityTwistCoordinateView))
+    assert wrench_views and twist_views
+    assert {graph.value(view, MAP.subspace) for view in wrench_views} == {MAP.force}
+    assert {graph.value(view, MAP.subspace) for view in twist_views} == {
+        MAP["linear-velocity"]
+    }
 
 
 def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> None:
