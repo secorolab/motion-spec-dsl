@@ -32,7 +32,7 @@ from motion_spec_dsl.classes.common import (
 
 
 class HandlerControlMode(StrEnum):
-    JointTorque = "JointTorque"
+    JointForce = "JointForce"
 
 
 class ControllerType(StrEnum):

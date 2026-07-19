@@ -72,7 +72,7 @@ ControllerParams:
 
 ControllerParam: name=ControllerParamName ":" value=FLOAT ;
 ControllerParamName: "Kp" | "Ki" | "Kd" | "stiffness" | "damping" | "decay" ;
-HandlerControlMode: "joint-torque" ;
+HandlerControlMode: "joint-force" ;
 MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
 UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
 WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;

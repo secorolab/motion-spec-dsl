@@ -7,9 +7,24 @@ ns pps_mjc = "https://secorolab.github.io/models/scenes/pick-place-single-mjc/"
 ktree inst (ns=pps_mjc) kinova of <kinova_tree>
 ktree inst (ns=pps_mjc) gripper of <gripper_tree>
 
-ktree (ns=pps_mjc) world_tree {
+ktree (ns=pps_mjc) kinova_2f85 {
     tree <kinova>
     tree <gripper>
+
+    joints {
+        fixed g_mount_on_pinch_site {
+            parent: <kinova.bracelet_link.pinch_site>
+            child: <gripper.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova.base_link.base_link_origin>
+            tip: <gripper.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=pps_mjc) world_tree {
+    tree <kinova_2f85>
 
     body world_body {
         frame world { }
@@ -34,14 +49,6 @@ ktree (ns=pps_mjc) world_tree {
             parent: <table.table_top>
             child: <kinova.base_link.base_link_origin>
         }
-        fixed g_mount_on_pinch_site {
-            parent: <kinova.bracelet_link.pinch_site>
-            child: <gripper.g_base_mount.g_mount_interface>
-        }
-        serial {
-            root: <kinova.base_link.base_link_origin>
-            tip: <gripper.g_base.g_pinch>
-        }
     }
 }
 
@@ -63,20 +70,23 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
     }
 
     obj <ws_objects.table> {
-        model table-mjc as mjcf { sys path = '~/.cache/mj_kdl_wrapper/assets/table.xml' }
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml' }
         body: <world_tree.table>
     }
 
     obj <pickplace_objects.cube> {
-        model cube-mjc as mjcf { sys path = '~/.cache/mj_kdl_wrapper/assets/cube.xml' }
+        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml' }
         body: <pick_place_graph.cube>
     }
 
-    agn <pickplace_agents.kinova> {
+    agn <pickplace_agents.kinova_2f85> {
         model kinova-mjc as mjcf {
-            sys path = '~/.cache/mj_kdl_wrapper/menagerie/kinova_gen3/gen3.xml'
-        }
-        ktree <kinova>
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+        } for <kinova>
+
+        model gripper-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+        } for <gripper> at body "base_mount"
 
         camera wrist {
             frame: <kinova.bracelet_link.wrist_anchor>
@@ -85,12 +95,5 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
             fov: 41.83792730009236 deg
             update-rate: 30.0 Hz
         }
-    }
-
-    agn <pickplace_agents.robotiq_2f85> {
-        model gripper-mjc as mjcf {
-            sys path = '~/.cache/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
-        }
-        ktree <gripper>
     }
 }

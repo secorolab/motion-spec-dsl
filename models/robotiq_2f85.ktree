@@ -82,8 +82,8 @@ ktree gripper_tree {
         }
         // Driven by the g_fingers_actuator tendon; the right finger mirrors it.
         revolute g_left_driver_joint {
-            parent: <g_base.g_left_driver_joint_anchor>.z
-            child: <g_left_driver.g_left_driver_origin>.z
+            parent: <g_base.g_left_driver_joint_anchor>.x
+            child: <g_left_driver.g_left_driver_origin>.x
             actuation {
                 gear ratio: 1.0
                 command-interface: position

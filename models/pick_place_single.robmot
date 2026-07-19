@@ -410,7 +410,7 @@ guarded-motion (ns=app) recover {
 
 constraint-handler (ns=app) handler-home {
     handles: <home>
-    control-mode: joint-torque
+    control-mode: joint-force
     controllers {
         pid ctrl-hold-position    { constraint: <home.hold-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 }
@@ -418,7 +418,7 @@ constraint-handler (ns=app) handler-home {
 
     solvers {
         solver arm-solver {
-            agent:     <pickplace_agents.kinova>,
+            agent:     <pickplace_agents.kinova_2f85>,
             algorithm: ACHD,
             gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }
         }
@@ -427,7 +427,7 @@ constraint-handler (ns=app) handler-home {
 
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event pp.E_PICK_ABOVE_READY while waiting hold <home>
     }
@@ -444,7 +444,7 @@ constraint-handler (ns=app) handler-pick-above {
 
 constraint-handler (ns=app) handler-pick {
     handles: <pick>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-pick-ready: monitor <pick.aligned-above> on activation trigger event pp.E_PICK_READY while waiting hold <pick-above>
     }
@@ -465,7 +465,7 @@ constraint-handler (ns=app) handler-pick {
 
 constraint-handler (ns=app) handler-close-grip {
     handles: <grasp-hold>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-grasp-ready: monitor <grasp-hold.near-cube> on activation trigger event pp.E_GRASP_READY while waiting hold <pick>
     }
@@ -483,7 +483,7 @@ constraint-handler (ns=app) handler-close-grip {
     solvers {
         <handler-home.arm-solver>,
         solver gripper-command-solver {
-            agent:     <pickplace_agents.kinova>,
+            agent:     <pickplace_agents.kinova_2f85>,
             algorithm: command-forwarding
         }
     }
@@ -491,7 +491,7 @@ constraint-handler (ns=app) handler-close-grip {
 
 constraint-handler (ns=app) handler-lift {
     handles: <lift>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-lift-ready: monitor <lift.grasped> on activation trigger event pp.E_LIFT_READY while waiting hold <grasp-hold>,
         mon-lift-grasp-lost: monitor <lift.until> on activation trigger event pp.E_GRASP_LOST_LIFT
@@ -515,7 +515,7 @@ constraint-handler (ns=app) handler-lift {
 
 constraint-handler (ns=app) handler-place-above {
     handles: <place-above>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-place-above-ready: monitor <place-above.lifted> on activation trigger event pp.E_PLACE_ABOVE_READY while waiting hold <lift>,
         mon-place-above-grasp-lost: monitor <place-above.until> on activation trigger event pp.E_GRASP_LOST_PLACE_ABOVE
@@ -539,7 +539,7 @@ constraint-handler (ns=app) handler-place-above {
 
 constraint-handler (ns=app) handler-place {
     handles: <place>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-place-ready: monitor <place.at-pre-place> on activation trigger event pp.E_PLACE_READY while waiting hold <place-above>,
         mon-place-grasp-lost: monitor <place.until> on activation trigger event pp.E_GRASP_LOST_PLACE
@@ -563,7 +563,7 @@ constraint-handler (ns=app) handler-place {
 
 constraint-handler (ns=app) handler-open-grip {
     handles: <open-grasp-hold>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-open-ready: monitor <open-grasp-hold.at-place> on activation trigger event pp.E_OPEN_READY while waiting hold <place>
     }
@@ -586,7 +586,7 @@ constraint-handler (ns=app) handler-open-grip {
 
 constraint-handler (ns=app) handler-retreat {
     handles: <retreat>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-retreat-ready:   monitor <retreat.released> on activation trigger event pp.E_RETREAT_READY while waiting hold <open-grasp-hold>,
         mon-retreat-settled: monitor <retreat.until>    on activation trigger event pp.E_RETREAT_SETTLED
@@ -610,7 +610,7 @@ constraint-handler (ns=app) handler-retreat {
 
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
-    control-mode: joint-torque
+    control-mode: joint-force
     monitors {
         mon-recover-hold: monitor <recover.hold-x> on activation trigger event pp.E_RECOVER
     }

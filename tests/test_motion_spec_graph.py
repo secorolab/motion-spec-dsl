@@ -161,6 +161,33 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
         for monitor in graph.subjects(RDF.type, CSTR_HDL.Monitor)
     )
 
+    (robot,) = ir["scene"].robots
+    assert (robot.id, robot.attach_kind, robot.attach_name) == (
+        "kinova_2f85",
+        "Site",
+        "table_table_top",
+    )
+    (gripper,) = robot.attachments
+    assert (gripper.id, gripper.attach_to, gripper.prefix) == (
+        "gripper",
+        "pinch_site",
+        "g_",
+    )
+    objects = {obj.id: obj for obj in ir["scene"].objects}
+    assert objects["table"].pos == [0.0, 0.0, 0.72]
+    assert objects["cube"].pos == [0.5, 0.0, 0.76]
+    assert not objects["cube"].fixed
+
+    arm_solver = ir["slv_arm"][0]
+    assert (
+        arm_solver.chain_root,
+        arm_solver.chain_tip,
+        arm_solver.tool_body,
+        arm_solver.tcp_site,
+    ) == ("base_link", "bracelet_link", "g_base", "g_pinch")
+    pose_ee_base = next(item for item in ir["shared_data"] if item.id == "pose_ee_base")
+    assert pose_ee_base.with_respect_to.id == "base_link"
+
 
 def test_generated_manifest_is_portable(generated_model: Path) -> None:
     document = json.loads(generated_model.read_text())

@@ -25,6 +25,7 @@ from rdflib.term import Literal, URIRef
 from textx.scoping import get_included_models
 
 from motion_spec.namespace import (
+    AGN,
     ALGO_EXT,
     EL,
     APP,
@@ -2740,7 +2741,7 @@ class MotionSpecDatasetBuilder:
             (handler_node, CSTR_HDL.motion, self._owned_uri(f"motion-{motion.name}", motion))
         )
         self.graph.add(
-            (handler_node, CSTR_HDL["control-mode"], CSTR_HDL[handler.control_mode.value])
+            (handler_node, CSTR_HDL_EXT["control-mode"], KC_STAT[handler.control_mode.value])
         )
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
         self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
@@ -3238,7 +3239,7 @@ class MotionSpecDatasetBuilder:
             solver_node = self._owned_uri(f"{solver_stem}-{motion.name}", handler)
             robot_uri = getattr(solver.agent, "uri", None)
             if robot_uri:
-                self.graph.add((solver_node, SLV_EXT["robot"], URIRef(robot_uri)))
+                self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
 
             alg = solver.algorithm
             if alg == "CommandForwarding":

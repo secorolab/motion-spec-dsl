@@ -26,9 +26,9 @@ from motion_spec_dsl.validation.constraints import validate_saturation_spec
 
 
 SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
-    "ACHD": {HandlerControlMode.JointTorque},
-    "RNE": {HandlerControlMode.JointTorque},
-    "CommandForwarding": {HandlerControlMode.JointTorque},
+    "ACHD": {HandlerControlMode.JointForce},
+    "RNE": {HandlerControlMode.JointForce},
+    "CommandForwarding": {HandlerControlMode.JointForce},
 }
 
 
