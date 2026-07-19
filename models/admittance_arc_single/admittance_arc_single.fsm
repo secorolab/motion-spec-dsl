@@ -1,0 +1,82 @@
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+FSM (ns=aas) admittance_arc_single_fsm {
+DESCRIPTION: "Home, descend to contact, move forward, trace an arc, and yield to external force through admittance control."
+
+STATES:
+    S_START,
+    S_HOME,
+    S_TOUCHDOWN,
+    S_FORWARD,
+    S_ARC,
+    S_ADMITTANCE,
+    S_DONE
+
+START_STATE: @S_START
+END_STATE: @S_DONE
+
+EVENTS:
+    E_STEP,
+    E_HOME_SETTLED,
+    E_CONTACT,
+    E_FORWARD_DONE,
+    E_FORCE_DETECTED,
+    E_FORCE_GONE,
+    E_TABLE_CONTACT,
+    E_ARC_CONTACT,
+    E_ARC_ENTERED
+
+TRANSITIONS:
+    T_START_HOME:
+        FROM: @S_START
+        TO: @S_HOME
+    T_HOME_TOUCHDOWN:
+        FROM: @S_HOME
+        TO: @S_TOUCHDOWN
+    T_TOUCHDOWN_FORWARD:
+        FROM: @S_TOUCHDOWN
+        TO: @S_FORWARD
+    T_FORWARD_ARC:
+        FROM: @S_FORWARD
+        TO: @S_ARC
+    T_ARC_ADMITTANCE:
+        FROM: @S_ARC
+        TO: @S_ADMITTANCE
+    T_ARC_DONE:
+        FROM: @S_ARC
+        TO: @S_DONE
+    T_ADMITTANCE_ARC:
+        FROM: @S_ADMITTANCE
+        TO: @S_ARC
+    T_ADMITTANCE_DONE:
+        FROM: @S_ADMITTANCE
+        TO: @S_DONE
+
+REACTIONS:
+    R_STEP_START:
+        WHEN: @E_STEP
+        DO: @T_START_HOME
+    R_HOME_SETTLED:
+        WHEN: @E_HOME_SETTLED
+        DO: @T_HOME_TOUCHDOWN
+    R_CONTACT:
+        WHEN: @E_CONTACT
+        DO: @T_TOUCHDOWN_FORWARD
+    R_FORWARD_DONE:
+        WHEN: @E_FORWARD_DONE
+        DO: @T_FORWARD_ARC
+        FIRES: @E_ARC_ENTERED
+    R_FORCE_DETECTED:
+        WHEN: @E_FORCE_DETECTED
+        DO: @T_ARC_ADMITTANCE
+    R_ARC_CONTACT:
+        WHEN: @E_ARC_CONTACT
+        DO: @T_ARC_DONE
+    R_FORCE_GONE:
+        WHEN: @E_FORCE_GONE
+        DO: @T_ADMITTANCE_ARC
+        FIRES: @E_ARC_ENTERED
+    R_TABLE_CONTACT:
+        WHEN: @E_TABLE_CONTACT
+        DO: @T_ADMITTANCE_DONE
+}
