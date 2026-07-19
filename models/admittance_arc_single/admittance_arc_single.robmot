@@ -190,7 +190,8 @@ guarded-motion (ns=app) arc-motion {
     while {
         follow-position: keeping <shared.world.pose-ee-base>.position equal to <spec.path>.position,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.path>.orientation,
-        force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+        force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
+        force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
     }
 
     until all {
@@ -204,7 +205,7 @@ guarded-motion (ns=app) compliance {
 
     context {
         spec {
-            pose hold-orientation = snapshot of <shared.world.pose-ee-base>,
+            pose hold-orientation = snapshot of <shared.world.pose-ee-base> on event aas.E_ADMITTANCE_ENTERED,
             admittance velocity-x = {
                 force: <shared.world.ext-force>.force.x,
                 mass: 2.0,
@@ -293,6 +294,7 @@ constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
     monitors {
         mon-force-x: monitor <arc-motion.force-x> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
+        mon-force-y: monitor <arc-motion.force-y> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
         mon-arc-complete: monitor <arc-motion.until> on activation trigger event aas.E_ARC_CONTACT after active for 0.3 s
     }
     controllers {
