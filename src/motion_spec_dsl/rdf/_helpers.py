@@ -22,6 +22,7 @@ from motion_spec_dsl.classes import (
     ContextQuantity,
     WorldQuantity,
     WorldQuantityType,
+    _flatten_constraint_items,
     _resolved_spec,
 )
 
@@ -163,7 +164,7 @@ def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecific
     """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
     out = []
     for section in (motion.when, motion.while_, motion.until):
-        for item in section.constraints:
+        for item in _flatten_constraint_items(section.constraints):
             spec = _resolved_spec(item)
             if not spec.disabled:
                 out.append(spec)

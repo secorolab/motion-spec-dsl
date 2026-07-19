@@ -236,13 +236,19 @@ guarded-motion (ns=app) compliance {
         comply-x:   keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x>,
         comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y>,
         comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z>,
-        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation,
-        released:   <shared.world.ext-force>.force.x between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>
+        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation
     }
 
-    until all {
-        near-table:    <shared.world.pose-bracelet-base>.position.z less than <shared.spec.bracelet-contact-z>,
-        contact-table: <shared.world.twist-bracelet-base>.linvel.z equal to <shared.spec.zero-linvel>
+    until {
+        released all {
+            released-x: <shared.world.ext-force>.force.x between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
+            released-y: <shared.world.ext-force>.force.y between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
+            released-z: <shared.world.ext-force>.force.z between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>
+        },
+        table-contact all {
+            near-table:    <shared.world.pose-bracelet-base>.position.z less than <shared.spec.bracelet-contact-z>,
+            contact-table: <shared.world.twist-bracelet-base>.linvel.z equal to <shared.spec.zero-linvel>
+        }
     }
 }
 
@@ -328,7 +334,7 @@ constraint-handler (ns=app) handler-admittance {
     handles: <compliance>
     monitors {
         mon-released: monitor <compliance.released> on activation trigger event aas.E_FORCE_GONE after active for 0.3 s,
-        mon-table-contact: monitor <compliance.until> on activation trigger event aas.E_TABLE_CONTACT
+        mon-table-contact: monitor <compliance.table-contact> on activation trigger event aas.E_TABLE_CONTACT after active for 0.3 s
     }
     controllers {
         pid ctrl-comply-x { constraint: <compliance.comply-x>, Kp: 150, Ki: 0, Kd: 0, decay: 0 },

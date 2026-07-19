@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 from motion_spec_dsl.classes import (
+    ConstraintGroup,
     Model,
     UntilMonitorRef,
     WhenMonitorRef,
     _resolved_controller,
+    _flatten_constraint_items,
     _resolved_spec,
 )
 from motion_spec_dsl.validation.common import (
@@ -27,6 +29,14 @@ def validate_handler_constraint_assembly(model: Model) -> None:
     for handler in constraint_handlers(model):
         assembled_specs = {
             id(_resolved_spec(item)) for item in motion_constraint_items(handler.motion)
+        }
+        # An until group is assembled by its motion in its own right: a monitor may target the
+        # group instead of any single constraint inside it.
+        assembled_specs |= {
+            id(item)
+            for section in handler.motion.sections
+            for item in section.constraints
+            if isinstance(item, ConstraintGroup)
         }
 
         for monitor in handler.monitors:
@@ -71,7 +81,9 @@ def validate_handler_requirements(model: Model) -> None:
 
         guard_constraints = [
             _resolved_spec(item)
-            for item in [*handler.motion.when.constraints, *handler.motion.until.constraints]
+            for item in _flatten_constraint_items(
+                [*handler.motion.when.constraints, *handler.motion.until.constraints]
+            )
         ]
         if guard_constraints and not handler.monitors:
             raise semantic_error(
@@ -79,7 +91,10 @@ def validate_handler_requirements(model: Model) -> None:
                 handler,
             )
 
-        until_items = [_resolved_spec(item) for item in handler.motion.until.constraints]
+        until_items = [
+            _resolved_spec(item)
+            for item in _flatten_constraint_items(handler.motion.until.constraints)
+        ]
         until_monitor_refs = [
             mon for mon in handler.monitors if isinstance(mon.constraint, UntilMonitorRef)
         ]
@@ -88,7 +103,10 @@ def validate_handler_requirements(model: Model) -> None:
                 mon
                 for mon in handler.monitors
                 if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
-                and id(mon.constraint.constraint) in {id(c) for c in until_items}
+                and (
+                    id(mon.constraint.constraint) in {id(c) for c in until_items}
+                    or isinstance(mon.constraint.constraint, ConstraintGroup)
+                )
             ]
             if until_monitor_refs and individual_until_monitors:
                 raise semantic_error(
@@ -101,7 +119,14 @@ def validate_handler_requirements(model: Model) -> None:
                     handler,
                 )
             if not until_monitor_refs:
-                monitored = {id(mon.constraint.constraint) for mon in individual_until_monitors}
+                # Monitoring a group covers every constraint inside it.
+                monitored = set()
+                for mon in individual_until_monitors:
+                    target = mon.constraint.constraint
+                    if isinstance(target, ConstraintGroup):
+                        monitored |= {id(_resolved_spec(i)) for i in target.constraints}
+                    else:
+                        monitored.add(id(target))
                 missing = [c.name for c in until_items if id(c) not in monitored]
                 if missing:
                     raise semantic_error(
@@ -127,7 +152,10 @@ def validate_handler_requirements(model: Model) -> None:
             if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
         }
         if not when_aggregate_monitored:
-            for constraint in [_resolved_spec(item) for item in handler.motion.when.constraints]:
+            for constraint in [
+                _resolved_spec(item)
+                for item in _flatten_constraint_items(handler.motion.when.constraints)
+            ]:
                 if id(constraint) not in monitored:
                     raise semantic_error(
                         f"ConstraintHandler '{handler.name}' has WHEN constraint "

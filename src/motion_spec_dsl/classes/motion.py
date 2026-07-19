@@ -579,6 +579,22 @@ class ConstraintSpecification(NamedNamespaceObject):
         super().__init__(parent=self.parent, name=self.name)
 
 
+# eq=False: identity semantics, matching ConstraintSpecification.
+@dataclass(eq=False)
+class ConstraintGroup(NamedNamespaceObject):
+    """A named set of until constraints evaluated as one condition, so a motion can carry
+    several independent transitions -- each group is monitored on its own.
+    """
+
+    parent: object
+    name: str
+    logic: str = "all"
+    constraints: list = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
 @dataclass
 class ConstraintRef:
     """A reference to a constraint declared within a motion."""
@@ -615,6 +631,21 @@ class ConstraintAlias(NamedNamespaceObject):
     @property
     def constraint(self) -> ConstraintSpecification:
         return self.ref.constraint
+
+
+def _flatten_constraint_items(items) -> list:
+    """Expand until groups into their member items; everything else passes through.
+
+    Callers that want the individual constraints -- validation, view emission, evaluators --
+    should not have to know whether a motion grouped them.
+    """
+    out = []
+    for item in items:
+        if isinstance(item, ConstraintGroup):
+            out.extend(item.constraints)
+        else:
+            out.append(item)
+    return out
 
 
 def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> ConstraintSpecification:

@@ -69,6 +69,7 @@ from motion_spec_dsl.classes import (
     SolverLimits,
     SolverRef,
     SnapshotValue,
+    ConstraintGroup,
     SpecContextDecl,
     ContextQuantityAlias,
     ContextQuantity,
@@ -134,6 +135,7 @@ LANGUAGE_CLASSES = [
     ReferenceValue,
     SnapshotValue,
     ConstraintAlias,
+    ConstraintGroup,
     ConstraintSpecification,
     ConstraintRef,
     UntilMonitorRef,
@@ -175,6 +177,12 @@ class MotionConstraintScopeProvider:
         motion = obj.motion
         if motion is None or not isinstance(motion, GuardedMotion):
             return None
+
+        # An until group is monitored as one condition, so it is nameable like a constraint.
+        for section in motion.sections:
+            for item in section.constraints:
+                if isinstance(item, ConstraintGroup) and item.name == obj_ref.obj_name:
+                    return item
 
         for item in motion_constraint_items(motion):
             item_name = getattr(item, "name", None) or getattr(_resolved_spec(item), "name", None)

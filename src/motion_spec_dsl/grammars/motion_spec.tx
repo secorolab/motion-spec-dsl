@@ -29,9 +29,14 @@ ConstraintSection:
 
 WhenSection:  "when"  (logic=WhenLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
 WhileSection: "while" "{" constraints*=ConstraintItem[","]? "}" ;
-UntilSection: "until" (logic=UntilLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
+UntilSection: "until" (logic=UntilLogic)? "{" constraints*=UntilItem[","]? "}" ;
 WhenLogic:    "any" | "all" ;
 UntilLogic:   "any" | "all" ;
+
+UntilItem: ConstraintGroup | ConstraintItem ;
+ConstraintGroup:
+    name=IRI_TRUNK logic=UntilLogic "{" constraints+=ConstraintItem[","] "}"
+;
 
 ConstraintItem: ConstraintSpecification | ConstraintAlias ;
 ConstraintAlias: (name=IRI_TRUNK ":")? "<" ref=ConstraintRef ">" ;
@@ -118,5 +123,8 @@ OutsideConstraint:
 ;
 
 ConstraintRef:
-    motion=[GuardedMotion|IRI_TRUNK] "." constraint=[ConstraintSpecification|IRI_TRUNK]
+    motion=[GuardedMotion|IRI_TRUNK] "." constraint=[ConstraintTarget|IRI_TRUNK]
 ;
+
+// A monitor or controller may name a single constraint, or an until group monitored as one.
+ConstraintTarget: ConstraintSpecification | ConstraintGroup ;

@@ -16,6 +16,7 @@ from motion_spec_dsl.classes import (
     ConstraintSpecification,
     GuardedMotion,
     Model,
+    _flatten_constraint_items,
     _resolved_spec,
 )
 
@@ -42,7 +43,9 @@ def constraint_handlers(model: Model) -> Iterable[ConstraintHandler]:
 
 def motion_constraint_items(spec: GuardedMotion) -> list[ConstraintSpecification | ConstraintAlias]:
     """All section items (inline specs and aliases) by their local name."""
-    return [item for section in spec.sections for item in section.constraints]
+    return _flatten_constraint_items(
+        [item for section in spec.sections for item in section.constraints]
+    )
 
 
 def motion_constraints(spec: GuardedMotion) -> list[ConstraintSpecification]:

@@ -68,6 +68,7 @@ from motion_spec_dsl.controller_semantics import (
 from motion_spec_dsl.classes import (
     BilateralConstraint,
     OutsideConstraint,
+    ConstraintGroup,
     ConstraintHandler,
     ConstraintSpecification,
     ContextDeclReference,
@@ -105,6 +106,7 @@ from motion_spec_dsl.classes import (
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
+    _flatten_constraint_items,
     _resolved_spec,
     _resolved_solver,
     _resolved_world_quantity,
@@ -2235,7 +2237,30 @@ class MotionSpecDatasetBuilder:
             if not spec.disabled:
                 self.graph.add((motion_node, MOT["while"], URIRef(spec.uri)))
         raw_logic = getattr(motion.until, "logic", None)
-        until_constraints = [i for i in motion.until.constraints if not _resolved_spec(i).disabled]
+        # A named group is one transition condition of its own, so it becomes a single
+        # conjunction/disjunction node the motion points at and a monitor can target.
+        groups = [i for i in motion.until.constraints if isinstance(i, ConstraintGroup)]
+        for group in groups:
+            members = [i for i in group.constraints if not _resolved_spec(i).disabled]
+            if not members:
+                continue
+            group_node = URIRef(group.uri)
+            group_type = (
+                CSTR_EXT.ConstraintDisjunction
+                if group.logic == "any"
+                else CSTR_EXT.ConstraintConjunction
+            )
+            self.graph.add((group_node, RDF.type, group_type))
+            self.graph.add((motion_node, MOT.until, group_node))
+            for item in members:
+                self.graph.add(
+                    (group_node, CSTR_EXT["has-constraint"], URIRef(_resolved_spec(item).uri))
+                )
+        until_constraints = [
+            i
+            for i in motion.until.constraints
+            if not isinstance(i, ConstraintGroup) and not _resolved_spec(i).disabled
+        ]
         if raw_logic == "any" and until_constraints:
             disjunction_node = self._owned_uri(f"motion-{motion.name}-until-disjunction", motion)
             self.graph.add((disjunction_node, RDF.type, CSTR_EXT.ConstraintDisjunction))
@@ -2752,26 +2777,42 @@ class MotionSpecDatasetBuilder:
             signal_node = URIRef(mon.event.uri) if is_event else URIRef(f"{mon.uri}.{mon.flag}")
             mon_node = URIRef(mon.uri)
 
-            if isinstance(cref, (UntilMonitorRef, WhenMonitorRef)):
+            # A group monitor aggregates exactly like a whole-section one, over the group's
+            # members, and points at the group node so the logic travels with it.
+            group_target = (
+                cref.constraint
+                if not isinstance(cref, (UntilMonitorRef, WhenMonitorRef))
+                and isinstance(getattr(cref, "constraint", None), ConstraintGroup)
+                else None
+            )
+            if isinstance(cref, (UntilMonitorRef, WhenMonitorRef)) or group_target is not None:
                 is_when_ref = isinstance(cref, WhenMonitorRef)
-                section_constraints = (
-                    cref.motion.when.constraints if is_when_ref else cref.motion.until.constraints
-                )
+                if group_target is not None:
+                    section_constraints = list(group_target.constraints)
+                else:
+                    section_constraints = _flatten_constraint_items(
+                        cref.motion.when.constraints
+                        if is_when_ref
+                        else cref.motion.until.constraints
+                    )
                 section_specs = [
                     _resolved_spec(item)
                     for item in section_constraints
                     if not _resolved_spec(item).disabled
                 ]
-                section = cref.motion.when if is_when_ref else cref.motion.until
-                if section.logic == "any":
-                    guard_nodes = [
-                        self._owned_uri(
-                            f"motion-{cref.motion.name}-{'when' if is_when_ref else 'until'}-disjunction",
-                            cref.motion,
-                        )
-                    ]
+                if group_target is not None:
+                    guard_nodes = [URIRef(group_target.uri)]
                 else:
-                    guard_nodes = [URIRef(spec.uri) for spec in section_specs]
+                    section = cref.motion.when if is_when_ref else cref.motion.until
+                    if section.logic == "any":
+                        guard_nodes = [
+                            self._owned_uri(
+                                f"motion-{cref.motion.name}-{'when' if is_when_ref else 'until'}-disjunction",
+                                cref.motion,
+                            )
+                        ]
+                    else:
+                        guard_nodes = [URIRef(spec.uri) for spec in section_specs]
                 component_error_nodes: list[URIRef] = []
                 for spec in section_specs:
                     if getattr(spec.view, "is_elapsed", False):

@@ -8,6 +8,7 @@ from motion_spec_dsl.classes.constraint_handler import *  # noqa: F403
 from motion_spec_dsl.classes.motion import (
     _authored_enum as _authored_enum,
     _resolved_context_quantity as _resolved_context_quantity,
+    _flatten_constraint_items as _flatten_constraint_items,
     _resolved_spec as _resolved_spec,
     _resolved_world_quantity as _resolved_world_quantity,
 )
