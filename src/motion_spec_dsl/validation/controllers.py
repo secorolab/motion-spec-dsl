@@ -13,7 +13,6 @@ from motion_spec_dsl.controller_semantics import (
     constraint_view_subspace,
     controller_command_record,
     infer_command_type,
-    pose_diff_components,
 )
 from motion_spec_dsl.classes import (
     ControllerAlias,
@@ -42,7 +41,7 @@ def _achd_acceleration_axis_keys(
 ) -> list[tuple[str, str]]:
     """The (subspace, axis) keys of a controller's ACHD acceleration constraints."""
     command = controller_command_record(controller)
-    return [(record.subspace, record.axis) for record in command.acceleration_constraints]
+    return [(f"{part}-acceleration", axis) for part, axis in command.controlled_axes]
 
 
 def _profile_quantity(controller: ControllerEntry) -> ContextQuantity | None:
@@ -106,7 +105,7 @@ def _validate_pid_measured_derivative(
     if (
         quantity is None
         or quantity.type != WorldQuantityType.Pose
-        or not command.acceleration_constraints
+        or not command.controlled_axes
         or not isinstance(resolved_controller.params.constraint.constraint.expr, EqualityConstraint)
     ):
         raise semantic_error(
@@ -127,12 +126,7 @@ def _validate_pid_measured_derivative(
             measured_derivative,
         )
 
-    # This is the pose-diff measured_derivative check, not ACHD acceleration-constraint
-    # validation (that's `_achd_acceleration_axis_keys` below) - translate to the
-    # neutral pose-diff vocabulary before testing (D4).
-    required_subspaces = {
-        component.part for component in pose_diff_components(command.acceleration_constraints)
-    }
+    required_subspaces = {part for part, _axis in command.controlled_axes}
     measured_subspace = _authored_subspace(measured_derivative)
     if measured_subspace is not None and measured_subspace not in required_subspaces:
         expected = ", ".join(sorted(required_subspaces))
@@ -146,7 +140,7 @@ def _validate_pid_measured_derivative(
             measured_derivative,
         )
 
-    required_axes = {component.axis for component in command.acceleration_constraints}
+    required_axes = {axis for _part, axis in command.controlled_axes}
     measured_axis = axis_label(getattr(measured_derivative, "axis", None))
     if measured_axis is not None and (
         len(required_axes) != 1 or measured_axis not in required_axes

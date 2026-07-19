@@ -12,7 +12,6 @@ from motion_spec_dsl.classes import (
     ControllerEntry,
     ControllerType,
     ExecutionContext,
-    HandlerControlMode,
     Model,
     QuantityType,
     SolverEntry,
@@ -23,13 +22,6 @@ from motion_spec_dsl.classes import (
 )
 from motion_spec_dsl.validation.common import constraint_handlers, semantic_error
 from motion_spec_dsl.validation.constraints import validate_saturation_spec
-
-
-SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM: dict[str, set[HandlerControlMode]] = {
-    "ACHD": {HandlerControlMode.JointForce},
-    "RNE": {HandlerControlMode.JointForce},
-    "CommandForwarding": {HandlerControlMode.JointForce},
-}
 
 
 def _implicit_solver_for_controller(
@@ -166,23 +158,6 @@ def validate_solver_limits(model: Model) -> None:
                     expected=expected,
                     owner=entry,
                     label=f"Solver '{resolved_solver.name}' {target}",
-                )
-
-
-def validate_handler_control_mode_solver_compatibility(model: Model) -> None:
-    """Raise if a handler's control mode is unsupported by its solver's algorithm."""
-    for handler in constraint_handlers(model):
-        for solver in handler.solvers:
-            resolved_solver = _resolved_solver(solver)
-            supported_modes = SUPPORTED_CONTROL_MODES_BY_SOLVER_ALGORITHM.get(
-                str(resolved_solver.algorithm), set()
-            )
-            if handler.control_mode not in supported_modes:
-                raise semantic_error(
-                    f"Handler '{handler.name}' control mode {handler.control_mode.value} "
-                    f"is not supported by solver '{resolved_solver.name}' with algorithm "
-                    f"{resolved_solver.algorithm}.",
-                    solver,
                 )
 
 

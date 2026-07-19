@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Derived controller semantics shared by RDF generation and validation."""
+"""Authored controller semantics shared by RDF generation and validation."""
 
 from __future__ import annotations
 
@@ -35,61 +35,9 @@ SUBSPACE_ALIAS: dict[str, str] = {
 
 
 @dataclass(frozen=True)
-class AccelerationConstraintRecord:
-    """One ACHD acceleration-constraint axis: a linear/angular acceleration subspace
-    and its x/y/z axis."""
-
-    subspace: str
-    axis: str
-
-    @property
-    def suffix(self) -> str:
-        """Compact id suffix, `lin-<axis>` or `ang-<axis>`."""
-        prefix = {
-            "linear-acceleration": "lin",
-            "angular-acceleration": "ang",
-        }[self.subspace]
-        return f"{prefix}-{self.axis}"
-
-
-@dataclass(frozen=True)
-class PoseDiffComponentRecord:
-    """Neutral linear/angular axis component for the pose-diff evaluator/controller
-    path. Distinct from `AccelerationConstraintRecord`: a pose-diff component is a
-    position/orientation error term (Length/Angle), not an acceleration, even though
-    it is derived from the same ACHD acceleration-constraint axis enumeration."""
-
-    part: str  # "linear" | "angular"
-    axis: str
-
-    @property
-    def suffix(self) -> str:
-        """Compact id suffix `lin-<axis>`/`ang-<axis>`.
-
-        Must equal AccelerationConstraintRecord.suffix: the pose-diff controller's
-        energy/control-signal node and the ACHD acceleration-energy node share this URI.
-        """
-        prefix = {"linear": "lin", "angular": "ang"}[self.part]
-        return f"{prefix}-{self.axis}"
-
-
-def pose_diff_components(
-    acceleration_constraints: tuple["AccelerationConstraintRecord", ...],
-) -> tuple[PoseDiffComponentRecord, ...]:
-    """Translate shared ACHD acceleration-constraint records into the neutral
-    linear/angular vocabulary the pose-diff path actually means."""
-    part_by_subspace = {"linear-acceleration": "linear", "angular-acceleration": "angular"}
-    return tuple(
-        PoseDiffComponentRecord(part_by_subspace[record.subspace], record.axis)
-        for record in acceleration_constraints
-    )
-
-
-@dataclass(frozen=True)
 class ControllerCommandRecord:
     """Resolved control-command shape for a controller+constraint: the commanded
-    quantity, its view subspace/axis, the command type, and the acceleration-constraint
-    axes the command expands into."""
+    quantity, its view subspace/axis, command type, and controlled Cartesian axes."""
 
     controller: ControllerEntry
     constraint: ConstraintSpecification
@@ -97,7 +45,7 @@ class ControllerCommandRecord:
     view_subspace: str | None
     axis: str | None
     command_type: QuantityType | None
-    acceleration_constraints: tuple[AccelerationConstraintRecord, ...]
+    controlled_axes: tuple[tuple[str, str], ...]
 
     @property
     def is_force_command(self) -> bool:
@@ -114,22 +62,9 @@ class ControllerCommandRecord:
         )
 
 
-LINEAR_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
-    AccelerationConstraintRecord("linear-acceleration", "x"),
-    AccelerationConstraintRecord("linear-acceleration", "y"),
-    AccelerationConstraintRecord("linear-acceleration", "z"),
-)
-
-ANGULAR_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
-    AccelerationConstraintRecord("angular-acceleration", "x"),
-    AccelerationConstraintRecord("angular-acceleration", "y"),
-    AccelerationConstraintRecord("angular-acceleration", "z"),
-)
-
-POSE_ACCELERATION_AXES: tuple[AccelerationConstraintRecord, ...] = (
-    *LINEAR_ACCELERATION_AXES,
-    *ANGULAR_ACCELERATION_AXES,
-)
+LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
+ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
+POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
 
 
 def axis_label(axis: object | None) -> str | None:
@@ -211,10 +146,7 @@ def resolved_constraint_quantity(
 def controller_command_record(
     controller: ControllerEntry | ControllerAlias,
 ) -> ControllerCommandRecord:
-    """Derive a controller's command record: resolve its command type (impedance forces a
-    Force command) and the acceleration-constraint axes it drives -- whole-pose 6D, a
-    single axis, or one distance-direction constraint.
-    """
+    """Resolve a controller's authored command type and controlled Cartesian axes."""
     resolved_controller = _resolved_controller(controller)
     constraint = resolved_controller.params.constraint.constraint
     quantity = resolved_constraint_quantity(constraint)
@@ -231,7 +163,7 @@ def controller_command_record(
     if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
         command_type = QuantityType.Force
 
-    acceleration_constraints: tuple[AccelerationConstraintRecord, ...] = ()
+    controlled_axes: tuple[tuple[str, str], ...] = ()
     whole_pose_command = (
         quantity is not None
         and quantity.type == WorldQuantityType.Pose
@@ -246,25 +178,13 @@ def controller_command_record(
     )
     if not (force_command or posture_torque):
         if whole_pose_command:
-            acceleration_constraints = POSE_ACCELERATION_AXES
+            controlled_axes = POSE_AXES
         elif raw_subspace in {SubSpace.Position, SubSpace.LinVel}:
-            acceleration_constraints = (
-                (AccelerationConstraintRecord("linear-acceleration", axis),)
-                if axis is not None
-                else LINEAR_ACCELERATION_AXES
-            )
+            controlled_axes = (("linear", axis),) if axis is not None else LINEAR_AXES
         elif raw_subspace in {SubSpace.Orientation, SubSpace.AngVel}:
-            acceleration_constraints = (
-                (AccelerationConstraintRecord("angular-acceleration", axis),)
-                if axis is not None
-                else ANGULAR_ACCELERATION_AXES
-            )
+            controlled_axes = (("angular", axis),) if axis is not None else ANGULAR_AXES
         elif view_subspace == "distance" and raw_subspace is None:
-            # `distance between <A> and <B>` (never the `.position.x` axis alias): a single
-            # direction-aligned linear acceleration constraint, driven by the runtime direction.
-            acceleration_constraints = (
-                AccelerationConstraintRecord("linear-acceleration", "distance"),
-            )
+            controlled_axes = (("linear", "distance"),)
 
     return ControllerCommandRecord(
         controller=resolved_controller,
@@ -273,5 +193,5 @@ def controller_command_record(
         view_subspace=view_subspace,
         axis=axis,
         command_type=command_type,
-        acceleration_constraints=acceleration_constraints,
+        controlled_axes=controlled_axes,
     )

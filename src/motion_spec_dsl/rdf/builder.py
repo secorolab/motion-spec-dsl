@@ -21,6 +21,12 @@ from urllib.parse import urlsplit
 from rdflib.graph import Dataset
 from rdflib.namespace import Namespace, RDF, XSD
 from rdflib.term import Literal, URIRef
+from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH, URI_QUDT_QK_MASS
+from rdf_utils.namespace import (
+    NS_MM_GEOM_REL,
+    NS_MM_QUDT_QTY,
+    NS_MM_QUDT_UNIT as QUDT_UNIT,
+)
 
 from textx.scoping import get_included_models
 
@@ -39,7 +45,6 @@ from motion_spec.namespace import (
     GEOM_OP,
     GEOM_OP_EXT,
     GEOM_REL,
-    GEOM_REL_EXT,
     KC_STAT,
     MAP,
     MAP_EXT,
@@ -47,7 +52,6 @@ from motion_spec.namespace import (
     TRAJ,
     QUDT_QKIND,
     QUDT_SCHEMA,
-    QUDT_UNIT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
@@ -57,11 +61,9 @@ from motion_spec.namespace import (
     SOSA,
 )
 from motion_spec_dsl.controller_semantics import (
-    PoseDiffComponentRecord,
     SUBSPACE_ALIAS,
     axis_label as semantic_axis_label,
     controller_command_record,
-    pose_diff_components,
 )
 from motion_spec_dsl.classes import (
     BilateralConstraint,
@@ -126,11 +128,6 @@ from motion_spec_dsl.rdf._helpers import (
     _view_subspace,
     _scalar_id,
     _axis_vector,
-    _quantity_axis_frame,
-    _pose_diff_error_id,
-    _pose_diff_controller_id,
-    _pose_diff_energy_id,
-    _pose_diff_measured_derivative_id,
     _scalar_type,
     _evaluator_id,
     _dsl_unit,
@@ -246,7 +243,7 @@ class MotionSpecDatasetBuilder:
             self._emit_constraint_handler(
                 handler, motion, world_qtys, shared_spec_ids, handler_order
             )
-            self._emit_solvers(handler, motion, world_qtys, shared_spec_ids)
+            self._emit_solvers(handler, motion, world_qtys)
 
         return self.dataset, context
 
@@ -266,7 +263,7 @@ class MotionSpecDatasetBuilder:
         self._emit_scalar_quantity(
             timestep,
             context.timestep,
-            QUDT_QKIND.Time,
+            NS_MM_QUDT_QTY["Time"],
             _dsl_unit(context.timestep_unit),
         )
         self.graph.add((node, EXEC.timestep, timestep))
@@ -606,11 +603,13 @@ class MotionSpecDatasetBuilder:
         """Emit a unit direction coordinate (Dimensionless VectorXYZ, as-seen-by `as_seen_by`),
         with optional explicit x/y/z components.
         """
-        self.graph.add((node, RDF.type, GEOM_REL.Direction))
+        self.graph.add((node, RDF.type, NS_MM_GEOM_REL["Direction"]))
         self.graph.add((node, RDF.type, GEOM_COORD.DirectionCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
         # A direction is a normalized (unit) vector: its quantity kind is Dimensionless.
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Dimensionless))
+        self.graph.add(
+            (node, QUDT_SCHEMA["hasQuantityKind"], NS_MM_QUDT_QTY["Dimensionless"])
+        )
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
         self.graph.add((node, GEOM_COORD["as-seen-by"], as_seen_by))
         if vector is not None:
@@ -1457,7 +1456,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
         self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], URI_QUDT_QK_LENGTH))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity)
@@ -1687,7 +1686,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
             self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], URI_QUDT_QK_LENGTH))
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity)
@@ -2011,7 +2010,7 @@ class MotionSpecDatasetBuilder:
             )
         )
         mass_node = URIRef(f"{op_node}-mass")
-        self._emit_scalar_quantity(mass_node, spec_val.mass, QUDT_QKIND.Mass, QUDT_UNIT["KiloGM"])
+        self._emit_scalar_quantity(mass_node, spec_val.mass, URI_QUDT_QK_MASS, QUDT_UNIT["KiloGM"])
         self.graph.add((op_node, CSTR_HDL_EXT["mass"], mass_node))
         damping_node = URIRef(f"{op_node}-damping")
         self._emit_scalar_quantity(damping_node, spec_val.damping, None, QUDT_UNIT["N-SEC-PER-M"])
@@ -2152,7 +2151,7 @@ class MotionSpecDatasetBuilder:
 
         qty_node = self._elapsed_quantity_node(spec, motion)
         self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((qty_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
+        self.graph.add((qty_node, QUDT_SCHEMA["hasQuantityKind"], NS_MM_QUDT_QTY["Time"]))
         self.graph.add((qty_node, QUDT_SCHEMA.unit, QUDT_UNIT["SEC"]))
         self.graph.add((node, CSTR.quantity, qty_node))
 
@@ -2179,7 +2178,7 @@ class MotionSpecDatasetBuilder:
         if bare is not None:
             node = self._owned_uri(suffix, owner)
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Time))
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], NS_MM_QUDT_QTY["Time"]))
             self.graph.add((node, QUDT_SCHEMA.unit, _time_unit(bare.unit)))
             self.graph.add(
                 (node, QUDT_SCHEMA.value, Literal(float(bare.value), datatype=XSD.double))
@@ -2200,7 +2199,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
         if getattr(motion, "trajectory", None) is not None:
             lerp_node = self._owned_uri(f"motion-{motion.name}-lerp", motion)
-            self.graph.add((lerp_node, RDF.type, TRAJ.Lerp))
+            self.graph.add((lerp_node, RDF.type, TRAJ.CartesianPoseInterpolation))
             self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
         raw_when_logic = getattr(motion.when, "logic", None)
         when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
@@ -2438,6 +2437,10 @@ class MotionSpecDatasetBuilder:
         (stiffness/damping, optional integral gain), or feed-forward.
         """
         self.graph.add((ctrl_node, RDF.type, CSTR_HDL.Controller))
+        if ctrl.command_type is not None:
+            self.graph.add(
+                (ctrl_node, APP["command-type"], Literal(ctrl.command_type.value))
+            )
         if ctrl.type == ControllerType.PID:
             self.graph.add((ctrl_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative))
             if ctrl.params.kp is not None:
@@ -2535,11 +2538,36 @@ class MotionSpecDatasetBuilder:
         self.graph.add((owner_node, ALGO_EXT.limits, node))
         return node
 
-    def _emit_acceleration_energy_quantity(self, energy_node: URIRef) -> None:
-        """Type `energy_node` as an acceleration-energy quantity (N·m²/s²)."""
-        self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
-        self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
+    def _emit_controller_limits(
+        self,
+        controller_node: URIRef,
+        controller: ControllerEntry,
+        command,
+        handler: ConstraintHandler,
+    ) -> None:
+        """Emit authored controller limits without choosing a solver representation."""
+        if controller.params.output_saturation is not None:
+            output = self._owned_uri(f"output-{controller.name}", handler)
+            self._add_quantity(output, command.command_type)
+            self._emit_saturation(
+                controller_node,
+                self._owned_uri(f"sat-output-{controller.name}", handler),
+                controller.params.output_saturation,
+                output,
+                output,
+                controller,
+            )
+        if controller.params.integral_saturation is not None:
+            integral = self._owned_uri(f"integral-state-{controller.name}", handler)
+            self.graph.add((integral, RDF.type, QUDT_SCHEMA.Quantity))
+            self._emit_saturation(
+                controller_node,
+                self._owned_uri(f"sat-integral-{controller.name}", handler),
+                controller.params.integral_saturation,
+                integral,
+                integral,
+                controller,
+            )
 
     def _emit_error_evaluator(
         self,
@@ -2561,168 +2589,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((eval_node, CSTR_HDL.error, error_node))
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
-    def _emit_pose_diff_evaluator(
-        self,
-        handler_node: URIRef,
-        ctrl: ControllerEntry,
-        spec: ConstraintSpecification,
-        qty: WorldQuantity,
-        ref_uri: URIRef,
-        components: tuple[PoseDiffComponentRecord, ...],
-        seen_eval_ids: set[str],
-    ) -> None:
-        """Emit a pose-difference evaluator computing the 6D error between a pose quantity and its
-        reference, with linear/angular sub-coordinates, and its per-component controllers.
-        """
-        eval_id = f"eval-pose-diff-{ctrl.name}"
-        eval_node = self._owned_uri(eval_id, spec.parent)
-        if eval_id not in seen_eval_ids:
-            seen_eval_ids.add(eval_id)
-            diff_id = f"pose-diff-{ctrl.name}"
-            diff_node = self._owned_uri(diff_id, spec.parent)
-            ref_point_node = self._owned_uri(f"point-{diff_id}-origin", spec.parent)
-            props = qty.props if isinstance(qty.props, GeometricProps) else None
-            as_seen_by = _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
-            if as_seen_by is None:
-                raise ValueError(
-                    f"Pose equality constraint '{spec.name}' needs an as-seen-by or wrt frame."
-                )
-
-            self.graph.add((eval_node, RDF.type, CSTR_HDL.ConstraintEvaluator))
-            self.graph.add((eval_node, RDF.type, GEOM_OP_EXT["PoseDiffEvaluator"]))
-            self.graph.add((eval_node, CSTR_HDL.constraint, URIRef(spec.uri)))
-            self.graph.add((eval_node, GEOM_OP.in1, URIRef(qty.uri)))
-            self.graph.add((eval_node, GEOM_OP.in2, ref_uri))
-            self.graph.add((eval_node, GEOM_OP.out, diff_node))
-            self.graph.add((diff_node, RDF.type, GEOM_REL_EXT.PoseDifference))
-            self.graph.add((diff_node, RDF.type, _ns_term(GEOM_COORD, "PoseDifferenceCoordinate")))
-            self.graph.add((diff_node, RDF.type, GEOM_COORD.VectorXYZ))
-            self.graph.add((diff_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Angle))
-            self.graph.add((diff_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
-            self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]))
-            self.graph.add((diff_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-            # geom-coord-ext:PoseDifferenceCoordinate needs its own linear/angular VectorXYZ sub-
-            # resources for SHACL only; the twist storage and component views are unaffected.
-            linear_node = self._owned_uri(f"{diff_id}-linear", spec.parent)
-            angular_node = self._owned_uri(f"{diff_id}-angular", spec.parent)
-            self.graph.add((diff_node, _ns_term(GEOM_COORD, "linear"), linear_node))
-            self.graph.add((diff_node, _ns_term(GEOM_COORD, "angular"), angular_node))
-            self.graph.add((linear_node, RDF.type, GEOM_COORD.VectorXYZ))
-            self.graph.add((angular_node, RDF.type, GEOM_COORD.VectorXYZ))
-            self.graph.add((linear_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Length))
-            self.graph.add((linear_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
-            self.graph.add((angular_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Angle))
-            self.graph.add((angular_node, QUDT_SCHEMA.unit, QUDT_UNIT["RAD"]))
-            self.graph.add((diff_node, GEOM_REL["reference-point"], ref_point_node))
-            self.graph.add((diff_node, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by, qty)))
-            of_v = _geo_prop(props, "of")
-            wrt_v = _geo_prop(props, "wrt")
-            if of_v:
-                self.graph.add((diff_node, GEOM_REL.of, self._owned_uri(of_v, qty)))
-            if wrt_v:
-                self.graph.add(
-                    (diff_node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty))
-                )
-            self.graph.add((ref_point_node, RDF.type, GEOM_ENT.Point))
-
-            for component in components:
-                err_id = _pose_diff_error_id(ctrl, component)
-                err_node = self._owned_uri(err_id, spec.parent)
-                # Pose-diff components are position/orientation diffs (Length/Angle), not
-                # accelerations; the real ACHD path (SLV emission below) keeps its own records.
-                is_linear = component.part == "linear"
-                err_kind = QUDT_QKIND.Length if is_linear else QUDT_QKIND.Angle
-                err_unit = QUDT_UNIT.M if is_linear else QUDT_UNIT["RAD"]
-                self.graph.add((err_node, RDF.type, QUDT_SCHEMA.Quantity))
-                self._emit_quantity_kind(err_node, err_kind)
-                self.graph.add((err_node, QUDT_SCHEMA.unit, err_unit))
-                view_node = self._owned_uri(f"view-{err_id}", spec.parent)
-                self._emit_view(view_node)
-                self.graph.add((view_node, RDF.type, MAP_EXT.PoseDifferenceView))
-                self.graph.add((view_node, MAP.superobject, diff_node))
-                self.graph.add((view_node, MAP.subobject, err_node))
-                self.graph.add(
-                    (
-                        view_node,
-                        MAP.subspace,
-                        _ns_term(MAP_EXT, "linear") if is_linear else _ns_term(MAP_EXT, "angular"),
-                    )
-                )
-                self.graph.add((view_node, MAP.axis, MAP[component.axis]))
-        self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
-
-    def _emit_pose_diff_component_controllers(
-        self,
-        handler_node: URIRef,
-        handler: ConstraintHandler,
-        ctrl: ControllerEntry,
-        spec: ConstraintSpecification,
-        motion: GuardedMotion,
-        components: tuple[PoseDiffComponentRecord, ...],
-    ) -> None:
-        """Emit a per-axis component controller for each pose-diff component: `ctrl`'s gains,
-        the component error signal, an optional measured derivative, and an
-        acceleration-energy control signal.
-        """
-        for component in components:
-            err_id = _pose_diff_error_id(ctrl, component)
-            comp_ctrl_node = self._owned_uri(_pose_diff_controller_id(ctrl, component), handler)
-            energy_node = self._owned_uri(_pose_diff_energy_id(ctrl, component), motion)
-            self._emit_controller_base(comp_ctrl_node, ctrl)
-            self.graph.add(
-                (comp_ctrl_node, CSTR_HDL["error-signal"], self._owned_uri(err_id, spec.parent))
-            )
-            measured_derivative_node = self._emit_pose_diff_measured_derivative(
-                ctrl,
-                component,
-                spec.parent,
-            )
-            if measured_derivative_node is not None:
-                self.graph.add(
-                    (comp_ctrl_node, CSTR_HDL["measured-velocity"], measured_derivative_node)
-                )
-            self.graph.add((comp_ctrl_node, CSTR_HDL["control-signal"], energy_node))
-            self._emit_acceleration_energy_quantity(energy_node)
-            self.graph.add((handler_node, CSTR_HDL.controllers, comp_ctrl_node))
-
-    def _emit_pose_diff_measured_derivative(
-        self,
-        ctrl: ControllerEntry,
-        component: PoseDiffComponentRecord,
-        owner: Any,
-    ) -> URIRef | None:
-        """Emit and view the velocity-twist measured-derivative feeding a pose-diff component
-        controller, or None when none is declared. Returns the derivative node.
-        """
-        measured_derivative = getattr(ctrl.params, "measured_derivative", None)
-        if measured_derivative is None:
-            return None
-        quantity = getattr(measured_derivative, "quantity", None)
-        if not isinstance(quantity, WorldQuantity):
-            return None
-        quantity = _resolved_world_quantity(quantity)
-        if quantity.type != WorldQuantityType.VelocityTwist:
-            return None
-
-        subspace = component.part
-        scalar_type = (
-            QuantityType.LinearVelocity if subspace == "linear" else QuantityType.AngularVelocity
-        )
-        velocity_subspace = f"{subspace}-velocity"
-        node = self._owned_uri(_pose_diff_measured_derivative_id(ctrl, component), owner)
-        view_node = self._owned_uri(
-            f"view-{_pose_diff_measured_derivative_id(ctrl, component)}", owner
-        )
-        self._add_quantity(node, scalar_type)
-        if view_node not in self._emitted_views:
-            self._emit_view(view_node)
-            self.graph.add((view_node, RDF.type, MAP_EXT.VelocityTwistCoordinateView))
-            self.graph.add((view_node, MAP.superobject, URIRef(quantity.uri)))
-            self.graph.add((view_node, MAP.subobject, node))
-            self.graph.add((view_node, MAP.subspace, MAP[velocity_subspace]))
-            self.graph.add((view_node, MAP.axis, MAP[component.axis]))
-        return node
-
     def _emit_constraint_handler(
         self,
         handler: ConstraintHandler,
@@ -2740,16 +2606,13 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (handler_node, CSTR_HDL.motion, self._owned_uri(f"motion-{motion.name}", motion))
         )
-        self.graph.add(
-            (handler_node, CSTR_HDL_EXT["control-mode"], KC_STAT[handler.control_mode.value])
-        )
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
         self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
 
         seen_error_ids: set[str] = set()
         seen_eval_ids: set[str] = set()
 
-        for ctrl_item in getattr(handler, "controllers", []):
+        for controller_order, ctrl_item in enumerate(getattr(handler, "controllers", [])):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
             cref = ctrl.params.constraint
             spec = cref.constraint if hasattr(cref, "constraint") else None
@@ -2770,6 +2633,32 @@ class MotionSpecDatasetBuilder:
             scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
             command = controller_command_record(ctrl)
 
+            authored_ctrl_node = URIRef(ctrl.uri)
+            self._emit_controller_base(authored_ctrl_node, ctrl)
+            self.graph.add((authored_ctrl_node, APP.order, Literal(controller_order)))
+            self.graph.add((authored_ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
+            measured_derivative = getattr(ctrl.params, "measured_derivative", None)
+            derivative_quantity = getattr(measured_derivative, "quantity", None)
+            if isinstance(derivative_quantity, WorldQuantity):
+                self.graph.add(
+                    (
+                        authored_ctrl_node,
+                        CSTR_HDL["measured-velocity"],
+                        URIRef(_resolved_world_quantity(derivative_quantity).uri),
+                    )
+                )
+            solver = self._controller_solver(handler, ctrl)
+            if solver is not None:
+                self.graph.add(
+                    (
+                        authored_ctrl_node,
+                        CSTR_HDL_EXT.solver,
+                        self._solver_node(handler, motion, solver),
+                    )
+                )
+
+            self._emit_controller_limits(authored_ctrl_node, ctrl, command, handler)
+
             controller_error_id: str | None = None
             evaluator_error_id: str | None = None
             if qty is not None:
@@ -2788,57 +2677,14 @@ class MotionSpecDatasetBuilder:
                 and qty.type == WorldQuantityType.Pose
                 and subspace in {"pose", "position", "orientation", "distance", "rotation"}
                 and axis is None
-                and command.acceleration_constraints
+                and command.controlled_axes
                 and isinstance(spec.expr, EqualityConstraint)
                 and not _is_distance_view(spec)
             ):
-                ref_uri = None
-                if subspace == "pose":
-                    # Full-pose equality: the reference-value already encodes frame conversion, so the diff
-                    # must be taken against that world-frame pose, not the raw reference frame.
-                    ref_uri = self._reference_value_index.get(URIRef(spec.uri))
-                else:
-                    # Position/orientation diffs extract components from the parent
-                    # pose/trajectory frame, so the evaluator needs that frame itself
-                    # (a coordinate node is not a Frame).
-                    ref_qty = _context_quantity(spec.expr.reference)
-                    if ref_qty is not None and getattr(ref_qty, "type", None) in {
-                        QuantityType.Pose,
-                        ReferenceGeneratorType.Trajectory,
-                    }:
-                        ref_uri = (
-                            self._reference_output_node(ref_qty)
-                            if ref_qty.type == ReferenceGeneratorType.Trajectory
-                            else URIRef(ref_qty.uri)
-                        )
-                if ref_uri is None:
-                    ref_uri = self._reference_value_index.get(URIRef(spec.uri))
-                if ref_uri is not None:
-                    # Translate the shared ACHD acceleration-axis enumeration into the
-                    # neutral linear/angular vocabulary the pose-diff path means (D4).
-                    pose_diff_comps = pose_diff_components(command.acceleration_constraints)
-                    self._emit_pose_diff_evaluator(
-                        handler_node,
-                        ctrl,
-                        spec,
-                        qty,
-                        URIRef(ref_uri),
-                        pose_diff_comps,
-                        seen_eval_ids,
-                    )
-                    self._emit_pose_diff_component_controllers(
-                        handler_node,
-                        handler,
-                        ctrl,
-                        spec,
-                        motion,
-                        pose_diff_comps,
-                    )
-                    continue
+                self.graph.add((handler_node, CSTR_HDL.controllers, authored_ctrl_node))
+                continue
 
-            ctrl_node = URIRef(ctrl.uri)
-            self._emit_controller_base(ctrl_node, ctrl)
-            self.graph.add((ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
+            ctrl_node = authored_ctrl_node
             if controller_error_id:
                 self.graph.add(
                     (
@@ -2857,30 +2703,6 @@ class MotionSpecDatasetBuilder:
                         (ctrl_node, CSTR_HDL_EXT["reference-signal"], URIRef(ref_qty.uri))
                     )
 
-            control_signal_node = self._decode_control_signal(
-                ctrl, qty, subspace, axis, motion, handler, shared
-            )
-            if ctrl.params.output_saturation is not None:
-                self._emit_saturation(
-                    ctrl_node,
-                    self._owned_uri(f"sat-output-{ctrl.name}", handler),
-                    ctrl.params.output_saturation,
-                    control_signal_node,
-                    control_signal_node,
-                    ctrl,
-                )
-            if ctrl.params.integral_saturation is not None:
-                integral_node = self._owned_uri(f"integral-state-{ctrl.name}", handler)
-                self.graph.add((integral_node, RDF.type, QUDT_SCHEMA.Quantity))
-                self._emit_saturation(
-                    ctrl_node,
-                    self._owned_uri(f"sat-integral-{ctrl.name}", handler),
-                    ctrl.params.integral_saturation,
-                    integral_node,
-                    integral_node,
-                    ctrl,
-                )
-            self.graph.add((ctrl_node, CSTR_HDL["control-signal"], control_signal_node))
             self.graph.add((handler_node, CSTR_HDL.controllers, ctrl_node))
 
             if evaluator_error_id and evaluator_error_id not in seen_error_ids:
@@ -3032,7 +2854,10 @@ class MotionSpecDatasetBuilder:
                     if mon.debounce_duration is not None:
                         debounce_node = URIRef(f"{mon.uri}.debounce")
                         self._emit_scalar_quantity(
-                            debounce_node, mon.debounce_duration, QUDT_QKIND.Time, QUDT_UNIT.SEC
+                            debounce_node,
+                            mon.debounce_duration,
+                            NS_MM_QUDT_QTY["Time"],
+                            QUDT_UNIT.SEC,
                         )
                         self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
                 else:
@@ -3117,7 +2942,10 @@ class MotionSpecDatasetBuilder:
                 if mon.debounce_duration is not None:
                     debounce_node = URIRef(f"{mon.uri}.debounce")
                     self._emit_scalar_quantity(
-                        debounce_node, mon.debounce_duration, QUDT_QKIND.Time, QUDT_UNIT.SEC
+                        debounce_node,
+                        mon.debounce_duration,
+                        NS_MM_QUDT_QTY["Time"],
+                        QUDT_UNIT.SEC,
                     )
                     self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
             else:
@@ -3125,98 +2953,28 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
             self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
 
-    def _decode_control_signal(
+    def _forwarded_command_signal(
         self,
         ctrl: ControllerEntry,
         qty: WorldQuantity | None,
         subspace: str,
         axis: str | None,
-        motion: GuardedMotion,
         handler: ConstraintHandler,
-        shared: bool,
     ) -> URIRef:
-        """The signal node a controller feeds into its solver: an acceleration-energy quantity
-        (ACHD/RNE), or a joint torque for a posture-torque command.
-        """
-        solver = self._controller_solver(handler, ctrl)
-        command = controller_command_record(ctrl)
+        """Emit the authored signal forwarded directly to a device command."""
+        signal = self._owned_uri(f"cmd-{ctrl.name}", handler)
+        signal_type = _scalar_type(qty, subspace, axis) if qty else QuantityType.FreeVector
+        self._add_quantity(signal, signal_type)
+        return signal
 
-        if ctrl.type == ControllerType.FeedForward:
-            signal_node = self._owned_uri(f"cmd-{ctrl.name}", handler)
-            signal_type = (
-                _scalar_type(qty, subspace, axis) if qty is not None else QuantityType.FreeVector
-            )
-            self._add_quantity(signal_node, signal_type)
-            return signal_node
-
-        if solver is None:
-            raise ValueError(
-                f"Controller '{ctrl.name}' cannot resolve a solver; specify 'via <solver>' "
-                "or ensure the handler has exactly one compatible solver."
-            )
-        if qty is None:
-            raise ValueError(
-                f"Controller '{ctrl.name}' cannot emit a control signal without a resolved quantity."
-            )
-        algorithm = getattr(solver, "algorithm", None)
-
-        ws_spec = WORLD_SPECS.get(qty.type) if qty else None
-        prop = ws_spec[3].get(subspace) if ws_spec else None
-        accel_prefix = prop[2] if prop else None
-        accel_subspace_label = prop[1] if prop else None
-
-        # Cartesian force command: controller output is a force magnitude.
-        if qty is not None and command.is_force_command:
-            return self._force_control_signal_node(ctrl, handler)
-
-        # Acceleration energy for dynamics solvers. A distance-between-poses control
-        # constraint has no axis (it's a single direction-aligned constraint, not a
-        # per-axis one) but is otherwise the same acceleration-energy PID signal.
-        if (
-            algorithm in {"ACHD", "RNE"}
-            and qty is not None
-            and (axis is not None or subspace == "distance")
-            and accel_prefix is not None
-            and accel_subspace_label is not None
-            and command.acceleration_constraints
-        ):
-            sid = _scalar_id(qty, subspace, axis)
-            stem = f"eacc-{sid}"
-            energy_id = stem if shared else f"{stem}-{motion.name}"
-            energy_node = self._owned_uri(energy_id, motion)
-            self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add(
-                (energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy)
-            )
-            self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
-            return energy_node
-
-        # Direct joint-space torque
-        if (
-            algorithm == "ACHD"
-            and command.is_posture_torque_command
-            and qty is not None
-            and qty.type == WorldQuantityType.JointPosition
-        ):
-            signal_id = f"tau-{ctrl.name}"
-            signal_node = self._owned_uri(signal_id, handler)
-            self.graph.add((signal_node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((signal_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Torque))
-            self.graph.add((signal_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
-            return signal_node
-
-        energy_node = self._owned_uri(f"eacc-{ctrl.name}", motion)
-        self.graph.add((energy_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((energy_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.AccelerationEnergy))
-        self.graph.add((energy_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M2-PER-SEC2"]))
-        return energy_node
+    def _solver_node(self, handler, motion, solver) -> URIRef:
+        return self._owned_uri(f"{solver.name}-{motion.name}", handler)
 
     def _emit_solvers(
         self,
         handler: ConstraintHandler,
         motion: GuardedMotion,
         world_qtys: dict[str, WorldQuantity],
-        shared_spec_ids: frozenset[ConstraintSpecification],
     ) -> None:
         """Emit each of a handler's motion drivers/solvers with its algorithm and interfaces."""
         solvers = [_resolved_solver(s) for s in getattr(handler, "solvers", [])]
@@ -3226,7 +2984,6 @@ class MotionSpecDatasetBuilder:
             if not getattr(solver, "algorithm", ""):
                 continue
 
-            solver_stem = solver.name
             driver_stem = (
                 f"{solver.name}-{motion.name or handler.name}"
                 if multi
@@ -3236,7 +2993,7 @@ class MotionSpecDatasetBuilder:
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
 
-            solver_node = self._owned_uri(f"{solver_stem}-{motion.name}", handler)
+            solver_node = self._solver_node(handler, motion, solver)
             robot_uri = getattr(solver.agent, "uri", None)
             if robot_uri:
                 self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
@@ -3250,10 +3007,8 @@ class MotionSpecDatasetBuilder:
                     motion,
                     solver,
                     solver_node,
-                    driver_stem,
                     driver_node,
                     world_qtys,
-                    shared_spec_ids,
                 )
                 continue
 
@@ -3308,15 +3063,28 @@ class MotionSpecDatasetBuilder:
                 str(entry.target): entry.saturation
                 for entry in getattr(getattr(solver, "limits", None), "entries", [])
             }
-            if "torque" in solver_limits_by_target:
-                torque_signal = self._owned_uri(f"torque-output-{solver.name}", handler)
-                self._add_quantity(torque_signal, QuantityType.Torque)
+            limit_quantity_types = {
+                "torque": QuantityType.Torque,
+                "linear-acceleration": QuantityType.LinearAcceleration,
+                "angular-acceleration": QuantityType.AngularAcceleration,
+            }
+            for target, quantity_type in limit_quantity_types.items():
+                saturation = solver_limits_by_target.get(target)
+                if saturation is None:
+                    continue
+                signal_name = (
+                    f"torque-output-{solver.name}"
+                    if target == "torque"
+                    else f"limit-target-{solver.name}-{target}"
+                )
+                signal = self._owned_uri(signal_name, handler)
+                self._add_quantity(signal, quantity_type)
                 self._emit_saturation(
                     solver_node,
-                    self._owned_uri(f"sat-torque-{solver.name}", handler),
-                    solver_limits_by_target["torque"],
-                    torque_signal,
-                    torque_signal,
+                    self._owned_uri(f"sat-{target}-{solver.name}", handler),
+                    saturation,
+                    signal,
+                    signal,
                     solver,
                 )
 
@@ -3327,10 +3095,8 @@ class MotionSpecDatasetBuilder:
                 motion,
                 solver,
                 solver_node,
-                driver_stem,
                 driver_node,
                 world_qtys,
-                shared_spec_ids,
             )
 
     def _emit_solver_interfaces(
@@ -3339,42 +3105,10 @@ class MotionSpecDatasetBuilder:
         motion: GuardedMotion,
         solver: Any,
         solver_node: URIRef,
-        stem: str,
         driver_node: URIRef,
         world_qtys: dict[str, WorldQuantity],
-        shared_spec_ids: frozenset[ConstraintSpecification],
     ) -> None:
-        """Emit a solver's interfaces: per-axis acceleration constraints (with saturations)
-        attached to the driver, plus force-distribution and spec-acceleration nodes.
-        """
-        acc_constraint_nodes: list[URIRef] = []
-        solver_limits_by_target = {
-            str(entry.target): entry.saturation
-            for entry in getattr(getattr(solver, "limits", None), "entries", [])
-        }
-
-        def emit_acceleration_saturation(
-            acc_node: URIRef,
-            energy_node: URIRef,
-            accel_subspace: str,
-            name: str,
-        ) -> None:
-            target = (
-                "linear-acceleration"
-                if accel_subspace == "linear-acceleration"
-                else "angular-acceleration"
-            )
-            saturation = solver_limits_by_target.get(target)
-            if saturation is None:
-                return
-            self._emit_saturation(
-                acc_node,
-                self._owned_uri(f"sat-{name}", motion),
-                saturation,
-                energy_node,
-                energy_node,
-                solver,
-            )
+        """Emit authored force, forwarding, and auxiliary solver interfaces."""
 
         for ctrl_item in getattr(handler, "controllers", []):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
@@ -3395,79 +3129,14 @@ class MotionSpecDatasetBuilder:
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
-            shared = spec in shared_spec_ids
             command = controller_command_record(ctrl)
-            axis_acceleration = (
-                command.acceleration_constraints[0]
-                if axis is not None and command.acceleration_constraints
-                else None
-            )
 
             if solver.algorithm == "CommandForwarding" and ctrl.type == ControllerType.FeedForward:
-                control_signal_node = self._decode_control_signal(
-                    ctrl, qty, subspace, axis, motion, handler, shared
+                control_signal_node = self._forwarded_command_signal(
+                    ctrl, qty, subspace, axis, handler
                 )
                 self.graph.add((solver_node, SLV.output, control_signal_node))
                 continue
-
-            if (
-                solver.algorithm in {"ACHD", "RNE"}
-                and qty.type == WorldQuantityType.Pose
-                and subspace in {"pose", "position", "orientation"}
-                and axis is None
-                and command.acceleration_constraints
-            ):
-                axis_frame = _quantity_axis_frame(qty)
-                for component in command.acceleration_constraints:
-                    energy_node = self._owned_uri(_pose_diff_energy_id(ctrl, component), motion)
-                    acc_node = self._owned_uri(f"acc-cstr-{ctrl.name}-{component.suffix}", motion)
-                    self.graph.add((acc_node, RDF.type, SLV.AccelerationConstraint))
-                    self.graph.add((acc_node, RDF.type, SLV.AxisAligned))
-                    self.graph.add((acc_node, SLV.subspace, SLV[component.subspace]))
-                    self.graph.add((acc_node, SLV.axis, SLV[component.axis]))
-                    self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
-                    emit_acceleration_saturation(
-                        acc_node,
-                        energy_node,
-                        component.subspace,
-                        f"{ctrl.name}-{component.suffix}",
-                    )
-                    if axis_frame:
-                        self.graph.add(
-                            (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
-                        )
-                    acc_constraint_nodes.append(acc_node)
-
-            if (
-                solver.algorithm in {"ACHD", "RNE"}
-                and axis is not None
-                and axis_acceleration is not None
-            ):
-                sid = _scalar_id(qty, subspace, axis)
-                energy_stem = f"eacc-{sid}"
-                energy_id = energy_stem if shared else f"{energy_stem}-{motion.name}"
-                acc_stem = f"acc-cstr-{sid}"
-                acc_id = acc_stem if shared else f"{acc_stem}-{motion.name}"
-
-                acc_node = self._owned_uri(acc_id, motion)
-                energy_node = self._owned_uri(energy_id, motion)
-                self.graph.add((acc_node, RDF.type, SLV.AccelerationConstraint))
-                self.graph.add((acc_node, RDF.type, SLV.AxisAligned))
-                self.graph.add((acc_node, SLV.subspace, SLV[axis_acceleration.subspace]))
-                self.graph.add((acc_node, SLV.axis, SLV[axis]))
-                self.graph.add((acc_node, SLV["acceleration-energy"], energy_node))
-                emit_acceleration_saturation(
-                    acc_node,
-                    energy_node,
-                    axis_acceleration.subspace,
-                    acc_id,
-                )
-                axis_frame = _quantity_axis_frame(qty)
-                if axis_frame:
-                    self.graph.add(
-                        (acc_node, GEOM_COORD["as-seen-by"], self._owned_uri(axis_frame, qty))
-                    )
-                acc_constraint_nodes.append(acc_node)
 
             if command.is_force_command:
                 force_signal_node = self._force_control_signal_node(ctrl, handler)
@@ -3528,32 +3197,6 @@ class MotionSpecDatasetBuilder:
             f_qty = self._resolve_qty(force_solver.force, world_qtys)
             if f_qty:
                 self.graph.add((fs_node, SLV.force, URIRef(f_qty.uri)))
-
-        if acc_constraint_nodes:
-            spec_acc_node = self._owned_uri(f"spec-acc-{stem}", motion)
-            self.graph.add((spec_acc_node, RDF.type, SLV.AccelerationConstraintSpecification))
-            attached_to: URIRef | None = None
-            for ctrl_item in getattr(handler, "controllers", []):
-                ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
-                if self._controller_solver(handler, ctrl) is not solver:
-                    continue
-                cref = ctrl.params.constraint
-                spec = cref.constraint if hasattr(cref, "constraint") else None
-                if spec is None:
-                    continue
-                qty = self._resolve_constraint_quantity(spec, world_qtys)
-                props = (
-                    qty.props if qty is not None and isinstance(qty.props, GeometricProps) else None
-                )
-                target_name = _geo_prop(props, "of")
-                if target_name:
-                    attached_to = self._owned_uri(target_name, qty)
-                    break
-            if attached_to is not None:
-                self.graph.add((spec_acc_node, SLV["attached-to"], attached_to))
-            for acc_node in acc_constraint_nodes:
-                self.graph.add((spec_acc_node, SLV.constraints, acc_node))
-            self.graph.add((driver_node, SLV["acceleration-constraint"], spec_acc_node))
 
     def _controller_solver(self, handler: ConstraintHandler, ctrl: ControllerEntry) -> Any:
         """The solver that runs `ctrl`: its explicit solver, the sole solver, or the one matching

@@ -11,14 +11,9 @@ from typing import Any
 from rdflib.term import URIRef
 
 
-from motion_spec_dsl.controller_semantics import (
-    AccelerationConstraintRecord,
-    PoseDiffComponentRecord,
-    constraint_view_subspace,
-)
+from motion_spec_dsl.controller_semantics import constraint_view_subspace
 from motion_spec_dsl.classes import (
     ConstraintSpecification,
-    ControllerEntry,
     ContextRef,
     GeoPropPair,
     GeometricProps,
@@ -98,31 +93,6 @@ def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
     if quantity.type == WorldQuantityType.Pose:
         return _geo_prop(props, "wrt")
     return None
-
-
-def _pose_diff_error_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
-    return f"{ctrl.name}-err-{component.suffix}"
-
-
-def _pose_diff_controller_id(ctrl: ControllerEntry, component: PoseDiffComponentRecord) -> str:
-    return f"{ctrl.name}-{component.suffix}"
-
-
-def _pose_diff_energy_id(
-    ctrl: ControllerEntry, component: AccelerationConstraintRecord | PoseDiffComponentRecord
-) -> str:
-    """Id of the acceleration-energy node linking control-signal to acceleration-energy.
-
-    Shared by the pose-diff component controller (neutral record) and the ACHD
-    acceleration-constraint emission (acceleration record): both must agree on this URI.
-    """
-    return f"eacc-{ctrl.name}-{component.suffix}"
-
-
-def _pose_diff_measured_derivative_id(
-    ctrl: ControllerEntry, component: PoseDiffComponentRecord
-) -> str:
-    return f"{ctrl.name}-measured-derivative-{component.suffix}"
 
 
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:

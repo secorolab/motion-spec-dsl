@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH
+from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
 from motion_spec.namespace import (
     ALGO_EXT,
@@ -29,7 +31,6 @@ from motion_spec.namespace import (
     MOT,
     QUDT_QKIND,
     QUDT_SCHEMA,
-    QUDT_UNIT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
@@ -93,7 +94,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
             GEOM_COORD.DirectionCosineXYZ,
             GEOM_COORD.VectorXYZ,
         ),
-        (QUDT_QKIND.PlaneAngle, QUDT_QKIND.Length),
+        (QUDT_QKIND.PlaneAngle, URI_QUDT_QK_LENGTH),
         (QUDT_UNIT.UNITLESS, QUDT_UNIT.M),
         {
             "rotation": (
@@ -179,12 +180,12 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.VelocityTwist: GEOM_REL.VelocityTwist,
     QuantityType.AccelerationTwist: GEOM_REL.AccelerationTwist,
     QuantityType.Wrench: RBDYN_ENT.Wrench,
-    QuantityType.Direction: QUDT_QKIND.Dimensionless,
-    QuantityType.FreeVector: QUDT_QKIND.FreeVector,
-    QuantityType.Dimensionless: QUDT_QKIND.Dimensionless,
-    QuantityType.Duration: QUDT_QKIND.Time,
-    QuantityType.PathParameter: QUDT_QKIND.Dimensionless,
-    QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
+    QuantityType.Direction: NS_MM_QUDT_QTY["Dimensionless"],
+    QuantityType.FreeVector: NS_MM_QUDT_QTY["FreeVector"],
+    QuantityType.Dimensionless: NS_MM_QUDT_QTY["Dimensionless"],
+    QuantityType.Duration: NS_MM_QUDT_QTY["Time"],
+    QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
+    QuantityType.LinearJerk: NS_MM_QUDT_QTY["LinearJerk"],
 }
 
 # QUDT quantity-kinds are individuals, not classes; used to tell them apart from

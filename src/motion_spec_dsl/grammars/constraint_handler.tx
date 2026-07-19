@@ -21,7 +21,6 @@ ConstraintHandler:
     "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("context"    "{" context*=HandlerContextItem[","] "}")?
         "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
-        "control-mode" ":" control_mode=HandlerControlMode
         ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
         "controllers"  "{" controllers*=ControllerItem[","]? "}"
         "solvers"      "{" solvers+=SolverItem[","] "}"
@@ -40,7 +39,7 @@ MonitorEntry:
     (
         ("on" "activation" "trigger" "event" event=EventName
             ("after" "active" "for" debounce=Measure)?
-            ("while" "waiting" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?) |
+            ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?) |
         ("while" "active" "set" "flag" flag=IRI_TRUNK)
     )
 ;
@@ -72,7 +71,6 @@ ControllerParams:
 
 ControllerParam: name=ControllerParamName ":" value=FLOAT ;
 ControllerParamName: "Kp" | "Ki" | "Kd" | "stiffness" | "damping" | "decay" ;
-HandlerControlMode: "joint-force" ;
 MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
 UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
 WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;

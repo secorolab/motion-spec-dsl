@@ -31,10 +31,6 @@ from motion_spec_dsl.classes.common import (
 )
 
 
-class HandlerControlMode(StrEnum):
-    JointForce = "JointForce"
-
-
 class ControllerType(StrEnum):
     PID = "PID"
     Impedance = "Impedance"
@@ -126,14 +122,12 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     context: list[WorldContextDecl | SpecContextDecl | ContextDeclReference]
     motion: GuardedMotion
-    control_mode: HandlerControlMode
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        self.control_mode = _authored_enum(HandlerControlMode, str(self.control_mode))
 
 
 @dataclass

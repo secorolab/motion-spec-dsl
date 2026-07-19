@@ -13,7 +13,7 @@ from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.ir_gen import _load_graph, generate_ir
+from motion_spec.ir_gen import _authored_controller_axes, _load_graph, generate_ir
 from motion_spec.namespace import (
     ALGO_EXT,
     APP,
@@ -151,8 +151,10 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     forwarded = [command for motion in ir["motions"] for command in motion.forwarded_commands]
     assert len(forwarded) == 6
     assert all(command.target for command in forwarded)
-
     graph = _load_graph(generated_model)[1]
+    authored_axes = _authored_controller_axes(graph)
+    assert authored_axes
+    assert sum(len(axes) for axes in authored_axes.values()) == 60
     forwarding_solvers = set(graph.subjects(RDF.type, SLV_EXT.CommandForwardingSolver))
     assert forwarding_solvers
     assert all(graph.value(solver, SLV.output) is not None for solver in forwarding_solvers)
@@ -185,6 +187,37 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
         arm_solver.tool_body,
         arm_solver.tcp_site,
     ) == ("base_link", "bracelet_link", "g_base", "g_pinch")
+    assert {
+        "pose_cube_base",
+        "pose_ee_base",
+        "pose_elbow_base",
+        "twist_ee_base",
+        "gripper_pos",
+    } <= {output.id for output in arm_solver.output}
+    cube_pose = next(output for output in arm_solver.output if output.id == "pose_cube_base")
+    assert (cube_pose.of.id, cube_pose.of.body, cube_pose.of.is_scene_object) == (
+        "cube",
+        "cube",
+        True,
+    )
+    pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
+    scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
+    interpolation = next(
+        closure for closure in scheduled if closure["type"] == "CartesianPoseInterpolation"
+    )
+    assert (interpolation["trajectory"], interpolation["path_parameter"]) == (
+        "reference",
+        "progress",
+    )
+    assert interpolation["assign_goal"]
+    assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
+    assert any(component["id"] == "goal_pose" for component in pick_above.declared_pose_components)
+    assert {snapshot.target_id for snapshot in pick_above.snapshots} >= {
+        "start_pose",
+        "start_cube_x",
+        "start_cube_y",
+    }
+    assert pick_above.time_trajectory_progress_ids == ["progress"]
     pose_ee_base = next(item for item in ir["shared_data"] if item.id == "pose_ee_base")
     assert pose_ee_base.with_respect_to.id == "base_link"
 
