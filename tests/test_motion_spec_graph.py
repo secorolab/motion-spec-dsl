@@ -41,7 +41,7 @@ def generated_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     metamodel = motion_spec_metamodel()
     model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return tmp_path / "pick_place_single-app.jsonld"
+    return tmp_path / "pick_place_single-app.ld.json"
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ def generated_dual_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     metamodel = motion_spec_metamodel()
     model = metamodel.model_from_file(MODELS / "pick_place_dual" / "pick_place_dual.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return tmp_path / "pick_place_dual-app.jsonld"
+    return tmp_path / "pick_place_dual-app.ld.json"
 
 
 def test_dual_arm_velocity_profiles_reach_ir(generated_dual_model: Path) -> None:
@@ -105,11 +105,11 @@ def test_dual_arm_velocity_profiles_reach_ir(generated_dual_model: Path) -> None
 
 def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Path) -> None:
     output = generated_model.parent
-    assert (output / "pick_place_single.jsonld").exists()
-    assert (output / "pick_place_single.scenex.jsonld").exists()
-    assert (output / "pick_place_single_fsm.jsonld").exists()
+    assert (output / "pick_place_single.ld.json").exists()
+    assert (output / "pick_place_single.scenex.ld.json").exists()
+    assert (output / "pick_place_single_fsm.ld.json").exists()
 
-    provenance = Graph().parse(output / "provenance" / "dsl.jsonld", format="json-ld")
+    provenance = Graph().parse(output / "provenance" / "dsl.ld.json", format="json-ld")
     prov = Namespace("http://www.w3.org/ns/prov#")
     activity = URIRef(
         "https://secorolab.github.io/motion-spec-dsl/provenance/"
@@ -217,7 +217,7 @@ def test_non_pose_component_views_keep_their_subspace(
         MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
     )
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    graph = _load_graph(tmp_path / "admittance_arc_single-app.jsonld")[1]
+    graph = _load_graph(tmp_path / "admittance_arc_single-app.ld.json")[1]
     wrench_views = set(graph.subjects(RDF.type, MAP_EXT.WrenchCoordinateView))
     twist_views = set(graph.subjects(RDF.type, MAP_EXT.VelocityTwistCoordinateView))
     assert wrench_views and twist_views

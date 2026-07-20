@@ -31,7 +31,7 @@ def interaction_ir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
     )
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return generate_ir(tmp_path / "admittance_arc_single-app.jsonld")
+    return generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
 
 
 def _motion(ir: dict, motion_id: str):

@@ -44,7 +44,7 @@ def constraint_graph(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Graph:
     model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     dataset = Dataset()
-    dataset.parse(str(tmp_path / "pick_place_single.jsonld"), format="json-ld")
+    dataset.parse(str(tmp_path / "pick_place_single.ld.json"), format="json-ld")
     graph = Graph()
     for quad in dataset.quads((None, None, None, None)):
         graph.add(quad[:3])
@@ -127,7 +127,7 @@ def test_authored_output_limit_binds_to_derived_signal(
     )
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
 
-    graph = Graph().parse(tmp_path / "pick_place_single.jsonld", format="json-ld")
+    graph = Graph().parse(tmp_path / "pick_place_single.ld.json", format="json-ld")
     controller = next(
         node
         for node in graph.subjects(RDF.type, CSTR_HDL.Controller)
@@ -139,7 +139,7 @@ def test_authored_output_limit_binds_to_derived_signal(
         authored_output : QUDT_SCHEMA.hasQuantityKind
     ]
 
-    ir = generate_ir(tmp_path / "pick_place_single-app.jsonld")
+    ir = generate_ir(tmp_path / "pick_place_single-app.ld.json")
     shared_ids = {getattr(item, "id", None) or item["id"] for item in ir["shared_data"]}
     controllers = [
         controller for handler in ir["cstr_hdl"] for controller in handler.controllers

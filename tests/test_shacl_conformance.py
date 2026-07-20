@@ -34,7 +34,7 @@ def test_example_model_conforms_to_shacl(tmp_path: Path) -> None:
             sys.executable,
             "-m",
             "motion_spec.check",
-            str(generated / "pick_place_single-app.jsonld"),
+            str(generated / "pick_place_single-app.ld.json"),
         ],
         cwd=MODEL.parent,
         env=env,

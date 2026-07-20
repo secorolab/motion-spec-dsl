@@ -14,6 +14,7 @@ from typing import Any
 
 import pyshacl
 from rdf_utils.resolver import IriToFileResolver, install_resolver
+from rdflib import Dataset, URIRef
 from rdflib.namespace import Namespace
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
@@ -354,9 +355,9 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
 
 
 def _artifact_role(name: str) -> str:
-    if name.endswith("-app.jsonld"):
+    if name.endswith("-app.ld.json"):
         return "app_manifest"
-    if name == "provenance/dsl.jsonld":
+    if name == "provenance/dsl.ld.json":
         return "provenance"
     if name == "fsm_ir.json":
         return "fsm_ir"
@@ -364,7 +365,7 @@ def _artifact_role(name: str) -> str:
         return "fsm_header"
     if name.endswith(("_fsm.dot", "_fsm.svg")):
         return "fsm_graphviz"
-    if name.endswith(".scenex.jsonld"):
+    if name.endswith(".scenex.ld.json"):
         return "scene_graph"
     return "generated_graph"
 
@@ -422,7 +423,7 @@ def _build_provenance_document(
     """The DSL's own provenance: what motion-spec-dsl generated directly, plus what it
     delegated to coord-dsl (FSM) and scene-dsl (scenex) -- each attributed to its own
     agent rather than folded into motion_spec_dsl. coord-dsl also writes its own, richer
-    provenance.jsonld beside its artifacts; a pointer entity here links to it rather than
+    provenance.ld.json beside its artifacts; a pointer entity here links to it rather than
     duplicating its activity detail (this document is SHACL-validated standalone, so any
     node referenced by @id must be described here too -- see `_tool_activity`).
     """
@@ -485,12 +486,12 @@ def _build_provenance_document(
                 "generatedAtTime": generated_at,
             }
         )
-    if fsm_tool_names and (output_dir / "provenance.jsonld").exists():
+    if fsm_tool_names and (output_dir / "provenance.ld.json").exists():
         graph.append(
             {
                 "@id": "dslprov:entity/provenance/coord_dsl",
                 "@type": ["prov:Entity"],
-                "atLocation": (output_dir / "provenance.jsonld").resolve().as_uri(),
+                "atLocation": (output_dir / "provenance.ld.json").resolve().as_uri(),
                 "wasAttributedTo": "dslprov:agent/coord_dsl",
             }
         )
@@ -513,18 +514,21 @@ def _slug(value: str) -> str:
 
 
 def _validate_provenance_artifact(path: Path) -> None:
-    metamodels = Path(os.environ.get("METAMODELS_PATH", ""))
-    if not (metamodels / "prov.shacl.ttl").exists():
-        raise RuntimeError("METAMODELS_PATH must point to metamodels containing prov.shacl.ttl")
-    install_resolver(
-        IriToFileResolver(
-            {"https://secorolab.github.io/metamodels/": str(metamodels)}, download=False
+    base = "https://secorolab.github.io/metamodels/"
+    override = os.environ.get("METAMODELS_PATH")
+    shape: str | Path = f"{base}prov.shacl.ttl"
+    if override:
+        metamodels = Path(override)
+        if not (metamodels / "prov.shacl.ttl").is_file():
+            raise RuntimeError(f"METAMODELS_PATH={override} does not contain prov.shacl.ttl")
+        install_resolver(
+            IriToFileResolver({base: str(metamodels)}, download=False)
         )
-    )
+        shape = metamodels / "prov.shacl.ttl"
     conforms, _graph, report = pyshacl.validate(
         data_graph=str(path),
         data_graph_format="json-ld",
-        shacl_graph=str(metamodels / "prov.shacl.ttl"),
+        shacl_graph=str(shape),
     )
     if not conforms:
         raise RuntimeError(f"{path}: PROV SHACL validation failed\n{report}")
@@ -548,14 +552,11 @@ def _source_paths(model: Model) -> list[Path]:
 def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     """Serialize the FSM rdflib graph as a JSON-LD *named graph* (@id = the FSM IRI) so
     it stays a distinct graph when ir_gen unions it into the model dataset."""
-    body = graph.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
-    body = body.decode() if isinstance(body, bytes) else body
-    doc = json.loads(body)
-    nodes = doc.get("@graph", [doc] if "@id" in doc else [])
-    return json.dumps(
-        {"@context": doc.get("@context", context), "@id": str(fsm_ref), "@graph": nodes},
-        indent=2,
-    )
+    dataset = Dataset()
+    named_graph = dataset.graph(URIRef(fsm_ref))
+    for triple in graph:
+        named_graph.add(triple)
+    return dataset.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
 
 
 def _gen_scenex(model, output_dir: Path) -> list[str]:
@@ -570,7 +571,7 @@ def _gen_scenex(model, output_dir: Path) -> list[str]:
         if not loaded:
             continue
 
-        jsonld_name = f"{Path(imp.importURI).stem}.scenex.jsonld"
+        jsonld_name = f"{Path(imp.importURI).stem}.scenex.ld.json"
         jsonld_path = output_dir / jsonld_name
         serialized = create_scenex_model_graph(loaded[0]).serialize(
             format="json-ld", auto_compact=True, indent=2
@@ -587,7 +588,7 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
     any .fsm files imported by the model. Returns (jsonld_names, tool_artifact_names):
     jsonld_names are added to the app manifest so ir_gen derives the FSM wiring from the
     combined graph (the .hpp stays standalone); tool_artifact_names are the filenames
-    coord-dsl itself generated (and recorded into its own provenance.jsonld beside
+    coord-dsl itself generated (and recorded into its own provenance.ld.json beside
     motion-spec-dsl's), so the caller can attribute them to coord-dsl rather than to
     motion-spec-dsl in the DSL's own provenance document.
     """
@@ -635,7 +636,7 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
         ir_path.write_text(json.dumps(ir, indent=2))
         print(f"  wrote {ir_path}")
 
-        jsonld_name = f"{ir['name']}.jsonld"
+        jsonld_name = f"{ir['name']}.ld.json"
         jsonld_path = output_dir / jsonld_name
         jsonld_path.write_text(_fsm_named_graph_jsonld(graph, context, fsm_ref))
         print(f"  wrote {jsonld_path}")
@@ -656,9 +657,9 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(model._tx_filename).stem
 
-    graph_path = output_dir / f"{stem}.jsonld"
-    manifest_path = output_dir / f"{stem}-app.jsonld"
-    provenance_name = "provenance/dsl.jsonld"
+    graph_path = output_dir / f"{stem}.ld.json"
+    manifest_path = output_dir / f"{stem}-app.ld.json"
+    provenance_name = "provenance/dsl.ld.json"
     provenance_path = output_dir / provenance_name
     serialized = dataset.default_graph.serialize(format="json-ld", indent=2, context=context)
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized

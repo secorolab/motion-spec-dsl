@@ -9,12 +9,11 @@ separate JSON-LD artifacts.
 
 ## Workspace setup
 
-Use the workspace virtual environment and local metamodel checkout:
+Use the workspace virtual environment:
 
 ```bash
 cd /path/to/workspace
 source .venv/bin/activate
-export METAMODELS_PATH="$PWD/src/metamodels"
 pip install -e src/motion-spec-dsl --no-deps
 ```
 
@@ -30,7 +29,8 @@ textx generate src/motion-spec-dsl/models/pick_place_single/pick_place_single.ro
 
 The application manifest imports the motion, scene, FSM, and provenance graphs and
 lists the SHACL files required by the emitted metamodel terms. Metamodel IRIs remain
-portable; the downstream loader resolves them through `METAMODELS_PATH`.
+portable and resolve normally. Developers can set `METAMODELS_PATH` to test against a
+local metamodel checkout.
 
 ## Verify
 
