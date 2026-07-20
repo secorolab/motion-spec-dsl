@@ -73,22 +73,27 @@ scene inst (ns=aas_mjc) admittance_arc_scene_mjc {
     }
 
     obj <workspace_objects.table> {
-        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml' }
-        body: <world_tree.table>
+        model table-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <world_tree.table> to "table"
+        }
     }
 
     agn <agents.kinova_ft_2f85> {
         model kinova-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
-        } for <kinova>
+            map tree <kinova> to "base_link"
+        }
 
         model ft-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/ft_sensor.xml'
-        } for <ft_tree> at body "wrist_ft_body"
+            map tree <ft_tree> to "wrist_ft_body"
+        }
 
         model gripper-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
-        } for <gripper> at body "base_mount"
+            map tree <gripper> to "base_mount"
+        }
 
         force-torque wrist_ft {
             frame: <ft_tree.wrist_ft_body.wrist_ft_site>

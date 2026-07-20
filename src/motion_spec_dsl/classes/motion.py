@@ -182,12 +182,19 @@ class TrajectoryValue:
 
 @dataclass
 class ProfileSpec:
+    """Authored limits and shape for an online velocity profile."""
+
     parent: object
     max_velocity: object
     max_acceleration: object
     measured_velocity: object | None = None
     max_jerk: object | None = None
     shape: str = "Trapezoidal"
+
+    def __post_init__(self):
+        self.shape = {"trapezoidal": "Trapezoidal", "s-curve": "SCurve"}.get(
+            self.shape, self.shape
+        )
 
 
 @dataclass

@@ -1,0 +1,31 @@
+ns ppd_env = "https://secorolab.github.io/models/environments/pick-place-dual/"
+ns ppd_agn = "https://secorolab.github.io/models/agents/pick-place-dual/"
+ns ppd_scene = "https://secorolab.github.io/models/scenes/pick-place-dual/"
+
+obj set (ns=ppd_env) pickplace_objects {
+    object cube,
+    object cube2
+}
+
+obj set (ns=ppd_env) ws_objects {
+    object table
+}
+
+ws set (ns=ppd_env) pickplace_workspaces {
+    workspace table_ws
+}
+
+agn set (ns=ppd_agn) pickplace_agents {
+    agent arm1,
+    agent arm2
+}
+
+comp (ns=ppd_env) comp_table_pickplace of ws <pickplace_workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=ppd_scene) pick_place_scene {
+    obj set <pickplace_objects>
+    ws comp <comp_table_pickplace>
+    agn set <pickplace_agents>
+}

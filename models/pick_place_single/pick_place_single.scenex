@@ -70,23 +70,27 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
     }
 
     obj <ws_objects.table> {
-        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml' }
-        body: <world_tree.table>
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <world_tree.table> to "table"
+        }
     }
 
     obj <pickplace_objects.cube> {
-        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml' }
-        body: <pick_place_graph.cube>
+        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            map body <pick_place_graph.cube> to "cube"
+        }
     }
 
     agn <pickplace_agents.kinova_2f85> {
         model kinova-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
-        } for <kinova>
+            map tree <kinova> to "base_link"
+        }
 
         model gripper-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
-        } for <gripper> at body "base_mount"
+            map tree <gripper> to "base_mount"
+        }
 
         camera wrist {
             frame: <kinova.bracelet_link.wrist_anchor>

@@ -185,7 +185,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Dimensionless: NS_MM_QUDT_QTY["Dimensionless"],
     QuantityType.Duration: NS_MM_QUDT_QTY["Time"],
     QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
-    QuantityType.LinearJerk: NS_MM_QUDT_QTY["LinearJerk"],
+    QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
 }
 
 # QUDT quantity-kinds are individuals, not classes; used to tell them apart from

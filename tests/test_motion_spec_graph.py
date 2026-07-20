@@ -18,6 +18,7 @@ from motion_spec.namespace import (
     ALGO_EXT,
     APP,
     CSTR_HDL,
+    CSTR_HDL_EXT,
     EXEC,
     GEOM_OP,
     GEOM_REL,
@@ -41,6 +42,65 @@ def generated_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "pick_place_single-app.jsonld"
+
+
+@pytest.fixture
+def generated_dual_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Generate the dual-arm model used to exercise profiles and repeated robot assets."""
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(MODELS / "pick_place_dual" / "pick_place_dual.robmot")
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    return tmp_path / "pick_place_dual-app.jsonld"
+
+
+def test_dual_arm_velocity_profiles_reach_ir(generated_dual_model: Path) -> None:
+    graph = _load_graph(generated_dual_model)[1]
+    assert len(set(graph.subjects(RDF.type, CSTR_HDL_EXT["LinearJerk"]))) == 1
+
+    ir = generate_ir(generated_dual_model)
+    profiles = [value for value in ir["closures"].values() if value.get("type") == "VelocityProfile"]
+
+    assert len(profiles) == 2
+    assert {str(profile["shape"]) for profile in profiles} == {"SCurve"}
+    assert all(profile["measured_velocity"] for profile in profiles)
+    assert all(profile["max_jerk"] == "max_lower_jerk" for profile in profiles)
+    assert [robot.prefix for robot in ir["scene"].robots] == ["kinova1_", "kinova2_"]
+    objects = {obj.id: obj for obj in ir["scene"].objects}
+    assert set(objects) == {"table", "cube", "cube2"}
+    robots = {robot.id: robot for robot in ir["scene"].robots}
+    assert robots["arm1"].pos == [-0.7, 0.0, 0.0]
+    assert robots["arm2"].pos == [0.7, 0.0, 0.0]
+    assert robots["arm2"].euler == [0.0, 0.0, 180.0]
+    assert robots["arm1"].attach_name == "table_table_top"
+    assert robots["arm2"].attach_name == "table_table_top"
+    pick_above_outputs = {
+        solver.chain_root: {output.id for output in solver.output if output.id.startswith("pose_ee")}
+        for solver in ir["slv_arm"]
+        if solver.id.endswith("pick_above")
+    }
+    assert pick_above_outputs == {
+        "kinova1_base_link": {"pose_ee1_base"},
+        "kinova2_base_link": {"pose_ee2_base"},
+    }
+    grasp_outputs = {
+        solver.chain_root: {
+            output.id: output.joint_name
+            for output in solver.output
+            if output.id.startswith("gripper")
+        }
+        for solver in ir["slv_arm"]
+        if solver.id.endswith("grasp_hold")
+    }
+    assert grasp_outputs == {
+        "kinova1_base_link": {"gripper1_pos": "kinova1_g_left_driver_joint"},
+        "kinova2_base_link": {"gripper2_pos": "kinova2_g_left_driver_joint"},
+    }
+    grasp_motion = next(motion for motion in ir["motions"] if motion.id == "motion_grasp_hold")
+    assert {
+        "ctrl_cg1_close_gripper",
+        "ctrl_cg2_close_gripper",
+    } <= set(grasp_motion.while_schedule)
 
 
 def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Path) -> None:
