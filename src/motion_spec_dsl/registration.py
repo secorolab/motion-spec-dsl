@@ -362,61 +362,142 @@ def _artifact_role(name: str) -> str:
         return "fsm_ir"
     if name.endswith("_fsm.hpp"):
         return "fsm_header"
+    if name.endswith(("_fsm.dot", "_fsm.svg")):
+        return "fsm_graphviz"
+    if name.endswith(".scenex.jsonld"):
+        return "scene_graph"
     return "generated_graph"
 
 
 def _write_provenance_artifact(
-    model: Model, artifact_names: list[str], output_dir: Path, path: Path
+    model: Model,
+    artifact_names: list[str],
+    output_dir: Path,
+    path: Path,
+    fsm_tool_names: list[str],
+    scene_tool_names: list[str],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(_build_provenance_document(model, artifact_names, output_dir), indent=2) + "\n"
+    document = _build_provenance_document(
+        model, artifact_names, output_dir, fsm_tool_names, scene_tool_names
     )
+    path.write_text(json.dumps(document, indent=2) + "\n")
     _validate_provenance_artifact(path)
     print(f"  wrote {path}")
 
 
+def _tool_activity(
+    graph: list[dict[str, Any]],
+    tool_names: list[str],
+    activity_id: str,
+    agent_id: str,
+    sources: list[Path],
+    generated_at: str,
+) -> None:
+    """Append an Activity (and its Agent) attributing `tool_names` to an external tool,
+    only if that tool actually produced anything for this generation pass.
+    """
+    if not tool_names:
+        return
+    graph.append(
+        {
+            "@id": activity_id,
+            "@type": ["prov:Activity"],
+            "used": [f"dslprov:entity/source/{_slug(s.name)}" for s in sources],
+            "wasAssociatedWith": agent_id,
+            "startedAtTime": generated_at,
+            "endedAtTime": generated_at,
+        }
+    )
+    graph.append({"@id": agent_id, "@type": ["prov:SoftwareAgent", "prov:Agent"]})
+
+
 def _build_provenance_document(
-    model: Model, artifact_names: list[str], output_dir: Path
+    model: Model,
+    artifact_names: list[str],
+    output_dir: Path,
+    fsm_tool_names: list[str],
+    scene_tool_names: list[str],
 ) -> dict[str, Any]:
+    """The DSL's own provenance: what motion-spec-dsl generated directly, plus what it
+    delegated to coord-dsl (FSM) and scene-dsl (scenex) -- each attributed to its own
+    agent rather than folded into motion_spec_dsl. coord-dsl also writes its own, richer
+    provenance.jsonld beside its artifacts; a pointer entity here links to it rather than
+    duplicating its activity detail (this document is SHACL-validated standalone, so any
+    node referenced by @id must be described here too -- see `_tool_activity`).
+    """
     stem = Path(model._tx_filename).stem
+    sources = _source_paths(model)
     activity = f"dslprov:activity/jsonld_generation/{_slug(stem)}"
+    fsm_activity = f"dslprov:activity/fsm_generation/{_slug(stem)}"
+    scene_activity = f"dslprov:activity/scenex_generation/{_slug(stem)}"
     generated_at = datetime.now(timezone.utc).isoformat()
+
     graph = [
         {"@id": "dslprov:bundle/dsl-provenance", "@type": "prov:Bundle"},
         {
             "@id": activity,
             "@type": ["prov:Activity"],
-            "used": [
-                f"dslprov:entity/source/{_slug(source.name)}" for source in _source_paths(model)
-            ],
+            "used": [f"dslprov:entity/source/{_slug(s.name)}" for s in sources],
             "wasAssociatedWith": "dslprov:agent/motion_spec_dsl",
             "startedAtTime": generated_at,
             "endedAtTime": generated_at,
         },
     ]
-    for source in _source_paths(model):
-        node = {
-            "@id": f"dslprov:entity/source/{_slug(source.name)}",
-            "@type": ["prov:Entity"],
-            "atLocation": source.resolve().as_uri(),
-        }
-        graph.append(node)
+    _tool_activity(
+        graph,
+        fsm_tool_names,
+        fsm_activity,
+        "dslprov:agent/coord_dsl",
+        [s for s in sources if s.suffix == ".fsm"],
+        generated_at,
+    )
+    _tool_activity(
+        graph,
+        scene_tool_names,
+        scene_activity,
+        "dslprov:agent/scene_dsl",
+        [s for s in sources if s.suffix == ".scenex"],
+        generated_at,
+    )
+
+    for source in sources:
+        graph.append(
+            {
+                "@id": f"dslprov:entity/source/{_slug(source.name)}",
+                "@type": ["prov:Entity"],
+                "atLocation": source.resolve().as_uri(),
+            }
+        )
     for name in artifact_names:
+        if name in fsm_tool_names:
+            generated_by = fsm_activity
+        elif name in scene_tool_names:
+            generated_by = scene_activity
+        else:
+            generated_by = activity
         graph.append(
             {
                 "@id": f"dslprov:entity/{_artifact_role(name)}/{_slug(name)}",
                 "@type": ["prov:Entity"],
                 "atLocation": (output_dir / name).resolve().as_uri(),
-                "wasGeneratedBy": activity,
+                "wasGeneratedBy": generated_by,
                 "generatedAtTime": generated_at,
             }
         )
-    agent = {
-        "@id": "dslprov:agent/motion_spec_dsl",
-        "@type": ["prov:SoftwareAgent", "prov:Agent"],
-    }
-    graph.append(agent)
+    if fsm_tool_names and (output_dir / "provenance.jsonld").exists():
+        graph.append(
+            {
+                "@id": "dslprov:entity/provenance/coord_dsl",
+                "@type": ["prov:Entity"],
+                "atLocation": (output_dir / "provenance.jsonld").resolve().as_uri(),
+                "wasAttributedTo": "dslprov:agent/coord_dsl",
+            }
+        )
+
+    graph.append(
+        {"@id": "dslprov:agent/motion_spec_dsl", "@type": ["prov:SoftwareAgent", "prov:Agent"]}
+    )
     return {
         "schema_version": 1,
         "@context": [
@@ -464,14 +545,6 @@ def _source_paths(model: Model) -> list[Path]:
     return list(paths)
 
 
-def _fsm_output_names(model) -> list[str]:
-    names = []
-    for imp in getattr(model, "imports", []):
-        if imp.importURI.endswith(".fsm"):
-            names.extend([Path(imp.importURI).stem + "_fsm.hpp", "fsm_ir.json"])
-    return names
-
-
 def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     """Serialize the FSM rdflib graph as a JSON-LD *named graph* (@id = the FSM IRI) so
     it stays a distinct graph when ir_gen unions it into the model dataset."""
@@ -509,13 +582,24 @@ def _gen_scenex(model, output_dir: Path) -> list[str]:
     return jsonld_names
 
 
-def _gen_fsm(model, output_dir: Path) -> list[str]:
-    """Generate FSM C++ header, IR JSON, and a named-graph JSON-LD for any .fsm files
-    imported by the model. Returns the JSON-LD filenames to add to the app manifest so
-    ir_gen derives the FSM wiring from the combined graph (the .hpp stays standalone)."""
+def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
+    """Generate FSM C++ header, a graphviz drawing, IR JSON, and a named-graph JSON-LD for
+    any .fsm files imported by the model. Returns (jsonld_names, tool_artifact_names):
+    jsonld_names are added to the app manifest so ir_gen derives the FSM wiring from the
+    combined graph (the .hpp stays standalone); tool_artifact_names are the filenames
+    coord-dsl itself generated (and recorded into its own provenance.jsonld beside
+    motion-spec-dsl's), so the caller can attribute them to coord-dsl rather than to
+    motion-spec-dsl in the DSL's own provenance document.
+    """
+    import shutil
+
+    from coord_dsl.generators.common import write_dot
+    from coord_dsl.generators.dot import fsm_dot
     from coord_dsl.generators.fsm.graph import gen_cpp_header, gen_json, get_fsm_graph
+    from coord_dsl.generators.provenance import record
 
     jsonld_names: list[str] = []
+    tool_artifact_names: list[str] = []
     for imp in getattr(model, "imports", []):
         if not imp.importURI.endswith(".fsm"):
             continue
@@ -531,6 +615,21 @@ def _gen_fsm(model, output_dir: Path) -> list[str]:
         hpp_path = output_dir / f"{ir['name']}.hpp"
         hpp_path.write_text(gen_cpp_header(ir))
         print(f"  wrote {hpp_path}")
+        record(fsm_model, "cpp", hpp_path)
+        tool_artifact_names.append(hpp_path.name)
+
+        dot_source = fsm_dot(graph, fsm_ref)
+        dot_path = output_dir / f"{ir['name']}.dot"
+        dot_path.write_text(dot_source)
+        print(f"  wrote {dot_path}")
+        record(fsm_model, "dot", dot_path)
+        tool_artifact_names.append(dot_path.name)
+        if shutil.which("dot") is not None:
+            svg_path = output_dir / f"{ir['name']}.svg"
+            write_dot(dot_source, svg_path, "svg")
+            print(f"  wrote {svg_path}")
+            record(fsm_model, "dot", svg_path)
+            tool_artifact_names.append(svg_path.name)
 
         ir_path = output_dir / "fsm_ir.json"
         ir_path.write_text(json.dumps(ir, indent=2))
@@ -541,7 +640,7 @@ def _gen_fsm(model, output_dir: Path) -> list[str]:
         jsonld_path.write_text(_fsm_named_graph_jsonld(graph, context, fsm_ref))
         print(f"  wrote {jsonld_path}")
         jsonld_names.append(jsonld_name)
-    return jsonld_names
+    return jsonld_names, tool_artifact_names
 
 
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
@@ -572,12 +671,13 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
     # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
     # combined graph (no fsm_ir.json read at codegen time).
-    fsm_jsonld_names = _gen_fsm(model, output_dir)
+    fsm_jsonld_names, fsm_tool_names = _gen_fsm(model, output_dir)
     artifact_names = [
         graph_path.name,
         manifest_path.name,
         provenance_name,
-        *_fsm_output_names(model),
+        *fsm_tool_names,
+        *(["fsm_ir.json"] if fsm_tool_names else []),
         *scene_jsonld_names,
         *fsm_jsonld_names,
     ]
@@ -590,7 +690,9 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     manifest_path.write_text(json.dumps(_build_manifest(manifest_imports), indent=2))
     print(f"  wrote {manifest_path}")
 
-    _write_provenance_artifact(model, artifact_names, output_dir, provenance_path)
+    _write_provenance_artifact(
+        model, artifact_names, output_dir, provenance_path, fsm_tool_names, scene_jsonld_names
+    )
 
 
 motion_spec_gen = GeneratorDesc(
