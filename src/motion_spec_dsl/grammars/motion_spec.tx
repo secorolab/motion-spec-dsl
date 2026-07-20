@@ -4,7 +4,7 @@
 // Guarded-motion and shared context declarations.
 
 import base
-import quantities
+import context
 import trajectory
 
 ContextSpec:

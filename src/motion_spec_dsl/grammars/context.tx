@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 // Author: Vamsi Kalagaturu
-// Reusable quantities, geometric properties, views, context quantities,
-// values, snapshots, poses, and references.
+// World quantities, geometric properties, views, and context quantities: values,
+// snapshots, poses, references, and reference-generator specs (admittance, velocity profile).
 
 import base
 
@@ -155,7 +155,7 @@ QuantityAliasType:
 ;
 
 ContextQuantityValue:
-    AdmittanceSpec | QuantityValue | SnapshotValue | PoseValue | ReferenceValue
+    AdmittanceSpec | ProfileSpec | QuantityValue | SnapshotValue | PoseValue | ReferenceValue
 ;
 
 AdmittanceSpec:
@@ -167,6 +167,18 @@ AdmittanceSpec:
         "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=Unit)?
     "}"
 ;
+
+ProfileSpec:
+    "=" "profile" "{"
+        "max-velocity" ":" max_velocity=ContextRef ","
+        "max-acceleration" ":" max_acceleration=ContextRef
+        ("," "measured-velocity" ":" measured_velocity=View)?
+        ("," "max-jerk" ":" max_jerk=ContextRef)?
+        ("," "shape" ":" shape=VelocityProfileShape)?
+    "}"
+;
+
+VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 SnapshotValue:
     "=" "snapshot" "of" source=View ("+" offset=ContextRef)?

@@ -43,7 +43,7 @@ def _grammar_keywords() -> frozenset[str]:
     grammar_dir = files("motion_spec_dsl.grammars")
     grammar_files = (
         "base.tx",
-        "quantities.tx",
+        "context.tx",
         "trajectory.tx",
         "motion_spec.tx",
         "constraint_handler.tx",

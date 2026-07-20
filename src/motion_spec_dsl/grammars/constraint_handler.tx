@@ -4,7 +4,7 @@
 // Constraint-handler assembly, monitors, controllers, and solvers.
 
 import base
-import quantities
+import context
 import trajectory
 import motion_spec
 

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 // Author: Vamsi Kalagaturu
-// Trajectory kinds, geometric paths, and velocity profiles.
+// Trajectory kinds and geometric paths.
 
-import quantities
+import context
 
 TrajectorySpec:
     type=TrajectoryType
@@ -25,18 +25,6 @@ LerpSpec:
 ;
 
 EasingProfile: "linear" | "ease-in" | "ease-out" | "ease-in-out" ;
-
-ProfileSpec:
-    "=" "profile" "{"
-        "max-velocity" ":" max_velocity=ContextRef ","
-        "max-acceleration" ":" max_acceleration=ContextRef
-        ("," "measured-velocity" ":" measured_velocity=View)?
-        ("," "max-jerk" ":" max_jerk=ContextRef)?
-        ("," "shape" ":" shape=VelocityProfileShape)?
-    "}"
-;
-
-VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 CircleSpec:
     "circle" "{"

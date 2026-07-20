@@ -1404,42 +1404,15 @@ class MotionSpecDatasetBuilder:
                 )
 
     def _emit_velocity_profile_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
-        """Emit a velocity-profile reference generator (max velocity/acceleration) from a ProfileSpec."""
+        """Emit a well-typed placeholder for a velocity-profile reference; the per-controller
+        profile op is emitted later at constraint-binding time (`_emit_velocity_profile_reference`),
+        mirroring how an admittance reference's placeholder relates to its filter op.
+        """
         if not isinstance(quantity.value, ProfileSpec):
             return
-        spec = quantity.value
-        self.graph.add((node, RDF.type, TRAJ.VelocityProfile))
-        self.graph.add(
-            (
-                node,
-                TRAJ["max-velocity"],
-                self._emit_context_ref_node(spec.max_velocity, quantity, "max-velocity"),
-            )
-        )
-        self.graph.add(
-            (
-                node,
-                TRAJ["max-acceleration"],
-                self._emit_context_ref_node(spec.max_acceleration, quantity, "max-acceleration"),
-            )
-        )
-        if spec.measured_velocity is not None:
-            self.graph.add(
-                (
-                    node,
-                    TRAJ["measured-velocity"],
-                    self._emit_profile_view_node(spec.measured_velocity, quantity),
-                )
-            )
-        if spec.max_jerk is not None:
-            self.graph.add(
-                (
-                    node,
-                    TRAJ["max-jerk"],
-                    self._emit_context_ref_node(spec.max_jerk, quantity, "max-jerk"),
-                )
-            )
-        self.graph.add((node, TRAJ["shape"], Literal(spec.shape or "Trapezoidal")))
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]))
 
     def _emit_admittance_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
         """Emit a well-typed placeholder for an admittance reference; the per-step filter op is
@@ -2064,7 +2037,7 @@ class MotionSpecDatasetBuilder:
             )
 
         out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-profile-ref", motion)
-        self._add_quantity(out_node, QuantityType.Distance)
+        self._add_quantity(out_node, QuantityType.LinearVelocity)
 
         op_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
         self.graph.add((op_node, RDF.type, TRAJ.VelocityProfile))
