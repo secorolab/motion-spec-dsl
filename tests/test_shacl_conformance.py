@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 WORKSPACE = Path(__file__).resolve().parents[3]
-MODEL = WORKSPACE / "src" / "motion-spec-dsl" / "models" / "pick_place_single.robmot"
+MODEL = WORKSPACE / "src" / "motion-spec-dsl" / "models" / "pick_place_single" / "pick_place_single.robmot"
 METAMODELS = WORKSPACE / "src" / "metamodels"
 
 

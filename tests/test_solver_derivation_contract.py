@@ -26,7 +26,7 @@ from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
 
 MODELS = Path(__file__).parents[1] / "models"
 
-# Recorded at motion-spec-dsl 4fa96df against models/pick_place_single.robmot.
+# Recorded at motion-spec-dsl 4fa96df against models/pick_place_single/pick_place_single.robmot.
 BASELINE = {
     "AccelerationConstraint": 0,
     "AccelerationConstraintSpecification": 0,
@@ -41,7 +41,7 @@ BASELINE = {
 def constraint_graph(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Graph:
     monkeypatch.setenv("METAMODELS_PATH", "/home/batsy/work/ms/src/metamodels")
     metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(MODELS / "pick_place_single.robmot")
+    model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     dataset = Dataset()
     dataset.parse(str(tmp_path / "pick_place_single.jsonld"), format="json-ld")
@@ -110,7 +110,7 @@ def test_authored_output_limit_binds_to_derived_signal(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("METAMODELS_PATH", "/home/batsy/work/ms/src/metamodels")
-    source = (MODELS / "pick_place_single.robmot").read_text()
+    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     source = source.replace(
         "linear-velocity zero-linvel = 0.0 m/s,",
         "linear-velocity zero-linvel = 0.0 m/s,\n"
@@ -123,7 +123,7 @@ def test_authored_output_limit_binds_to_derived_signal(
     )
     metamodel = motion_spec_metamodel()
     model = metamodel.model_from_str(
-        source, file_name=str(MODELS / "pick_place_single.robmot")
+        source, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
     )
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
 

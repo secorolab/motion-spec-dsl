@@ -38,7 +38,7 @@ def generated_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Generate the representative model and return its application manifest."""
     monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
     metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(MODELS / "pick_place_single.robmot")
+    model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
     _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "pick_place_single-app.jsonld"
 

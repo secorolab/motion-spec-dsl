@@ -24,7 +24,7 @@ and `rdf-utils`.
 ## Generate
 
 ```bash
-textx generate src/motion-spec-dsl/models/pick_place_single.robmot \
+textx generate src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot \
   --target jsonld -o /tmp/motion-spec-model
 ```
 
@@ -40,4 +40,4 @@ pytest
 ruff check src tests
 ```
 
-The representative model is [models/pick_place_single.robmot](models/pick_place_single.robmot).
+The representative model is [models/pick_place_single/pick_place_single.robmot](models/pick_place_single/pick_place_single.robmot).

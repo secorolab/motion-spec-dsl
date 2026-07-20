@@ -1,6 +1,6 @@
 import "pick_place_single.scene"
-import "kinova_gen3_7dof.ktree"
-import "robotiq_2f85.ktree"
+import "../kinova_gen3_7dof.ktree"
+import "../robotiq_2f85.ktree"
 
 ns pps_mjc = "https://secorolab.github.io/models/scenes/pick-place-single-mjc/"
 

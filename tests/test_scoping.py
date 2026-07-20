@@ -17,7 +17,7 @@ GRAMMAR = Path(__file__).parents[1] / "src/motion_spec_dsl/grammars/model.tx"
 MODELS = Path(__file__).parents[1] / "models"
 
 HEAD = """
-import "pick_place_single.scenex"
+import "pick_place_single/pick_place_single.scenex"
 ns app = "https://example.org/app/"
 context (ns=app) shared {
     world {
@@ -117,7 +117,7 @@ guarded-motion (ns=app) m1 {
 
 
 def test_full_example_parses():
-    model = motion_spec_metamodel().model_from_file(str(MODELS / "pick_place_single.robmot"))
+    model = motion_spec_metamodel().model_from_file(str(MODELS / "pick_place_single" / "pick_place_single.robmot"))
     assert len(model.specs) == 22
     handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
     assert handler.motion.name == "pick-above"
@@ -125,12 +125,12 @@ def test_full_example_parses():
 
 
 def test_solver_gravity_accepts_literal_equals_and_spec_reference():
-    source = (MODELS / "pick_place_single.robmot").read_text()
+    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     metamodel = motion_spec_metamodel()
 
     equal_literal = metamodel.model_from_str(
         source.replace("gravity:   {", "gravity:   = {"),
-        file_name=str(MODELS / "pick_place_single.robmot"),
+        file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot"),
     )
     equal_solver = next(
         spec for spec in equal_literal.specs if spec.name == "handler-home"
@@ -148,7 +148,7 @@ def test_solver_gravity_accepts_literal_equals_and_spec_reference():
     referenced_solver = next(
         spec
         for spec in metamodel.model_from_str(
-            referenced, file_name=str(MODELS / "pick_place_single.robmot")
+            referenced, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
         ).specs
         if spec.name == "handler-home"
     ).solvers[0]
@@ -156,12 +156,12 @@ def test_solver_gravity_accepts_literal_equals_and_spec_reference():
 
 
 def test_grammar_keyword_cannot_be_used_as_a_quantity_name():
-    source = (MODELS / "pick_place_single.robmot").read_text()
+    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     reserved_name = source.replace("path-parameter progress", "path-parameter gravity").replace(
         "<spec.progress>", "<spec.gravity>"
     )
 
     with pytest.raises(TextXSemanticError, match="gravity.*keyword"):
         motion_spec_metamodel().model_from_str(
-            reserved_name, file_name=str(MODELS / "pick_place_single.robmot")
+            reserved_name, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
         )
