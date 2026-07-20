@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: MPL-2.0
+"""Valid fixtures parse; mutating one clause of the base fixture makes validate_model reject it."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from textx.exceptions import TextXSemanticError
+
+EXTRA_CONSTRUCTS = (Path(__file__).parent / "fixtures" / "extra_constructs.robmot").read_text()
+
+
+def test_base_model_is_valid(parse_source, base_source):
+    assert parse_source(base_source) is not None
+
+
+def test_extra_constructs_are_valid(parse_source):
+    """A second, larger model: joint-position, impedance, and saturated-solver constructs
+    the base fixture doesn't use, so their happy-path validation/emission branches run too.
+    """
+    assert parse_source(EXTRA_CONSTRUCTS) is not None
+
+
+REJECTIONS = [
+    pytest.param(
+        "linear-velocity zero-linvel = 0.0 m/s",
+        "linear-velocity zero-linvel = 0.0 m/s,\n        linear-velocity gravity = 0.0 m/s",
+        "gravity.*keyword",
+        id="reject_keyword_names",
+    ),
+    pytest.param(
+        "settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>",
+        "hold-position: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>",
+        "hold-position",
+        id="validate_unique_constraint_names",
+    ),
+    # validate_supported_solver_algorithms has no case: the grammar's algorithm rule is a
+    # closed enum, so an unsupported name is a syntax error and the validator never runs.
+    pytest.param(
+        "Kp: 200, Ki: 100, Kd: 40, decay: 0",
+        "Kp: 200, Ki: 100, Kd: 40, Kp: 1, decay: 0",
+        "repeats parameter",
+        id="validate_controller_commands_duplicate_param",
+    ),
+]
+
+
+@pytest.mark.parametrize(("old", "new", "message"), REJECTIONS)
+def test_invalid_model_is_rejected(parse_mutated, old, new, message):
+    with pytest.raises(TextXSemanticError, match=message):
+        parse_mutated(old, new)
