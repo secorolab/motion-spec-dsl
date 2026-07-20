@@ -151,6 +151,15 @@ def _validate_pid_measured_derivative(
         )
 
 
+# A velocity/position controller does not emit a velocity: its signal becomes the solver's
+# acceleration-energy row, which is what the generated clamp applies to. Force and torque
+# commands are emitted in their own dimension, so they saturate in it.
+OUTPUT_SATURATION_TYPE = {
+    QuantityType.LinearVelocity: QuantityType.LinearAcceleration,
+    QuantityType.AngularVelocity: QuantityType.AngularAcceleration,
+}
+
+
 def validate_controller_commands(model: Model) -> None:
     """Raise on invalid controller commands: duplicate terms, unsupported velocity profiles,
     missing measured velocities, or invalid measured derivatives.
@@ -390,7 +399,7 @@ def validate_controller_commands(model: Model) -> None:
                     )
                 validate_saturation_spec(
                     params.output_saturation,
-                    expected=command_type,
+                    expected=OUTPUT_SATURATION_TYPE.get(command_type, command_type),
                     owner=controller,
                     label=f"Controller '{controller.name}' output",
                 )

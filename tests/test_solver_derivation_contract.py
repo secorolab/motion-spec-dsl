@@ -114,7 +114,8 @@ def test_authored_output_limit_binds_to_derived_signal(
     source = source.replace(
         "linear-velocity zero-linvel = 0.0 m/s,",
         "linear-velocity zero-linvel = 0.0 m/s,\n"
-        "        linear-velocity output-limit = 1.0 m/s,",
+        # The signal saturated is the solver's acceleration-energy row, not a velocity.
+        "        linear-acceleration output-limit = 10.0 m/s2,",
     ).replace(
         "constraint: <pick.hold-x>,     Kp:",
         "constraint: <pick.hold-x>, output-saturation: saturation { "
@@ -158,5 +159,5 @@ def test_authored_output_limit_binds_to_derived_signal(
         for controller in controllers
         if controller.id == "ctrl_pk_hold_x"
     )
-    assert derived.output_saturation.maximum.value == 1.0
+    assert derived.output_saturation.maximum.value == 10.0
     assert derived.output_saturation.input_signal is derived.control_signal
