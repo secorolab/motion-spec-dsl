@@ -5,12 +5,6 @@
 
 import context
 
-TrajectorySpec:
-    type=TrajectoryType
-;
-
-TrajectoryType: "lerp" | "circle" | "arc" | "helix" | "figure8" ;
-
 TrajectoryValue:
     "=" (lerp=LerpSpec | circle=CircleSpec | arc=ArcSpec | helix=HelixSpec | figure8=Figure8Spec)
 ;

@@ -62,9 +62,9 @@ def test_dual_arm_velocity_profiles_reach_ir(generated_dual_model: Path) -> None
     profiles = [value for value in ir["closures"].values() if value.get("type") == "VelocityProfile"]
 
     assert len(profiles) == 2
-    assert {str(profile["shape"]) for profile in profiles} == {"SCurve"}
-    assert all(profile["measured_velocity"] for profile in profiles)
-    assert all(profile["max_jerk"] == "max_lower_jerk" for profile in profiles)
+    assert {str(profile["shape"]) for profile in profiles} == {"s_curve"}
+    assert all(profile["in"] for profile in profiles)
+    assert all(profile["maximum_jerk"] == "max_lower_jerk" for profile in profiles)
     assert [robot.prefix for robot in ir["scene"].robots] == ["kinova1_", "kinova2_"]
     objects = {obj.id: obj for obj in ir["scene"].objects}
     assert set(objects) == {"table", "cube", "cube2"}
@@ -283,9 +283,7 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     )
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
     scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
-    interpolation = next(
-        closure for closure in scheduled if closure["type"] == "CartesianPoseInterpolation"
-    )
+    interpolation = next(closure for closure in scheduled if closure["type"] == "LinearPath")
     assert (interpolation["trajectory"], interpolation["path_parameter"]) == (
         "reference",
         "progress",

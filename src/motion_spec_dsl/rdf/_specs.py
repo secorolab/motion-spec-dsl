@@ -23,6 +23,7 @@ from motion_spec.namespace import (
     GEOM_ENT,
     GEOM_OP,
     GEOM_OP_EXT,
+    GEOM_PATH,
     GEOM_REL,
     GEOM_REL_EXT,
     KC_STAT,
@@ -34,11 +35,9 @@ from motion_spec.namespace import (
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
-    SNAP,
     SLV,
     SLV_EXT,
     SOSA,
-    TRAJ,
 )
 from motion_spec_dsl.classes.motion import QuantityType, WorldQuantityType
 
@@ -210,7 +209,6 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("geom-rel-ext", GEOM_REL_EXT),
     ("el", EL),
     ("exec", EXEC),
-    ("snap", SNAP),
     ("rbdyn-ent", RBDYN_ENT),
     ("rbdyn-coord", RBDYN_COORD),
     ("rbdyn-op", RBDYN_OP),
@@ -227,5 +225,5 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("slv", SLV),
     ("slv-ext", SLV_EXT),
     ("sosa", SOSA),
-    ("traj", TRAJ),
+    ("geom-path", GEOM_PATH),
 )

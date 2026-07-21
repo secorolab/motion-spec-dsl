@@ -299,8 +299,8 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
             f"Profile '{quantity.name}' must be declared as VelocityProfile.",
             quantity,
         )
-    shape = value.shape or "Trapezoidal"
-    if shape not in {"Trapezoidal", "SCurve"}:
+    shape = value.shape or "trapezoidal"
+    if shape not in {"trapezoidal", "s-curve"}:
         raise semantic_error(
             f"VelocityProfile '{quantity.name}' has unsupported shape '{shape}'.", quantity
         )
@@ -313,11 +313,11 @@ def _validate_profile_quantity(quantity: ContextQuantity) -> None:
                 f"VelocityProfile '{quantity.name}' measured_velocity must be LinearVelocity, got {measured_shape}.",
                 value.measured_velocity,
             )
-    if shape == "SCurve":
+    if shape == "s-curve":
         _check_profile_ref(value, "max_jerk", QuantityType.LinearJerk)
     elif value.max_jerk is not None:
         raise semantic_error(
-            f"VelocityProfile '{quantity.name}' may only specify max_jerk for shape SCurve.",
+            f"VelocityProfile '{quantity.name}' may only specify max_jerk for shape s-curve.",
             value.max_jerk,
         )
 

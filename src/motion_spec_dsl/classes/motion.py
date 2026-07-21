@@ -119,7 +119,7 @@ class LerpSpec:
     start: object  # ContextRef
     goal: object  # ContextRef
     alpha: object  # ContextRef
-    profile: str = "EaseInOut"  # progress easing: Linear | EaseIn | EaseOut | EaseInOut
+    profile: str = "ease-in-out"  # progress easing: linear | ease-in | ease-out | ease-in-out
 
 
 @dataclass
@@ -167,7 +167,7 @@ class Figure8Spec:
     radius: object  # ContextRef
     plane_normal: object  # ContextRef
     alpha: object  # ContextRef
-    form: str = "Gerono"
+    form: str = "gerono"
 
 
 @dataclass
@@ -189,12 +189,7 @@ class ProfileSpec:
     max_acceleration: object
     measured_velocity: object | None = None
     max_jerk: object | None = None
-    shape: str = "Trapezoidal"
-
-    def __post_init__(self):
-        self.shape = {"trapezoidal": "Trapezoidal", "s-curve": "SCurve"}.get(
-            self.shape, self.shape
-        )
+    shape: str = "trapezoidal"
 
 
 @dataclass
@@ -216,12 +211,6 @@ class PoseValue:
 
 
 @dataclass
-class TrajectorySpec:
-    parent: object
-    type: str
-
-
-@dataclass
 class GuardedMotion(IHasNamespaceDeclare):
     """A guarded motion: its when/while/until constraint sections and context."""
 
@@ -229,7 +218,6 @@ class GuardedMotion(IHasNamespaceDeclare):
     ns: NamespaceDeclLike
     name: str
     move: str | None
-    trajectory: TrajectorySpec | None
     context: list[
         WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl | ContextDeclReference
     ]

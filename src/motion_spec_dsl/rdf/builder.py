@@ -44,18 +44,17 @@ from motion_spec.namespace import (
     GEOM_ENT,
     GEOM_OP,
     GEOM_OP_EXT,
+    GEOM_PATH,
     GEOM_REL,
     KC_STAT,
     MAP,
     MAP_EXT,
     MOT,
-    TRAJ,
     QUDT_QKIND,
     QUDT_SCHEMA,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
-    SNAP,
     SLV,
     SLV_EXT,
     SOSA,
@@ -1272,7 +1271,7 @@ class MotionSpecDatasetBuilder:
         for quantity in context_quantities.values():
             node = URIRef(quantity.uri)
             if quantity.type == ReferenceGeneratorType.Trajectory:
-                self._emit_trajectory_quantity(node, quantity, constraints, world_qtys)
+                self._emit_trajectory_quantity(quantity, constraints, world_qtys)
                 continue
             if quantity.type == QuantityType.Direction:
                 self._emit_direction_quantity(node, quantity)
@@ -1302,7 +1301,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add(
                         (
                             node,
-                            _ns_term(QUDT_SCHEMA, "numericValue"),
+                            QUDT_SCHEMA.value,
                             Literal(0.0, datatype=XSD.double),
                         )
                     )
@@ -1318,15 +1317,15 @@ class MotionSpecDatasetBuilder:
                     )
                     add_node = URIRef(f"{node}-add")
                     self.graph.add((add_node, RDF.type, ALGO_EXT.Addition))
-                    self.graph.add((add_node, ALGO_EXT["in1"], source_node))
-                    self.graph.add((add_node, ALGO_EXT["in2"], offset_ref_node))
+                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), source_node))
+                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), offset_ref_node))
                     self.graph.add((add_node, ALGO_EXT.out, node))
                 else:
                     self.graph.add((node, CSTR["reference-value"], source_node))
                 continue
             if isinstance(quantity.value, SnapshotValue):
                 snapshot_node = URIRef(f"{node}-snapshot")
-                self.graph.add((snapshot_node, RDF.type, SNAP.Snapshot))
+                self.graph.add((snapshot_node, RDF.type, ALGO_EXT.Snapshot))
                 view_node = self._view_node(quantity.value.source, quantity)
                 if quantity.value.offset is not None:
                     offset_ref_node = self._emit_context_ref_node(
@@ -1340,8 +1339,8 @@ class MotionSpecDatasetBuilder:
                         QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
                     )
                     self.graph.add((add_node, RDF.type, ALGO_EXT.Addition))
-                    self.graph.add((add_node, ALGO_EXT["in1"], view_node))
-                    self.graph.add((add_node, ALGO_EXT["in2"], offset_ref_node))
+                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), view_node))
+                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), offset_ref_node))
                     self.graph.add((add_node, ALGO_EXT.out, out_node))
                     self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
                     self._emit_quantity_kind(out_node, qkind)
@@ -1359,21 +1358,21 @@ class MotionSpecDatasetBuilder:
                     snap_source = out_node
                 else:
                     snap_source = view_node
-                self.graph.add((snapshot_node, SNAP["snapshot-of"], snap_source))
-                self.graph.add((snapshot_node, _ns_term(SNAP, "output"), node))
+                self.graph.add((snapshot_node, _ns_term(ALGO_EXT, "in"), snap_source))
+                self.graph.add((snapshot_node, ALGO_EXT.out, node))
                 trigger = quantity.value.trigger
                 self.graph.add(
                     (
                         snapshot_node,
-                        _ns_term(SNAP, "sampling"),
+                        _ns_term(ALGO_EXT, "sampling"),
                         _ns_term(
-                            SNAP,
+                            ALGO_EXT,
                             "event-triggered-sampling" if trigger else "initial-sampling",
                         ),
                     )
                 )
                 if trigger is not None:
-                    self.graph.add((snapshot_node, _ns_term(SNAP, "trigger"), URIRef(trigger.uri)))
+                    self.graph.add((snapshot_node, _ns_term(ALGO_EXT, "trigger"), URIRef(trigger.uri)))
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
@@ -1567,101 +1566,79 @@ class MotionSpecDatasetBuilder:
 
     def _emit_trajectory_quantity(
         self,
-        node: URIRef,
         quantity: ContextQuantity,
         constraints: list[ConstraintSpecification] | None = None,
         world_qtys: dict[str, WorldQuantity] | None = None,
     ) -> None:
-        """Emit a trajectory reference generator, dispatching by shape (lerp / circle / arc /
-        helix / figure-8) to the matching emitter.
+        """Emit a geometric path and the evaluator that traverses it, dispatching by shape
+        (lerp / circle / arc / helix / figure-8) to the matching emitter.
         """
         assert isinstance(quantity.value, TrajectoryValue)
         value = quantity.value
         if value.lerp is not None:
-            self._emit_lerp_trajectory(node, quantity, value.lerp, constraints, world_qtys)
+            self._emit_lerp_trajectory(quantity, value.lerp, constraints, world_qtys)
         elif value.circle is not None:
             self._emit_geometric_trajectory(
-                node,
-                quantity,
-                value.circle,
-                TRAJ.Circle,
-                "circle",
+                quantity, GEOM_PATH.Circle, "circle", value.circle.alpha,
                 [
-                    ("start", TRAJ.start, value.circle.start),
-                    ("center", TRAJ.center, value.circle.center),
-                    ("plane-normal", TRAJ["plane-normal"], value.circle.plane_normal),
-                    ("path-parameter", _ns_term(TRAJ, "path-parameter"), value.circle.alpha),
+                    ("start", GEOM_PATH.start, value.circle.start),
+                    ("center", GEOM_PATH.center, value.circle.center),
+                    ("plane-normal", GEOM_PATH["plane-normal"], value.circle.plane_normal),
                 ],
                 constraints,
                 world_qtys,
             )
         elif value.arc is not None:
             self._emit_geometric_trajectory(
-                node,
-                quantity,
-                value.arc,
-                TRAJ.Arc,
-                "arc",
+                quantity, GEOM_PATH.Arc, "arc", value.arc.alpha,
                 [
-                    ("start", TRAJ.start, value.arc.start),
-                    ("end", TRAJ.end, value.arc.end),
-                    ("amplitude", TRAJ.amplitude, value.arc.amplitude),
-                    ("plane-normal", TRAJ["plane-normal"], value.arc.plane_normal),
-                    ("path-parameter", _ns_term(TRAJ, "path-parameter"), value.arc.alpha),
+                    ("start", GEOM_PATH.start, value.arc.start),
+                    ("end", GEOM_PATH.end, value.arc.end),
+                    ("amplitude", GEOM_PATH.amplitude, value.arc.amplitude),
+                    ("plane-normal", GEOM_PATH["plane-normal"], value.arc.plane_normal),
                 ],
                 constraints,
                 world_qtys,
             )
         elif value.helix is not None:
             self._emit_geometric_trajectory(
-                node,
-                quantity,
-                value.helix,
-                TRAJ.Helix,
-                "helix",
+                quantity, GEOM_PATH.Helix, "helix", value.helix.alpha,
                 [
-                    ("start", TRAJ.start, value.helix.start),
-                    ("center", TRAJ.center, value.helix.center),
-                    ("axis", TRAJ.axis, value.helix.axis),
-                    ("pitch", TRAJ.pitch, value.helix.pitch),
-                    ("revolutions", TRAJ.revolutions, value.helix.revolutions),
-                    ("path-parameter", _ns_term(TRAJ, "path-parameter"), value.helix.alpha),
+                    ("start", GEOM_PATH.start, value.helix.start),
+                    ("center", GEOM_PATH.center, value.helix.center),
+                    ("axis", GEOM_PATH.axis, value.helix.axis),
+                    ("pitch", GEOM_PATH.pitch, value.helix.pitch),
+                    ("revolutions", GEOM_PATH.revolutions, value.helix.revolutions),
                 ],
                 constraints,
                 world_qtys,
             )
         elif value.figure8 is not None:
             self._emit_geometric_trajectory(
-                node,
-                quantity,
-                value.figure8,
-                TRAJ.Figure8,
-                "figure8",
+                quantity, GEOM_PATH.Figure8, "figure8", value.figure8.alpha,
                 [
-                    ("anchor", TRAJ.anchor, value.figure8.anchor),
-                    ("radius", TRAJ.radius, value.figure8.radius),
-                    ("plane-normal", TRAJ["plane-normal"], value.figure8.plane_normal),
-                    ("path-parameter", _ns_term(TRAJ, "path-parameter"), value.figure8.alpha),
+                    ("anchor", GEOM_PATH.anchor, value.figure8.anchor),
+                    ("radius", GEOM_PATH.radius, value.figure8.radius),
+                    ("plane-normal", GEOM_PATH["plane-normal"], value.figure8.plane_normal),
                 ],
                 constraints,
                 world_qtys,
-                literals=[(TRAJ.form, Literal(value.figure8.form or "Gerono"))],
+                path_terms=[
+                    (GEOM_PATH.form, _ns_term(GEOM_PATH, value.figure8.form or "gerono"))
+                ],
             )
         else:
             raise ValueError(f"TrajectoryValue on '{quantity.name}' has no populated spec")
 
     def _emit_trajectory_pose_metadata(
         self,
-        generator_node: URIRef,
         quantity: ContextQuantity,
         value_kind: Any | None,
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
     ) -> None:
-        """Emit a trajectory generator and its produced quantity."""
+        """Emit the setpoint pose the path evaluator produces, with its frame metadata."""
         node = self._reference_output_node(quantity)
-        self.graph.add((generator_node, RDF.type, TRAJ.Trajectory))
-        self.graph.add((generator_node, _ns_term(TRAJ, "reference"), node))
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         if value_kind is not None:
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], value_kind))
@@ -1678,56 +1655,84 @@ class MotionSpecDatasetBuilder:
 
     def _emit_lerp_trajectory(
         self,
-        node: URIRef,
         quantity: ContextQuantity,
         lerp: Any,
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
     ) -> None:
-        """Emit a lerp trajectory op (start/goal/alpha/profile) producing `node`."""
+        """Emit a linear path (start/goal) and the evaluator that eases along it."""
         lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
         value_kind = self._lerp_value_kind(lerp)
-        self._emit_trajectory_pose_metadata(node, quantity, value_kind, constraints, world_qtys)
-        self.graph.add((lerp_node, RDF.type, _ns_term(TRAJ, "CartesianPoseInterpolation")))
+        self._emit_trajectory_pose_metadata(quantity, value_kind, constraints, world_qtys)
+        self.graph.add((lerp_node, RDF.type, GEOM_PATH.Path))
+        self.graph.add((lerp_node, RDF.type, GEOM_PATH.LinearPath))
         self.graph.add(
-            (lerp_node, TRAJ.start, self._emit_context_ref_node(lerp.start, quantity, "start"))
+            (lerp_node, GEOM_PATH.start, self._emit_context_ref_node(lerp.start, quantity, "start"))
         )
         self.graph.add(
-            (lerp_node, TRAJ.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal"))
+            (lerp_node, GEOM_PATH.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal"))
         )
-        self.graph.add(
-            (
-                lerp_node,
-                _ns_term(TRAJ, "path-parameter"),
-                self._emit_context_ref_node(lerp.alpha, quantity, "path-parameter"),
-            )
+        self._emit_path_evaluator(
+            quantity,
+            lerp_node,
+            lerp.alpha,
+            "lerp",
+            _ns_term(GEOM_OP_EXT, lerp.profile or "ease-in-out"),
         )
-        self.graph.add((lerp_node, TRAJ.profile, Literal(lerp.profile or "EaseInOut")))
-        self.graph.add((lerp_node, TRAJ.trajectory, node))
 
     def _emit_geometric_trajectory(
         self,
-        node: URIRef,
         quantity: ContextQuantity,
-        spec: Any,
-        spec_type: URIRef,
+        path_type: URIRef,
         spec_prefix: str,
+        alpha: Any,
         inputs: list[tuple[str, URIRef, Any]],
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
-        literals: list[tuple[URIRef, Any]] = (),
+        path_terms: list[tuple[URIRef, Any]] = (),
     ) -> None:
-        """Emit a geometric trajectory op (circle/arc/helix/figure-8) with its input references
-        and literals. All geometric trajectories output a Pose.
+        """Emit the path as geometry and a PathEvaluator that traverses it. The path carries no
+        parameter and no output; both belong to the evaluator, which produces the setpoint.
         """
-        self._emit_trajectory_pose_metadata(node, quantity, GEOM_REL.Pose, constraints, world_qtys)
-        op_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
-        self.graph.add((op_node, RDF.type, spec_type))
+        self._emit_trajectory_pose_metadata(quantity, GEOM_REL.Pose, constraints, world_qtys)
+        path_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
+        self.graph.add((path_node, RDF.type, GEOM_PATH.Path))
+        self.graph.add((path_node, RDF.type, path_type))
         for suffix, predicate, ref in inputs:
-            self.graph.add((op_node, predicate, self._emit_context_ref_node(ref, quantity, suffix)))
-        for predicate, literal in literals:
-            self.graph.add((op_node, predicate, literal))
-        self.graph.add((op_node, TRAJ.trajectory, node))
+            self.graph.add(
+                (path_node, predicate, self._emit_context_ref_node(ref, quantity, suffix))
+            )
+        for predicate, term in path_terms:
+            self.graph.add((path_node, predicate, term))
+        self._emit_path_evaluator(quantity, path_node, alpha, spec_prefix)
+
+    def _emit_path_evaluator(
+        self,
+        quantity: ContextQuantity,
+        path_node: URIRef,
+        alpha: Any,
+        spec_prefix: str,
+        easing: URIRef | None = None,
+    ) -> None:
+        """Emit the operator that turns a position along a path into the pose setpoint.
+
+        The evaluator *is* the declaration's reference generator: it owns the path parameter
+        and produces the setpoint pose, so the declared quantity needs no node of its own.
+        """
+        eval_node = self._owned_uri(f"{spec_prefix}-eval-{quantity.name}", quantity)
+        self.graph.add((eval_node, RDF.type, GEOM_OP_EXT.PathEvaluator))
+        self.graph.add((eval_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
+        self.graph.add((eval_node, GEOM_OP_EXT.path, path_node))
+        self.graph.add(
+            (
+                eval_node,
+                _ns_term(GEOM_OP_EXT, "path-parameter"),
+                self._emit_context_ref_node(alpha, quantity, "path-parameter"),
+            )
+        )
+        if easing is not None:
+            self.graph.add((eval_node, GEOM_OP_EXT.easing, easing))
+        self.graph.add((eval_node, GEOM_OP.out, self._reference_output_node(quantity)))
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         """Resolve a context reference to its value node: a subspace view, a passthrough source,
@@ -1910,6 +1915,7 @@ class MotionSpecDatasetBuilder:
                         motion,
                         ref_node,
                         qty_node,
+                        scalar_t,
                     )
                 admit_qty = _context_quantity(expr.reference)
                 if isinstance(admit_qty, ContextQuantity):
@@ -1986,23 +1992,24 @@ class MotionSpecDatasetBuilder:
         self._add_quantity(out_node, scalar_t)
 
         op_node = self._owned_uri(f"admit-{spec.name}-{ctrl.name}", motion)
-        self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.Admittance))
+        self.graph.add((op_node, RDF.type, ALGO_EXT.Admittance))
+        self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         self.graph.add(
             (
                 op_node,
-                CSTR_HDL_EXT["force"],
+                _ns_term(ALGO_EXT, "in"),
                 self._emit_profile_view_node(spec_val.force, admit_qty),
             )
         )
         mass_node = URIRef(f"{op_node}-mass")
         self._emit_scalar_quantity(mass_node, spec_val.mass, URI_QUDT_QK_MASS, QUDT_UNIT["KiloGM"])
-        self.graph.add((op_node, CSTR_HDL_EXT["mass"], mass_node))
+        self.graph.add((op_node, ALGO_EXT.mass, mass_node))
         damping_node = URIRef(f"{op_node}-damping")
         self._emit_scalar_quantity(damping_node, spec_val.damping, None, QUDT_UNIT["N-SEC-PER-M"])
-        self.graph.add((op_node, CSTR_HDL_EXT["damping"], damping_node))
+        self.graph.add((op_node, ALGO_EXT.damping, damping_node))
         stiffness_node = URIRef(f"{op_node}-stiffness")
         self._emit_scalar_quantity(stiffness_node, spec_val.stiffness, None, QUDT_UNIT["N-PER-M"])
-        self.graph.add((op_node, CSTR_HDL_EXT["stiffness"], stiffness_node))
+        self.graph.add((op_node, ALGO_EXT.stiffness, stiffness_node))
         max_velocity_node = URIRef(f"{op_node}-max-velocity")
         self._emit_scalar_quantity(
             max_velocity_node,
@@ -2011,7 +2018,7 @@ class MotionSpecDatasetBuilder:
             QUDT_UNIT["M-PER-SEC"],
         )
         self.graph.add((op_node, CSTR_HDL["maximum-velocity"], max_velocity_node))
-        self.graph.add((op_node, TRAJ.reference, out_node))
+        self.graph.add((op_node, ALGO_EXT.out, out_node))
         return out_node
 
     def _emit_velocity_profile_reference(
@@ -2021,6 +2028,7 @@ class MotionSpecDatasetBuilder:
         motion: GuardedMotion,
         goal_node: URIRef,
         measured_node: URIRef | None,
+        scalar_t: Any,
     ) -> URIRef:
         """Emit a velocity-profile reference-generating op (goal + measured -> profiled velocity)
         for a profiled controller. Returns the reference-value node.
@@ -2036,17 +2044,21 @@ class MotionSpecDatasetBuilder:
                 f"Controller '{ctrl.name}' profile '{profile_qty.name}' is not a Profile."
             )
 
+        # The profile emits a setpoint for the quantity it drives, so the output carries
+        # that quantity's kind, not a velocity.
         out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-profile-ref", motion)
-        self._add_quantity(out_node, QuantityType.LinearVelocity)
+        self._add_quantity(out_node, scalar_t)
 
         op_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
-        self.graph.add((op_node, RDF.type, TRAJ.VelocityProfile))
-        self.graph.add((op_node, TRAJ.goal, goal_node))
-        self.graph.add((op_node, TRAJ.start, measured_node))
+        self.graph.add((op_node, RDF.type, ALGO_EXT.VelocityProfile))
+        self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
+        # Where it is driving to. The value it starts from is the constraint's own
+        # quantity, so the profile does not restate it.
+        self.graph.add((op_node, _ns_term(ALGO_EXT, "target"), goal_node))
         self.graph.add(
             (
                 op_node,
-                TRAJ["max-velocity"],
+                _ns_term(ALGO_EXT, "maximum-velocity"),
                 self._emit_context_ref_node(
                     profile_qty.value.max_velocity, profile_qty, "max-velocity"
                 ),
@@ -2055,7 +2067,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (
                 op_node,
-                TRAJ["max-acceleration"],
+                _ns_term(ALGO_EXT, "maximum-acceleration"),
                 self._emit_context_ref_node(
                     profile_qty.value.max_acceleration, profile_qty, "max-acceleration"
                 ),
@@ -2065,7 +2077,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add(
                 (
                     op_node,
-                    TRAJ["measured-velocity"],
+                    _ns_term(ALGO_EXT, "in"),
                     self._emit_profile_view_node(profile_qty.value.measured_velocity, profile_qty),
                 )
             )
@@ -2073,14 +2085,16 @@ class MotionSpecDatasetBuilder:
             self.graph.add(
                 (
                     op_node,
-                    TRAJ["max-jerk"],
+                    _ns_term(ALGO_EXT, "maximum-jerk"),
                     self._emit_context_ref_node(
                         profile_qty.value.max_jerk, profile_qty, "max-jerk"
                     ),
                 )
             )
-        self.graph.add((op_node, TRAJ["shape"], Literal(profile_qty.value.shape or "Trapezoidal")))
-        self.graph.add((op_node, TRAJ.reference, out_node))
+        self.graph.add(
+            (op_node, ALGO_EXT.shape, _ns_term(ALGO_EXT, profile_qty.value.shape or "trapezoidal"))
+        )
+        self.graph.add((op_node, ALGO_EXT.out, out_node))
         return out_node
 
     def _emit_profile_view_node(self, view: Any, owner: Any) -> URIRef:
@@ -2182,10 +2196,6 @@ class MotionSpecDatasetBuilder:
         """
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
-        if getattr(motion, "trajectory", None) is not None:
-            lerp_node = self._owned_uri(f"motion-{motion.name}-lerp", motion)
-            self.graph.add((lerp_node, RDF.type, TRAJ.CartesianPoseInterpolation))
-            self.graph.add((motion_node, TRAJ.trajectory, lerp_node))
         raw_when_logic = getattr(motion.when, "logic", None)
         when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
         if raw_when_logic == "any" and when_constraints:

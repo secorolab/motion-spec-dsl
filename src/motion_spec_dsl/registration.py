@@ -75,7 +75,6 @@ from motion_spec_dsl.classes import (
     ContextQuantityAlias,
     ContextQuantity,
     ContextTrajectory,
-    TrajectorySpec,
     TrajectoryValue,
     VectorQuantity,
     View,
@@ -110,7 +109,6 @@ LANGUAGE_CLASSES = [
     OrientationTerm,
     PoseValue,
     GuardedMotion,
-    TrajectorySpec,
     TrajectoryValue,
     LerpSpec,
     ProfileSpec,
@@ -306,12 +304,11 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-relations-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/execution-context.shacl.ttl",
-        "https://secorolab.github.io/metamodels/task/snapshot.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/map-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
-        "https://secorolab.github.io/metamodels/task/trajectory.shacl.ttl",
+        "https://secorolab.github.io/metamodels/geometry/path.shacl.ttl",
     }
     # The manifest's iri-map only declares where *this model's* imported graphs live
     # (relative to the manifest). Metamodel/ontology prefixes are deliberately NOT
