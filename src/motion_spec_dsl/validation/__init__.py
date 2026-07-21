@@ -25,7 +25,7 @@ from motion_spec_dsl.validation.handlers import (
     validate_handler_requirements,
     validate_motion_spec_coverage,
 )
-from motion_spec_dsl.validation.names import reject_keyword_names
+from motion_spec_dsl.validation.names import reject_keyword_names, validate_namespace_uris
 from motion_spec_dsl.validation.solvers import (
     validate_controller_solver_refs,
     validate_mixed_solver_domains,
@@ -46,6 +46,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     """
     del metamodel
     reject_keyword_names(model)
+    validate_namespace_uris(model)
     validate_unique_constraint_names(model)
     validate_constraint_context_refs(model)
     validate_context_quantity_values(model)

@@ -25,9 +25,6 @@ dependencies = [
     "scene-dsl",
 ]
 
-[project.optional-dependencies]
-docs = ["sphinx>=7", "myst-parser>=3", "furo>=2024.1"]
-
 [project.entry-points."textx_languages"]
 "motion_spec" = "motion_spec_dsl.registration:motion_spec_lang"
 

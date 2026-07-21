@@ -1,43 +1,34 @@
 # motion-spec-dsl
 
-[![build](https://github.com/secorolab/motion-spec-dsl/actions/workflows/build.yml/badge.svg)](https://github.com/secorolab/motion-spec-dsl/actions/workflows/build.yml)
-[![test](https://github.com/secorolab/motion-spec-dsl/actions/workflows/test.yml/badge.svg)](https://github.com/secorolab/motion-spec-dsl/actions/workflows/test.yml)
+The textX authoring language for guarded robot motion. `.robmot` models compose
+scene and FSM models with typed context, constraints, monitors, controllers, and
+solvers.
 
-A textX DSL for guarded robot motions. It validates `.robmot` models and emits the
-motion graph, application manifest, imported scene/FSM graphs, and DSL provenance as
-separate JSON-LD artifacts.
+User documentation—including setup, the complete language reference, and model
+tutorials—is maintained in
+[`motion-spec`](https://github.com/secorolab/motion-spec/tree/dev/docs/sphinx/source/dsl).
 
-## Workspace setup
+## Development
 
-Use the workspace virtual environment:
+Use the workspace virtual environment and install this checkout without
+re-resolving sibling packages:
 
 ```bash
 cd /path/to/workspace
 source .venv/bin/activate
-pip install -e src/motion-spec-dsl --no-deps
+python -m pip install --no-deps -e src/motion-spec-dsl
 ```
 
-The package depends on the workspace siblings `motion_spec`, `scene-dsl`, `coord_dsl`,
-and `rdf-utils`.
-
-## Generate
+Verify language registration and parse the maintained model:
 
 ```bash
-textx generate src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot \
-  --target jsonld -o /tmp/motion-spec-model
+textx list-languages
+textx check src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot
 ```
 
-The application manifest imports the motion, scene, FSM, and provenance graphs and
-lists the SHACL files required by the emitted metamodel terms. Metamodel IRIs remain
-portable and resolve normally. Developers can set `METAMODELS_PATH` to test against a
-local metamodel checkout.
-
-## Verify
+Run repository checks from `src/motion-spec-dsl`:
 
 ```bash
-cd src/motion-spec-dsl
 pytest
 ruff check src tests
 ```
-
-The representative model is [models/pick_place_single/pick_place_single.robmot](models/pick_place_single/pick_place_single.robmot).

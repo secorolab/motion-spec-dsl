@@ -43,6 +43,18 @@ REJECTIONS = [
         "repeats parameter",
         id="validate_controller_commands_duplicate_param",
     ),
+    pytest.param(
+        'ns app = "https://secorolab.github.io/models/base/"',
+        'ns app = "https://secorolab.github.io/models/base"',
+        "must end with",
+        id="validate_namespace_uris_missing_separator",
+    ),
+    pytest.param(
+        'ns app = "https://secorolab.github.io/models/base/"',
+        'ns app = "https://secorolab.github.io/models//base/"',
+        "empty path segment",
+        id="validate_namespace_uris_empty_segment",
+    ),
 ]
 
 
