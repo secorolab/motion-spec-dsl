@@ -156,6 +156,15 @@ class EventName:
 
 
 @dataclass
+class ROSTopic:
+    """A ROS topic described with the terms from the ROS JSON-LD context."""
+
+    channel_name: str
+    type_name: str = ""
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
 class MonitorEntry(NamedNamespaceObject):
     """A monitor watching a constraint and emitting an event when it triggers."""
 
@@ -165,8 +174,7 @@ class MonitorEntry(NamedNamespaceObject):
     event: EventName | None = None
     fallback: GuardedMotion | None = None
     flag: str = ""
-    topic: str = ""
-    topic_type: str = ""
+    ros_topic: ROSTopic | None = None
     # Optional `for <FLOAT> <Unit>` debounce clause: the monitored condition must
     # hold continuously for this long before the edge-triggered monitor fires.
     # Absent (None) == current byte-identical rising-edge behaviour.

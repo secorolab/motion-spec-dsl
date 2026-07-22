@@ -40,10 +40,12 @@ MonitorEntry:
         ("on" "activation" "trigger" "event" event=EventName
             ("after" "active" "for" debounce=Measure)?
             ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?
-            ("also" "publish" "to" "topic" topic=STRING ("as" topic_type=STRING)?)?) |
+            ("also" "publish" "to" ros_topic=ROSTopic)?) |
         ("while" "active" "set" "flag" flag=IRI_TRUNK)
     )
 ;
+
+ROSTopic: "topic" channel_name=STRING ("as" type_name=STRING)? ;
 
 ControllerEntry:
     type=ControllerType name=IRI_TRUNK "{"

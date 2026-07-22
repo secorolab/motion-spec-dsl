@@ -45,9 +45,30 @@ from motion_spec_dsl.classes.motion import QuantityType, WorldQuantityType
 
 
 class ROS(DefinedNamespace):
+    Package: URIRef
     Topic: URIRef
-    _extras = ["channel-name", "type-name"]
+    Action: URIRef
+    Service: URIRef
+    HasFrameId: URIRef
+    _extras = ["package-name", "channel-name", "type-name", "frame-id"]
     _NS = Namespace("https://index.ros.org/p/")
+
+
+# Copied term-for-term from metamodels-bdd/ros.json. These aliases matter to
+# JSON-LD serialization even though the expanded RDF IRIs are the same.
+ROS_CONTEXT: dict[str, Any] = {
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "ros": "https://index.ros.org/p/",
+    "ROSPackage": {"@id": "ros:Package"},
+    "ros-pkg-name": {"@id": "ros:package-name", "@type": "xsd:string"},
+    "ROSTopic": {"@id": "ros:Topic"},
+    "ROSAction": {"@id": "ros:Action"},
+    "ROSService": {"@id": "ros:Service"},
+    "channel-name": {"@id": "ros:channel-name", "@type": "xsd:string"},
+    "type-name": {"@id": "ros:type-name", "@type": "xsd:string"},
+    "HasFrameId": {"@id": "ros:HasFrameId"},
+    "frame-id": {"@id": "ros:frame-id", "@type": "xsd:string"},
+}
 
 
 # Each entry: (rdf_types, qkinds, units, prop_map)
