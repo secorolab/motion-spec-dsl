@@ -39,7 +39,8 @@ MonitorEntry:
     (
         ("on" "activation" "trigger" "event" event=EventName
             ("after" "active" "for" debounce=Measure)?
-            ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?) |
+            ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?
+            ("also" "publish" "to" "topic" topic=STRING ("as" topic_type=STRING)?)?) |
         ("while" "active" "set" "flag" flag=IRI_TRUNK)
     )
 ;

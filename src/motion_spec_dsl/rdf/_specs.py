@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from rdflib import URIRef
+from rdflib.namespace import DefinedNamespace, Namespace
 from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
@@ -40,6 +42,12 @@ from motion_spec.namespace import (
     SOSA,
 )
 from motion_spec_dsl.classes.motion import QuantityType, WorldQuantityType
+
+
+class ROS(DefinedNamespace):
+    Topic: URIRef
+    _extras = ["channel-name", "type-name"]
+    _NS = Namespace("https://index.ros.org/p/")
 
 
 # Each entry: (rdf_types, qkinds, units, prop_map)
@@ -226,4 +234,5 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("slv-ext", SLV_EXT),
     ("sosa", SOSA),
     ("geom-path", GEOM_PATH),
+    ("ros", ROS),
 )

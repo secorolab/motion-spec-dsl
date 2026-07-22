@@ -28,6 +28,7 @@ from motion_spec.namespace import (
     SLV_EXT,
 )
 from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
+from motion_spec_dsl.rdf._specs import ROS
 
 
 MODELS = Path(__file__).parents[1] / "models"
@@ -225,6 +226,10 @@ def test_non_pose_component_views_keep_their_subspace(
     assert {graph.value(view, MAP.subspace) for view in twist_views} == {
         MAP["linear-velocity"]
     }
+    monitor = next(graph.subjects(ROS["channel-name"], None))
+    assert (monitor, RDF.type, ROS.Topic) in graph
+    assert str(graph.value(monitor, ROS["channel-name"])) == "/motion/forward_done"
+    assert str(graph.value(monitor, ROS["type-name"])) == "std_msgs/msg/Empty"
 
 
 def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> None:

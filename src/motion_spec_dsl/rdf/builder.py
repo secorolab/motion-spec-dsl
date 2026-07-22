@@ -120,6 +120,7 @@ from motion_spec_dsl.rdf._specs import (
     _QKIND_PREFIX,
     CONTEXT_COMPOSITE_WORLD_TYPE,
     GRAPH_BINDINGS,
+    ROS,
 )
 from motion_spec_dsl.rdf._helpers import (
     _ns_term,
@@ -2879,6 +2880,12 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
+                    if mon.topic:
+                        self.graph.add((mon_node, RDF.type, ROS.Topic))
+                        self.graph.add((mon_node, ROS["channel-name"], Literal(mon.topic)))
+                        self.graph.add(
+                            (mon_node, ROS["type-name"], Literal(mon.topic_type or "std_msgs/msg/Empty"))
+                        )
                     if mon.fallback is not None:
                         self.graph.add(
                             (
@@ -2967,6 +2974,12 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
+                if mon.topic:
+                    self.graph.add((mon_node, RDF.type, ROS.Topic))
+                    self.graph.add((mon_node, ROS["channel-name"], Literal(mon.topic)))
+                    self.graph.add(
+                        (mon_node, ROS["type-name"], Literal(mon.topic_type or "std_msgs/msg/Empty"))
+                    )
                 if mon.fallback is not None:
                     self.graph.add(
                         (

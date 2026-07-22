@@ -165,6 +165,8 @@ class MonitorEntry(NamedNamespaceObject):
     event: EventName | None = None
     fallback: GuardedMotion | None = None
     flag: str = ""
+    topic: str = ""
+    topic_type: str = ""
     # Optional `for <FLOAT> <Unit>` debounce clause: the monitored condition must
     # hold continuously for this long before the edge-triggered monitor fires.
     # Absent (None) == current byte-identical rising-edge behaviour.
