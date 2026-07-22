@@ -1,0 +1,9 @@
+import "kinova_gen3_robotiq_communication_test.scenex"
+
+ns app = "https://secorolab.github.io/models/kinova-gen3-robotiq-communication-test/"
+
+exec-context (ns=app) kinova-gen3-robotiq-communication-test-exec {
+    runs-scene: <kinova_gen3_robotiq_communication_test_scene_instance>
+    platform:   real-world { name: "robif2b-communication-test" }
+    timestep:   1.0 ms
+}

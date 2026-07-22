@@ -1,0 +1,11 @@
+ns kgrc_env = "https://secorolab.github.io/models/environments/kinova-gen3-robotiq-communication-test/"
+ns kgrc_agn = "https://secorolab.github.io/models/agents/kinova-gen3-robotiq-communication-test/"
+ns kgrc_scene = "https://secorolab.github.io/models/scenes/kinova-gen3-robotiq-communication-test/"
+
+agn set (ns=kgrc_agn) agents {
+    agent kinova_ft_2f85
+}
+
+scene (ns=kgrc_scene) kinova_gen3_robotiq_communication_test_scene {
+    agn set <agents>
+}
