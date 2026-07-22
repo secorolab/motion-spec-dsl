@@ -26,6 +26,7 @@ jobs:
           pip install \
             "git+https://github.com/secorolab/rdf-utils.git@main" \
             "git+https://github.com/secorolab/motion-spec.git@dev" \
+            "git+https://github.com/secorolab/scene-dsl.git@main" \
             "git+https://github.com/secorolab/coord-dsl.git@main"
 
       - name: Install motion_spec_dsl
