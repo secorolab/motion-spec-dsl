@@ -23,6 +23,7 @@ dependencies = [
     "pyshacl>=0.25.0",
     "coord_dsl",
     "scene-dsl",
+    "numpy>=1.26",
 ]
 
 [project.entry-points."textx_languages"]

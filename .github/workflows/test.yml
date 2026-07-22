@@ -22,7 +22,7 @@ jobs:
       # is added explicitly. Assumes the secorolab repos are public; add a token otherwise.
       - name: Install workspace siblings
         run: |
-          pip install pytest textX pyshacl platformdirs textx_ls_core jinja2
+          pip install pytest textX pyshacl platformdirs textx_ls_core jinja2 "numpy>=1.26"
           pip install \
             "git+https://github.com/secorolab/rdf-utils.git@main" \
             "git+https://github.com/secorolab/motion-spec.git@dev" \
