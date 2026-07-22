@@ -121,7 +121,6 @@ from motion_spec_dsl.rdf._specs import (
     CONTEXT_COMPOSITE_WORLD_TYPE,
     GRAPH_BINDINGS,
     ROS,
-    ROS_CONTEXT,
 )
 from motion_spec_dsl.rdf._helpers import (
     _ns_term,
@@ -197,7 +196,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_position_coords: set[URIRef] = set()
         self._emitted_orientation_coords: set[URIRef] = set()
 
-    def build(self) -> tuple[Dataset, dict[str, Any]]:
+    def build(self) -> tuple[Dataset, dict[str, str]]:
         """Emit the full dataset and return it with its JSON-LD namespace context.
 
         Emits context specs once, then for each authored handler+motion runs
@@ -209,10 +208,9 @@ class MotionSpecDatasetBuilder:
 
         shared_spec_ids = self._compute_shared_specs(handlers)
 
-        context: dict[str, Any] = {}
+        context: dict[str, str] = {}
         for prefix, ns in GRAPH_BINDINGS:
             context[prefix] = str(ns._NS)
-        context.update(ROS_CONTEXT)
 
         for model in self.models:
             for spec in getattr(model, "specs", []):
@@ -2612,20 +2610,18 @@ class MotionSpecDatasetBuilder:
             self.graph.add((eval_node, CSTR_HDL.error, error_node))
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
-    def _emit_ros_topic(self, monitor: Any, event_node: URIRef) -> None:
-        """Describe the monitor's published event as a ROS topic."""
+    def _emit_ros_topic(self, monitor: Any, monitor_node: URIRef) -> None:
+        """Describe a monitor backed by a ROS topic."""
         topic = monitor.ros_topic
         if topic is None:
             return
-        self.graph.add((event_node, RDF.type, ROS.Topic))
-        self.graph.add(
-            (event_node, ROS["channel-name"], Literal(topic.channel_name, datatype=XSD.string))
-        )
+        self.graph.add((monitor_node, RDF.type, ROS.Topic))
+        self.graph.add((monitor_node, ROS["channel-name"], Literal(topic.channel_name)))
         self.graph.add(
             (
-                event_node,
+                monitor_node,
                 ROS["type-name"],
-                Literal(topic.type_name or "std_msgs/msg/Empty", datatype=XSD.string),
+                Literal(topic.type_name or "std_msgs/msg/Empty"),
             )
         )
 
@@ -2899,7 +2895,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
-                    self._emit_ros_topic(mon, signal_node)
+                    self._emit_ros_topic(mon, mon_node)
                     if mon.fallback is not None:
                         self.graph.add(
                             (
@@ -2988,7 +2984,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
-                self._emit_ros_topic(mon, signal_node)
+                self._emit_ros_topic(mon, mon_node)
                 if mon.fallback is not None:
                     self.graph.add(
                         (

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
-from rdflib.namespace import RDF, XSD
+from rdflib.namespace import RDF
 
 from motion_spec.ir_gen import _authored_controller_axes, _load_graph, generate_ir
 from motion_spec.namespace import (
@@ -28,7 +28,7 @@ from motion_spec.namespace import (
     SLV_EXT,
 )
 from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
-from motion_spec_dsl.rdf._specs import ROS, ROS_CONTEXT
+from motion_spec_dsl.rdf._specs import ROS
 
 
 MODELS = Path(__file__).parents[1] / "models"
@@ -226,22 +226,15 @@ def test_non_pose_component_views_keep_their_subspace(
     assert {graph.value(view, MAP.subspace) for view in twist_views} == {
         MAP["linear-velocity"]
     }
-    topic = next(graph.subjects(ROS["channel-name"], None))
-    monitor = next(graph.subjects(CSTR_HDL.event, topic))
-    assert (topic, RDF.type, ROS.Topic) in graph
-    assert (monitor, RDF.type, ROS.Topic) not in graph
-    assert str(graph.value(topic, ROS["channel-name"])) == "/motion/forward_done"
-    assert str(graph.value(topic, ROS["type-name"])) == "std_msgs/msg/Empty"
-    assert graph.value(topic, ROS["channel-name"]).datatype == XSD.string
-    assert graph.value(topic, ROS["type-name"]).datatype == XSD.string
+    monitor = next(graph.subjects(RDF.type, ROS.Topic))
+    assert graph.value(monitor, CSTR_HDL.event) is not None
+    assert str(graph.value(monitor, ROS["channel-name"])) == "/motion/forward_done"
+    assert str(graph.value(monitor, ROS["type-name"])) == "std_msgs/msg/Empty"
 
-    document = json.loads((tmp_path / "admittance_arc_single.ld.json").read_text())
-    context = document["@context"]
-    assert {term: context[term] for term in ROS_CONTEXT} == ROS_CONTEXT
-    topic_json = next(node for node in document["@graph"] if node["@id"] == str(topic))
-    assert "ROSTopic" in topic_json["@type"]
-    assert topic_json["channel-name"] == "/motion/forward_done"
-    assert topic_json["type-name"] == "std_msgs/msg/Empty"
+    document = (tmp_path / "admittance_arc_single.ld.json").read_text()
+    assert '"ros": "https://index.ros.org/p/"' in document
+    unused_terms = ("ROSPackage", "ROSAction", "ROSService", "HasFrameId")
+    assert not any(term in document for term in unused_terms)
 
 
 def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> None:
