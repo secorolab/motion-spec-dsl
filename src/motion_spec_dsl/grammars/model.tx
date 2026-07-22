@@ -1,0 +1,47 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+// Top-level composition and execution target.
+
+import base
+import context
+import trajectory
+import motion_spec
+import constraint_handler
+
+Model:
+    imports*=Import
+    namespaces*=NamespaceDeclare
+    specs+=Specification
+;
+
+Specification:
+    ContextSpec | ExecutionContext | GuardedMotion | ConstraintHandler
+;
+
+// Execution target: binds the imported scene to a platform (real-world | simulation)
+// and a control timestep. The controlled robot(s) come from the referenced scene's
+// agents; the platform is dispatched off its name (required for simulation).
+ExecutionContext:
+    "exec-context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        "runs-scene" ":" "<" scene=[scene.SceneInstance|FQN] ">"
+        "platform"   ":" platform=Platform
+        "timestep"   ":" timestep=FLOAT timestep_unit=Unit
+    "}"
+;
+
+Platform:
+    RealWorldPlatform | SimulationPlatform
+;
+
+RealWorldPlatform:
+    kind="real-world"
+        ("{" "name" ":" name=STRING
+             ("," "version" ":" version=STRING)? "}")?
+;
+
+SimulationPlatform:
+    kind="simulation"
+        "{" "name" ":" name=STRING
+            ("," "version" ":" version=STRING)? "}"
+;

@@ -1,0 +1,148 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
+"""Invariants for the interaction path: force sensing, velocity control, per-motion ownership.
+
+Each check here corresponds to a defect that a passing headless run did not reveal -- the FSM
+completed start-to-end while the arm was uncommanded on an axis, blind to external force, or
+recomputing another motion's state.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from motion_spec.ir_gen import generate_ir
+from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
+
+
+MODELS = Path(__file__).parents[1] / "models"
+METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
+
+
+@pytest.fixture
+def interaction_ir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """IR for the force-interaction model (admittance, arc re-entry, until groups)."""
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(
+        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    )
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    return generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
+
+
+def _motion(ir: dict, motion_id: str):
+    return next(m for m in ir["motions"] if m.id == motion_id)
+
+
+def _acceleration_rows(motion) -> set[tuple[str, str]]:
+    """The (subspace, axis) solver rows a motion actually commands."""
+    return {
+        (row.subspace, row.axis)
+        for solver in motion.arm_solvers
+        for row in solver.motion_driver.acceleration_constraint
+    }
+
+
+def test_velocity_constraints_get_a_solver_row(interaction_ir: dict) -> None:
+    """A velocity constraint must reach the solver.
+
+    derive_solver matched stale subspace tokens, so these produced no constraint row: the
+    controller computed a signal that codegen then dropped, leaving the axis uncommanded.
+    """
+    rows = _acceleration_rows(_motion(interaction_ir, "motion_touchdown"))
+    assert ("Linear", "Z") in rows, f"velocity constraint produced no Z row; rows={sorted(rows)}"
+
+    comply_rows = _acceleration_rows(_motion(interaction_ir, "motion_compliance"))
+    assert {("Linear", "X"), ("Linear", "Y"), ("Linear", "Z")} <= comply_rows
+
+
+def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
+    """The scenex force-torque declaration must survive into the solver setup.
+
+    It was hardcoded empty, so find_ft_sensor() returned null and the measured wrench stayed
+    exactly zero for whole runs while the physics engine applied real forces.
+    """
+    sensors = [
+        sensor
+        for solver in interaction_ir["arm_solvers"]
+        for sensor in (getattr(solver, "ft_sensors", None) or [])
+    ]
+    assert sensors, "scenex declares force-torque wrist_ft but no solver carries it"
+    assert {s["name"] for s in sensors} == {"wrist_ft"}
+    assert all(s["frame_site"] for s in sensors)
+
+
+def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: dict) -> None:
+    """A closure feeding a pose-axis error group must be scheduled, and scheduled first.
+
+    Grouped evaluators were excluded from the schedule walk, so the admittance filter was
+    generated but never called and its reference stayed 0.0 -- the compliant axes were in
+    fact a stiff zero-velocity regulator.
+    """
+    compliance = _motion(interaction_ir, "motion_compliance")
+    admit = [c for c in interaction_ir["closures"] if c.startswith("admit_")]
+    assert admit, "model declares admittance references"
+    assert set(admit) <= set(compliance.while_pre_schedule), (
+        f"admittance closures unscheduled: {sorted(set(admit) - set(compliance.while_pre_schedule))}"
+    )
+
+
+def test_no_motion_captures_another_motions_snapshot(interaction_ir: dict) -> None:
+    """Snapshots write shared slots, so a motion re-capturing another's retargets it.
+
+    Entering the compliance motion used to re-derive the arc's end pose from the pose at that
+    instant, moving the arc's goal every time the arm was pushed.
+    """
+    owners: dict[str, set[str]] = {}
+    for motion in interaction_ir["motions"]:
+        for snapshot in motion.snapshots:
+            owners.setdefault(snapshot.target_id, set()).add(motion.id)
+    shared = {t: m for t, m in owners.items() if len(m) > 1}
+    assert not shared, f"snapshots captured by several motions: {shared}"
+
+
+def test_no_motion_schedules_another_motions_closure(interaction_ir: dict) -> None:
+    """The backward schedule walk must not pull in a closure another motion declares.
+
+    The arc trajectory was scheduled into every motion, so the compliance motion advanced the
+    arc's path parameter and recomputed its setpoint while the arc was not running.
+    """
+    arc_only = {"arc_path"}
+    for motion in interaction_ir["motions"]:
+        if motion.id == "motion_arc_motion":
+            continue
+        scheduled = set(motion.while_schedule) | set(motion.while_pre_schedule)
+        assert not (arc_only & scheduled), f"{motion.id} schedules the arc trajectory"
+
+
+def test_until_groups_are_monitored_independently(interaction_ir: dict) -> None:
+    """Named until groups give one motion several transitions, each ANDed on its own."""
+    compliance = _motion(interaction_ir, "motion_compliance")
+    by_event = {m.event_name: m for m in compliance.until_monitors}
+    assert {"E_FORCE_GONE", "E_TABLE_CONTACT"} <= set(by_event)
+
+    released = by_event["E_FORCE_GONE"]
+    assert len(released.group_constraint_ids) == 3, "release must cover every force axis"
+    assert released.group_any is False
+    assert len(released.active_terms) == 3
+
+    table = by_event["E_TABLE_CONTACT"]
+    assert len(table.group_constraint_ids) == 2
+    assert set(released.group_constraint_ids) & set(table.group_constraint_ids) == set()
+
+
+def test_event_triggered_snapshot_carries_its_fsm_event(interaction_ir: dict) -> None:
+    """`snapshot ... on event E` re-samples on re-entry, and only in the declaring motion."""
+    arc = _motion(interaction_ir, "motion_arc_motion")
+    triggered = [s for s in arc.snapshots if s.trigger_event]
+    assert triggered, "arc start pose re-samples on entry"
+    assert all(s.fsm_namespace for s in triggered)
+    assert {s.trigger_event for s in triggered} == {"E_ARC_ENTERED"}
+    # The end pose stays initial-sampled: re-sampling it would move the goal.
+    assert [s.trigger_event for s in arc.snapshots if s.target_id.startswith("end_")] == [
+        None
+    ] * len([s for s in arc.snapshots if s.target_id.startswith("end_")])

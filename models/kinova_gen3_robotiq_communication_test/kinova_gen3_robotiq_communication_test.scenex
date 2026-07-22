@@ -1,0 +1,68 @@
+import "kinova_gen3_robotiq_communication_test.scene"
+import "../kinova_gen3_7dof.ktree"
+import "../robotiq_2f85.ktree"
+
+ns kgrc = "https://secorolab.github.io/models/scenes/kinova-gen3-robotiq-communication-test/"
+
+ktree inst (ns=kgrc) kinova of <kinova_tree>
+ktree inst (ns=kgrc) gripper of <gripper_tree>
+
+ktree (ns=kgrc) ft_tree {
+    body wrist_ft_body {
+        frame wrist_ft_body_origin { }
+        frame wrist_ft_site { }
+    }
+    joints { }
+}
+
+ktree (ns=kgrc) kinova_ft_2f85 {
+    tree <kinova>
+    tree <ft_tree>
+    tree <gripper>
+
+    joints {
+        fixed ft_on_pinch_site {
+            parent: <kinova.bracelet_link.pinch_site>
+            child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
+        }
+        fixed gripper_on_ft {
+            parent: <ft_tree.wrist_ft_body.wrist_ft_site>
+            child: <gripper.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova.base_link.base_link_origin>
+            tip: <gripper.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=kgrc) world_tree {
+    tree <kinova_ft_2f85>
+
+    body world_body {
+        frame world { }
+    }
+
+    joints {
+        fixed arm_on_world {
+            parent: <world_body.world>
+            child: <kinova.base_link.base_link_origin>
+        }
+    }
+}
+
+scene inst (ns=kgrc) kinova_gen3_robotiq_communication_test_scene_instance {
+    scene: <kinova_gen3_robotiq_communication_test_scene>
+
+    kgraph (ns=kgrc) kinova_gen3_robotiq_communication_test_graph {
+        tree <world_tree>
+    }
+
+    agn <agents.kinova_ft_2f85> {
+        force-torque wrist_ft {
+            frame: <ft_tree.wrist_ft_body.wrist_ft_site>
+            observes: force torque
+            update-rate: 100.0 Hz
+        }
+    }
+}

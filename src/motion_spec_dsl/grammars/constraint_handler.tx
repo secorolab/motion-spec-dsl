@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+// Constraint-handler assembly, monitors, controllers, and solvers.
+
+import base
+import context
+import trajectory
+import motion_spec
+
+SaturationSpec:
+    "saturation" "{"
+        (
+            "max" ":" maximum=ContextRef |
+            "lower" ":" lower=ContextRef "," "upper" ":" upper=ContextRef
+        )
+    "}"
+;
+
+ConstraintHandler:
+    "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        ("context"    "{" context*=HandlerContextItem[","] "}")?
+        "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
+        ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
+        "controllers"  "{" controllers*=ControllerItem[","]? "}"
+        "solvers"      "{" solvers+=SolverItem[","] "}"
+    "}"
+;
+
+ControllerItem: ControllerAlias | ControllerEntry ;
+ControllerAlias: (name=IRI_TRUNK ":")? "<" ref=ControllerRef ">" ;
+SolverItem: SolverAlias | SolverEntry ;
+SolverAlias: (name=IRI_TRUNK ":")? "<" ref=SolverRef ">" ;
+HandlerContextDecl: WorldContextDecl | SpecContextDecl ;
+HandlerContextItem: HandlerContextDecl | ContextDeclReference ;
+
+MonitorEntry:
+    name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">"
+    (
+        ("on" "activation" "trigger" "event" event=EventName
+            ("after" "active" "for" debounce=Measure)?
+            ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?) |
+        ("while" "active" "set" "flag" flag=IRI_TRUNK)
+    )
+;
+
+ControllerEntry:
+    type=ControllerType name=IRI_TRUNK "{"
+        params=ControllerParams
+    "}"
+    ("as" command_type=QuantityType)?
+    ("apply" "at" "<" apply_at=[scene.RigidBody|FQN] ">")?
+    ("via" "<" solver=SolverRef ">")?
+;
+
+ControllerType: "pid" | "impedance" | "abag" | "feed-forward" ;
+
+ControllerParams:
+    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("," "profile" ":" profile=ContextRef)?
+    ("," "measured-derivative" ":" measured_derivative=View)?
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+    ("," "integral-saturation" ":" integral_saturation=SaturationSpec)?
+    ("," terms*=ControllerParam[","])?
+;
+
+ControllerParam: name=ControllerParamName ":" value=FLOAT ;
+ControllerParamName: "Kp" | "Ki" | "Kd" | "stiffness" | "damping" | "decay" ;
+MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
+UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
+WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;
+ControllerRef: handler=[ConstraintHandler|IRI_TRUNK] "." controller=[ControllerEntry|IRI_TRUNK] ;
+SolverRef: (handler=[ConstraintHandler|IRI_TRUNK] ".")? solver=[SolverEntry|IRI_TRUNK] ;
+
+SolverEntry:
+    "solver" name=IRI_TRUNK "{"
+        "agent"     ":" "<" agent=[scene.Agent|FQN] ">" ","
+        "algorithm" ":" algorithm=SolverAlgorithm
+        ("," limits=SolverLimits)?
+        ("," "gravity" ":" gravity_value=GravityValue)?
+    "}"
+;
+
+SolverLimits: "limits" "{" entries+=SolverLimitEntry[","] "}" ;
+SolverLimitEntry: target=SolverLimitTarget ":" saturation=SaturationSpec ;
+SolverLimitTarget: "torque" | "linear-acceleration" | "angular-acceleration" ;
+SolverAlgorithm: "ACHD" | "RNE" | "command-forwarding" | "velocity-distribution" | "force-distribution" ;
+
+GravityVector:
+    "{" "x" ":" x=FLOAT ","
+        "y" ":" y=FLOAT ","
+        "z" ":" z=FLOAT unit=Unit
+    "}"
+;
+
+GravityValue: ("=")? literal=GravityVector | ref=ContextRef ;

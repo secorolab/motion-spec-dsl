@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+// Trajectory kinds and geometric paths.
+
+import context
+
+TrajectoryValue:
+    "=" (lerp=LerpSpec | circle=CircleSpec | arc=ArcSpec | helix=HelixSpec | figure8=Figure8Spec)
+;
+
+LerpSpec:
+    "lerp" "{"
+        "start" ":" start=ContextRef ","
+        "goal"  ":" goal=ContextRef  ","
+        "alpha" ":" alpha=ContextRef
+        ("," "profile" ":" profile=EasingProfile)?
+    "}"
+;
+
+EasingProfile: "linear" | "ease-in" | "ease-out" | "ease-in-out" ;
+
+CircleSpec:
+    "circle" "{"
+        "start"        ":" start=ContextRef        ","
+        "center"       ":" center=ContextRef       ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "alpha"        ":" alpha=ContextRef
+    "}"
+;
+
+ArcSpec:
+    "arc" "{"
+        "start"        ":" start=ContextRef        ","
+        "end"          ":" end=ContextRef          ","
+        "amplitude"    ":" amplitude=ContextRef    ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "alpha"        ":" alpha=ContextRef
+    "}"
+;
+
+HelixSpec:
+    "helix" "{"
+        "start"       ":" start=ContextRef       ","
+        "center"      ":" center=ContextRef      ","
+        "axis"        ":" axis=ContextRef        ","
+        "pitch"       ":" pitch=ContextRef       ","
+        "revolutions" ":" revolutions=ContextRef ","
+        "alpha"       ":" alpha=ContextRef
+    "}"
+;
+
+Figure8Spec:
+    "figure8" "{"
+        "anchor"       ":" anchor=ContextRef       ","
+        "radius"       ":" radius=ContextRef       ","
+        "plane-normal" ":" plane_normal=ContextRef ","
+        "alpha"        ":" alpha=ContextRef
+        ("," "form" ":" form=Figure8Form)?
+    "}"
+;
+
+Figure8Form: "gerono" | "bernoulli" ;

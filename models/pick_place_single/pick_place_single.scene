@@ -1,0 +1,30 @@
+ns pps_env = "https://secorolab.github.io/models/environments/pick-place-single/"
+ns pps_agn = "https://secorolab.github.io/models/agents/pick-place-single/"
+ns pps_scene = "https://secorolab.github.io/models/scenes/pick-place-single/"
+ns pps_mjc = "https://secorolab.github.io/models/scenes/pick-place-single-mjc/"
+
+obj set (ns=pps_env) pickplace_objects {
+    object cube
+}
+
+obj set (ns=pps_env) ws_objects {
+    object table
+}
+
+ws set (ns=pps_env) pickplace_workspaces {
+    workspace table_ws
+}
+
+agn set (ns=pps_agn) pickplace_agents {
+    agent kinova_2f85
+}
+
+comp (ns=pps_env) comp_table_pickplace of ws <pickplace_workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=pps_scene) pick_place_scene {
+    obj set <pickplace_objects>
+    ws comp <comp_table_pickplace>
+    agn set <pickplace_agents>
+}

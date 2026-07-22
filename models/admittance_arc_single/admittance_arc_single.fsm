@@ -1,0 +1,65 @@
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+fsm (ns=aas) admittance_arc_single_fsm {
+    description: "Home, descend to contact, move forward, trace an arc, and yield to external force through admittance control."
+
+    states {
+        S_START,
+        S_HOME,
+        S_TOUCHDOWN,
+        S_FORWARD,
+        S_ARC,
+        S_ADMITTANCE,
+        S_DONE
+    }
+
+    events {
+        E_STEP,
+        E_HOME_SETTLED,
+        E_CONTACT,
+        E_FORWARD_DONE,
+        E_FORCE_DETECTED,
+        E_FORCE_GONE,
+        E_ARC_CONTACT,
+        E_TABLE_CONTACT,
+        E_ARC_ENTERED,
+        E_ADMITTANCE_ENTERED
+    }
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_HOME        { from: <S_START>,      to: <S_HOME> },
+        T_HOME_TOUCHDOWN    { from: <S_HOME>,       to: <S_TOUCHDOWN> },
+        T_TOUCHDOWN_FORWARD { from: <S_TOUCHDOWN>,  to: <S_FORWARD> },
+        T_FORWARD_ARC       { from: <S_FORWARD>,    to: <S_ARC> },
+        T_ARC_ADMITTANCE    { from: <S_ARC>,        to: <S_ADMITTANCE> },
+        T_ARC_DONE          { from: <S_ARC>,        to: <S_DONE> },
+        T_ADMITTANCE_DONE   { from: <S_ADMITTANCE>, to: <S_DONE> },
+        T_ADMITTANCE_ARC    { from: <S_ADMITTANCE>, to: <S_ARC> }
+    }
+
+    reactions {
+        R_STEP_START { when: <E_STEP>, do: <T_START_HOME> },
+        R_HOME_SETTLED { when: <E_HOME_SETTLED>, do: <T_HOME_TOUCHDOWN> },
+        R_CONTACT { when: <E_CONTACT>, do: <T_TOUCHDOWN_FORWARD> },
+        R_FORWARD_DONE {
+            when: <E_FORWARD_DONE>,
+            do:   <T_FORWARD_ARC>,
+            fires { <E_ARC_ENTERED> }
+        },
+        R_FORCE_DETECTED {
+            when: <E_FORCE_DETECTED>,
+            do:   <T_ARC_ADMITTANCE>,
+            fires { <E_ADMITTANCE_ENTERED> }
+        },
+        R_ARC_CONTACT { when: <E_ARC_CONTACT>, do: <T_ARC_DONE> },
+        R_TABLE_CONTACT { when: <E_TABLE_CONTACT>, do: <T_ADMITTANCE_DONE> },
+        R_FORCE_GONE {
+            when: <E_FORCE_GONE>,
+            do:   <T_ADMITTANCE_ARC>,
+            fires { <E_ARC_ENTERED> }
+        }
+    }
+}

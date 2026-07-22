@@ -1,0 +1,129 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+// Guarded-motion and shared context declarations.
+
+import base
+import context
+import trajectory
+
+ContextSpec:
+    "context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        context*=MotionContextDecl[","]
+    "}"
+;
+
+
+GuardedMotion:
+    "guarded-motion" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        ("move"       ":" move=STRING)?
+        "context"  "{" context*=MotionContextItem[","] "}"
+        sections+=ConstraintSection
+    "}"
+;
+
+ConstraintSection:
+    WhenSection | WhileSection | UntilSection
+;
+
+WhenSection:  "when"  (logic=WhenLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
+WhileSection: "while" "{" constraints*=ConstraintItem[","]? "}" ;
+UntilSection: "until" (logic=UntilLogic)? "{" constraints*=UntilItem[","]? "}" ;
+WhenLogic:    "any" | "all" ;
+UntilLogic:   "any" | "all" ;
+
+UntilItem: ConstraintGroup | ConstraintItem ;
+ConstraintGroup:
+    name=IRI_TRUNK logic=UntilLogic "{" constraints+=ConstraintItem[","] "}"
+;
+
+ConstraintItem: ConstraintSpecification | ConstraintAlias ;
+ConstraintAlias: (name=IRI_TRUNK ":")? "<" ref=ConstraintRef ">" ;
+
+MotionContextDecl:
+    QuantityContextDecl
+;
+
+MotionContextItem:
+    MotionContextDecl | ContextDeclReference
+;
+
+ContextDeclReference:
+    "<" ref=[QuantityContextDecl|FQN] ">"
+;
+
+QuantityContextDecl:
+    WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
+;
+
+WorldContextDecl:
+    name="world" "{" declaration+=WorldQuantityItem[","] "}"
+;
+
+PreContextDecl:
+    name="pre" "{" declaration+=ContextQuantityItem[","] "}"
+;
+
+SpecContextDecl:
+    name="spec" "{" declaration+=ContextQuantityItem[","] "}"
+;
+
+PostContextDecl:
+    name="post" "{" declaration+=ContextQuantityItem[","] "}"
+;
+
+WorldQuantityItem:
+    WorldQuantityAlias | WorldQuantity
+;
+
+WorldQuantityAlias:
+    (name=IRI_TRUNK ":")? "<" ref=[WorldQuantity|FQN] ">"
+;
+
+ContextQuantityItem:
+    ContextQuantityAlias | ContextTrajectory | ContextQuantity
+;
+
+ContextQuantityAlias:
+    (name=IRI_TRUNK ":")? "<" ref=[ContextQuantity|FQN] ">"
+;
+
+ContextTrajectory:
+    "trajectory" name=IRI_TRUNK value=TrajectoryValue
+;
+
+ConstraintSpecification:
+    disabled?='@disable' name=IRI_TRUNK ":"
+    ("keeping")? view=View expr=ConstraintRelation
+;
+
+ConstraintRelation:
+    EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | OutsideConstraint
+;
+
+EqualityConstraint:
+    "equal" "to" reference=ContextRef
+;
+
+GreaterThanConstraint:
+    ("greater" "than" | "is" "larger" "than" | "away" "from") threshold=ContextRef
+;
+
+LessThanConstraint:
+    ("less" "than" | "is" "smaller" "than" | "up" "to") threshold=ContextRef
+;
+
+BilateralConstraint:
+    "between" lower=ContextRef "and" upper=ContextRef
+;
+
+OutsideConstraint:
+    "outside" lower=ContextRef "and" upper=ContextRef
+;
+
+ConstraintRef:
+    motion=[GuardedMotion|IRI_TRUNK] "." constraint=[ConstraintTarget|IRI_TRUNK]
+;
+
+// A monitor or controller may name a single constraint, or an until group monitored as one.
+ConstraintTarget: ConstraintSpecification | ConstraintGroup ;

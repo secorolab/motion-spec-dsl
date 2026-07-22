@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+// World quantities, geometric properties, views, and context quantities: values,
+// snapshots, poses, references, and reference-generator specs (admittance, velocity profile).
+
+import base
+
+WorldQuantity:
+    type=NonGravityWorldQuantityType name=IRI_TRUNK ("{" props=GeometricProps "}")?
+;
+
+NonGravityWorldQuantityType:
+    "velocity-twist" | "wrench" | "pose" | "joint-position"
+;
+
+GeometricProps:
+    pairs+=GeoPropPair[","]
+;
+
+// Geometric props reference scenex elements directly: frames for the
+// pose/twist/wrench slots, a joint for joint-space quantities, an FT sensor
+// for measured wrenches.
+GeoPropPair:
+      key="of"         ":" "<" frame=[scene.Frame|FQN] ">"
+    | key="wrt"        ":" "<" frame=[scene.Frame|FQN] ">"
+    | key="ref-point"  ":" "<" frame=[scene.Frame|FQN] ">"
+    | key="as-seen-by" ":" "<" frame=[scene.Frame|FQN] ">"
+    | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
+    | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
+;
+
+QuantityValue:
+    ScalarQuantity | VectorQuantity
+;
+
+ScalarQuantity:
+    "=" Measure
+;
+
+Measure: value=FLOAT unit=Unit ;
+
+VectorQuantity:
+    "=" "{"
+    "x" ":" x=FLOAT ","
+    "y" ":" y=FLOAT ","
+    "z" ":" z=FLOAT (unit=Unit)?
+    "}"
+;
+
+QuantityType:
+    "pose"                |
+    "position"            |
+    "orientation"         |
+    "velocity-twist"      |
+    "acceleration-twist"  |
+    "wrench"              |
+    "angular-velocity"    |
+    "linear-velocity"     |
+    "linear-acceleration" |
+    "angular-acceleration"|
+    "linear-jerk"         |
+    "force"               |
+    "torque"              |
+    "distance"            |
+    "angle"               |
+    "direction"           |
+    "free-vector"         |
+    "dimensionless"       |
+    "duration"            |
+    "path-parameter"
+;
+
+View:
+    (
+        "distance" "between"
+        "<" distance_from=[WorldQuantity|FQN] ">"
+        "and"
+        "<" distance_to=[WorldQuantity|FQN] ">"
+    )
+    |
+    elapsed=ElapsedTime
+    |
+    (
+        "<" quantity=[WorldQuantity|FQN] ">"
+        selector=SelectorTail?
+    )
+;
+
+ElapsedTime:
+    marker?="elapsed"
+;
+
+SelectorTail:
+    "." subspace=SubSpace ("." axis=Axis)?
+;
+
+SubSpace:
+    "angacc"      |
+    "angvel"      |
+    "linacc"      |
+    "linvel"      |
+    "torque"      |
+    "force"       |
+    "orientation" |
+    "position"
+;
+
+Axis:
+    "x" | "y" | "z" | "roll" | "pitch" | "yaw"
+;
+
+LinearAxis: "x" | "y" | "z" ;
+AngularAxis: "roll" | "pitch" | "yaw" ;
+
+// Compact DSL unit spellings only. Verbose QUDT spellings belong in JSON-LD,
+// not authored .robmot files.
+Unit:
+    "rad/s2" | "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
+    "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N" | "1"
+;
+
+// Context quantities: values, poses, snapshots, and references.
+
+PositionValue:
+    "{" (terms*=PositionTerm[","])? "}"
+;
+
+PositionTerm:
+    axis=LinearAxis ":" (value=FLOAT unit=Unit | ref=ContextRef)
+;
+
+OrientationValue:
+    "{" (terms*=OrientationTerm[","])? "}"
+;
+
+OrientationTerm:
+    axis=AngularAxis ":" (value=FLOAT unit=Unit | ref=ContextRef)
+;
+
+ContextQuantity:
+    type=ContextQuantityType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=ContextQuantityValue?
+;
+
+ContextQuantityType:
+    QuantityType | QuantityAliasType | ReferenceGeneratorType
+;
+
+ReferenceGeneratorType:
+    "velocity-profile" | "admittance"
+;
+
+QuantityAliasType:
+    "linear-distance" | "angular-distance"
+;
+
+ContextQuantityValue:
+    AdmittanceSpec | ProfileSpec | QuantityValue | SnapshotValue | PoseValue | ReferenceValue
+;
+
+AdmittanceSpec:
+    "=" "{"
+        "force" ":" force=View ","
+        "mass" ":" mass=FLOAT ","
+        "damping" ":" damping=FLOAT
+        ("," "stiffness" ":" stiffness=FLOAT)?
+        "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=Unit)?
+    "}"
+;
+
+ProfileSpec:
+    "=" "profile" "{"
+        "max-velocity" ":" max_velocity=ContextRef ","
+        "max-acceleration" ":" max_acceleration=ContextRef
+        ("," "measured-velocity" ":" measured_velocity=View)?
+        ("," "max-jerk" ":" max_jerk=ContextRef)?
+        ("," "shape" ":" shape=VelocityProfileShape)?
+    "}"
+;
+
+VelocityProfileShape: "trapezoidal" | "s-curve" ;
+
+SnapshotValue:
+    "=" "snapshot" "of" source=View ("+" offset=ContextRef)?
+    ("on" "event" trigger=EventName)?
+;
+
+PoseValue:
+    "=" "{"
+        "position" ":" position=PositionValue ","
+        "orientation" ":" orientation=OrientationValue
+    "}"
+;
+
+ContextRef:
+    "[" quantity=[ContextQuantity|FQN] literal_value=QuantityValue? "]"
+  | "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
+  | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
+  | bare=Measure
+;
+
+ContextScope:
+    "pre" | "spec" | "post"
+;
+
+ReferenceValue:
+    "=" source=ContextRef ("+" offset=ContextRef)?
+;
