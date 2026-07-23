@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pyshacl import validate
@@ -27,6 +28,8 @@ from motion_spec.namespace import (
     SLV,
     SLV_EXT,
 )
+from motion_spec_dsl.classes.constraint_handler import ROSTopic
+from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
 from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
 from motion_spec_dsl.rdf._specs import ROS
 
@@ -226,15 +229,35 @@ def test_non_pose_component_views_keep_their_subspace(
     assert {graph.value(view, MAP.subspace) for view in twist_views} == {
         MAP["linear-velocity"]
     }
+
+
+def test_monitor_publishes_to_ros_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`also publish to topic` marks the event monitor as a ROS topic, reusing the canonical
+    ROS namespace and leaking none of the unused terms from its JSON-LD context."""
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_file(
+        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    )
+    builder = MotionSpecDatasetBuilder(model)
+    dataset, context = builder.build()
+    graph = dataset.default_graph
+
     monitor = next(graph.subjects(RDF.type, ROS.Topic))
     assert graph.value(monitor, CSTR_HDL.event) is not None
     assert str(graph.value(monitor, ROS["channel-name"])) == "/motion/forward_done"
-    assert str(graph.value(monitor, ROS["type-name"])) == "std_msgs/msg/Empty"
+    assert str(graph.value(monitor, ROS["type-name"])) == "bdd_ros2_interfaces/msg/Trinary"
 
-    document = (tmp_path / "admittance_arc_single.ld.json").read_text()
+    document = graph.serialize(format="json-ld", context=context)
+    document = document.decode() if isinstance(document, bytes) else document
     assert '"ros": "https://index.ros.org/p/"' in document
     unused_terms = ("ROSPackage", "ROSAction", "ROSService", "HasFrameId")
     assert not any(term in document for term in unused_terms)
+
+    # An omitted `as <type>` falls back to the empty message type.
+    node = URIRef("urn:test:default-topic")
+    builder._emit_ros_topic(SimpleNamespace(ros_topic=ROSTopic(channel_name="/x")), node)
+    assert str(graph.value(node, ROS["type-name"])) == "std_msgs/msg/Empty"
 
 
 def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> None:
