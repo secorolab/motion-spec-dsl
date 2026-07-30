@@ -14,6 +14,8 @@ from motion_spec_dsl.validation.constraints import (
     validate_constraint_context_refs,
     validate_constraint_value_types,
     validate_context_quantity_values,
+    validate_elapsed_constraint_relations,
+    validate_progress_objectives,
     validate_unique_constraint_names,
 )
 from motion_spec_dsl.validation.controllers import (
@@ -50,7 +52,9 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_unique_constraint_names(model)
     validate_constraint_context_refs(model)
     validate_context_quantity_values(model)
+    validate_progress_objectives(model)
     validate_constraint_value_types(model)
+    validate_elapsed_constraint_relations(model)
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_refs(model)

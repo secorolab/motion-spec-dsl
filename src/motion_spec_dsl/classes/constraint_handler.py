@@ -114,6 +114,27 @@ class SaturationSpec:
 
 
 @dataclass
+class ProgressObjective(NamedNamespaceObject):
+    """A named handler policy advancing one parameter along one or more paths."""
+
+    parent: object
+    name: str
+    parameter: object  # ContextRef
+    path: object | None = None  # ContextRef
+    paths: list[object] = field(default_factory=list)  # ContextRef
+    advancement: float = 0.0
+    advancement_unit: str = "Hz"
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def path_refs(self) -> list[object]:
+        """Return single- and multi-path syntax in one downstream representation."""
+        return [self.path] if self.path is not None else self.paths
+
+
+@dataclass
 class ConstraintHandler(IHasNamespaceDeclare):
     """Binds a motion to the controllers, monitors and solvers that realize it."""
 
@@ -122,6 +143,7 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     context: list[WorldContextDecl | SpecContextDecl | ContextDeclReference]
     motion: GuardedMotion
+    progress: list[ProgressObjective]
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)

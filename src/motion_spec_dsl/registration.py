@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pyshacl
+from pyld import jsonld
 from rdf_utils.resolver import IriToFileResolver, install_resolver
 from rdflib import Dataset, URIRef
 from rdflib.namespace import Namespace
@@ -59,6 +60,7 @@ from motion_spec_dsl.classes import (
     PositionTerm,
     PositionValue,
     ProfileSpec,
+    ProgressObjective,
     ReferenceValue,
     ROSTopic,
     AdmittanceSpec,
@@ -75,8 +77,8 @@ from motion_spec_dsl.classes import (
     SpecContextDecl,
     ContextQuantityAlias,
     ContextQuantity,
-    ContextTrajectory,
-    TrajectoryValue,
+    ContextPath,
+    PathValue,
     VectorQuantity,
     View,
     WorldContextDecl,
@@ -110,12 +112,13 @@ LANGUAGE_CLASSES = [
     OrientationTerm,
     PoseValue,
     GuardedMotion,
-    TrajectoryValue,
+    PathValue,
     LerpSpec,
     ProfileSpec,
     AdmittanceSpec,
     Figure8Spec,
     ConstraintHandler,
+    ProgressObjective,
     WorldContextDecl,
     PreContextDecl,
     SpecContextDecl,
@@ -129,7 +132,7 @@ LANGUAGE_CLASSES = [
     GravityVector,
     ContextQuantity,
     ContextQuantityAlias,
-    ContextTrajectory,
+    ContextPath,
     Measure,
     VectorQuantity,
     ReferenceValue,
@@ -261,15 +264,17 @@ motion_spec_lang = LanguageDesc(
 
 
 def _canonicalize_jsonld(text: str) -> str:
-    """Order the ``@graph`` array by ``@id`` so emission is stable across runs.
+    """Compact graph identifiers and order nodes so emission is stable across runs.
 
-    rdflib's JSON-LD serializer lays out ``@graph`` nodes in hash-seeded set order,
-    so the generated graph — and every artifact derived from it (IR, generated C++) —
-    differs from run to run for byte-identical input. Every node here carries a unique
-    IRI ``@id`` (no blank nodes), so sorting by ``@id`` yields a deterministic,
+    rdflib's JSON-LD serializer lays out ``@graph`` nodes in hash-seeded set order
+    and does not compact hierarchical identifiers against a parent prefix. Compacting
+    identifiers from the emitted context and sorting by ``@id`` yields a deterministic,
     semantically identical document.
     """
     doc = json.loads(text)
+    context = doc.get("@context") if isinstance(doc, dict) else None
+    if context:
+        doc = jsonld.compact(doc, context)
     graph = doc.get("@graph") if isinstance(doc, dict) else None
     if isinstance(graph, list):
         graph = [_sort_lists(node) for node in graph]
@@ -311,6 +316,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/task/map-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/path.shacl.ttl",
+        "https://secorolab.github.io/metamodels/time.shacl.ttl",
     }
     # The manifest's iri-map only declares where *this model's* imported graphs live
     # (relative to the manifest). Metamodel/ontology prefixes are deliberately NOT
@@ -593,10 +599,10 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
     """
     import shutil
 
-    from coord_dsl.generators.common import write_dot
-    from coord_dsl.generators.dot import fsm_dot
-    from coord_dsl.generators.fsm.graph import gen_cpp_header, gen_json, get_fsm_graph
+    from coord_dsl.generators.dot import fsm_dot, write_dot
+    from coord_dsl.generators.fsm import gen_cpp_header, gen_json
     from coord_dsl.generators.provenance import record
+    from coord_dsl.rdf.fsm import get_fsm_graph
 
     jsonld_names: list[str] = []
     tool_artifact_names: list[str] = []
@@ -607,7 +613,7 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
         if not loaded:
             continue
         fsm_model = loaded[0]
-        graph, context, fsm_ref = get_fsm_graph(fsm_model)
+        graph, fsm_ref = get_fsm_graph(fsm_model)
         ir = gen_json(graph, fsm_ref)
         # Add the namespace URI so it also travels with the framed IR / header.
         ir["namespace_uri"] = fsm_model.fsm.ns.uri
@@ -637,7 +643,7 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
 
         jsonld_name = f"{ir['name']}.ld.json"
         jsonld_path = output_dir / jsonld_name
-        jsonld_path.write_text(_fsm_named_graph_jsonld(graph, context, fsm_ref))
+        jsonld_path.write_text(_fsm_named_graph_jsonld(graph, None, fsm_ref))
         print(f"  wrote {jsonld_path}")
         jsonld_names.append(jsonld_name)
     return jsonld_names, tool_artifact_names

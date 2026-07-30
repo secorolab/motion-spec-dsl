@@ -5,7 +5,7 @@
 
 import base
 import context
-import trajectory
+import path
 
 ContextSpec:
     "context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
@@ -81,15 +81,15 @@ WorldQuantityAlias:
 ;
 
 ContextQuantityItem:
-    ContextQuantityAlias | ContextTrajectory | ContextQuantity
+    ContextQuantityAlias | ContextPath | ContextQuantity
 ;
 
 ContextQuantityAlias:
     (name=IRI_TRUNK ":")? "<" ref=[ContextQuantity|FQN] ">"
 ;
 
-ContextTrajectory:
-    "trajectory" name=IRI_TRUNK value=TrajectoryValue
+ContextPath:
+    "path" name=IRI_TRUNK value=PathValue
 ;
 
 ConstraintSpecification:
@@ -102,7 +102,7 @@ ConstraintRelation:
 ;
 
 EqualityConstraint:
-    "equal" "to" reference=ContextRef
+    "equal" "to" reference=ContextRef ("within" tolerance=ContextRef)?
 ;
 
 GreaterThanConstraint:

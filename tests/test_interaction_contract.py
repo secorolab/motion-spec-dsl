@@ -108,15 +108,15 @@ def test_no_motion_captures_another_motions_snapshot(interaction_ir: dict) -> No
 def test_no_motion_schedules_another_motions_closure(interaction_ir: dict) -> None:
     """The backward schedule walk must not pull in a closure another motion declares.
 
-    The arc trajectory was scheduled into every motion, so the compliance motion advanced the
+    The arc path was scheduled into every motion, so the compliance motion advanced the
     arc's path parameter and recomputed its setpoint while the arc was not running.
     """
-    arc_only = {"arc_path"}
+    arc_only = {"arc_eval_arc_path"}
     for motion in interaction_ir["motions"]:
         if motion.id == "motion_arc_motion":
             continue
         scheduled = set(motion.while_schedule) | set(motion.while_pre_schedule)
-        assert not (arc_only & scheduled), f"{motion.id} schedules the arc trajectory"
+        assert not (arc_only & scheduled), f"{motion.id} schedules the arc path"
 
 
 def test_until_groups_are_monitored_independently(interaction_ir: dict) -> None:

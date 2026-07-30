@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import math
 
 from motion_spec_dsl.controller_semantics import axis_label
 from motion_spec_dsl.classes import (
@@ -22,6 +23,7 @@ from motion_spec_dsl.classes import (
     Measure,
     Model,
     GuardedMotion,
+    OutsideConstraint,
     ProfileSpec,
     QuantityType,
     ReferenceGeneratorType,
@@ -29,11 +31,12 @@ from motion_spec_dsl.classes import (
     SaturationSpec,
     SnapshotValue,
     SubSpace,
-    TrajectoryValue,
+    PathValue,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
     _resolved_world_quantity,
+    _resolved_spec,
 )
 from motion_spec_dsl.validation.common import (
     constraint_handlers,
@@ -146,7 +149,7 @@ def _context_ref_shape(ref: ContextRef) -> QuantityType | ReferenceGeneratorType
         else subspace_value
     )
     _validate_axis(subspace, raw_axis_value, ref)
-    if base_shape in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}:
+    if base_shape in {QuantityType.Pose, ReferenceGeneratorType.Path}:
         if subspace == SubSpace.Position:
             return QuantityType.Distance if axis is not None else QuantityType.Position
         if subspace == SubSpace.Orientation:
@@ -212,7 +215,7 @@ def _types_match(
         QuantityType.Distance: {QuantityType.Distance},
         QuantityType.Position: {QuantityType.Position},
         QuantityType.Orientation: {QuantityType.Orientation},
-        QuantityType.Pose: {QuantityType.Pose, ReferenceGeneratorType.Trajectory},
+        QuantityType.Pose: {QuantityType.Pose, ReferenceGeneratorType.Path},
         QuantityType.Duration: {QuantityType.Duration},
         QuantityType.Dimensionless: {QuantityType.Dimensionless},
         # An Admittance quantity is a per-axis velocity reference: a velocity
@@ -226,7 +229,10 @@ def _types_match(
 
 
 def _static_scalar(ref: ContextRef) -> Measure | None:
-    """The static Measure a reference resolves to, or None."""
+    """The static Measure a reference resolves to (bare literal or declared value), or None."""
+    bare = getattr(ref, "bare", None)
+    if isinstance(bare, Measure):
+        return bare
     value = context_ref_value(ref)
     value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
     scalar = getattr(value, "value", None)
@@ -288,9 +294,7 @@ def validate_saturation_spec(
 
 
 def _validate_profile_quantity(quantity: ContextQuantity) -> None:
-    """Raise if a velocity-profile quantity is mis-declared, has an unsupported shape, or
-    invalid velocity/acceleration/jerk references.
-    """
+    """Raise if a velocity-profile quantity has invalid physical motion limits."""
     value = getattr(quantity, "value", None)
     if not isinstance(value, ProfileSpec):
         return
@@ -435,80 +439,75 @@ def _validate_admittance_tracking(
         )
 
 
-def _check_trajectory_ref(
+def _check_path_ref(
     quantity: ContextQuantity,
     attr: str,
     ref: ContextRef,
     expected: QuantityType,
 ) -> None:
-    """Raise if a trajectory's `attr` reference is missing or not `expected`."""
+    """Raise if a path's `attr` reference is missing or not `expected`."""
     actual = _require_shape(
         _context_ref_shape(ref),
         ref,
-        f"Trajectory '{quantity.name}' {attr} has an invalid selector.",
+        f"Path '{quantity.name}' {attr} has an invalid selector.",
     )
     if actual != expected:
         raise semantic_error(
-            f"Trajectory '{quantity.name}' {attr} must reference {expected}, got {actual}.",
+            f"Path '{quantity.name}' {attr} must reference {expected}, got {actual}.",
             ref,
         )
 
 
-def _validate_trajectory_quantity(quantity: ContextQuantity) -> None:
-    """Raise if a trajectory quantity is mis-declared or its shape inputs are invalid."""
+def _validate_path_quantity(quantity: ContextQuantity) -> None:
+    """Raise if a path quantity is mis-declared or its shape inputs are invalid."""
     value = getattr(quantity, "value", None)
-    if not isinstance(value, TrajectoryValue):
+    if not isinstance(value, PathValue):
         return
-    if quantity.type != ReferenceGeneratorType.Trajectory:
+    if quantity.type != ReferenceGeneratorType.Path:
         raise semantic_error(
-            f"Trajectory '{quantity.name}' must be declared as Trajectory.",
+            f"Path '{quantity.name}' must be declared as Path.",
             quantity,
         )
     if value.lerp is not None:
-        _check_trajectory_ref(quantity, "start", value.lerp.start, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "goal", value.lerp.goal, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "alpha", value.lerp.alpha, QuantityType.PathParameter)
+        _check_path_ref(quantity, "start", value.lerp.start, QuantityType.Pose)
+        _check_path_ref(quantity, "goal", value.lerp.goal, QuantityType.Pose)
         return
     if value.circle is not None:
-        _check_trajectory_ref(quantity, "start", value.circle.start, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "center", value.circle.center, QuantityType.Position)
-        _check_trajectory_ref(
+        _check_path_ref(quantity, "start", value.circle.start, QuantityType.Pose)
+        _check_path_ref(quantity, "center", value.circle.center, QuantityType.Position)
+        _check_path_ref(
             quantity, "plane-normal", value.circle.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(quantity, "alpha", value.circle.alpha, QuantityType.PathParameter)
         return
     if value.arc is not None:
-        _check_trajectory_ref(quantity, "start", value.arc.start, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "end", value.arc.end, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "amplitude", value.arc.amplitude, QuantityType.Distance)
-        _check_trajectory_ref(
+        _check_path_ref(quantity, "start", value.arc.start, QuantityType.Pose)
+        _check_path_ref(quantity, "end", value.arc.end, QuantityType.Pose)
+        _check_path_ref(quantity, "amplitude", value.arc.amplitude, QuantityType.Distance)
+        _check_path_ref(
             quantity, "plane-normal", value.arc.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(quantity, "alpha", value.arc.alpha, QuantityType.PathParameter)
         return
     if value.helix is not None:
-        _check_trajectory_ref(quantity, "start", value.helix.start, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "center", value.helix.center, QuantityType.Position)
-        _check_trajectory_ref(quantity, "axis", value.helix.axis, QuantityType.Direction)
-        _check_trajectory_ref(quantity, "pitch", value.helix.pitch, QuantityType.Distance)
-        _check_trajectory_ref(
+        _check_path_ref(quantity, "start", value.helix.start, QuantityType.Pose)
+        _check_path_ref(quantity, "center", value.helix.center, QuantityType.Position)
+        _check_path_ref(quantity, "axis", value.helix.axis, QuantityType.Direction)
+        _check_path_ref(quantity, "pitch", value.helix.pitch, QuantityType.Distance)
+        _check_path_ref(
             quantity, "revolutions", value.helix.revolutions, QuantityType.Dimensionless
         )
-        _check_trajectory_ref(quantity, "alpha", value.helix.alpha, QuantityType.PathParameter)
         return
     if value.figure8 is not None:
-        _check_trajectory_ref(quantity, "anchor", value.figure8.anchor, QuantityType.Pose)
-        _check_trajectory_ref(quantity, "radius", value.figure8.radius, QuantityType.Distance)
-        _check_trajectory_ref(
+        _check_path_ref(quantity, "anchor", value.figure8.anchor, QuantityType.Pose)
+        _check_path_ref(quantity, "radius", value.figure8.radius, QuantityType.Distance)
+        _check_path_ref(
             quantity, "plane-normal", value.figure8.plane_normal, QuantityType.Direction
         )
-        _check_trajectory_ref(quantity, "alpha", value.figure8.alpha, QuantityType.PathParameter)
         return
-    raise semantic_error(f"Trajectory '{quantity.name}' has no populated spec.", quantity)
+    raise semantic_error(f"Path '{quantity.name}' has no populated spec.", quantity)
 
 
 def validate_context_quantity_values(model: Model) -> None:
-    """Validate every context quantity's value: profile/admittance/trajectory specs and
+    """Validate every context quantity's value: profile/admittance/path specs and
     reference/snapshot source-type matching.
     """
     for motion in motion_specs(model):
@@ -521,7 +520,7 @@ def validate_context_quantity_values(model: Model) -> None:
                 value = getattr(quantity, "value", None)
                 _validate_profile_quantity(quantity)
                 _validate_admittance_quantity(quantity)
-                _validate_trajectory_quantity(quantity)
+                _validate_path_quantity(quantity)
                 if isinstance(value, ReferenceValue):
                     source_shape = _require_shape(
                         _context_ref_shape(value.source),
@@ -576,7 +575,7 @@ def validate_context_quantity_values(model: Model) -> None:
                     quantity = _resolved_context_quantity(item)
                     _validate_profile_quantity(quantity)
                     _validate_admittance_quantity(quantity)
-                    _validate_trajectory_quantity(quantity)
+                    _validate_path_quantity(quantity)
 
 
 def validate_constraint_value_types(model: Model) -> None:
@@ -597,6 +596,120 @@ def validate_constraint_value_types(model: Model) -> None:
                         ref,
                     )
                 _validate_admittance_tracking(constraint, ref)
+
+
+def validate_elapsed_constraint_relations(model: Model) -> None:
+    """Elapsed (timing) views only support greater-than, less-than, and tolerance-bound
+    equality: a sampled control loop cannot land on one exact instant, and a bilateral/
+    outside band over a duration has no specified controller/monitor semantics. Tolerance
+    itself is scoped to elapsed equality until non-time equality semantics are decided.
+    """
+    for motion in motion_specs(model):
+        for constraint in motion_constraints(motion):
+            is_elapsed = getattr(constraint.view, "is_elapsed", False)
+            expr = constraint.expr
+            if is_elapsed and isinstance(expr, (BilateralConstraint, OutsideConstraint)):
+                raise semantic_error(
+                    f"Constraint '{constraint.name}' is elapsed but uses a between/outside "
+                    "relation; use 'greater than', 'less than', or 'equal to ... within ...'.",
+                    constraint,
+                )
+            if not isinstance(expr, EqualityConstraint):
+                continue
+            if not is_elapsed:
+                if expr.tolerance is not None:
+                    raise semantic_error(
+                        f"Constraint '{constraint.name}' has a 'within' tolerance, but only "
+                        "elapsed equality constraints support tolerance in this plan.",
+                        expr.tolerance,
+                    )
+                continue
+            if expr.tolerance is None:
+                raise semantic_error(
+                    f"Constraint '{constraint.name}' is an elapsed equality and needs "
+                    "'within <tolerance>': a sampled clock cannot land on one exact instant.",
+                    expr,
+                )
+            scalar = _static_scalar(expr.tolerance)
+            if scalar is None:
+                continue
+            if not math.isfinite(scalar.value) or scalar.value < 0:
+                raise semantic_error(
+                    f"Constraint '{constraint.name}' tolerance must be a finite, "
+                    "non-negative duration.",
+                    expr.tolerance,
+                )
+            if scalar.unit not in {"s", "ms"}:
+                raise semantic_error(
+                    f"Constraint '{constraint.name}' tolerance must use 's' or 'ms', "
+                    f"not '{scalar.unit}'.",
+                    expr.tolerance,
+                )
+
+
+def validate_progress_objectives(model: Model) -> None:
+    """Validate named path/parameter policies and their tracking constraints."""
+    for handler in constraint_handlers(model):
+        motion = handler.motion
+        names: set[str] = set()
+        for objective in handler.progress:
+            if not math.isfinite(objective.advancement) or objective.advancement <= 0.0:
+                raise semantic_error(
+                    "Progress advancement must be a positive finite rate.", objective
+                )
+            if objective.name in names:
+                raise semantic_error(
+                    f"Handler '{handler.name}' has duplicate progress policy name "
+                    f"'{objective.name}'.",
+                    objective,
+                )
+            names.add(objective.name)
+
+            parameter = context_ref_value(objective.parameter)
+            parameter = (
+                _resolved_context_quantity(parameter)
+                if isinstance(parameter, ContextQuantity)
+                else parameter
+            )
+            if not isinstance(parameter, ContextQuantity) or parameter.type != QuantityType.PathParameter:
+                raise semantic_error("Progress must maximize a PathParameter.", objective.parameter)
+
+            paths: list[ContextQuantity] = []
+            for path_ref in objective.path_refs:
+                path = context_ref_value(path_ref)
+                path = (
+                    _resolved_context_quantity(path)
+                    if isinstance(path, ContextQuantity)
+                    else path
+                )
+                if not isinstance(path, ContextQuantity) or path.type != ReferenceGeneratorType.Path:
+                    raise semantic_error("Progress must select a Path.", path_ref)
+                if path in paths:
+                    raise semantic_error(
+                        f"Progress policy '{objective.name}' selects path '{path.name}' more than once.",
+                        path_ref,
+                    )
+                paths.append(path)
+
+            for path in paths:
+                governing = []
+                for item in motion.while_.constraints:
+                    constraint = _resolved_spec(item)
+                    if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
+                        continue
+                    reference = context_ref_value(constraint.expr.reference)
+                    reference = (
+                        _resolved_context_quantity(reference)
+                        if isinstance(reference, ContextQuantity)
+                        else reference
+                    )
+                    if reference is path:
+                        governing.append(constraint)
+                if not governing:
+                    raise semantic_error(
+                        f"Progress along '{path.name}' needs a WHILE equality constraint tracking that path or one of its views.",
+                        objective,
+                    )
 
 
 def validate_unique_constraint_names(model: Model) -> None:
@@ -665,7 +778,10 @@ def constraint_context_refs(constraint: ConstraintSpecification) -> list[Context
     """The context references a constraint compares against (reference / threshold / bounds)."""
     expr = constraint.expr
     if isinstance(expr, EqualityConstraint):
-        return [expr.reference]
+        refs = [expr.reference]
+        if expr.tolerance is not None:
+            refs.append(expr.tolerance)
+        return refs
     if isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
         return [expr.threshold]
     if isinstance(expr, BilateralConstraint):

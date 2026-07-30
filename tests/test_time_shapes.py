@@ -23,8 +23,8 @@ PREFIXES = """
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 """
 
-# An `elapsed greater than 5 s` guard: the interval from motion entry to now, its
-# duration coordinate, and the constraint over it.
+# An `elapsed greater than 5 s` guard: the interval from motion entry to now, its native
+# OWL-Time duration coordinate (unmeasured -- runtime state), and the constraint over it.
 ELAPSED = """
 app:clock a time:TRS .
 
@@ -39,18 +39,15 @@ app:elapsed a time:ProperInterval ;
     time:hasEnd app:now ;
     time:hasDuration app:elapsed-duration .
 
-app:elapsed-duration a time:Duration, qudt:Quantity ;
-    qudt:hasQuantityKind qkind:Time ;
-    qudt:unit unit:SEC .
+app:elapsed-duration a time:Duration .
 
 app:wait5s a cstr-ext:TimeConstraint, cstr:UnilateralConstraint, cstr:GreaterThanConstraint ;
     cstr:quantity app:elapsed-duration ;
     cstr:threshold app:wait5s-threshold .
 
-app:wait5s-threshold a time:Duration, qudt:Quantity ;
-    qudt:hasQuantityKind qkind:Time ;
-    qudt:unit unit:SEC ;
-    qudt:value "5.0"^^xsd:double .
+app:wait5s-threshold a time:Duration ;
+    time:numericDuration "5.0"^^xsd:decimal ;
+    time:unitType time:unitSecond .
 """
 
 
@@ -80,10 +77,47 @@ def test_duration_is_not_read_against_a_clock() -> None:
 
 
 def test_constraint_quantity_must_be_a_duration() -> None:
-    assert not _conforms(ELAPSED.replace("app:elapsed-duration a time:Duration,", "app:elapsed-duration a"))
+    assert not _conforms(ELAPSED.replace("app:elapsed-duration a time:Duration .", "app:elapsed-duration a time:Instant ."))
 
 
-def _equality(tolerance: str = "", kind: str = "qkind:Time", unit: str = "unit:SEC") -> str:
+def test_old_qudt_only_duration_representation_is_rejected() -> None:
+    """The legacy `qudt:value`/`qudt:unit` representation no longer satisfies an authored
+    Duration -- it needs native `time:numericDuration`/`time:unitType`."""
+    legacy_threshold = """
+app:wait5s-threshold a time:Duration, qudt:Quantity ;
+    qudt:hasQuantityKind qkind:Time ;
+    qudt:unit unit:SEC ;
+    qudt:value "5.0"^^xsd:double .
+"""
+    assert not _conforms(
+        ELAPSED.replace(
+            'app:wait5s-threshold a time:Duration ;\n    time:numericDuration "5.0"^^xsd:decimal ;\n    time:unitType time:unitSecond .\n',
+            legacy_threshold,
+        )
+    )
+
+
+_THRESHOLD_BLOCK = (
+    'app:wait5s-threshold a time:Duration ;\n'
+    '    time:numericDuration "5.0"^^xsd:decimal ;\n'
+    '    time:unitType time:unitSecond .\n'
+)
+
+
+def test_authored_duration_needs_both_value_and_unit() -> None:
+    missing_unit = ELAPSED.replace(
+        _THRESHOLD_BLOCK,
+        'app:wait5s-threshold a time:Duration ;\n    time:numericDuration "5.0"^^xsd:decimal .\n',
+    )
+    missing_value = ELAPSED.replace(
+        _THRESHOLD_BLOCK,
+        "app:wait5s-threshold a time:Duration ;\n    time:unitType time:unitSecond .\n",
+    )
+    assert not _conforms(missing_unit)
+    assert not _conforms(missing_value)
+
+
+def _equality(tolerance: str = "") -> str:
     """The elapsed guard rewritten as `elapsed equals 5 s`, optionally with a tolerance."""
     equality = ELAPSED.replace(
         "cstr:UnilateralConstraint, cstr:GreaterThanConstraint", "cstr:EqualityConstraint"
@@ -92,10 +126,9 @@ def _equality(tolerance: str = "", kind: str = "qkind:Time", unit: str = "unit:S
         return equality
     return equality + f"""
 app:wait5s cstr-ext:tolerance app:wait5s-tolerance .
-app:wait5s-tolerance a time:Duration, qudt:Quantity ;
-    qudt:hasQuantityKind {kind} ;
-    qudt:unit {unit} ;
-    qudt:value "{tolerance}"^^xsd:double .
+app:wait5s-tolerance a time:Duration ;
+    time:numericDuration "{tolerance}"^^xsd:decimal ;
+    time:unitType time:unitSecond .
 """
 
 
@@ -112,19 +145,16 @@ def test_only_an_equality_takes_a_tolerance() -> None:
     assert not _conforms(
         ELAPSED + """
 app:wait5s cstr-ext:tolerance app:wait5s-tolerance .
-app:wait5s-tolerance a time:Duration, qudt:Quantity ;
-    qudt:hasQuantityKind qkind:Time ;
-    qudt:unit unit:SEC ;
-    qudt:value "0.1"^^xsd:double .
+app:wait5s-tolerance a time:Duration ;
+    time:numericDuration "0.1"^^xsd:decimal ;
+    time:unitType time:unitSecond .
 """
     )
 
 
-def test_tolerance_must_share_the_kind_of_what_it_tolerances() -> None:
-    # `elapsed equals 5 s +/- 0.1 N` -- right shape, wrong dimension.
-    assert not _conforms(_equality("0.1", kind="qkind:Force", unit="unit:N"))
-
-
 def test_tolerance_needs_a_unit() -> None:
-    bare = _equality("0.1").replace("    qudt:unit unit:SEC ;\n", "")
+    bare = _equality("0.1").replace(
+        '    time:numericDuration "0.1"^^xsd:decimal ;\n    time:unitType time:unitSecond .\n',
+        '    time:numericDuration "0.1"^^xsd:decimal .\n',
+    )
     assert not _conforms(bare)

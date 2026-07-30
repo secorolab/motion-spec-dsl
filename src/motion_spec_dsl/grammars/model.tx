@@ -5,7 +5,7 @@
 
 import base
 import context
-import trajectory
+import path
 import motion_spec
 import constraint_handler
 

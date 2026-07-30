@@ -68,12 +68,12 @@ guarded-motion (ns=app) home {
 }
 
 guarded-motion (ns=app) pick-above {
-    move: "Move TCP to the pre-grasp position above the cube (trajectory)"
+    move: "Move TCP to the pre-grasp position above the cube along a path"
 
     context {
         spec {
             linear-distance above-z      = 0.26 m,
-            path-parameter progress,
+            path-parameter s,
             pose start-pose              = snapshot of <shared.world.pose-ee-base>,
             linear-distance start-cube-x = snapshot of <shared.world.pose-cube-base>.position.x,
             linear-distance start-cube-y = snapshot of <shared.world.pose-cube-base>.position.y,
@@ -89,10 +89,9 @@ guarded-motion (ns=app) pick-above {
                     yaw:   <shared.spec.grasp-yaw>
                 }
             },
-            trajectory traj = lerp {
+            path approach-path = lerp {
                 start: <spec.start-pose>,
-                goal:  <spec.goal-pose>,
-                alpha: <spec.progress>
+                goal:  <spec.goal-pose>
             }
         }
     }
@@ -102,8 +101,8 @@ guarded-motion (ns=app) pick-above {
     }
 
     while {
-        follow-pos: keeping <shared.world.pose-ee-base>.position    equal to <spec.traj>.position,
-        follow-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.traj>.orientation
+        follow-pos: keeping <shared.world.pose-ee-base>.position    equal to <spec.approach-path>.position,
+        follow-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.approach-path>.orientation
     }
 
     until {}
@@ -427,6 +426,9 @@ constraint-handler (ns=app) handler-home {
 
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
+    progress {
+        approach: maximizing <pick-above.spec.s> along <pick-above.spec.approach-path> advancing at 1.0 Hz
+    }
     monitors {
         mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>
     }

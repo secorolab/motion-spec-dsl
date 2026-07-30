@@ -118,8 +118,6 @@ class LerpSpec:
     parent: object
     start: object  # ContextRef
     goal: object  # ContextRef
-    alpha: object  # ContextRef
-    profile: str = "ease-in-out"  # progress easing: linear | ease-in | ease-out | ease-in-out
 
 
 @dataclass
@@ -130,7 +128,6 @@ class CircleSpec:
     )
     center: object  # ContextRef (Position the curve orbits; radius = |start - center| in-plane)
     plane_normal: object  # ContextRef
-    alpha: object  # ContextRef
 
 
 @dataclass
@@ -142,7 +139,6 @@ class ArcSpec:
     end: object  # ContextRef (Pose: the other endpoint and orientation target)
     amplitude: object  # ContextRef (LinearDistance: how far the arc bows from the chord; = chord/2 -> semicircle)
     plane_normal: object  # ContextRef
-    alpha: object  # ContextRef
 
 
 @dataclass
@@ -157,7 +153,6 @@ class HelixSpec:
     axis: object  # ContextRef
     pitch: object  # ContextRef
     revolutions: object  # ContextRef
-    alpha: object  # ContextRef
 
 
 @dataclass
@@ -166,12 +161,11 @@ class Figure8Spec:
     anchor: object  # ContextRef (Pose: position -> center, rotation -> orientation)
     radius: object  # ContextRef
     plane_normal: object  # ContextRef
-    alpha: object  # ContextRef
     form: str = "gerono"
 
 
 @dataclass
-class TrajectoryValue:
+class PathValue:
     parent: object
     lerp: LerpSpec | None = None
     circle: CircleSpec | None = None
@@ -422,7 +416,7 @@ class QuantityType(StrEnum):
 
 
 class ReferenceGeneratorType(StrEnum):
-    Trajectory = "Trajectory"
+    Path = "Path"
     VelocityProfile = "VelocityProfile"
     Admittance = "Admittance"
 
@@ -437,7 +431,7 @@ QUANTITY_TYPE_ALIASES = {
 
 @dataclass
 class ContextQuantity(NamedNamespaceObject):
-    """A context quantity: a reference, snapshot, profile, trajectory, or literal value."""
+    """A context quantity: a reference, snapshot, profile, path, or literal value."""
 
     parent: object
     name: str
@@ -447,7 +441,7 @@ class ContextQuantity(NamedNamespaceObject):
         | VectorQuantity
         | ReferenceValue
         | SnapshotValue
-        | TrajectoryValue
+        | PathValue
         | ProfileSpec
         | AdmittanceSpec
         | PoseValue
@@ -503,14 +497,14 @@ class ContextQuantityAlias(ContextQuantity):
         self.value = self.ref.value
 
 
-class ContextTrajectory(ContextQuantity):
-    """A trajectory reference generator declared in a context block."""
+class ContextPath(ContextQuantity):
+    """A path reference generator declared in a context block."""
 
-    def __init__(self, parent: object, name: str, value: TrajectoryValue, **_):
+    def __init__(self, parent: object, name: str, value: PathValue, **_):
         super().__init__(
             parent=parent,
             name=name,
-            type=ReferenceGeneratorType.Trajectory,
+            type=ReferenceGeneratorType.Path,
             value=value,
         )
 
@@ -772,9 +766,10 @@ class ContextRef:
 
 @dataclass
 class EqualityConstraint:
-    """An equality constraint against a reference value."""
+    """An equality constraint against a reference value, optionally within a tolerance."""
 
     reference: ContextRef
+    tolerance: ContextRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):

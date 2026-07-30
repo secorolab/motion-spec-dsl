@@ -157,11 +157,56 @@ def test_solver_gravity_accepts_literal_equals_and_spec_reference():
 
 def test_grammar_keyword_cannot_be_used_as_a_quantity_name():
     source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    reserved_name = source.replace("path-parameter progress", "path-parameter gravity").replace(
-        "<spec.progress>", "<spec.gravity>"
+    reserved_name = source.replace("path-parameter s", "path-parameter gravity").replace(
+        "<pick-above.spec.s>", "<pick-above.spec.gravity>"
     )
 
     with pytest.raises(TextXSemanticError, match="gravity.*keyword"):
         motion_spec_metamodel().model_from_str(
             reserved_name, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
         )
+
+
+def test_progress_requires_a_path_parameter_and_tracking_equality():
+    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
+    metamodel = motion_spec_metamodel()
+    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
+    model = metamodel.model_from_str(source, file_name=model_path)
+    handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
+    assert len(handler.progress) == 1
+    assert not hasattr(handler.motion, "progress")
+
+    with pytest.raises(TextXSemanticError, match="PathParameter"):
+        metamodel.model_from_str(
+            source.replace("path-parameter s,", "dimensionless alpha,").replace(
+                "<pick-above.spec.s>", "<pick-above.spec.alpha>"
+            ),
+            file_name=model_path,
+        )
+
+    untracked = source.replace(
+        "equal to <spec.approach-path>.position", "equal to <spec.goal-pose>.position"
+    ).replace(
+        "equal to <spec.approach-path>.orientation", "equal to <spec.goal-pose>.orientation"
+    )
+    with pytest.raises(TextXSemanticError, match="needs a WHILE equality"):
+        metamodel.model_from_str(untracked, file_name=model_path)
+
+
+def test_progress_policy_names_and_paths_are_unique():
+    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
+    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
+    duplicate_name = source.replace(
+        "        approach: maximizing <pick-above.spec.s> along <pick-above.spec.approach-path> advancing at 1.0 Hz",
+        "        approach: maximizing <pick-above.spec.s> along <pick-above.spec.approach-path> advancing at 1.0 Hz,\n"
+        "        approach: maximizing <pick-above.spec.s> along <pick-above.spec.approach-path> advancing at 1.0 Hz",
+    )
+    with pytest.raises(TextXSemanticError, match="duplicate progress policy name"):
+        motion_spec_metamodel().model_from_str(duplicate_name, file_name=model_path)
+
+    duplicate_path = source.replace(
+        "along <pick-above.spec.approach-path>",
+        "along { <pick-above.spec.approach-path>, <pick-above.spec.approach-path> }",
+    )
+    with pytest.raises(TextXSemanticError, match="selects path 'approach-path' more than once"):
+        motion_spec_metamodel().model_from_str(duplicate_path, file_name=model_path)

@@ -58,6 +58,7 @@ from motion_spec.namespace import (
     SLV,
     SLV_EXT,
     SOSA,
+    TIME,
 )
 from motion_spec_dsl.controller_semantics import (
     SUBSPACE_ALIAS,
@@ -97,7 +98,7 @@ from motion_spec_dsl.classes import (
     SnapshotValue,
     SpecContextDecl,
     ContextQuantity,
-    TrajectoryValue,
+    PathValue,
     UntilMonitorRef,
     WhenMonitorRef,
     VectorQuantity,
@@ -133,7 +134,7 @@ from motion_spec_dsl.rdf._helpers import (
     _scalar_type,
     _evaluator_id,
     _dsl_unit,
-    _time_unit,
+    _duration_seconds,
     _linear_velocity_mps,
     _context_quantity,
     _resolved_constraint_items,
@@ -195,6 +196,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
         self._emitted_orientation_coords: set[URIRef] = set()
+        self._motion_time_endpoints_index: dict[str, tuple[URIRef, URIRef]] = {}
 
     def build(self) -> tuple[Dataset, dict[str, str]]:
         """Emit the full dataset and return it with its JSON-LD namespace context.
@@ -210,7 +212,7 @@ class MotionSpecDatasetBuilder:
 
         context: dict[str, str] = {}
         for prefix, ns in GRAPH_BINDINGS:
-            context[prefix] = str(ns._NS)
+            context[prefix] = str(ns if isinstance(ns, Namespace) else ns._NS)
 
         for model in self.models:
             for spec in getattr(model, "specs", []):
@@ -218,6 +220,13 @@ class MotionSpecDatasetBuilder:
                     self._emit_execution_context(spec)
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
+                    scene = spec.scene
+                    self.dataset.bind(scene.ns_prefix, scene.ns.uri)
+                    context[scene.ns_prefix] = scene.ns.uri
+                    for modelled_agent in scene.modelled_agns:
+                        agent_set = modelled_agent.agn.parent
+                        self.dataset.bind(agent_set.ns_prefix, agent_set.ns.uri)
+                        context[agent_set.ns_prefix] = agent_set.ns.uri
                 elif isinstance(spec, ContextSpec):
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
@@ -240,6 +249,7 @@ class MotionSpecDatasetBuilder:
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
             self._emit_constraints(motion, constraints, world_qtys)
             self._emit_motion_spec(motion)
+            self._emit_progress_objectives(handler, motion)
             self._emit_scalar_views(motion, constraints, world_qtys)
             self._emit_map_operations(motion, constraints, world_qtys)
             self._emit_constraint_handler(
@@ -1135,10 +1145,10 @@ class MotionSpecDatasetBuilder:
         subspace_raw: str,
         axis: str | None,
     ) -> tuple[Any, Any, Any] | None:
-        """The (scalar type, view type, view subspace) for a context pose/trajectory reference's
+        """The (scalar type, view type, view subspace) for a context pose/path reference's
         subspace+axis, or None when that subspace exposes no view.
         """
-        if quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}:
+        if quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}:
             if subspace_raw == "position":
                 return (
                     QuantityType.Distance if axis is not None else QuantityType.Position,
@@ -1196,7 +1206,7 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
     ) -> URIRef:
         """Emit (once) the scalar/coordinate node and its map:View for a subspace of a context
-        pose/trajectory reference, and return the value node.
+        pose/path reference, and return the value node.
         """
         view_spec = self._context_ref_view_spec(quantity, subspace_raw, axis)
         if view_spec is None:
@@ -1207,11 +1217,11 @@ class MotionSpecDatasetBuilder:
         self._add_quantity(node, scalar_type)
         super_node = (
             self._reference_output_node(quantity)
-            if quantity.type == ReferenceGeneratorType.Trajectory
+            if quantity.type == ReferenceGeneratorType.Path
             else URIRef(quantity.uri)
         )
         if (
-            quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}
+            quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}
             and subspace_raw == "position"
         ):
             self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
@@ -1228,7 +1238,7 @@ class MotionSpecDatasetBuilder:
             else:
                 self._retag_as_position_kind(node)
         elif (
-            quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Trajectory}
+            quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}
             and subspace_raw == "orientation"
             and axis is None
         ):
@@ -1249,7 +1259,7 @@ class MotionSpecDatasetBuilder:
             self._emit_view(view_node)
             if axis is None or quantity.type not in {
                 QuantityType.Pose,
-                ReferenceGeneratorType.Trajectory,
+                ReferenceGeneratorType.Path,
             }:
                 self.graph.add((view_node, RDF.type, view_type))
             self.graph.add((view_node, MAP.superobject, super_node))
@@ -1265,14 +1275,14 @@ class MotionSpecDatasetBuilder:
         constraints: list[ConstraintSpecification],
         world_qtys: dict[str, WorldQuantity],
     ) -> None:
-        """Emit every context quantity. Trajectories, directions, profiles, admittance and pose
+        """Emit every context quantity. Paths, directions, profiles, admittance and pose
         values dispatch to their own emitters; the rest get quantity-kind typing, composite
         metadata and their value (reference, snapshot with optional offset, measure or vector).
         """
         for quantity in context_quantities.values():
             node = URIRef(quantity.uri)
-            if quantity.type == ReferenceGeneratorType.Trajectory:
-                self._emit_trajectory_quantity(quantity, constraints, world_qtys)
+            if quantity.type == ReferenceGeneratorType.Path:
+                self._emit_path_quantity(quantity, constraints, world_qtys)
                 continue
             if quantity.type == QuantityType.Direction:
                 self._emit_direction_quantity(node, quantity)
@@ -1282,6 +1292,9 @@ class MotionSpecDatasetBuilder:
                 continue
             if quantity.type == ReferenceGeneratorType.Admittance:
                 self._emit_admittance_quantity(node, quantity)
+                continue
+            if quantity.type == QuantityType.Duration and isinstance(quantity.value, Measure):
+                self._emit_duration_measure(node, quantity.value)
                 continue
             if isinstance(quantity.value, PoseValue):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
@@ -1534,7 +1547,7 @@ class MotionSpecDatasetBuilder:
             return None
         if start_kind != goal_kind:
             raise ValueError(
-                f"Lerp trajectory start type '{getattr(start_qty, 'type', None)}' "
+                f"Lerp path start type '{getattr(start_qty, 'type', None)}' "
                 f"does not match goal type '{getattr(goal_qty, 'type', None)}'"
             )
         return start_kind
@@ -1565,22 +1578,20 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self._emit_direction_coordinate(node, as_seen_by_node, vector)
 
-    def _emit_trajectory_quantity(
+    def _emit_path_quantity(
         self,
         quantity: ContextQuantity,
         constraints: list[ConstraintSpecification] | None = None,
         world_qtys: dict[str, WorldQuantity] | None = None,
     ) -> None:
-        """Emit a geometric path and the evaluator that traverses it, dispatching by shape
-        (lerp / circle / arc / helix / figure-8) to the matching emitter.
-        """
-        assert isinstance(quantity.value, TrajectoryValue)
+        """Emit geometric path data; traversal is emitted by the handler's progress objective."""
+        assert isinstance(quantity.value, PathValue)
         value = quantity.value
         if value.lerp is not None:
-            self._emit_lerp_trajectory(quantity, value.lerp, constraints, world_qtys)
+            self._emit_lerp_path(quantity, value.lerp, constraints, world_qtys)
         elif value.circle is not None:
-            self._emit_geometric_trajectory(
-                quantity, GEOM_PATH.Circle, "circle", value.circle.alpha,
+            self._emit_geometric_path(
+                quantity, GEOM_PATH.Circle, "circle",
                 [
                     ("start", GEOM_PATH.start, value.circle.start),
                     ("center", GEOM_PATH.center, value.circle.center),
@@ -1590,8 +1601,8 @@ class MotionSpecDatasetBuilder:
                 world_qtys,
             )
         elif value.arc is not None:
-            self._emit_geometric_trajectory(
-                quantity, GEOM_PATH.Arc, "arc", value.arc.alpha,
+            self._emit_geometric_path(
+                quantity, GEOM_PATH.Arc, "arc",
                 [
                     ("start", GEOM_PATH.start, value.arc.start),
                     ("end", GEOM_PATH.end, value.arc.end),
@@ -1602,8 +1613,8 @@ class MotionSpecDatasetBuilder:
                 world_qtys,
             )
         elif value.helix is not None:
-            self._emit_geometric_trajectory(
-                quantity, GEOM_PATH.Helix, "helix", value.helix.alpha,
+            self._emit_geometric_path(
+                quantity, GEOM_PATH.Helix, "helix",
                 [
                     ("start", GEOM_PATH.start, value.helix.start),
                     ("center", GEOM_PATH.center, value.helix.center),
@@ -1615,8 +1626,8 @@ class MotionSpecDatasetBuilder:
                 world_qtys,
             )
         elif value.figure8 is not None:
-            self._emit_geometric_trajectory(
-                quantity, GEOM_PATH.Figure8, "figure8", value.figure8.alpha,
+            self._emit_geometric_path(
+                quantity, GEOM_PATH.Figure8, "figure8",
                 [
                     ("anchor", GEOM_PATH.anchor, value.figure8.anchor),
                     ("radius", GEOM_PATH.radius, value.figure8.radius),
@@ -1629,9 +1640,9 @@ class MotionSpecDatasetBuilder:
                 ],
             )
         else:
-            raise ValueError(f"TrajectoryValue on '{quantity.name}' has no populated spec")
+            raise ValueError(f"PathValue on '{quantity.name}' has no populated spec")
 
-    def _emit_trajectory_pose_metadata(
+    def _emit_path_pose_metadata(
         self,
         quantity: ContextQuantity,
         value_kind: Any | None,
@@ -1654,17 +1665,17 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity)
 
-    def _emit_lerp_trajectory(
+    def _emit_lerp_path(
         self,
         quantity: ContextQuantity,
         lerp: Any,
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
     ) -> None:
-        """Emit a linear path (start/goal) and the evaluator that eases along it."""
+        """Emit a geometric linear path and its eventual setpoint metadata."""
         lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
         value_kind = self._lerp_value_kind(lerp)
-        self._emit_trajectory_pose_metadata(quantity, value_kind, constraints, world_qtys)
+        self._emit_path_pose_metadata(quantity, value_kind, constraints, world_qtys)
         self.graph.add((lerp_node, RDF.type, GEOM_PATH.Path))
         self.graph.add((lerp_node, RDF.type, GEOM_PATH.LinearPath))
         self.graph.add(
@@ -1673,29 +1684,19 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (lerp_node, GEOM_PATH.goal, self._emit_context_ref_node(lerp.goal, quantity, "goal"))
         )
-        self._emit_path_evaluator(
-            quantity,
-            lerp_node,
-            lerp.alpha,
-            "lerp",
-            _ns_term(GEOM_OP_EXT, lerp.profile or "ease-in-out"),
-        )
 
-    def _emit_geometric_trajectory(
+    def _emit_geometric_path(
         self,
         quantity: ContextQuantity,
         path_type: URIRef,
         spec_prefix: str,
-        alpha: Any,
         inputs: list[tuple[str, URIRef, Any]],
         constraints: list[ConstraintSpecification] | None,
         world_qtys: dict[str, WorldQuantity] | None,
         path_terms: list[tuple[URIRef, Any]] = (),
     ) -> None:
-        """Emit the path as geometry and a PathEvaluator that traverses it. The path carries no
-        parameter and no output; both belong to the evaluator, which produces the setpoint.
-        """
-        self._emit_trajectory_pose_metadata(quantity, GEOM_REL.Pose, constraints, world_qtys)
+        """Emit path geometry and its eventual setpoint metadata."""
+        self._emit_path_pose_metadata(quantity, GEOM_REL.Pose, constraints, world_qtys)
         path_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
         self.graph.add((path_node, RDF.type, GEOM_PATH.Path))
         self.graph.add((path_node, RDF.type, path_type))
@@ -1705,15 +1706,62 @@ class MotionSpecDatasetBuilder:
             )
         for predicate, term in path_terms:
             self.graph.add((path_node, predicate, term))
-        self._emit_path_evaluator(quantity, path_node, alpha, spec_prefix)
+
+    @staticmethod
+    def _path_shape(quantity: ContextQuantity) -> str:
+        """Return the populated geometric shape name of a Path quantity."""
+        value = quantity.value
+        for name in ("lerp", "circle", "arc", "helix", "figure8"):
+            if getattr(value, name, None) is not None:
+                return name
+        raise ValueError(f"PathValue on '{quantity.name}' has no populated spec")
+
+    def _emit_progress_objectives(
+        self, handler: ConstraintHandler, motion: GuardedMotion
+    ) -> None:
+        """Emit each explicit progress objective and the path evaluator it governs."""
+        handler_node = URIRef(handler.uri)
+        for objective in handler.progress:
+            parameter = _resolved_context_quantity(_context_quantity(objective.parameter))
+            paths = [
+                _resolved_context_quantity(_context_quantity(path_ref))
+                for path_ref in objective.path_refs
+            ]
+            objective_node = URIRef(objective.uri)
+            self.graph.add((objective_node, RDF.type, ALGO_EXT.ProgressObjective))
+            self.graph.add((objective_node, ALGO_EXT.parameter, URIRef(parameter.uri)))
+            advancement_node = URIRef(f"{objective.uri}/advancement")
+            self._emit_scalar_quantity(
+                advancement_node,
+                objective.advancement,
+                NS_MM_QUDT_QTY["Frequency"],
+                QUDT_UNIT.HZ,
+            )
+            self.graph.add((objective_node, ALGO_EXT.advancement, advancement_node))
+            self.graph.add((handler_node, ALGO_EXT.progress, objective_node))
+            for path in paths:
+                shape = self._path_shape(path)
+                path_node = self._owned_uri(f"{shape}-{path.name}", path)
+                self._emit_path_evaluator(path, path_node, objective.parameter, shape)
+                self.graph.add((objective_node, ALGO_EXT.path, path_node))
+                for item in motion.while_.constraints:
+                    constraint = _resolved_spec(item)
+                    if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
+                        continue
+                    reference = _context_quantity(constraint.expr.reference)
+                    if isinstance(reference, ContextQuantity):
+                        reference = _resolved_context_quantity(reference)
+                    if reference is path:
+                        self.graph.add(
+                            (objective_node, CSTR_HDL.constraint, URIRef(constraint.uri))
+                        )
 
     def _emit_path_evaluator(
         self,
         quantity: ContextQuantity,
         path_node: URIRef,
-        alpha: Any,
+        path_parameter: Any,
         spec_prefix: str,
-        easing: URIRef | None = None,
     ) -> None:
         """Emit the operator that turns a position along a path into the pose setpoint.
 
@@ -1728,11 +1776,9 @@ class MotionSpecDatasetBuilder:
             (
                 eval_node,
                 _ns_term(GEOM_OP_EXT, "path-parameter"),
-                self._emit_context_ref_node(alpha, quantity, "path-parameter"),
+                self._emit_context_ref_node(path_parameter, quantity, "path-parameter"),
             )
         )
-        if easing is not None:
-            self.graph.add((eval_node, GEOM_OP_EXT.easing, easing))
         self.graph.add((eval_node, GEOM_OP.out, self._reference_output_node(quantity)))
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
@@ -1752,7 +1798,7 @@ class MotionSpecDatasetBuilder:
                 return self._emit_context_ref_view_node(quantity, subspace, axis)
             if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
                 return self._emit_context_ref_node(quantity.value.source, owner, suffix)
-            if quantity.type == ReferenceGeneratorType.Trajectory:
+            if quantity.type == ReferenceGeneratorType.Path:
                 return self._reference_output_node(quantity)
             return URIRef(quantity.uri)
 
@@ -1796,7 +1842,7 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
     ) -> URIRef:
         """The node a constraint compares against, promoted to a position/orientation coordinate
-        for a whole-subspace (axis-less) pose/trajectory reference.
+        for a whole-subspace (axis-less) pose/path reference.
         """
         ref_node = self._emit_context_ref_node(ref, owner, suffix)
         quantity = _context_quantity(ref)
@@ -1832,7 +1878,7 @@ class MotionSpecDatasetBuilder:
                         (orientation_node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt)
                     )
                 return orientation_node
-        if quantity.type == ReferenceGeneratorType.Trajectory:
+        if quantity.type == ReferenceGeneratorType.Path:
             if subspace == "position":
                 self.graph.add((ref_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
@@ -2140,49 +2186,82 @@ class MotionSpecDatasetBuilder:
         """Owned node holding a timing constraint's elapsed-time quantity."""
         return self._owned_uri(f"{spec.name}-elapsed", motion)
 
+    def _motion_time_endpoints(self, motion: GuardedMotion) -> tuple[URIRef, URIRef]:
+        """The (motion-entry, current-time) time:Instant pair shared by every elapsed
+        constraint in `motion`, emitted once per motion."""
+        key = str(motion.uri)
+        cached = self._motion_time_endpoints_index.get(key)
+        if cached is not None:
+            return cached
+        entry_node = self._owned_uri("motion-entry", motion)
+        current_node = self._owned_uri("current-time", motion)
+        self.graph.add((entry_node, RDF.type, TIME.Instant))
+        self.graph.add((current_node, RDF.type, TIME.Instant))
+        endpoints = (entry_node, current_node)
+        self._motion_time_endpoints_index[key] = endpoints
+        return endpoints
+
     def _emit_elapsed_constraint(
         self, node: URIRef, spec: ConstraintSpecification, motion: GuardedMotion
     ) -> None:
-        """A timing constraint: a normal cstr:Constraint whose measured quantity is the
-        motion-state elapsed time (filled at runtime from the world clock), compared
-        against a Duration threshold. No kinematics — codegen reads the clock directly."""
+        """A timing constraint: a cstr-ext:TimeConstraint over the time:ProperInterval
+        spanning motion entry to now, whose measured time:Duration (filled at runtime from
+        the world clock) is compared against an authored Duration threshold, reference, or
+        tolerance. No kinematics — codegen reads the clock directly."""
         expr = spec.expr
         self.graph.add((node, RDF.type, CSTR.Constraint))
+        self.graph.add((node, RDF.type, CSTR_EXT.TimeConstraint))
 
         qty_node = self._elapsed_quantity_node(spec, motion)
-        self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self.graph.add((qty_node, QUDT_SCHEMA["hasQuantityKind"], NS_MM_QUDT_QTY["Time"]))
-        self.graph.add((qty_node, QUDT_SCHEMA.unit, QUDT_UNIT["SEC"]))
+        self.graph.add((qty_node, RDF.type, TIME.Duration))
         self.graph.add((node, CSTR.quantity, qty_node))
+
+        entry_node, current_node = self._motion_time_endpoints(motion)
+        interval_node = self._owned_uri(f"{spec.name}-interval", motion)
+        self.graph.add((interval_node, RDF.type, TIME.ProperInterval))
+        self.graph.add((interval_node, TIME.hasBeginning, entry_node))
+        self.graph.add((interval_node, TIME.hasEnd, current_node))
+        self.graph.add((interval_node, TIME.hasDuration, qty_node))
 
         if isinstance(expr, GreaterThanConstraint):
             self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
             self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
-            threshold = expr.threshold
+            thr_node = self._emit_duration_threshold_node(
+                expr.threshold, motion, f"{spec.name}-threshold"
+            )
+            self.graph.add((node, CSTR.threshold, thr_node))
         elif isinstance(expr, LessThanConstraint):
             self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
             self.graph.add((node, RDF.type, CSTR.LessThanConstraint))
-            threshold = expr.threshold
+            thr_node = self._emit_duration_threshold_node(
+                expr.threshold, motion, f"{spec.name}-threshold"
+            )
+            self.graph.add((node, CSTR.threshold, thr_node))
+        elif isinstance(expr, EqualityConstraint):
+            self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
+            ref_node = self._emit_duration_threshold_node(
+                expr.reference, motion, f"{spec.name}-reference"
+            )
+            self.graph.add((node, CSTR["reference-value"], ref_node))
+            # Semantic validation guarantees an elapsed equality always carries a tolerance.
+            tol_node = self._emit_duration_threshold_node(
+                expr.tolerance, motion, f"{spec.name}-tolerance"
+            )
+            self.graph.add((node, CSTR_EXT.tolerance, tol_node))
         else:
             raise ValueError(
-                f"Timing constraint '{spec.name}' must use 'greater than' or 'less than'."
+                f"Timing constraint '{spec.name}' must use 'greater than', 'less than', "
+                "or 'equal to'."
             )
-        thr_node = self._emit_duration_threshold_node(threshold, motion, f"{spec.name}-threshold")
-        self.graph.add((node, CSTR.threshold, thr_node))
 
     def _emit_duration_threshold_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
-        """Resolve a timing threshold to a node: an inline Duration literal, or a declared
-        Duration quantity.
+        """Resolve a timing threshold/reference/tolerance to a native OWL-Time Duration
+        node: an inline literal, or a declared Duration quantity.
         """
         bare = getattr(ref, "bare", None)
         if bare is not None:
             node = self._owned_uri(suffix, owner)
-            self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], NS_MM_QUDT_QTY["Time"]))
-            self.graph.add((node, QUDT_SCHEMA.unit, _time_unit(bare.unit)))
-            self.graph.add(
-                (node, QUDT_SCHEMA.value, Literal(float(bare.value), datatype=XSD.double))
-            )
+            self._emit_duration_measure(node, bare)
             return node
         quantity = _context_quantity(ref)
         if isinstance(quantity, ContextQuantity):
@@ -2191,9 +2270,22 @@ class MotionSpecDatasetBuilder:
             "Timing threshold must be a declared Duration quantity or an inline literal like `5.0 s`."
         )
 
+    def _emit_duration_measure(self, node: URIRef, value: Measure) -> None:
+        """Emit a Measure (`5.0 s`, `10.0 ms`) as a native OWL-Time Duration, normalized
+        to seconds so every emitted Duration uses the one temporal unit."""
+        self.graph.add((node, RDF.type, TIME.Duration))
+        self.graph.add(
+            (
+                node,
+                TIME.numericDuration,
+                Literal(_duration_seconds(value.value, value.unit), datatype=XSD.decimal),
+            )
+        )
+        self.graph.add((node, TIME.unitType, TIME.unitSecond))
+
     def _emit_motion_spec(self, motion: GuardedMotion) -> None:
         """Emit the guarded-motion node linking its when/while/until constraints (with disjunction
-        nodes for `any` logic) and any trajectory.
+        nodes for `any` logic) and any path.
         """
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
@@ -2643,7 +2735,6 @@ class MotionSpecDatasetBuilder:
             (handler_node, CSTR_HDL.motion, self._owned_uri(f"motion-{motion.name}", motion))
         )
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
-        self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
 
         seen_error_ids: set[str] = set()
         seen_eval_ids: set[str] = set()
@@ -2892,6 +2983,7 @@ class MotionSpecDatasetBuilder:
                 for guard_node in guard_nodes:
                     self.graph.add((mon_node, CSTR_HDL.constraint, guard_node))
                 if signal_kind == "event":
+                    self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
@@ -2981,6 +3073,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
             self.graph.add((mon_node, CSTR_HDL.error, error_node))
             if signal_kind == "event":
+                self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))

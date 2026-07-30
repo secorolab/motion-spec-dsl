@@ -93,12 +93,11 @@ guarded-motion (ns=app) home {
 }
 
 guarded-motion (ns=app) pick-above {
-    move: "Move both TCPs to the pre-grasp position above their cubes (trajectory)"
+    move: "Move both TCPs to the pre-grasp position above their cubes along paths"
 
     context {
         spec {
             linear-distance above-z = 0.26 m,
-
             path-parameter alpha1,
             pose start1-pose = snapshot of <shared.world.pose-ee1-base>,
             linear-distance start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x,
@@ -107,7 +106,7 @@ guarded-motion (ns=app) pick-above {
                 position: { x: <spec.start1-cube-x>, y: <spec.start1-cube-y>, z: <spec.above-z> },
                 orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
             },
-            trajectory traj1 = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose>, alpha: <spec.alpha1> },
+            path arm1-approach-path = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose> },
 
             path-parameter alpha2,
             pose start2-pose = snapshot of <shared.world.pose-ee2-base>,
@@ -117,7 +116,7 @@ guarded-motion (ns=app) pick-above {
                 position: { x: <spec.start2-cube-x>, y: <spec.start2-cube-y>, z: <spec.above-z> },
                 orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
             },
-            trajectory traj2 = lerp { start: <spec.start2-pose>, goal: <spec.goal2-pose>, alpha: <spec.alpha2> }
+            path arm2-approach-path = lerp { start: <spec.start2-pose>, goal: <spec.goal2-pose> }
         }
     }
 
@@ -127,10 +126,10 @@ guarded-motion (ns=app) pick-above {
     }
 
     while {
-        follow1-pos: keeping <shared.world.pose-ee1-base>.position    equal to <spec.traj1>.position,
-        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.traj1>.orientation,
-        follow2-pos: keeping <shared.world.pose-ee2-base>.position    equal to <spec.traj2>.position,
-        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.traj2>.orientation
+        follow1-pos: keeping <shared.world.pose-ee1-base>.position    equal to <spec.arm1-approach-path>.position,
+        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.arm1-approach-path>.orientation,
+        follow2-pos: keeping <shared.world.pose-ee2-base>.position    equal to <spec.arm2-approach-path>.position,
+        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.arm2-approach-path>.orientation
     }
 
     until {}
@@ -570,6 +569,10 @@ constraint-handler (ns=app) handler-home {
 
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
+    progress {
+        arm1-approach: maximizing <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> advancing at 1.0 Hz,
+        arm2-approach: maximizing <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> advancing at 1.0 Hz
+    }
     monitors {
         mon-pick-above-ready: monitor <pick-above.when> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>
     }

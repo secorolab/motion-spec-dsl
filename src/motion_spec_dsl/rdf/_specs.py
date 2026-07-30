@@ -14,6 +14,7 @@ from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
 from motion_spec.namespace import (
     ALGO_EXT,
+    AGN,
     APP,
     EL,
     CSTR,
@@ -40,9 +41,9 @@ from motion_spec.namespace import (
     SLV,
     SLV_EXT,
     SOSA,
+    TIME,
 )
 from motion_spec_dsl.classes.motion import QuantityType, WorldQuantityType
-
 
 class ROS(DefinedNamespace):
     Topic: URIRef
@@ -207,7 +208,8 @@ CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("algo-ext", ALGO_EXT),
-    ("app", APP),
+    ("application", APP),
+    ("agn", AGN),
     ("kc-stat", KC_STAT),
     ("geom-ent", GEOM_ENT),
     ("geom-rel", GEOM_REL),
@@ -235,4 +237,5 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("sosa", SOSA),
     ("geom-path", GEOM_PATH),
     ("ros", ROS),
+    ("time", TIME),
 )

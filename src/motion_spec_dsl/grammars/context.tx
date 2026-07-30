@@ -117,7 +117,7 @@ AngularAxis: "roll" | "pitch" | "yaw" ;
 // not authored .robmot files.
 Unit:
     "rad/s2" | "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
-    "Nm"    | "rad"  | "deg" | "cm"   | "ms" | "m" | "s" | "N" | "1"
+    "Nm" | "rad" | "deg" | "cm" | "ms" | "m" | "s" | "N" | "1"
 ;
 
 // Context quantities: values, poses, snapshots, and references.

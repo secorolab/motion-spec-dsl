@@ -21,6 +21,7 @@ dependencies = [
     "rdf-utils",
     "motion_spec",
     "pyshacl>=0.25.0",
+    "PyLD>=2.0.0",
     "coord_dsl",
     "scene-dsl",
 ]

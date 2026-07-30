@@ -5,7 +5,6 @@
 
 import base
 import context
-import trajectory
 import motion_spec
 
 SaturationSpec:
@@ -21,10 +20,17 @@ ConstraintHandler:
     "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("context"    "{" context*=HandlerContextItem[","] "}")?
         "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
+        ("progress"    "{" progress*=ProgressObjective[","]? "}")?
         ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
         "controllers"  "{" controllers*=ControllerItem[","]? "}"
         "solvers"      "{" solvers+=SolverItem[","] "}"
     "}"
+;
+
+ProgressObjective:
+    name=IRI_TRUNK ":" "maximizing" parameter=ContextRef "along"
+    (path=ContextRef | "{" paths+=ContextRef[","] "}")
+    "advancing" "at" advancement=FLOAT advancement_unit="Hz"
 ;
 
 ControllerItem: ControllerAlias | ControllerEntry ;

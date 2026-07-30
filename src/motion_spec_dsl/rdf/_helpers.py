@@ -138,11 +138,12 @@ def _dsl_unit(unit_name: str) -> Any:
         raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
 
 
-def _time_unit(unit_name: str) -> Any:
-    """QUDT unit for a timing value, restricted to `'s'` or `'ms'`."""
+def _duration_seconds(value: float, unit_name: str) -> float:
+    """Normalize a timing value to fractional seconds, restricted to `'s'` or `'ms'`, so
+    every emitted OWL-Time Duration uses the one temporal unit."""
     if unit_name not in {"s", "ms"}:
         raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
-    return _dsl_unit(unit_name)
+    return float(value) * (0.001 if unit_name == "ms" else 1.0)
 
 
 def _linear_velocity_mps(value: float, unit: object | None) -> float:

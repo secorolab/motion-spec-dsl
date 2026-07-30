@@ -14,6 +14,7 @@ from textx import get_location
 from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.validation.common import semantic_error
+from motion_spec_dsl.classes import ContextQuantity, QuantityType
 
 _FIXED_NAME_RULES = frozenset(
     {
@@ -47,7 +48,7 @@ def _grammar_keywords() -> frozenset[str]:
     grammar_files = (
         "base.tx",
         "context.tx",
-        "trajectory.tx",
+        "path.tx",
         "motion_spec.tx",
         "constraint_handler.tx",
         "model.tx",
@@ -68,6 +69,12 @@ def reject_keyword_names(model) -> None:
         if type(node).__name__ in _FIXED_NAME_RULES:
             continue
         name = getattr(node, "name", None)
+        if (
+            isinstance(node, ContextQuantity)
+            and node.type == QuantityType.PathParameter
+            and name == "s"
+        ):
+            continue
         if isinstance(name, str) and name in _grammar_keywords():
             raise TextXSemanticError(
                 f"'{name}' is a motion-spec keyword and cannot name this {type(node).__name__}",

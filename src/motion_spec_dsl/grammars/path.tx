@@ -1,31 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 // Author: Vamsi Kalagaturu
-// Trajectory kinds and geometric paths.
+// Path kinds and geometric paths.
 
 import context
 
-TrajectoryValue:
+PathValue:
     "=" (lerp=LerpSpec | circle=CircleSpec | arc=ArcSpec | helix=HelixSpec | figure8=Figure8Spec)
 ;
 
 LerpSpec:
     "lerp" "{"
         "start" ":" start=ContextRef ","
-        "goal"  ":" goal=ContextRef  ","
-        "alpha" ":" alpha=ContextRef
-        ("," "profile" ":" profile=EasingProfile)?
+        "goal"  ":" goal=ContextRef
     "}"
 ;
-
-EasingProfile: "linear" | "ease-in" | "ease-out" | "ease-in-out" ;
 
 CircleSpec:
     "circle" "{"
         "start"        ":" start=ContextRef        ","
         "center"       ":" center=ContextRef       ","
-        "plane-normal" ":" plane_normal=ContextRef ","
-        "alpha"        ":" alpha=ContextRef
+        "plane-normal" ":" plane_normal=ContextRef
     "}"
 ;
 
@@ -34,8 +29,7 @@ ArcSpec:
         "start"        ":" start=ContextRef        ","
         "end"          ":" end=ContextRef          ","
         "amplitude"    ":" amplitude=ContextRef    ","
-        "plane-normal" ":" plane_normal=ContextRef ","
-        "alpha"        ":" alpha=ContextRef
+        "plane-normal" ":" plane_normal=ContextRef
     "}"
 ;
 
@@ -45,8 +39,7 @@ HelixSpec:
         "center"      ":" center=ContextRef      ","
         "axis"        ":" axis=ContextRef        ","
         "pitch"       ":" pitch=ContextRef       ","
-        "revolutions" ":" revolutions=ContextRef ","
-        "alpha"       ":" alpha=ContextRef
+        "revolutions" ":" revolutions=ContextRef
     "}"
 ;
 
@@ -54,8 +47,7 @@ Figure8Spec:
     "figure8" "{"
         "anchor"       ":" anchor=ContextRef       ","
         "radius"       ":" radius=ContextRef       ","
-        "plane-normal" ":" plane_normal=ContextRef ","
-        "alpha"        ":" alpha=ContextRef
+        "plane-normal" ":" plane_normal=ContextRef
         ("," "form" ":" form=Figure8Form)?
     "}"
 ;

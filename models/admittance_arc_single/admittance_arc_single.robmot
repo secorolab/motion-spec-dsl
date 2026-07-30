@@ -141,7 +141,7 @@ guarded-motion (ns=app) arc-motion {
 
     context {
         spec {
-            path-parameter progress,
+            path-parameter s,
             direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> } = {
                 x: 0.9863939238,
                 y: 0.1643989873,
@@ -177,12 +177,11 @@ guarded-motion (ns=app) arc-motion {
                     yaw:   <spec.end-yaw>
                 }
             },
-            trajectory path = arc {
+            path arc-path = arc {
                 start:        <spec.start-pose>,
                 end:          <spec.end-pose>,
                 amplitude:    <spec.arc-height>,
-                plane-normal: <spec.path-normal>,
-                alpha:        <spec.progress>
+                plane-normal: <spec.path-normal>
             }
         }
     }
@@ -190,8 +189,8 @@ guarded-motion (ns=app) arc-motion {
     when {}
 
     while {
-        follow-position: keeping <shared.world.pose-ee-base>.position equal to <spec.path>.position,
-        follow-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.path>.orientation,
+        follow-position: keeping <shared.world.pose-ee-base>.position equal to <spec.arc-path>.position,
+        follow-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.arc-path>.orientation,
         force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
         force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
     }
@@ -300,6 +299,9 @@ constraint-handler (ns=app) handler-forward {
 
 constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
+    progress {
+        arc-progress: maximizing <arc-motion.spec.s> along <arc-motion.spec.arc-path> advancing at 0.1 Hz
+    }
     monitors {
         mon-force-x: monitor <arc-motion.force-x> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
         mon-force-y: monitor <arc-motion.force-y> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,

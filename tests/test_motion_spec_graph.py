@@ -14,7 +14,7 @@ from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.ir_gen import _authored_controller_axes, _load_graph, generate_ir
+from motion_spec.ir_gen import Parser, _authored_controller_axes, _load_graph, generate_ir
 from motion_spec.namespace import (
     ALGO_EXT,
     APP,
@@ -25,6 +25,7 @@ from motion_spec.namespace import (
     GEOM_REL,
     MAP,
     MAP_EXT,
+    QUDT_SCHEMA,
     SLV,
     SLV_EXT,
 )
@@ -58,17 +59,51 @@ def generated_dual_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
     return tmp_path / "pick_place_dual-app.ld.json"
 
 
-def test_dual_arm_velocity_profiles_reach_ir(generated_dual_model: Path) -> None:
+def test_generated_jsonld_compacts_hierarchical_identifiers(generated_model: Path) -> None:
+    document = json.loads(generated_model.with_name("pick_place_single.ld.json").read_text())
+    identifiers: list[str] = []
+
+    def collect(value) -> None:
+        if isinstance(value, dict):
+            if isinstance(value.get("@id"), str):
+                identifiers.append(value["@id"])
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(document.get("@graph", []))
+    assert "app:pick-above/while/follow-pos" in identifiers
+    assert not any(identifier.startswith(("http://", "https://", "/")) for identifier in identifiers)
+
+
+def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_model: Path) -> None:
     graph = _load_graph(generated_dual_model)[1]
     assert len(set(graph.subjects(RDF.type, CSTR_HDL_EXT["LinearJerk"]))) == 1
+    objectives = set(graph.subjects(RDF.type, ALGO_EXT.ProgressObjective))
+    (handler_node,) = set(graph.subjects(ALGO_EXT.progress, None))
+    assert set(graph.objects(handler_node, ALGO_EXT.progress)) == objectives
+    assert len(Parser(graph).constraint_handler(handler_node).progress) == 2
 
     ir = generate_ir(generated_dual_model)
     profiles = [value for value in ir["closures"].values() if value.get("type") == "VelocityProfile"]
 
-    assert len(profiles) == 2
-    assert {str(profile["shape"]) for profile in profiles} == {"s_curve"}
-    assert all(profile["in"] for profile in profiles)
-    assert all(profile["maximum_jerk"] == "max_lower_jerk" for profile in profiles)
+    motion_profiles = profiles
+    assert len(motion_profiles) == 2
+    assert all(str(profile["shape"]) == "s_curve" and profile["in"] for profile in motion_profiles)
+    assert all(profile["maximum_jerk"] == "max_lower_jerk" for profile in motion_profiles)
+    pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
+    assert {objective.parameter for objective in pick_above.progress_objectives} == {
+        "alpha1",
+        "alpha2",
+    }
+    assert {objective.id for objective in pick_above.progress_objectives} == {
+        "arm1_approach",
+        "arm2_approach",
+    }
+    assert all(len(objective.paths) == 1 for objective in pick_above.progress_objectives)
+    assert all(objective.errors for objective in pick_above.progress_objectives)
     assert [robot.prefix for robot in ir["scene"].robots] == ["kinova1_", "kinova2_"]
     objects = {obj.id: obj for obj in ir["scene"].objects}
     assert set(objects) == {"table", "cube", "cube2"}
@@ -193,6 +228,12 @@ def test_reduced_shacl_contract_conforms(generated_model: Path) -> None:
     conforms, _, report = validate(data, shacl_graph=shapes, inference="rdfs")
     assert conforms, report
 
+    objective = next(data.subjects(RDF.type, ALGO_EXT.ProgressObjective))
+    advancement = data.value(objective, ALGO_EXT.advancement)
+    data.set((advancement, QUDT_SCHEMA.unit, URIRef("http://qudt.org/vocab/unit/KiloHZ")))
+    conforms, _, _ = validate(data, shacl_graph=shapes, inference="rdfs")
+    assert not conforms
+
     assert (
         "https://secorolab.github.io/metamodels/algorithm-extension.shacl.ttl"
         in constraint_locations
@@ -266,6 +307,21 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert len(forwarded) == 6
     assert all(command.target for command in forwarded)
     graph = _load_graph(generated_model)[1]
+    objectives = list(graph.subjects(RDF.type, ALGO_EXT.ProgressObjective))
+    assert len(objectives) == 1
+    (handler_node,) = graph.subjects(ALGO_EXT.progress, objectives[0])
+    motion_node = graph.value(handler_node, CSTR_HDL.motion)
+    assert CSTR_HDL.ConstraintHandler in graph[handler_node : RDF.type]
+    assert (motion_node, ALGO_EXT.progress, objectives[0]) not in graph
+    parsed_handler = Parser(graph).constraint_handler(handler_node)
+    assert len(parsed_handler.progress) == 1
+    assert not hasattr(parsed_handler.motion, "progress")
+    assert graph.value(objectives[0], ALGO_EXT.parameter) is not None
+    assert graph.value(objectives[0], ALGO_EXT.path) is not None
+    assert not any(
+        graph.value(profile, ALGO_EXT.out) == graph.value(objectives[0], ALGO_EXT.parameter)
+        for profile in graph.subjects(RDF.type, ALGO_EXT.VelocityProfile)
+    )
     authored_axes = _authored_controller_axes(graph)
     assert authored_axes
     assert sum(len(axes) for axes in authored_axes.values()) == 60
@@ -317,9 +373,9 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
     scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
     interpolation = next(closure for closure in scheduled if closure["type"] == "LinearPath")
-    assert (interpolation["trajectory"], interpolation["path_parameter"]) == (
+    assert (interpolation["setpoint"], interpolation["path_parameter"]) == (
         "reference",
-        "progress",
+        "s",
     )
     assert interpolation["assign_goal"]
     assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
@@ -329,9 +385,57 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
         "start_cube_x",
         "start_cube_y",
     }
-    assert pick_above.time_trajectory_progress_ids == ["progress"]
+    assert len(pick_above.progress_objectives) == 1
+    objective = pick_above.progress_objectives[0]
+    assert objective.parameter == "s"
+    assert objective.id == "approach"
+    assert objective.paths == ["lerp_approach_path"]
+    assert len(objective.errors) == 6
+    assert all(closure["type"] != "VelocityProfile" for closure in scheduled)
     pose_ee_base = next(item for item in ir["shared_data"] if item.id == "pose_ee_base")
     assert pose_ee_base.with_respect_to.id == "base_link"
+
+
+def test_one_named_progress_policy_synchronizes_two_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One shared parameter is gated by the union of both paths' controller errors."""
+    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
+    model_path = MODELS / "pick_place_dual" / "pick_place_dual.robmot"
+    source = model_path.read_text().replace(
+        "            path-parameter alpha1,", "            path-parameter s,"
+    ).replace("            path-parameter alpha2,\n", "").replace(
+        """    progress {
+        arm1-approach: maximizing <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> advancing at 1.0 Hz,
+        arm2-approach: maximizing <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> advancing at 1.0 Hz
+    }""",
+        """    progress {
+        dual-approach: maximizing <pick-above.spec.s> along {
+            <pick-above.spec.arm1-approach-path>,
+            <pick-above.spec.arm2-approach-path>
+        } advancing at 1.0 Hz
+    }""",
+    )
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_str(source, file_name=str(model_path))
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+
+    manifest = tmp_path / "pick_place_dual-app.ld.json"
+    graph = _load_graph(manifest)[1]
+    (objective_node,) = graph.subjects(RDF.type, ALGO_EXT.ProgressObjective)
+    assert len(set(graph.objects(objective_node, ALGO_EXT.path))) == 2
+
+    ir = generate_ir(manifest)
+    pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
+    (objective,) = pick_above.progress_objectives
+    assert objective.id == "dual_approach"
+    assert objective.parameter == "s"
+    assert set(objective.paths) == {
+        "lerp_arm1_approach_path",
+        "lerp_arm2_approach_path",
+    }
+    assert len(objective.constraints) == 4
+    assert len(objective.errors) == 12
 
 
 def test_generated_manifest_is_portable(generated_model: Path) -> None:
