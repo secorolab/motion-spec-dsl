@@ -11,7 +11,7 @@ import pytest
 from rdflib import Dataset, Graph
 from rdflib.namespace import PROV, RDF
 
-from motion_spec.namespace import (
+from motion_spec.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
@@ -20,7 +20,7 @@ from motion_spec.namespace import (
     SLV,
     SLV_EXT,
 )
-from motion_spec.ir_gen import generate_ir
+from motion_spec.rdf_parser.ir import generate_ir
 from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
 
 MODELS = Path(__file__).parents[1] / "models"

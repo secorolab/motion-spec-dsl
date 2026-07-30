@@ -12,7 +12,7 @@ from rdflib.namespace import DefinedNamespace, Namespace
 from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
-from motion_spec.namespace import (
+from motion_spec.rdf_parser.vocab import (
     ALGO_EXT,
     AGN,
     APP,

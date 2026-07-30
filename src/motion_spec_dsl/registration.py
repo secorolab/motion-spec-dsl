@@ -323,7 +323,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
     # The manifest's iri-map only declares where *this model's* imported graphs live
     # (relative to the manifest). Metamodel/ontology prefixes are deliberately NOT
     # baked in here: they resolve through rdf-utils' IriToFileResolver against the
-    # local metamodels checkout (motion_spec.manifest.metamodel_url_map), so the
+    # local metamodels checkout (motion_spec.rdf_parser.manifest.metamodel_url_map), so the
     # generated manifest stays free of machine-specific absolute paths and is
     # portable into run archives.
     iri_map = {

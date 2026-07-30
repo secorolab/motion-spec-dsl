@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 from rdflib.namespace import RDF
 
-from motion_spec.namespace import CSTR, CSTR_EXT, TIME
+from motion_spec.rdf_parser.vocab import CSTR, CSTR_EXT, TIME
 from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
 from motion_spec_dsl.registration import _build_manifest
 

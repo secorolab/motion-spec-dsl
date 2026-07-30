@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from motion_spec.ir_gen import generate_ir
+from motion_spec.rdf_parser.ir import generate_ir
 from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
 
 
@@ -48,25 +48,28 @@ def _motion(ir: dict, motion_id: str):
     return next(m for m in ir["motions"] if m.id == motion_id)
 
 
-def _acceleration_rows(motion) -> set[tuple[str, str]]:
+def _spatial_rows(motion) -> set[tuple[str, str]]:
     """The (subspace, axis) solver rows a motion actually commands."""
     return {
         (row.subspace, row.axis)
         for solver in motion.arm_solvers
-        for row in solver.motion_driver.acceleration_constraint
+        for row in (
+            *solver.motion_driver.acceleration_constraint,
+            *solver.motion_driver.cartesian_acceleration,
+        )
     }
 
 
 def test_velocity_constraints_get_a_solver_row(interaction_ir: dict) -> None:
     """A velocity constraint must reach the solver.
 
-    derive_solver matched stale subspace tokens, so these produced no constraint row: the
+    Axis derivation matched stale subspace tokens, so these produced no solver row: the
     controller computed a signal that codegen then dropped, leaving the axis uncommanded.
     """
-    rows = _acceleration_rows(_motion(interaction_ir, "motion_touchdown"))
+    rows = _spatial_rows(_motion(interaction_ir, "motion_touchdown"))
     assert ("Linear", "Z") in rows, f"velocity constraint produced no Z row; rows={sorted(rows)}"
 
-    comply_rows = _acceleration_rows(_motion(interaction_ir, "motion_compliance"))
+    comply_rows = _spatial_rows(_motion(interaction_ir, "motion_compliance"))
     assert {("Linear", "X"), ("Linear", "Y"), ("Linear", "Z")} <= comply_rows
 
 

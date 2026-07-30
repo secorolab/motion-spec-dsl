@@ -30,7 +30,7 @@ from rdf_utils.namespace import (
 
 from textx.scoping import get_included_models
 
-from motion_spec.namespace import (
+from motion_spec.rdf_parser.vocab import (
     AGN,
     ALGO_EXT,
     EL,

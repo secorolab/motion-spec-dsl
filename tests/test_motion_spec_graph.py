@@ -13,8 +13,8 @@ import pytest
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.ir_gen import Parser, _load_graph, generate_ir
-from motion_spec.namespace import (
+from motion_spec.rdf_parser.ir import Parser, _load_graph, generate_ir
+from motion_spec.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
