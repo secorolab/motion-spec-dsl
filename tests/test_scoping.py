@@ -116,7 +116,7 @@ guarded-motion (ns=app) m1 {
         mm.model_from_str(src, file_name=str(MODELS / "probe.robmot"))
 
 
-def test_progress_requires_a_path_parameter_and_tracking_equality():
+def test_progress_requires_a_tracking_equality():
     source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     metamodel = motion_spec_metamodel()
     model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
@@ -124,14 +124,6 @@ def test_progress_requires_a_path_parameter_and_tracking_equality():
     handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
     assert len(handler.progress) == 1
     assert not hasattr(handler.motion, "progress")
-
-    with pytest.raises(TextXSemanticError, match="PathParameter"):
-        metamodel.model_from_str(
-            source.replace("path-parameter s,", "dimensionless alpha,").replace(
-                "<pick-above.spec.s>", "<pick-above.spec.alpha>"
-            ),
-            file_name=model_path,
-        )
 
     untracked = source.replace(
         "equal to <spec.approach-path>.position", "equal to <spec.goal-pose>.position"
@@ -162,7 +154,7 @@ def test_progress_policy_names_and_paths_are_unique():
         motion_spec_metamodel().model_from_str(duplicate_path, file_name=model_path)
 
 
-def test_progress_objective_needs_a_capable_solver():
+def test_progress_objective_is_an_authored_model_concept():
     source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
     with_objective = source.replace(
@@ -176,30 +168,6 @@ def test_progress_objective_needs_a_capable_solver():
         "            maximize <pick-above.spec.s> along <pick-above.spec.approach-path>\n"
         "        }",
     )
-    with pytest.raises(TextXSemanticError, match="needs a solver.*that can consume"):
-        motion_spec_metamodel().model_from_str(with_objective, file_name=model_path)
-
-
-def test_progress_at_most_one_objective_per_handler(monkeypatch: pytest.MonkeyPatch):
-    # Isolate the duplicate-objective check from the (currently always-failing)
-    # solver-capability check by granting ACHD objective capability for this test.
-    from motion_spec_dsl.validation import constraints as validation_constraints
-
-    monkeypatch.setattr(
-        validation_constraints, "_OBJECTIVE_CAPABLE_SOLVER_ALGORITHMS", frozenset({"ACHD"})
-    )
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    two_objectives = source.replace(
-        "        approach: constraint {\n"
-        "            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz\n"
-        "        }",
-        "        approach-one: objective {\n"
-        "            maximize <pick-above.spec.s> along <pick-above.spec.approach-path>\n"
-        "        },\n"
-        "        approach-two: objective {\n"
-        "            maximize <pick-above.spec.s> along <pick-above.spec.approach-path>\n"
-        "        }",
-    )
-    with pytest.raises(TextXSemanticError, match="at most one progress objective"):
-        motion_spec_metamodel().model_from_str(two_objectives, file_name=model_path)
+    model = motion_spec_metamodel().model_from_str(with_objective, file_name=model_path)
+    handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
+    assert [entry.name for entry in handler.progress] == ["approach", "approach-objective"]

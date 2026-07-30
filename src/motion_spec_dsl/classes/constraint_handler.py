@@ -34,7 +34,6 @@ from motion_spec_dsl.classes.common import (
 class ControllerType(StrEnum):
     PID = "PID"
     Impedance = "Impedance"
-    ABAG = "ABAG"
     FeedForward = "FeedForward"
 
 
@@ -302,18 +301,6 @@ class ControllerAlias(ControllerEntry):
 
 
 @dataclass
-class ControllerParam:
-    """A single controller parameter term."""
-
-    name: ControllerParamName
-    value: float
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        self.name = _authored_enum(ControllerParamName, str(self.name))
-
-
-@dataclass
 class ControllerParams:
     """The resolved parameters of a controller (gains, constraint, profile, limits, ...)."""
 
@@ -322,24 +309,18 @@ class ControllerParams:
     measured_derivative: View | None = None
     output_saturation: SaturationSpec | None = None
     integral_saturation: SaturationSpec | None = None
-    terms: list[ControllerParam] = field(default_factory=list)
+    terms: list[object] = field(default_factory=list)
     kp: float | None = field(init=False, default=None)
     ki: float | None = field(init=False, default=None)
     kd: float | None = field(init=False, default=None)
     stiffness: float | None = field(init=False, default=None)
     damping: float | None = field(init=False, default=None)
     decay: float | None = field(init=False, default=None)
-    duplicate_terms: list[str] = field(init=False, default_factory=list)
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
-        seen: set[str] = set()
         for term in self.terms:
-            name = term.name
-            if name in seen:
-                self.duplicate_terms.append(name.value)
-                continue
-            seen.add(name)
+            name = _authored_enum(ControllerParamName, str(term.name))
             if name == ControllerParamName.Kp:
                 self.kp = term.value
             elif name == ControllerParamName.Ki:
@@ -353,33 +334,28 @@ class ControllerParams:
             elif name == ControllerParamName.Decay:
                 self.decay = term.value
 
-    @property
-    def pid_gains(self) -> tuple[float | None, float | None, float | None]:
-        return (self.kp, self.ki, self.kd)
-
-    @property
-    def has_pid_gains(self) -> bool:
-        return all(gain is not None for gain in self.pid_gains)
-
-    @property
-    def has_impedance_terms(self) -> bool:
-        return self.stiffness is not None or self.damping is not None
+@dataclass
+class PIDControllerParams(ControllerParams):
+    """Parameters admitted by the PID controller grammar alternative."""
 
 
 @dataclass
-class SolverLimitEntry:
-    parent: object
-    target: str
-    saturation: SaturationSpec
+class ImpedanceControllerParams(ControllerParams):
+    """Parameters admitted by the impedance controller grammar alternative."""
+
+
+@dataclass
+class FeedForwardControllerParams(ControllerParams):
+    """Parameters admitted by the feed-forward controller grammar alternative."""
 
 
 @dataclass
 class SolverLimits:
     parent: object
-    entries: list[SolverLimitEntry] = field(default_factory=list)
+    entries: list[object] = field(default_factory=list)
 
 
-@dataclass
+@dataclass(eq=False)
 class SolverEntry(NamedNamespaceObject):
     """A motion driver/solver (ACHD/RNE/...) assigned to an agent."""
 
@@ -417,7 +393,7 @@ class SolverRef:
         return self.solver.name
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class SolverAlias(SolverEntry):
     """An alias referring to a SolverEntry."""
 

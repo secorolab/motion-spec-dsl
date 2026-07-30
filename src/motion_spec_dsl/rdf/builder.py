@@ -64,6 +64,7 @@ from motion_spec_dsl.controller_semantics import (
     SUBSPACE_ALIAS,
     axis_label as semantic_axis_label,
     controller_command_record,
+    controller_solver,
 )
 from motion_spec_dsl.classes import (
     BilateralConstraint,
@@ -89,7 +90,6 @@ from motion_spec_dsl.classes import (
     PreContextDecl,
     ProfileSpec,
     ProgressConstraint,
-    ProgressObjective,
     AdmittanceSpec,
     QuantityType,
     ReferenceGeneratorType,
@@ -3356,24 +3356,8 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((fs_node, SLV.force, URIRef(f_qty.uri)))
 
     def _controller_solver(self, handler: ConstraintHandler, ctrl: ControllerEntry) -> Any:
-        """The solver that runs `ctrl`: its explicit solver, the sole solver, or the one matching
-        its command-forwarding vs dynamics role.
-        """
-        explicit = getattr(getattr(ctrl, "solver", None), "solver", None)
-        if explicit is not None:
-            return explicit
-        solvers = [_resolved_solver(s) for s in getattr(handler, "solvers", [])]
-        if len(solvers) == 1:
-            return solvers[0]
-        if ctrl.type == ControllerType.FeedForward:
-            candidates = [
-                solver for solver in solvers if str(solver.algorithm) == "CommandForwarding"
-            ]
-        else:
-            candidates = [
-                solver for solver in solvers if str(solver.algorithm) != "CommandForwarding"
-            ]
-        return candidates[0] if len(candidates) == 1 else None
+        """Return the shared semantic solver resolution for `ctrl`."""
+        return controller_solver(handler, ctrl)
 
     def _add_quantity(self, node: URIRef, scalar_type: Any) -> None:
         """Type `node` as a QUDT quantity of `scalar_type` (kind + unit), adding a

@@ -49,6 +49,10 @@ VectorQuantity:
 ;
 
 QuantityType:
+    ContextQuantityWithGeometryType | ScalarQuantityType
+;
+
+ContextQuantityWithGeometryType:
     "pose"                |
     "position"            |
     "orientation"         |
@@ -62,13 +66,12 @@ QuantityType:
     "linear-jerk"         |
     "force"               |
     "torque"              |
-    "distance"            |
-    "angle"               |
     "direction"           |
-    "free-vector"         |
-    "dimensionless"       |
-    "duration"            |
-    "path-parameter"
+    "free-vector"
+;
+
+ScalarQuantityType:
+    "distance" | "angle" | "dimensionless" | "duration" | "path-parameter"
 ;
 
 View:
@@ -139,23 +142,22 @@ OrientationTerm:
 ;
 
 ContextQuantity:
-    type=ContextQuantityType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=ContextQuantityValue?
+      type="velocity-profile" name=IRI_TRUNK value=ProfileSpec
+    | type="admittance" name=IRI_TRUNK value=AdmittanceSpec
+    | type=ContextQuantityWithGeometryType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=PlainContextQuantityValue?
+    | type=ScalarContextQuantityType name=IRI_TRUNK value=PlainContextQuantityValue?
 ;
 
-ContextQuantityType:
-    QuantityType | QuantityAliasType | ReferenceGeneratorType
-;
-
-ReferenceGeneratorType:
-    "velocity-profile" | "admittance"
+ScalarContextQuantityType:
+    ScalarQuantityType | QuantityAliasType
 ;
 
 QuantityAliasType:
     "linear-distance" | "angular-distance"
 ;
 
-ContextQuantityValue:
-    AdmittanceSpec | ProfileSpec | QuantityValue | SnapshotValue | PoseValue | ReferenceValue
+PlainContextQuantityValue:
+    QuantityValue | SnapshotValue | PoseValue | ReferenceValue
 ;
 
 AdmittanceSpec:
@@ -164,9 +166,11 @@ AdmittanceSpec:
         "mass" ":" mass=FLOAT ","
         "damping" ":" damping=FLOAT
         ("," "stiffness" ":" stiffness=FLOAT)?
-        "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=Unit)?
+        "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=LinearVelocityUnit)?
     "}"
 ;
+
+LinearVelocityUnit: "m/s" | "cm/s" ;
 
 ProfileSpec:
     "=" "profile" "{"

@@ -430,7 +430,7 @@ QUANTITY_TYPE_ALIASES = {
 }
 
 
-@dataclass
+@dataclass(eq=False)
 class ContextQuantity(NamedNamespaceObject):
     """A context quantity: a reference, snapshot, profile, path, or literal value."""
 
@@ -450,19 +450,6 @@ class ContextQuantity(NamedNamespaceObject):
     ) = None
     props: GeometricProps | None = field(default=None, kw_only=True)
 
-    _SCALAR_TYPES = frozenset(
-        {
-            "Distance",
-            "LinearDistance",
-            "Angle",
-            "PlaneAngle",
-            "AngularDistance",
-            "PathParameter",
-            "Dimensionless",
-            "Duration",
-        }
-    )
-
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         raw_type = str(self.type)
@@ -473,13 +460,9 @@ class ContextQuantity(NamedNamespaceObject):
                 self.type = _authored_enum(ReferenceGeneratorType, raw_type)
             except ValueError:
                 self.type = _authored_enum(QuantityType, raw_type)
-        if self.props is not None and raw_type in self._SCALAR_TYPES:
-            raise ValueError(
-                f"geometric props block is not valid for scalar quantity type '{self.type}'"
-            )
 
 
-@dataclass(kw_only=True)
+@dataclass(eq=False, kw_only=True)
 class ContextQuantityAlias(ContextQuantity):
     """An alias referring to a ContextQuantity."""
 

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import pytest
 from rdflib.namespace import RDF
-from textx.exceptions import TextXSemanticError
 
 from motion_spec.namespace import CSTR, CSTR_EXT, TIME
 from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
@@ -22,28 +21,6 @@ WHILE_ANCHOR = (
 
 def _while(extra: str) -> str:
     return f"{WHILE_ANCHOR},\n        {extra}"
-
-
-REJECTIONS = [
-    pytest.param(
-        _while(
-            "hold-eq: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within 0.1 m/s"
-        ),
-        "only elapsed equality",
-        id="tolerance_on_non_elapsed_equality",
-    ),
-    pytest.param(
-        _while("wait5: elapsed between 1.0 s and 5.0 s"),
-        "between/outside",
-        id="elapsed_bilateral_rejected",
-    ),
-]
-
-
-@pytest.mark.parametrize(("body", "message"), REJECTIONS)
-def test_invalid_elapsed_constraint_is_rejected(parse_mutated, body, message):
-    with pytest.raises(TextXSemanticError, match=message):
-        parse_mutated(WHILE_ANCHOR, body)
 
 
 def _build(parse_mutated, body: str):

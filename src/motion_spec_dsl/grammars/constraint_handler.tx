@@ -65,27 +65,47 @@ MonitorEntry:
 ROSTopic: "topic" channel_name=STRING ("as" type_name=STRING)? ;
 
 ControllerEntry:
-    type=ControllerType name=IRI_TRUNK "{"
-        params=ControllerParams
-    "}"
+    (
+        type="pid" name=IRI_TRUNK "{" params=PIDControllerParams "}" |
+        type="impedance" name=IRI_TRUNK "{" params=ImpedanceControllerParams "}" |
+        type="feed-forward" name=IRI_TRUNK "{" params=FeedForwardControllerParams "}"
+    )
     ("as" command_type=QuantityType)?
     ("apply" "at" "<" apply_at=[scene.RigidBody|FQN] ">")?
     ("via" "<" solver=SolverRef ">")?
 ;
 
-ControllerType: "pid" | "impedance" | "abag" | "feed-forward" ;
-
-ControllerParams:
+PIDControllerParams:
     "constraint" ":" "<" constraint=ConstraintRef ">"
     ("," "profile" ":" profile=ContextRef)?
     ("," "measured-derivative" ":" measured_derivative=View)?
     ("," "output-saturation" ":" output_saturation=SaturationSpec)?
     ("," "integral-saturation" ":" integral_saturation=SaturationSpec)?
-    ("," terms*=ControllerParam[","])?
+    "," terms+=KpParam "," terms+=KiParam "," terms+=KdParam
+    ("," terms+=DecayParam)?
 ;
 
-ControllerParam: name=ControllerParamName ":" value=FLOAT ;
-ControllerParamName: "Kp" | "Ki" | "Kd" | "stiffness" | "damping" | "decay" ;
+ImpedanceControllerParams:
+    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+    ("," terms+=KiParam)?
+    "," (
+        terms+=StiffnessParam ("," terms+=DampingParam)? |
+        terms+=DampingParam ("," terms+=StiffnessParam)?
+    )
+;
+
+FeedForwardControllerParams:
+    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+;
+
+KpParam: name="Kp" ":" value=FLOAT ;
+KiParam: name="Ki" ":" value=FLOAT ;
+KdParam: name="Kd" ":" value=FLOAT ;
+DecayParam: name="decay" ":" value=FLOAT ;
+StiffnessParam: name="stiffness" ":" value=FLOAT ;
+DampingParam: name="damping" ":" value=FLOAT ;
 MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
 UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
 WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;
@@ -101,9 +121,19 @@ SolverEntry:
     "}"
 ;
 
-SolverLimits: "limits" "{" entries+=SolverLimitEntry[","] "}" ;
-SolverLimitEntry: target=SolverLimitTarget ":" saturation=SaturationSpec ;
-SolverLimitTarget: "torque" | "linear-acceleration" | "angular-acceleration" ;
+SolverLimits:
+    "limits" "{" (
+        entries+=TorqueLimit
+        ("," entries+=LinearAccelerationLimit)?
+        ("," entries+=AngularAccelerationLimit)? |
+        entries+=LinearAccelerationLimit
+        ("," entries+=AngularAccelerationLimit)? |
+        entries+=AngularAccelerationLimit
+    ) "}"
+;
+TorqueLimit: target="torque" ":" saturation=SaturationSpec ;
+LinearAccelerationLimit: target="linear-acceleration" ":" saturation=SaturationSpec ;
+AngularAccelerationLimit: target="angular-acceleration" ":" saturation=SaturationSpec ;
 SolverAlgorithm: "ACHD" | "RNE" | "command-forwarding" | "velocity-distribution" | "force-distribution" ;
 
 GravityVector:

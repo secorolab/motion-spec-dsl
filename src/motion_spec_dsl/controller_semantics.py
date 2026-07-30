@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motion_spec_dsl.classes import (
+    ConstraintHandler,
     ConstraintSpecification,
     ControllerAlias,
     ControllerEntry,
@@ -18,6 +19,7 @@ from motion_spec_dsl.classes import (
     WorldQuantity,
     WorldQuantityType,
     _resolved_controller,
+    _resolved_solver,
     _resolved_world_quantity,
 )
 
@@ -65,6 +67,24 @@ class ControllerCommandRecord:
 LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
 ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
 POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
+
+
+def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | ControllerAlias):
+    """Resolve the authored, sole, or uniquely role-compatible solver for a controller."""
+    resolved = _resolved_controller(controller)
+    explicit = getattr(getattr(resolved, "solver", None), "solver", None)
+    if explicit is not None:
+        return _resolved_solver(explicit)
+    solvers = [_resolved_solver(item) for item in handler.solvers]
+    if len(solvers) == 1:
+        return solvers[0]
+    forwarding = resolved.type == ControllerType.FeedForward
+    candidates = [
+        solver
+        for solver in solvers
+        if (str(solver.algorithm) == "CommandForwarding") == forwarding
+    ]
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def axis_label(axis: object | None) -> str | None:

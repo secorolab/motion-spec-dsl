@@ -11,13 +11,14 @@ from motion_spec_dsl.classes import (
     UntilMonitorRef,
     WhenMonitorRef,
     _resolved_controller,
+    _resolved_solver,
     _flatten_constraint_items,
     _resolved_spec,
 )
+from motion_spec_dsl.controller_semantics import controller_solver
 from motion_spec_dsl.validation.common import (
     constraint_handlers,
     motion_constraint_items,
-    motion_specs,
     semantic_error,
 )
 
@@ -27,13 +28,11 @@ def validate_handler_constraint_assembly(model: Model) -> None:
     does not assemble.
     """
     for handler in constraint_handlers(model):
-        assembled_specs = {
-            id(_resolved_spec(item)) for item in motion_constraint_items(handler.motion)
-        }
+        assembled_specs = {_resolved_spec(item) for item in motion_constraint_items(handler.motion)}
         # An until group is assembled by its motion in its own right: a monitor may target the
         # group instead of any single constraint inside it.
         assembled_specs |= {
-            id(item)
+            item
             for section in handler.motion.sections
             for item in section.constraints
             if isinstance(item, ConstraintGroup)
@@ -49,7 +48,7 @@ def validate_handler_constraint_assembly(model: Model) -> None:
                         monitor,
                     )
                 continue
-            if id(monitor.constraint.constraint) not in assembled_specs:
+            if monitor.constraint.constraint not in assembled_specs:
                 raise semantic_error(
                     f"Monitor '{monitor.name}' references constraint "
                     f"'{monitor.constraint}', but handler '{handler.name}' primary motion "
@@ -59,7 +58,7 @@ def validate_handler_constraint_assembly(model: Model) -> None:
 
         for controller in handler.controllers:
             resolved_controller = _resolved_controller(controller)
-            if id(resolved_controller.params.constraint.constraint) not in assembled_specs:
+            if resolved_controller.params.constraint.constraint not in assembled_specs:
                 raise semantic_error(
                     f"Controller '{controller.name}' references constraint "
                     f"'{resolved_controller.params.constraint}', but handler '{handler.name}' "
@@ -104,7 +103,7 @@ def validate_handler_requirements(model: Model) -> None:
                 for mon in handler.monitors
                 if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
                 and (
-                    id(mon.constraint.constraint) in {id(c) for c in until_items}
+                    mon.constraint.constraint in set(until_items)
                     or isinstance(mon.constraint.constraint, ConstraintGroup)
                 )
             ]
@@ -124,10 +123,10 @@ def validate_handler_requirements(model: Model) -> None:
                 for mon in individual_until_monitors:
                     target = mon.constraint.constraint
                     if isinstance(target, ConstraintGroup):
-                        monitored |= {id(_resolved_spec(i)) for i in target.constraints}
+                        monitored |= {_resolved_spec(i) for i in target.constraints}
                     else:
-                        monitored.add(id(target))
-                missing = [c.name for c in until_items if id(c) not in monitored]
+                        monitored.add(target)
+                missing = [c.name for c in until_items if c not in monitored]
                 if missing:
                     raise semantic_error(
                         f"ConstraintHandler '{handler.name}' has unmonitored UNTIL constraint(s): "
@@ -147,7 +146,7 @@ def validate_handler_requirements(model: Model) -> None:
             isinstance(mon.constraint, WhenMonitorRef) for mon in handler.monitors
         )
         monitored = {
-            id(mon.constraint.constraint)
+            mon.constraint.constraint
             for mon in handler.monitors
             if not isinstance(mon.constraint, (UntilMonitorRef, WhenMonitorRef))
         }
@@ -156,7 +155,7 @@ def validate_handler_requirements(model: Model) -> None:
                 _resolved_spec(item)
                 for item in _flatten_constraint_items(handler.motion.when.constraints)
             ]:
-                if id(constraint) not in monitored:
+                if constraint not in monitored:
                     raise semantic_error(
                         f"ConstraintHandler '{handler.name}' has WHEN constraint "
                         f"'{constraint.name}' without a monitor.",
@@ -164,15 +163,21 @@ def validate_handler_requirements(model: Model) -> None:
                     )
 
 
-def validate_motion_spec_coverage(model: Model) -> None:
-    """Raise if any GuardedMotion is not bound to a ConstraintHandler."""
-    referenced = {
-        handler.motion.name for handler in constraint_handlers(model) if handler.motion is not None
-    }
-    for motion in motion_specs(model):
-        if motion.name not in referenced:
-            raise semantic_error(
-                f"GuardedMotion '{motion.name}' is not referenced by any ConstraintHandler. "
-                "Every GuardedMotion must be bound to exactly one ConstraintHandler.",
-                motion,
-            )
+def validate_controller_solver_assembly(model: Model) -> None:
+    """Require every controller to resolve to a solver assembled by its handler."""
+    for handler in constraint_handlers(model):
+        assembled = {_resolved_solver(item) for item in handler.solvers}
+        for controller in handler.controllers:
+            solver = controller_solver(handler, controller)
+            if solver is None:
+                raise semantic_error(
+                    f"Controller '{controller.name}' has no unique compatible solver in "
+                    f"handler '{handler.name}'; author an explicit 'via' reference.",
+                    controller,
+                )
+            if solver not in assembled:
+                raise semantic_error(
+                    f"Controller '{controller.name}' references solver '{solver.name}', but "
+                    f"handler '{handler.name}' does not assemble it.",
+                    controller,
+                )
