@@ -570,8 +570,12 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
     progress {
-        arm1-approach: maximizing <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> advancing at 1.0 Hz,
-        arm2-approach: maximizing <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> advancing at 1.0 Hz
+        arm1-approach: constraint {
+            advance <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> at 1.0 Hz
+        },
+        arm2-approach: constraint {
+            advance <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> at 1.0 Hz
+        }
     }
     monitors {
         mon-pick-above-ready: monitor <pick-above.when> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>

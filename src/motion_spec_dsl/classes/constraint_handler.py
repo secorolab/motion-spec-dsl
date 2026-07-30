@@ -114,8 +114,10 @@ class SaturationSpec:
 
 
 @dataclass
-class ProgressObjective(NamedNamespaceObject):
-    """A named handler policy advancing one parameter along one or more paths."""
+class ProgressConstraint(NamedNamespaceObject):
+    """A named advancement law: the rate and gating constraints that move a path
+    parameter along one or more paths. This is the maintained path-tracking form.
+    """
 
     parent: object
     name: str
@@ -135,6 +137,28 @@ class ProgressObjective(NamedNamespaceObject):
 
 
 @dataclass
+class ProgressObjective(NamedNamespaceObject):
+    """A named handler policy asking a compatible solver to maximize a path parameter.
+
+    No duration, easing, or fixed advancement rate: the solver owns the traversal.
+    """
+
+    parent: object
+    name: str
+    parameter: object  # ContextRef
+    path: object | None = None  # ContextRef
+    paths: list[object] = field(default_factory=list)  # ContextRef
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def path_refs(self) -> list[object]:
+        """Return single- and multi-path syntax in one downstream representation."""
+        return [self.path] if self.path is not None else self.paths
+
+
+@dataclass
 class ConstraintHandler(IHasNamespaceDeclare):
     """Binds a motion to the controllers, monitors and solvers that realize it."""
 
@@ -143,7 +167,7 @@ class ConstraintHandler(IHasNamespaceDeclare):
     name: str
     context: list[WorldContextDecl | SpecContextDecl | ContextDeclReference]
     motion: GuardedMotion
-    progress: list[ProgressObjective]
+    progress: list[ProgressConstraint | ProgressObjective]
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)

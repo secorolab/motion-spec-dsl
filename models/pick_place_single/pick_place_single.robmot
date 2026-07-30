@@ -427,7 +427,9 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
     progress {
-        approach: maximizing <pick-above.spec.s> along <pick-above.spec.approach-path> advancing at 1.0 Hz
+        approach: constraint {
+            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz
+        }
     }
     monitors {
         mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>

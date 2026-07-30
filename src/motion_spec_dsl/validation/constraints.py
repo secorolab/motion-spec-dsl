@@ -24,7 +24,10 @@ from motion_spec_dsl.classes import (
     Model,
     GuardedMotion,
     OutsideConstraint,
+    PoseValue,
     ProfileSpec,
+    ProgressConstraint,
+    ProgressObjective,
     QuantityType,
     ReferenceGeneratorType,
     ReferenceValue,
@@ -32,9 +35,11 @@ from motion_spec_dsl.classes import (
     SnapshotValue,
     SubSpace,
     PathValue,
+    VectorQuantity,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
+    _resolved_solver,
     _resolved_world_quantity,
     _resolved_spec,
 )
@@ -237,6 +242,83 @@ def _static_scalar(ref: ContextRef) -> Measure | None:
     value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
     scalar = getattr(value, "value", None)
     return scalar if isinstance(scalar, Measure) else None
+
+
+_Vec3 = tuple[float, float, float]
+
+
+def _static_vector(ref: ContextRef) -> _Vec3 | None:
+    """The static (x, y, z) a Direction/Position reference resolves to, or None when it is
+    dynamic (a snapshot/reference) rather than a literal vector.
+    """
+    literal = getattr(ref, "literal_value", None)
+    if isinstance(literal, VectorQuantity):
+        return (literal.x, literal.y, literal.z)
+    value = context_ref_value(ref)
+    value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
+    value = getattr(value, "value", value)
+    return (value.x, value.y, value.z) if isinstance(value, VectorQuantity) else None
+
+
+def _static_position(ref: ContextRef) -> _Vec3 | None:
+    """The static (x, y, z) a Position/Pose reference resolves to, or None when any
+    component depends on runtime state (a snapshot or a non-literal reference).
+    """
+    vector = _static_vector(ref)
+    if vector is not None:
+        return vector
+    value = context_ref_value(ref)
+    value = _resolved_context_quantity(value) if isinstance(value, ContextQuantity) else value
+    value = getattr(value, "value", value)
+    if not isinstance(value, PoseValue):
+        return None
+    axes: dict[str, float] = {}
+    for term in value.position.terms:
+        if term.ref is not None:
+            scalar = _static_scalar(term.ref)
+            if scalar is None:
+                return None
+            axes[term.axis] = scalar.value
+        else:
+            axes[term.axis] = term.value
+    if not {"x", "y", "z"} <= axes.keys():
+        return None
+    return (axes["x"], axes["y"], axes["z"])
+
+
+def _vec_sub(a: _Vec3, b: _Vec3) -> _Vec3:
+    return (a[0] - b[0], a[1] - b[1], a[2] - b[2])
+
+
+def _vec_dot(a: _Vec3, b: _Vec3) -> float:
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _vec_norm(a: _Vec3) -> float:
+    return math.sqrt(_vec_dot(a, a))
+
+
+_GEOMETRY_TOLERANCE = 1e-6
+
+
+def _require_finite_vector(vector: _Vec3, owner: object, message: str) -> None:
+    if not all(math.isfinite(c) for c in vector):
+        raise semantic_error(message, owner)
+
+
+def _require_nonzero_direction(ref: ContextRef, label: str, owner: object) -> None:
+    """Raise if a statically-known direction is zero or not unit length; do nothing for a
+    dynamic (runtime-resolved) direction, which cannot be checked at author time.
+    """
+    vector = _static_vector(ref)
+    if vector is None:
+        return
+    _require_finite_vector(vector, owner, f"{label} must be finite.")
+    norm = _vec_norm(vector)
+    if norm < _GEOMETRY_TOLERANCE:
+        raise semantic_error(f"{label} must be a non-zero vector.", owner)
+    if abs(norm - 1.0) > 1e-3:
+        raise semantic_error(f"{label} must be a unit-length direction.", owner)
 
 
 def _check_profile_ref(
@@ -458,6 +540,92 @@ def _check_path_ref(
         )
 
 
+def _require_positive_scalar(ref: ContextRef, label: str, owner: object) -> None:
+    """Raise if a statically-known scalar is non-finite or non-positive; skip a dynamic one."""
+    scalar = _static_scalar(ref)
+    if scalar is None:
+        return
+    if not math.isfinite(scalar.value):
+        raise semantic_error(f"{label} must be finite.", owner)
+    if scalar.value <= 0.0:
+        raise semantic_error(f"{label} must be positive.", owner)
+
+
+def _validate_circle_geometry(quantity: ContextQuantity, circle) -> None:
+    _require_nonzero_direction(circle.plane_normal, f"Circle '{quantity.name}' plane-normal", circle)
+    start = _static_position(circle.start)
+    center = _static_position(circle.center)
+    normal = _static_vector(circle.plane_normal)
+    if start is None or center is None:
+        return
+    radial = _vec_sub(start, center)
+    _require_finite_vector(radial, circle, f"Circle '{quantity.name}' start/center must be finite.")
+    if _vec_norm(radial) < _GEOMETRY_TOLERANCE:
+        raise semantic_error(
+            f"Circle '{quantity.name}' start must be a non-zero radius away from center.", circle
+        )
+    if normal is not None and abs(_vec_dot(radial, normal)) > _GEOMETRY_TOLERANCE * max(
+        1.0, _vec_norm(radial)
+    ):
+        raise semantic_error(
+            f"Circle '{quantity.name}' start-to-center radius must be perpendicular to plane-normal.",
+            circle,
+        )
+
+
+def _validate_arc_geometry(quantity: ContextQuantity, arc) -> None:
+    _require_nonzero_direction(arc.plane_normal, f"Arc '{quantity.name}' plane-normal", arc)
+    _require_positive_scalar(arc.amplitude, f"Arc '{quantity.name}' amplitude", arc)
+    start = _static_position(arc.start)
+    end = _static_position(arc.end)
+    normal = _static_vector(arc.plane_normal)
+    if start is None or end is None:
+        return
+    chord = _vec_sub(end, start)
+    _require_finite_vector(chord, arc, f"Arc '{quantity.name}' start/end must be finite.")
+    chord_len = _vec_norm(chord)
+    if chord_len < _GEOMETRY_TOLERANCE:
+        raise semantic_error(f"Arc '{quantity.name}' start and end must be distinct.", arc)
+    if normal is not None and abs(_vec_dot(chord, normal)) > _GEOMETRY_TOLERANCE * chord_len:
+        raise semantic_error(
+            f"Arc '{quantity.name}' plane-normal must be perpendicular to the start-end chord.", arc
+        )
+    amplitude = _static_scalar(arc.amplitude)
+    if amplitude is not None and amplitude.value > 0.5 * chord_len + _GEOMETRY_TOLERANCE:
+        raise semantic_error(
+            f"Arc '{quantity.name}' amplitude (sagitta) must not exceed half the chord length.",
+            arc.amplitude,
+        )
+
+
+def _validate_helix_geometry(quantity: ContextQuantity, helix) -> None:
+    _require_nonzero_direction(helix.axis, f"Helix '{quantity.name}' axis", helix)
+    _require_positive_scalar(helix.revolutions, f"Helix '{quantity.name}' revolutions", helix)
+    pitch = _static_scalar(helix.pitch)
+    if pitch is not None and not math.isfinite(pitch.value):
+        raise semantic_error(f"Helix '{quantity.name}' pitch must be finite.", helix.pitch)
+    start = _static_position(helix.start)
+    center = _static_position(helix.center)
+    axis = _static_vector(helix.axis)
+    if start is None or center is None or axis is None:
+        return
+    arm = _vec_sub(start, center)
+    axial = _vec_dot(arm, axis)
+    radial = _vec_sub(arm, (axial * axis[0], axial * axis[1], axial * axis[2]))
+    if _vec_norm(radial) < _GEOMETRY_TOLERANCE:
+        raise semantic_error(
+            f"Helix '{quantity.name}' start must have a non-zero radial offset from center "
+            "(perpendicular to axis).",
+            helix,
+        )
+
+
+def _validate_figure8_geometry(quantity: ContextQuantity, figure8) -> None:
+    _require_nonzero_direction(figure8.plane_normal, f"Figure8 '{quantity.name}' plane-normal", figure8)
+    _require_nonzero_direction(figure8.direction, f"Figure8 '{quantity.name}' direction", figure8)
+    _require_positive_scalar(figure8.radius, f"Figure8 '{quantity.name}' radius", figure8)
+
+
 def _validate_path_quantity(quantity: ContextQuantity) -> None:
     """Raise if a path quantity is mis-declared or its shape inputs are invalid."""
     value = getattr(quantity, "value", None)
@@ -478,6 +646,7 @@ def _validate_path_quantity(quantity: ContextQuantity) -> None:
         _check_path_ref(
             quantity, "plane-normal", value.circle.plane_normal, QuantityType.Direction
         )
+        _validate_circle_geometry(quantity, value.circle)
         return
     if value.arc is not None:
         _check_path_ref(quantity, "start", value.arc.start, QuantityType.Pose)
@@ -486,6 +655,7 @@ def _validate_path_quantity(quantity: ContextQuantity) -> None:
         _check_path_ref(
             quantity, "plane-normal", value.arc.plane_normal, QuantityType.Direction
         )
+        _validate_arc_geometry(quantity, value.arc)
         return
     if value.helix is not None:
         _check_path_ref(quantity, "start", value.helix.start, QuantityType.Pose)
@@ -495,6 +665,7 @@ def _validate_path_quantity(quantity: ContextQuantity) -> None:
         _check_path_ref(
             quantity, "revolutions", value.helix.revolutions, QuantityType.Dimensionless
         )
+        _validate_helix_geometry(quantity, value.helix)
         return
     if value.figure8 is not None:
         _check_path_ref(quantity, "anchor", value.figure8.anchor, QuantityType.Pose)
@@ -502,6 +673,10 @@ def _validate_path_quantity(quantity: ContextQuantity) -> None:
         _check_path_ref(
             quantity, "plane-normal", value.figure8.plane_normal, QuantityType.Direction
         )
+        _check_path_ref(
+            quantity, "direction", value.figure8.direction, QuantityType.Direction
+        )
+        _validate_figure8_geometry(quantity, value.figure8)
         return
     raise semantic_error(f"Path '{quantity.name}' has no populated spec.", quantity)
 
@@ -647,69 +822,111 @@ def validate_elapsed_constraint_relations(model: Model) -> None:
                 )
 
 
-def validate_progress_objectives(model: Model) -> None:
-    """Validate named path/parameter policies and their tracking constraints."""
+# No solver algorithm currently exposes an optimization input for a scalar path
+# objective; add its name here once one does.
+_OBJECTIVE_CAPABLE_SOLVER_ALGORITHMS: frozenset[str] = frozenset()
+
+
+def _progress_parameter(entry) -> ContextQuantity:
+    """Raise unless `entry.parameter` resolves to a declared PathParameter quantity."""
+    parameter = context_ref_value(entry.parameter)
+    parameter = (
+        _resolved_context_quantity(parameter) if isinstance(parameter, ContextQuantity) else parameter
+    )
+    if not isinstance(parameter, ContextQuantity) or parameter.type != QuantityType.PathParameter:
+        raise semantic_error("Progress must maximize a PathParameter.", entry.parameter)
+    return parameter
+
+
+def _progress_paths(entry) -> list[ContextQuantity]:
+    """Raise unless every path `entry` selects resolves to a distinct declared Path."""
+    paths: list[ContextQuantity] = []
+    for path_ref in entry.path_refs:
+        path = context_ref_value(path_ref)
+        path = _resolved_context_quantity(path) if isinstance(path, ContextQuantity) else path
+        if not isinstance(path, ContextQuantity) or path.type != ReferenceGeneratorType.Path:
+            raise semantic_error("Progress must select a Path.", path_ref)
+        if path in paths:
+            raise semantic_error(
+                f"Progress policy '{entry.name}' selects path '{path.name}' more than once.",
+                path_ref,
+            )
+        paths.append(path)
+    return paths
+
+
+def _require_progress_tracking_constraint(motion: GuardedMotion, entry, path: ContextQuantity) -> None:
+    """Raise unless an active WHILE equality constraint tracks `path`."""
+    governing = []
+    for item in motion.while_.constraints:
+        constraint = _resolved_spec(item)
+        if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
+            continue
+        reference = context_ref_value(constraint.expr.reference)
+        reference = (
+            _resolved_context_quantity(reference) if isinstance(reference, ContextQuantity) else reference
+        )
+        if reference is path:
+            governing.append(constraint)
+    if not governing:
+        raise semantic_error(
+            f"Progress along '{path.name}' needs a WHILE equality constraint tracking that path or one of its views.",
+            entry,
+        )
+
+
+def validate_progress_entries(model: Model) -> None:
+    """Validate named progress entries dispatched by kind: a ProgressConstraint authors
+    its advancement law, a ProgressObjective asks a compatible solver to maximize the
+    parameter. Both need a declared PathParameter, one or more declared Paths, and an
+    active WHILE equality tracking each selected path.
+    """
     for handler in constraint_handlers(model):
         motion = handler.motion
         names: set[str] = set()
-        for objective in handler.progress:
-            if not math.isfinite(objective.advancement) or objective.advancement <= 0.0:
-                raise semantic_error(
-                    "Progress advancement must be a positive finite rate.", objective
-                )
-            if objective.name in names:
+        has_objective = False
+        for entry in handler.progress:
+            if entry.name in names:
                 raise semantic_error(
                     f"Handler '{handler.name}' has duplicate progress policy name "
-                    f"'{objective.name}'.",
-                    objective,
+                    f"'{entry.name}'.",
+                    entry,
                 )
-            names.add(objective.name)
+            names.add(entry.name)
 
-            parameter = context_ref_value(objective.parameter)
-            parameter = (
-                _resolved_context_quantity(parameter)
-                if isinstance(parameter, ContextQuantity)
-                else parameter
-            )
-            if not isinstance(parameter, ContextQuantity) or parameter.type != QuantityType.PathParameter:
-                raise semantic_error("Progress must maximize a PathParameter.", objective.parameter)
-
-            paths: list[ContextQuantity] = []
-            for path_ref in objective.path_refs:
-                path = context_ref_value(path_ref)
-                path = (
-                    _resolved_context_quantity(path)
-                    if isinstance(path, ContextQuantity)
-                    else path
+            if isinstance(entry, ProgressObjective):
+                # No solver can consume an objective yet, so this always fails today;
+                # check it first rather than making the author fix unrelated details
+                # (parameter/path/tracking) for an entry that can never pass anyway.
+                capable = any(
+                    _resolved_solver(solver).algorithm in _OBJECTIVE_CAPABLE_SOLVER_ALGORITHMS
+                    for solver in handler.solvers
                 )
-                if not isinstance(path, ContextQuantity) or path.type != ReferenceGeneratorType.Path:
-                    raise semantic_error("Progress must select a Path.", path_ref)
-                if path in paths:
+                if not capable:
                     raise semantic_error(
-                        f"Progress policy '{objective.name}' selects path '{path.name}' more than once.",
-                        path_ref,
+                        f"Progress objective '{entry.name}' needs a solver in handler "
+                        f"'{handler.name}' that can consume a path-parameter objective; "
+                        "no available solver exposes that input.",
+                        entry,
                     )
-                paths.append(path)
+                if has_objective:
+                    raise semantic_error(
+                        f"Handler '{handler.name}' may have at most one progress objective.",
+                        entry,
+                    )
+                has_objective = True
 
+            _progress_parameter(entry)
+            paths = _progress_paths(entry)
             for path in paths:
-                governing = []
-                for item in motion.while_.constraints:
-                    constraint = _resolved_spec(item)
-                    if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
-                        continue
-                    reference = context_ref_value(constraint.expr.reference)
-                    reference = (
-                        _resolved_context_quantity(reference)
-                        if isinstance(reference, ContextQuantity)
-                        else reference
-                    )
-                    if reference is path:
-                        governing.append(constraint)
-                if not governing:
-                    raise semantic_error(
-                        f"Progress along '{path.name}' needs a WHILE equality constraint tracking that path or one of its views.",
-                        objective,
-                    )
+                _require_progress_tracking_constraint(motion, entry, path)
+
+            if isinstance(entry, ProgressObjective):
+                continue
+
+            assert isinstance(entry, ProgressConstraint)
+            if not math.isfinite(entry.advancement) or entry.advancement <= 0.0:
+                raise semantic_error("Progress advancement must be a positive finite rate.", entry)
 
 
 def validate_unique_constraint_names(model: Model) -> None:

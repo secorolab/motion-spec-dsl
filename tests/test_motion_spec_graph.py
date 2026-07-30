@@ -81,9 +81,9 @@ def test_generated_jsonld_compacts_hierarchical_identifiers(generated_model: Pat
 def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_model: Path) -> None:
     graph = _load_graph(generated_dual_model)[1]
     assert len(set(graph.subjects(RDF.type, CSTR_HDL_EXT["LinearJerk"]))) == 1
-    objectives = set(graph.subjects(RDF.type, ALGO_EXT.ProgressObjective))
+    entries = set(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
     (handler_node,) = set(graph.subjects(ALGO_EXT.progress, None))
-    assert set(graph.objects(handler_node, ALGO_EXT.progress)) == objectives
+    assert set(graph.objects(handler_node, ALGO_EXT.progress)) == entries
     assert len(Parser(graph).constraint_handler(handler_node).progress) == 2
 
     ir = generate_ir(generated_dual_model)
@@ -94,16 +94,16 @@ def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_mo
     assert all(str(profile["shape"]) == "s_curve" and profile["in"] for profile in motion_profiles)
     assert all(profile["maximum_jerk"] == "max_lower_jerk" for profile in motion_profiles)
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
-    assert {objective.parameter for objective in pick_above.progress_objectives} == {
+    assert {entry.parameter for entry in pick_above.progress_constraints} == {
         "alpha1",
         "alpha2",
     }
-    assert {objective.id for objective in pick_above.progress_objectives} == {
+    assert {entry.id for entry in pick_above.progress_constraints} == {
         "arm1_approach",
         "arm2_approach",
     }
-    assert all(len(objective.paths) == 1 for objective in pick_above.progress_objectives)
-    assert all(objective.errors for objective in pick_above.progress_objectives)
+    assert all(len(entry.paths) == 1 for entry in pick_above.progress_constraints)
+    assert all(entry.errors for entry in pick_above.progress_constraints)
 
 
 def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Path) -> None:
@@ -174,19 +174,19 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert len(forwarded) == 6
     assert all(command.target for command in forwarded)
     graph = _load_graph(generated_model)[1]
-    objectives = list(graph.subjects(RDF.type, ALGO_EXT.ProgressObjective))
-    assert len(objectives) == 1
-    (handler_node,) = graph.subjects(ALGO_EXT.progress, objectives[0])
+    entries = list(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
+    assert len(entries) == 1
+    (handler_node,) = graph.subjects(ALGO_EXT.progress, entries[0])
     motion_node = graph.value(handler_node, CSTR_HDL.motion)
     assert CSTR_HDL.ConstraintHandler in graph[handler_node : RDF.type]
-    assert (motion_node, ALGO_EXT.progress, objectives[0]) not in graph
+    assert (motion_node, ALGO_EXT.progress, entries[0]) not in graph
     parsed_handler = Parser(graph).constraint_handler(handler_node)
     assert len(parsed_handler.progress) == 1
     assert not hasattr(parsed_handler.motion, "progress")
-    assert graph.value(objectives[0], ALGO_EXT.parameter) is not None
-    assert graph.value(objectives[0], ALGO_EXT.path) is not None
+    assert graph.value(entries[0], ALGO_EXT.parameter) is not None
+    assert graph.value(entries[0], ALGO_EXT.path) is not None
     assert not any(
-        graph.value(profile, ALGO_EXT.out) == graph.value(objectives[0], ALGO_EXT.parameter)
+        graph.value(profile, ALGO_EXT.out) == graph.value(entries[0], ALGO_EXT.parameter)
         for profile in graph.subjects(RDF.type, ALGO_EXT.VelocityProfile)
     )
     forwarding_solvers = set(graph.subjects(RDF.type, SLV_EXT.CommandForwardingSolver))
@@ -207,12 +207,12 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert interpolation["assign_goal"]
     assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
     assert any(component["id"] == "goal_pose" for component in pick_above.declared_pose_components)
-    assert len(pick_above.progress_objectives) == 1
-    objective = pick_above.progress_objectives[0]
-    assert objective.parameter == "s"
-    assert objective.id == "approach"
-    assert objective.paths == ["lerp_approach_path"]
-    assert len(objective.errors) == 6
+    assert len(pick_above.progress_constraints) == 1
+    entry = pick_above.progress_constraints[0]
+    assert entry.parameter == "s"
+    assert entry.id == "approach"
+    assert entry.paths == ["lerp_approach_path"]
+    assert len(entry.errors) == 6
     assert all(closure["type"] != "VelocityProfile" for closure in scheduled)
 
 
@@ -226,14 +226,20 @@ def test_one_named_progress_policy_synchronizes_two_paths(
         "            path-parameter alpha1,", "            path-parameter s,"
     ).replace("            path-parameter alpha2,\n", "").replace(
         """    progress {
-        arm1-approach: maximizing <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> advancing at 1.0 Hz,
-        arm2-approach: maximizing <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> advancing at 1.0 Hz
+        arm1-approach: constraint {
+            advance <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> at 1.0 Hz
+        },
+        arm2-approach: constraint {
+            advance <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> at 1.0 Hz
+        }
     }""",
         """    progress {
-        dual-approach: maximizing <pick-above.spec.s> along {
-            <pick-above.spec.arm1-approach-path>,
-            <pick-above.spec.arm2-approach-path>
-        } advancing at 1.0 Hz
+        dual-approach: constraint {
+            advance <pick-above.spec.s> along {
+                <pick-above.spec.arm1-approach-path>,
+                <pick-above.spec.arm2-approach-path>
+            } at 1.0 Hz
+        }
     }""",
     )
     metamodel = motion_spec_metamodel()
@@ -242,20 +248,20 @@ def test_one_named_progress_policy_synchronizes_two_paths(
 
     manifest = tmp_path / "pick_place_dual-app.ld.json"
     graph = _load_graph(manifest)[1]
-    (objective_node,) = graph.subjects(RDF.type, ALGO_EXT.ProgressObjective)
-    assert len(set(graph.objects(objective_node, ALGO_EXT.path))) == 2
+    (entry_node,) = graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint)
+    assert len(set(graph.objects(entry_node, ALGO_EXT.path))) == 2
 
     ir = generate_ir(manifest)
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
-    (objective,) = pick_above.progress_objectives
-    assert objective.id == "dual_approach"
-    assert objective.parameter == "s"
-    assert set(objective.paths) == {
+    (entry,) = pick_above.progress_constraints
+    assert entry.id == "dual_approach"
+    assert entry.parameter == "s"
+    assert set(entry.paths) == {
         "lerp_arm1_approach_path",
         "lerp_arm2_approach_path",
     }
-    assert len(objective.constraints) == 4
-    assert len(objective.errors) == 12
+    assert len(entry.constraints) == 4
+    assert len(entry.errors) == 12
 
 
 def test_generated_manifest_is_portable(generated_model: Path) -> None:

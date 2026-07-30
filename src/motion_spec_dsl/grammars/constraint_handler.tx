@@ -20,17 +20,28 @@ ConstraintHandler:
     "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("context"    "{" context*=HandlerContextItem[","] "}")?
         "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
-        ("progress"    "{" progress*=ProgressObjective[","]? "}")?
+        ("progress"    "{" progress*=ProgressEntry[","]? "}")?
         ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
         "controllers"  "{" controllers*=ControllerItem[","]? "}"
         "solvers"      "{" solvers+=SolverItem[","] "}"
     "}"
 ;
 
+ProgressEntry: ProgressConstraint | ProgressObjective ;
+
+ProgressConstraint:
+    name=IRI_TRUNK ":" "constraint" "{"
+        "advance" parameter=ContextRef "along"
+        (path=ContextRef | "{" paths+=ContextRef[","] "}")
+        "at" advancement=FLOAT advancement_unit="Hz"
+    "}"
+;
+
 ProgressObjective:
-    name=IRI_TRUNK ":" "maximizing" parameter=ContextRef "along"
-    (path=ContextRef | "{" paths+=ContextRef[","] "}")
-    "advancing" "at" advancement=FLOAT advancement_unit="Hz"
+    name=IRI_TRUNK ":" "objective" "{"
+        "maximize" parameter=ContextRef "along"
+        (path=ContextRef | "{" paths+=ContextRef[","] "}")
+    "}"
 ;
 
 ControllerItem: ControllerAlias | ControllerEntry ;

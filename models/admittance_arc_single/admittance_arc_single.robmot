@@ -300,7 +300,9 @@ constraint-handler (ns=app) handler-forward {
 constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
     progress {
-        arc-progress: maximizing <arc-motion.spec.s> along <arc-motion.spec.arc-path> advancing at 0.1 Hz
+        arc-progress: constraint {
+            advance <arc-motion.spec.s> along <arc-motion.spec.arc-path> at 0.1 Hz
+        }
     }
     monitors {
         mon-force-x: monitor <arc-motion.force-x> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,

@@ -88,6 +88,8 @@ from motion_spec_dsl.classes import (
     PostContextDecl,
     PreContextDecl,
     ProfileSpec,
+    ProgressConstraint,
+    ProgressObjective,
     AdmittanceSpec,
     QuantityType,
     ReferenceGeneratorType,
@@ -1632,6 +1634,7 @@ class MotionSpecDatasetBuilder:
                     ("anchor", GEOM_PATH.anchor, value.figure8.anchor),
                     ("radius", GEOM_PATH.radius, value.figure8.radius),
                     ("plane-normal", GEOM_PATH["plane-normal"], value.figure8.plane_normal),
+                    ("direction", GEOM_PATH.direction, value.figure8.direction),
                 ],
                 constraints,
                 world_qtys,
@@ -1719,31 +1722,38 @@ class MotionSpecDatasetBuilder:
     def _emit_progress_objectives(
         self, handler: ConstraintHandler, motion: GuardedMotion
     ) -> None:
-        """Emit each explicit progress objective and the path evaluator it governs."""
+        """Emit each explicit progress entry (constraint-form advancement law, or
+        objective-form maximization request) and the path evaluator(s) it governs.
+        """
         handler_node = URIRef(handler.uri)
-        for objective in handler.progress:
-            parameter = _resolved_context_quantity(_context_quantity(objective.parameter))
+        for entry in handler.progress:
+            is_constraint = isinstance(entry, ProgressConstraint)
+            parameter = _resolved_context_quantity(_context_quantity(entry.parameter))
             paths = [
                 _resolved_context_quantity(_context_quantity(path_ref))
-                for path_ref in objective.path_refs
+                for path_ref in entry.path_refs
             ]
-            objective_node = URIRef(objective.uri)
-            self.graph.add((objective_node, RDF.type, ALGO_EXT.ProgressObjective))
-            self.graph.add((objective_node, ALGO_EXT.parameter, URIRef(parameter.uri)))
-            advancement_node = URIRef(f"{objective.uri}/advancement")
-            self._emit_scalar_quantity(
-                advancement_node,
-                objective.advancement,
-                NS_MM_QUDT_QTY["Frequency"],
-                QUDT_UNIT.HZ,
-            )
-            self.graph.add((objective_node, ALGO_EXT.advancement, advancement_node))
-            self.graph.add((handler_node, ALGO_EXT.progress, objective_node))
+            entry_node = URIRef(entry.uri)
+            entry_type = ALGO_EXT.ProgressConstraint if is_constraint else ALGO_EXT.ProgressObjective
+            self.graph.add((entry_node, RDF.type, entry_type))
+            self.graph.add((entry_node, ALGO_EXT.parameter, URIRef(parameter.uri)))
+            self.graph.add((handler_node, ALGO_EXT.progress, entry_node))
+            if is_constraint:
+                advancement_node = URIRef(f"{entry.uri}/advancement")
+                self._emit_scalar_quantity(
+                    advancement_node,
+                    entry.advancement,
+                    NS_MM_QUDT_QTY["Frequency"],
+                    QUDT_UNIT.HZ,
+                )
+                self.graph.add((entry_node, ALGO_EXT.advancement, advancement_node))
             for path in paths:
                 shape = self._path_shape(path)
                 path_node = self._owned_uri(f"{shape}-{path.name}", path)
-                self._emit_path_evaluator(path, path_node, objective.parameter, shape)
-                self.graph.add((objective_node, ALGO_EXT.path, path_node))
+                self._emit_path_evaluator(path, path_node, entry.parameter, shape)
+                self.graph.add((entry_node, ALGO_EXT.path, path_node))
+                if not is_constraint:
+                    continue
                 for item in motion.while_.constraints:
                     constraint = _resolved_spec(item)
                     if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
@@ -1753,7 +1763,7 @@ class MotionSpecDatasetBuilder:
                         reference = _resolved_context_quantity(reference)
                     if reference is path:
                         self.graph.add(
-                            (objective_node, CSTR_HDL.constraint, URIRef(constraint.uri))
+                            (entry_node, CSTR_HDL.constraint, URIRef(constraint.uri))
                         )
 
     def _emit_path_evaluator(

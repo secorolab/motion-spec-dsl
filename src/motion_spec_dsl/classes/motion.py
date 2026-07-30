@@ -161,6 +161,7 @@ class Figure8Spec:
     anchor: object  # ContextRef (Pose: position -> center, rotation -> orientation)
     radius: object  # ContextRef
     plane_normal: object  # ContextRef
+    direction: object  # ContextRef (Direction: in-plane axis anchoring the curve's orientation)
     form: str = "gerono"
 
 
