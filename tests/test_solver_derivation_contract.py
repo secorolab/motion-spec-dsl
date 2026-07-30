@@ -26,48 +26,43 @@ from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
 
 MODELS = Path(__file__).parents[1] / "models"
 
-# Recorded at motion-spec-dsl 4fa96df against models/pick_place_single/pick_place_single.robmot.
-BASELINE = {
-    "AccelerationConstraint": 0,
-    "AccelerationConstraintSpecification": 0,
-    "control-signal": 0,
-    "PoseDiffEvaluator": 0,
-    "acceleration-energy": 0,
-    "AccelerationEnergy quantities": 0,
-}
+
+@pytest.fixture(scope="module")
+def pick_place_single_jsonld(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    tmp_path = tmp_path_factory.mktemp("pick_place_single")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("METAMODELS_PATH", "/home/batsy/work/ms/src/metamodels")
+        metamodel = motion_spec_metamodel()
+        model = metamodel.model_from_file(
+            MODELS / "pick_place_single" / "pick_place_single.robmot"
+        )
+        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    return tmp_path / "pick_place_single.ld.json"
 
 
 @pytest.fixture
-def constraint_graph(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Graph:
-    monkeypatch.setenv("METAMODELS_PATH", "/home/batsy/work/ms/src/metamodels")
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+def constraint_graph(pick_place_single_jsonld: Path) -> Graph:
+    """Fresh graph per test: parsed from the immutable JSON-LD so no test can leak
+    triple mutations into another."""
     dataset = Dataset()
-    dataset.parse(str(tmp_path / "pick_place_single.ld.json"), format="json-ld")
+    dataset.parse(str(pick_place_single_jsonld), format="json-ld")
     graph = Graph()
     for quad in dataset.quads((None, None, None, None)):
         graph.add(quad[:3])
     return graph
 
 
-def _counts(graph: Graph) -> dict[str, int]:
-    return {
-        "AccelerationConstraint": len(set(graph.subjects(RDF.type, SLV.AccelerationConstraint))),
-        "AccelerationConstraintSpecification": len(
-            set(graph.subjects(RDF.type, SLV.AccelerationConstraintSpecification))
-        ),
-        "control-signal": len(list(graph.triples((None, CSTR_HDL["control-signal"], None)))),
-        "PoseDiffEvaluator": len(set(graph.subjects(RDF.type, GEOM_OP_EXT["PoseDiffEvaluator"]))),
-        "acceleration-energy": len(list(graph.triples((None, SLV["acceleration-energy"], None)))),
-        "AccelerationEnergy quantities": len(
-            set(graph.subjects(QUDT_SCHEMA.hasQuantityKind, QUDT_QKIND.AccelerationEnergy))
-        ),
-    }
-
-
 def test_dsl_omits_derived_achd_solver_structure(constraint_graph: Graph) -> None:
-    assert _counts(constraint_graph) == BASELINE
+    """The authored DSL graph never materializes IR-derived ACHD rows: those are added
+    later, when the IR layer derives the solver structure from the authored constraints."""
+    assert not set(constraint_graph.subjects(RDF.type, SLV.AccelerationConstraint))
+    assert not set(constraint_graph.subjects(RDF.type, SLV.AccelerationConstraintSpecification))
+    assert not set(constraint_graph.subjects(RDF.type, GEOM_OP_EXT["PoseDiffEvaluator"]))
+    assert not list(constraint_graph.triples((None, CSTR_HDL["control-signal"], None)))
+    assert not list(constraint_graph.triples((None, SLV["acceleration-energy"], None)))
+    assert not set(
+        constraint_graph.subjects(QUDT_SCHEMA.hasQuantityKind, QUDT_QKIND.AccelerationEnergy)
+    )
 
 
 def test_controllers_reference_their_solver(constraint_graph: Graph) -> None:

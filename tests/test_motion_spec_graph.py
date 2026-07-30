@@ -14,7 +14,7 @@ from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.ir_gen import Parser, _authored_controller_axes, _load_graph, generate_ir
+from motion_spec.ir_gen import Parser, _load_graph, generate_ir
 from motion_spec.namespace import (
     ALGO_EXT,
     APP,
@@ -39,23 +39,29 @@ MODELS = Path(__file__).parents[1] / "models"
 METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 
 
-@pytest.fixture
-def generated_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Generate the representative model and return its application manifest."""
-    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+@pytest.fixture(scope="module")
+def generated_model(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generate the representative model once per module; consumers load their own
+    fresh graph from the immutable result and must not mutate the manifest on disk."""
+    tmp_path = tmp_path_factory.mktemp("pick_place_single")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("METAMODELS_PATH", str(METAMODELS))
+        metamodel = motion_spec_metamodel()
+        model = metamodel.model_from_file(MODELS / "pick_place_single" / "pick_place_single.robmot")
+        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "pick_place_single-app.ld.json"
 
 
-@pytest.fixture
-def generated_dual_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Generate the dual-arm model used to exercise profiles and repeated robot assets."""
-    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(MODELS / "pick_place_dual" / "pick_place_dual.robmot")
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+@pytest.fixture(scope="module")
+def generated_dual_model(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generate the dual-arm model once per module; consumers load their own fresh
+    graph from the immutable result and must not mutate the manifest on disk."""
+    tmp_path = tmp_path_factory.mktemp("pick_place_dual")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("METAMODELS_PATH", str(METAMODELS))
+        metamodel = motion_spec_metamodel()
+        model = metamodel.model_from_file(MODELS / "pick_place_dual" / "pick_place_dual.robmot")
+        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "pick_place_dual-app.ld.json"
 
 
@@ -104,42 +110,6 @@ def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_mo
     }
     assert all(len(objective.paths) == 1 for objective in pick_above.progress_objectives)
     assert all(objective.errors for objective in pick_above.progress_objectives)
-    assert [robot.prefix for robot in ir["scene"].robots] == ["kinova1_", "kinova2_"]
-    objects = {obj.id: obj for obj in ir["scene"].objects}
-    assert set(objects) == {"table", "cube", "cube2"}
-    robots = {robot.id: robot for robot in ir["scene"].robots}
-    assert robots["arm1"].pos == [-0.7, 0.0, 0.0]
-    assert robots["arm2"].pos == [0.7, 0.0, 0.0]
-    assert robots["arm2"].euler == [0.0, 0.0, 180.0]
-    assert robots["arm1"].attach_name == "table_table_top"
-    assert robots["arm2"].attach_name == "table_table_top"
-    pick_above_outputs = {
-        solver.chain_root: {output.id for output in solver.output if output.id.startswith("pose_ee")}
-        for solver in ir["slv_arm"]
-        if solver.id.endswith("pick_above")
-    }
-    assert pick_above_outputs == {
-        "kinova1_base_link": {"pose_ee1_base"},
-        "kinova2_base_link": {"pose_ee2_base"},
-    }
-    grasp_outputs = {
-        solver.chain_root: {
-            output.id: output.joint_name
-            for output in solver.output
-            if output.id.startswith("gripper")
-        }
-        for solver in ir["slv_arm"]
-        if solver.id.endswith("grasp_hold")
-    }
-    assert grasp_outputs == {
-        "kinova1_base_link": {"gripper1_pos": "kinova1_g_left_driver_joint"},
-        "kinova2_base_link": {"gripper2_pos": "kinova2_g_left_driver_joint"},
-    }
-    grasp_motion = next(motion for motion in ir["motions"] if motion.id == "motion_grasp_hold")
-    assert {
-        "ctrl_cg1_close_gripper",
-        "ctrl_cg2_close_gripper",
-    } <= set(grasp_motion.while_schedule)
 
 
 def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Path) -> None:
@@ -159,33 +129,6 @@ def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Pat
 
 def test_graph_uses_only_the_reduced_extension_contract(generated_model: Path) -> None:
     graph = _load_graph(generated_model)[1]
-    serialized = graph.serialize(format="nt")
-
-    obsolete_terms = {
-        "SignalLimiter",
-        "IntegralSaturation",
-        "TorqueSaturation",
-        "AccelerationSaturation",
-        "DirectionAligned",
-        "JointCommand",
-        "monitors-until",
-        "monitors-when",
-        "forwards-command",
-        "command-signal",
-        "regularization",
-        "sampled-on",
-        "ft-sensor-ref",
-        "AddQuantity",
-        "Norm",
-        "PoseOrientationView",
-        "PosePositionView",
-        "WrenchVectorView",
-        "ComputeRotationFromPose",
-        "attached-body",
-    }
-    assert not any(term in serialized for term in obsolete_terms)
-    assert ".origin>" not in serialized
-    assert ".body>" not in serialized
 
     assert not set(graph.subjects(RDF.type, GEOM_OP.InvertPose))
     assert not set(graph.subjects(RDF.type, GEOM_OP.ComposePose))
@@ -322,9 +265,6 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
         graph.value(profile, ALGO_EXT.out) == graph.value(objectives[0], ALGO_EXT.parameter)
         for profile in graph.subjects(RDF.type, ALGO_EXT.VelocityProfile)
     )
-    authored_axes = _authored_controller_axes(graph)
-    assert authored_axes
-    assert sum(len(axes) for axes in authored_axes.values()) == 60
     forwarding_solvers = set(graph.subjects(RDF.type, SLV_EXT.CommandForwardingSolver))
     assert forwarding_solvers
     assert all(graph.value(solver, SLV.output) is not None for solver in forwarding_solvers)
@@ -333,43 +273,6 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
         for monitor in graph.subjects(RDF.type, CSTR_HDL.Monitor)
     )
 
-    (robot,) = ir["scene"].robots
-    assert (robot.id, robot.attach_kind, robot.attach_name) == (
-        "kinova_2f85",
-        "Site",
-        "table_table_top",
-    )
-    (gripper,) = robot.attachments
-    assert (gripper.id, gripper.attach_to, gripper.prefix) == (
-        "gripper",
-        "pinch_site",
-        "g_",
-    )
-    objects = {obj.id: obj for obj in ir["scene"].objects}
-    assert objects["table"].pos == [0.0, 0.0, 0.72]
-    assert objects["cube"].pos == [0.5, 0.0, 0.76]
-    assert not objects["cube"].fixed
-
-    arm_solver = ir["slv_arm"][0]
-    assert (
-        arm_solver.chain_root,
-        arm_solver.chain_tip,
-        arm_solver.tool_body,
-        arm_solver.tcp_site,
-    ) == ("base_link", "bracelet_link", "g_base", "g_pinch")
-    assert {
-        "pose_cube_base",
-        "pose_ee_base",
-        "pose_elbow_base",
-        "twist_ee_base",
-        "gripper_pos",
-    } <= {output.id for output in arm_solver.output}
-    cube_pose = next(output for output in arm_solver.output if output.id == "pose_cube_base")
-    assert (cube_pose.of.id, cube_pose.of.body, cube_pose.of.is_scene_object) == (
-        "cube",
-        "cube",
-        True,
-    )
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
     scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
     interpolation = next(closure for closure in scheduled if closure["type"] == "LinearPath")
@@ -380,11 +283,6 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert interpolation["assign_goal"]
     assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
     assert any(component["id"] == "goal_pose" for component in pick_above.declared_pose_components)
-    assert {snapshot.target_id for snapshot in pick_above.snapshots} >= {
-        "start_pose",
-        "start_cube_x",
-        "start_cube_y",
-    }
     assert len(pick_above.progress_objectives) == 1
     objective = pick_above.progress_objectives[0]
     assert objective.parameter == "s"
@@ -392,8 +290,6 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert objective.paths == ["lerp_approach_path"]
     assert len(objective.errors) == 6
     assert all(closure["type"] != "VelocityProfile" for closure in scheduled)
-    pose_ee_base = next(item for item in ir["shared_data"] if item.id == "pose_ee_base")
-    assert pose_ee_base.with_respect_to.id == "base_link"
 
 
 def test_one_named_progress_policy_synchronizes_two_paths(

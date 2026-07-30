@@ -48,4 +48,13 @@ where = ["src"]
 line-length = 100
 
 [tool.pytest.ini_options]
-filterwarnings = ["ignore::DeprecationWarning"]
+filterwarnings = [
+    "error::DeprecationWarning",
+    # The patched rdflib fork (7.6.0-fix-multi-type-scoped-context) and pyshacl both
+    # still reach through these deprecated rdflib APIs internally; drop each exact
+    # upstream message once the fork/pyshacl no longer emit it.
+    "ignore:ConjunctiveGraph is deprecated, use Dataset instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.contexts is deprecated, use Dataset\\.graphs instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.default_context is deprecated, use Dataset\\.default_graph instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.identifier is deprecated and will be removed in future versions\\.:DeprecationWarning",
+]

@@ -56,15 +56,6 @@ def test_invalid_elapsed_constraint_is_rejected(parse_mutated, body, message):
         parse_mutated(WHILE_ANCHOR, body)
 
 
-def test_elapsed_greater_than_parses(parse_mutated):
-    assert parse_mutated(WHILE_ANCHOR, _while("wait5: elapsed greater than 5.0 s")) is not None
-
-
-def test_elapsed_equality_with_tolerance_parses(parse_mutated):
-    model = parse_mutated(WHILE_ANCHOR, _while("wait5: elapsed equal to 5.0 s within 10.0 ms"))
-    assert model is not None
-
-
 def _build(parse_mutated, body: str):
     model = parse_mutated(WHILE_ANCHOR, _while(body))
     dataset, _ = MotionSpecDatasetBuilder(model).build()

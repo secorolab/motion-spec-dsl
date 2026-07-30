@@ -22,16 +22,26 @@ MODELS = Path(__file__).parents[1] / "models"
 METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 
 
+@pytest.fixture(scope="module")
+def admittance_arc_manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generate the force-interaction model once per module (admittance, arc re-entry,
+    until groups); consumers derive their own fresh IR from the immutable manifest."""
+    tmp_path = tmp_path_factory.mktemp("admittance_arc_single")
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("METAMODELS_PATH", str(METAMODELS))
+        metamodel = motion_spec_metamodel()
+        model = metamodel.model_from_file(
+            MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+        )
+        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    return tmp_path / "admittance_arc_single-app.ld.json"
+
+
 @pytest.fixture
-def interaction_ir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
-    """IR for the force-interaction model (admittance, arc re-entry, until groups)."""
-    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_file(
-        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
-    )
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
+def interaction_ir(admittance_arc_manifest: Path) -> dict:
+    """Fresh IR per test: derived from the immutable manifest so no test can leak
+    mutations of the IR's dataclasses/lists into another."""
+    return generate_ir(admittance_arc_manifest)
 
 
 def _motion(ir: dict, motion_id: str):
