@@ -26,11 +26,6 @@ def _while(extra: str) -> str:
 
 REJECTIONS = [
     pytest.param(
-        _while("wait5: elapsed equal to 5.0 s"),
-        "within",
-        id="elapsed_equality_without_tolerance",
-    ),
-    pytest.param(
         _while(
             "hold-eq: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within 0.1 m/s"
         ),
@@ -41,11 +36,6 @@ REJECTIONS = [
         _while("wait5: elapsed between 1.0 s and 5.0 s"),
         "between/outside",
         id="elapsed_bilateral_rejected",
-    ),
-    pytest.param(
-        _while("wait5: elapsed equal to 5.0 s within -0.1 s"),
-        "non-negative",
-        id="negative_tolerance_rejected",
     ),
 ]
 

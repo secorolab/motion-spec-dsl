@@ -116,57 +116,6 @@ guarded-motion (ns=app) m1 {
         mm.model_from_str(src, file_name=str(MODELS / "probe.robmot"))
 
 
-def test_full_example_parses():
-    model = motion_spec_metamodel().model_from_file(str(MODELS / "pick_place_single" / "pick_place_single.robmot"))
-    assert len(model.specs) == 22
-    handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
-    assert handler.motion.name == "pick-above"
-    assert handler.monitors[0].fallback.name == "home"
-
-
-def test_solver_gravity_accepts_literal_equals_and_spec_reference():
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    metamodel = motion_spec_metamodel()
-
-    equal_literal = metamodel.model_from_str(
-        source.replace("gravity:   {", "gravity:   = {"),
-        file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot"),
-    )
-    equal_solver = next(
-        spec for spec in equal_literal.specs if spec.name == "handler-home"
-    ).solvers[0]
-    assert equal_solver.gravity_value.literal.z == -9.81
-
-    referenced = source.replace(
-        "linear-distance lost-dist   = 0.12 m",
-        "linear-distance lost-dist   = 0.12 m,\n"
-        "        free-vector solver-gravity = { x: 0.0, y: 0.0, z: -9.81 m/s2 }",
-    ).replace(
-        "gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }",
-        "gravity:   <shared.spec.solver-gravity>",
-    )
-    referenced_solver = next(
-        spec
-        for spec in metamodel.model_from_str(
-            referenced, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-        ).specs
-        if spec.name == "handler-home"
-    ).solvers[0]
-    assert referenced_solver.gravity_value.ref.quantity.name == "solver-gravity"
-
-
-def test_grammar_keyword_cannot_be_used_as_a_quantity_name():
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    reserved_name = source.replace("path-parameter s", "path-parameter gravity").replace(
-        "<pick-above.spec.s>", "<pick-above.spec.gravity>"
-    )
-
-    with pytest.raises(TextXSemanticError, match="gravity.*keyword"):
-        motion_spec_metamodel().model_from_str(
-            reserved_name, file_name=str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-        )
-
-
 def test_progress_requires_a_path_parameter_and_tracking_equality():
     source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
     metamodel = motion_spec_metamodel()

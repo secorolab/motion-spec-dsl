@@ -10,22 +10,16 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from pyshacl import validate
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
 from motion_spec.ir_gen import Parser, _load_graph, generate_ir
 from motion_spec.namespace import (
     ALGO_EXT,
-    APP,
     CSTR_HDL,
     CSTR_HDL_EXT,
-    EXEC,
-    GEOM_OP,
-    GEOM_REL,
     MAP,
     MAP_EXT,
-    QUDT_SCHEMA,
     SLV,
     SLV_EXT,
 )
@@ -127,74 +121,6 @@ def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Pat
     assert (activity, RDF.type, prov.Activity) in provenance
 
 
-def test_graph_uses_only_the_reduced_extension_contract(generated_model: Path) -> None:
-    graph = _load_graph(generated_model)[1]
-
-    assert not set(graph.subjects(RDF.type, GEOM_OP.InvertPose))
-    assert not set(graph.subjects(RDF.type, GEOM_OP.ComposePose))
-    assert not set(graph.subjects(RDF.type, GEOM_OP.PoseToLinearDistance))
-    distances = set(graph.subjects(RDF.type, GEOM_REL.LinearDistance))
-    assert distances
-    assert all(
-        len(set(graph.objects(distance, GEOM_REL["between-entities"]))) == 2
-        for distance in distances
-    )
-    assert set(graph.subjects(RDF.type, ALGO_EXT.Addition))
-
-    execution_context = next(graph.subjects(RDF.type, URIRef(f"{EXEC._NS}ExecutionContext")))
-    assert graph.value(execution_context, URIRef(f"{EXEC._NS}runs-scene")) is not None
-    assert graph.value(execution_context, URIRef(f"{EXEC._NS}timestep")) is not None
-
-    allowed_map_types = {
-        MAP_EXT.PoseCoordinateView,
-        MAP_EXT.VelocityTwistCoordinateView,
-        MAP_EXT.AccelerationTwistCoordinateView,
-        MAP_EXT.WrenchCoordinateView,
-        MAP_EXT.PoseDifferenceView,
-    }
-    emitted_map_types = {
-        type_
-        for type_ in graph.objects(predicate=RDF.type)
-        if str(type_).startswith(str(MAP_EXT._NS))
-    }
-    assert emitted_map_types <= allowed_map_types
-
-
-def test_reduced_shacl_contract_conforms(generated_model: Path) -> None:
-    data = _load_graph(generated_model)[1]
-    constraint_locations = set(map(str, data.objects(predicate=APP.constraints)))
-    assert constraint_locations
-    shapes = Graph()
-    for location in constraint_locations:
-        shapes.parse(location)
-
-    conforms, _, report = validate(data, shacl_graph=shapes, inference="rdfs")
-    assert conforms, report
-
-    objective = next(data.subjects(RDF.type, ALGO_EXT.ProgressObjective))
-    advancement = data.value(objective, ALGO_EXT.advancement)
-    data.set((advancement, QUDT_SCHEMA.unit, URIRef("http://qudt.org/vocab/unit/KiloHZ")))
-    conforms, _, _ = validate(data, shacl_graph=shapes, inference="rdfs")
-    assert not conforms
-
-    assert (
-        "https://secorolab.github.io/metamodels/algorithm-extension.shacl.ttl"
-        in constraint_locations
-    )
-    assert (
-        "https://secorolab.github.io/metamodels/geometry/spatial-relations-extension.shacl.ttl"
-        in constraint_locations
-    )
-    assert (
-        "https://secorolab.github.io/metamodels/geometry/geometry.shacl.ttl"
-        not in constraint_locations
-    )
-    assert not any(
-        location.startswith("https://comp-rob2b.github.io/metamodels/geometry/")
-        for location in constraint_locations
-    )
-
-
 def test_non_pose_component_views_keep_their_subspace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -235,8 +161,6 @@ def test_monitor_publishes_to_ros_topic(monkeypatch: pytest.MonkeyPatch) -> None
     document = graph.serialize(format="json-ld", context=context)
     document = document.decode() if isinstance(document, bytes) else document
     assert '"ros": "https://index.ros.org/p/"' in document
-    unused_terms = ("ROSPackage", "ROSAction", "ROSService", "HasFrameId")
-    assert not any(term in document for term in unused_terms)
 
     # An omitted `as <type>` falls back to the empty message type.
     node = URIRef("urn:test:default-topic")

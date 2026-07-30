@@ -39,3 +39,24 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+      # Application-level SHACL gate for the maintained models. This does not repeat
+      # metamodel shape tests (owned by the metamodels repo) or run a build/simulator;
+      # it only proves the checked-in models still generate valid RDF against the
+      # metamodel this repo depends on.
+      - name: Checkout metamodels
+        uses: actions/checkout@v4
+        with:
+          repository: secorolab/metamodels
+          path: metamodels-checkout
+
+      - name: Three-model SHACL gate (gen ir + check)
+        env:
+          METAMODELS_PATH: ${{ github.workspace }}/metamodels-checkout
+        run: |
+          set -e
+          for name in pick_place_single pick_place_dual admittance_arc_single; do
+            out="$RUNNER_TEMP/${name}_shacl_gen"
+            (cd "models/$name" && motion-spec gen ir "$name.robmot" -o "$out")
+            motion-spec check "$out/generated/model/${name}-app.ld.json"
+          done

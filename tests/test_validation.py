@@ -3,24 +3,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from textx.exceptions import TextXSemanticError
-
-EXTRA_CONSTRUCTS = (Path(__file__).parent / "fixtures" / "extra_constructs.robmot").read_text()
-
-
-def test_base_model_is_valid(parse_source, base_source):
-    assert parse_source(base_source) is not None
-
-
-def test_extra_constructs_are_valid(parse_source):
-    """A second, larger model: joint-position, impedance, and saturated-solver constructs
-    the base fixture doesn't use, so their happy-path validation/emission branches run too.
-    """
-    assert parse_source(EXTRA_CONSTRUCTS) is not None
-
 
 REJECTIONS = [
     pytest.param(

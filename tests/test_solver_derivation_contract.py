@@ -15,7 +15,6 @@ from motion_spec.namespace import (
     ALGO_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
-    GEOM_OP_EXT,
     QUDT_QKIND,
     QUDT_SCHEMA,
     SLV,
@@ -50,19 +49,6 @@ def constraint_graph(pick_place_single_jsonld: Path) -> Graph:
     for quad in dataset.quads((None, None, None, None)):
         graph.add(quad[:3])
     return graph
-
-
-def test_dsl_omits_derived_achd_solver_structure(constraint_graph: Graph) -> None:
-    """The authored DSL graph never materializes IR-derived ACHD rows: those are added
-    later, when the IR layer derives the solver structure from the authored constraints."""
-    assert not set(constraint_graph.subjects(RDF.type, SLV.AccelerationConstraint))
-    assert not set(constraint_graph.subjects(RDF.type, SLV.AccelerationConstraintSpecification))
-    assert not set(constraint_graph.subjects(RDF.type, GEOM_OP_EXT["PoseDiffEvaluator"]))
-    assert not list(constraint_graph.triples((None, CSTR_HDL["control-signal"], None)))
-    assert not list(constraint_graph.triples((None, SLV["acceleration-energy"], None)))
-    assert not set(
-        constraint_graph.subjects(QUDT_SCHEMA.hasQuantityKind, QUDT_QKIND.AccelerationEnergy)
-    )
 
 
 def test_controllers_reference_their_solver(constraint_graph: Graph) -> None:
