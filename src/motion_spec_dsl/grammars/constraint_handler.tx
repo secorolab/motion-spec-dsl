@@ -112,29 +112,50 @@ WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;
 ControllerRef: handler=[ConstraintHandler|IRI_TRUNK] "." controller=[ControllerEntry|IRI_TRUNK] ;
 SolverRef: (handler=[ConstraintHandler|IRI_TRUNK] ".")? solver=[SolverEntry|IRI_TRUNK] ;
 
-SolverEntry:
-    "solver" name=IRI_TRUNK "{"
+// A solver's mechanism family (serial-chain dynamics vs. mobile-platform kinematics/control
+// allocation) is a closed authoring choice, not a generic algorithm string: each family accepts
+// only its own algorithms and fields. Command forwarding is a third, distinct alternative -- it
+// is neither a dynamics solver nor a platform kinematics/control-allocation solver.
+SolverEntry: SerialChainSolver | MobilePlatformSolver | CommandForwardingSolver ;
+
+SerialChainSolver:
+    name=IRI_TRUNK ":" "serial-chain" "{"
         "agent"     ":" "<" agent=[scene.Agent|FQN] ">" ","
-        "algorithm" ":" algorithm=SolverAlgorithm
+        "algorithm" ":" algorithm=SerialChainAlgorithm
         ("," limits=SolverLimits)?
         ("," "gravity" ":" gravity_value=GravityValue)?
     "}"
 ;
+SerialChainAlgorithm: "achd" | "rne" ;
+
+// One class over two axes: quantity {velocity, force} x operation {composition, distribution}.
+// velocity-composition and force-distribution are backed by vendored RDF classes
+// (comp-rob2b solver-specification.ttl:25,35); velocity-distribution and force-composition
+// are backed by slv-ext classes (solver-specification-extension.shacl.ttl). All four are
+// implemented by the hddc2b runtime. The operation dimension lives in the algorithm token,
+// not as a separate field, so no combination is representable as illegal state.
+MobilePlatformSolver:
+    name=IRI_TRUNK ":" "mobile-platform" "{"
+        "agent"         ":" "<" agent=[scene.Agent|FQN] ">" ","
+        "algorithm"     ":" algorithm=MobilePlatformAlgorithm ","
+        "configuration" ":" configuration=STRING ","
+        "quantity"      ":" quantity=ContextRef
+    "}"
+;
+MobilePlatformAlgorithm:
+    "velocity-composition" | "velocity-distribution" | "force-composition" | "force-distribution"
+;
+
+CommandForwardingSolver:
+    name=IRI_TRUNK ":" "command-forwarding" "{"
+        "agent" ":" "<" agent=[scene.Agent|FQN] ">"
+    "}"
+;
 
 SolverLimits:
-    "limits" "{" (
-        entries+=TorqueLimit
-        ("," entries+=LinearAccelerationLimit)?
-        ("," entries+=AngularAccelerationLimit)? |
-        entries+=LinearAccelerationLimit
-        ("," entries+=AngularAccelerationLimit)? |
-        entries+=AngularAccelerationLimit
-    ) "}"
+    "limits" "{" entries+=TorqueLimit "}"
 ;
 TorqueLimit: target="torque" ":" saturation=SaturationSpec ;
-LinearAccelerationLimit: target="linear-acceleration" ":" saturation=SaturationSpec ;
-AngularAccelerationLimit: target="angular-acceleration" ":" saturation=SaturationSpec ;
-SolverAlgorithm: "ACHD" | "RNE" | "command-forwarding" | "velocity-distribution" | "force-distribution" ;
 
 GravityVector:
     "{" "x" ":" x=FLOAT ","

@@ -80,11 +80,7 @@ def test_controllers_reference_their_solver(constraint_graph: Graph) -> None:
         if (signal := constraint_graph.value(limit, ALGO_EXT["in"])) is not None
         for kind in constraint_graph.objects(signal, QUDT_SCHEMA.hasQuantityKind)
     }
-    assert declared_limit_kinds <= {
-        QUDT_QKIND.Torque,
-        QUDT_QKIND.LinearAcceleration,
-        QUDT_QKIND.AngularAcceleration,
-    }
+    assert declared_limit_kinds <= {QUDT_QKIND.Torque}
 
 
 def test_authored_output_limit_binds_to_derived_signal(
@@ -127,7 +123,7 @@ def test_authored_output_limit_binds_to_derived_signal(
     ]
     acceleration_constraints = [
         constraint
-        for solver in ir["slv_arm"]
+        for solver in ir["serial_chain_solvers"]
         for driver in solver.motion_drivers
         for constraint in driver.acceleration_constraint
     ]

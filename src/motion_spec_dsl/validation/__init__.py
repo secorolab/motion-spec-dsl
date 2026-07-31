@@ -19,6 +19,7 @@ from motion_spec_dsl.validation.handlers import (
     validate_controller_solver_assembly,
     validate_handler_constraint_assembly,
     validate_handler_requirements,
+    validate_mobile_platform_solver_quantity,
 )
 from motion_spec_dsl.validation.names import validate_namespace_uris
 
@@ -41,3 +42,4 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
+    validate_mobile_platform_solver_quantity(model)

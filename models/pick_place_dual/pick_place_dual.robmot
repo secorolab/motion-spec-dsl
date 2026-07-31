@@ -554,14 +554,14 @@ constraint-handler (ns=app) handler-home {
     }
 
     solvers {
-        solver arm1-solver {
+        arm1-solver: serial-chain {
             agent:     <pickplace_agents.arm1>,
-            algorithm: ACHD,
+            algorithm: achd,
             gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }
         },
-        solver arm2-solver {
+        arm2-solver: serial-chain {
             agent:     <pickplace_agents.arm2>,
-            algorithm: ACHD,
+            algorithm: achd,
             gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }
         }
     }
@@ -645,13 +645,11 @@ constraint-handler (ns=app) handler-close-grip {
     solvers {
         <handler-home.arm1-solver>,
         <handler-home.arm2-solver>,
-        solver gripper1-solver {
-            agent: <pickplace_agents.arm1>,
-            algorithm: command-forwarding
+        gripper1-solver: command-forwarding {
+            agent: <pickplace_agents.arm1>
         },
-        solver gripper2-solver {
-            agent: <pickplace_agents.arm2>,
-            algorithm: command-forwarding
+        gripper2-solver: command-forwarding {
+            agent: <pickplace_agents.arm2>
         }
     }
 }

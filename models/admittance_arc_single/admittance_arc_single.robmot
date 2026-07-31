@@ -263,9 +263,9 @@ constraint-handler (ns=app) handler-home {
         pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
     }
     solvers {
-        solver arm-solver {
+        arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
-            algorithm: ACHD,
+            algorithm: achd,
             gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
         }
     }
@@ -328,9 +328,9 @@ constraint-handler (ns=app) handler-arc {
         }
     }
     solvers {
-        solver rne-arm-solver {
+        rne-arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
-            algorithm: RNE,
+            algorithm: rne,
             gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
         }
     }

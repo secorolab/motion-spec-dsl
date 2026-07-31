@@ -97,6 +97,9 @@ from motion_spec_dsl.classes import (
     ReferenceValue,
     SaturationSpec,
     Measure,
+    SerialChainSolver,
+    MobilePlatformSolver,
+    CommandForwardingSolver,
     SnapshotValue,
     SpecContextDecl,
     ContextQuantity,
@@ -142,6 +145,14 @@ from motion_spec_dsl.rdf._helpers import (
     _resolved_constraint_items,
     _DistancePlan,
 )
+
+
+_MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
+    "VelocityComposition": (SLV.VelocityCompositionSolver, SLV.velocity),
+    "VelocityDistribution": (SLV_EXT.VelocityDistributionSolver, SLV.velocity),
+    "ForceDistribution": (SLV.ForceDistributionSolver, SLV.force),
+    "ForceComposition": (SLV_EXT.ForceCompositionSolver, SLV.force),
+}
 
 
 def _constraint_type_iri(scalar_t: Any) -> URIRef:
@@ -3133,12 +3144,24 @@ class MotionSpecDatasetBuilder:
         motion: GuardedMotion,
         world_qtys: dict[str, WorldQuantity],
     ) -> None:
-        """Emit each of a handler's motion drivers/solvers with its algorithm and interfaces."""
+        """Emit each of a handler's solvers, routed by mechanism: serial-chain dynamics,
+        mobile-platform velocity/force, or command forwarding."""
         solvers = [_resolved_solver(s) for s in getattr(handler, "solvers", [])]
         multi = len(solvers) > 1
 
         for solver in solvers:
-            if not getattr(solver, "algorithm", ""):
+            solver_node = self._solver_node(handler, motion, solver)
+            robot_uri = getattr(solver.agent, "uri", None)
+            if robot_uri:
+                self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
+
+            if isinstance(solver, MobilePlatformSolver):
+                quantity = _context_quantity(solver.quantity)
+                self.graph.add((solver_node, SLV.configuration, Literal(solver.configuration)))
+                rdf_class, predicate = _MOBILE_PLATFORM_ALGORITHM_RDF[solver.algorithm]
+                self.graph.add((solver_node, RDF.type, rdf_class))
+                if quantity is not None:
+                    self.graph.add((solver_node, predicate, URIRef(quantity.uri)))
                 continue
 
             driver_stem = (
@@ -3150,13 +3173,7 @@ class MotionSpecDatasetBuilder:
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
 
-            solver_node = self._solver_node(handler, motion, solver)
-            robot_uri = getattr(solver.agent, "uri", None)
-            if robot_uri:
-                self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
-
-            alg = solver.algorithm
-            if alg == "CommandForwarding":
+            if isinstance(solver, CommandForwardingSolver):
                 self.graph.add((solver_node, RDF.type, SLV_EXT.CommandForwardingSolver))
                 self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
                 self._emit_solver_interfaces(
@@ -3169,14 +3186,14 @@ class MotionSpecDatasetBuilder:
                 )
                 continue
 
+            # SerialChainSolver: ACHD/RNE dynamics over one ordered kinematic chain.
             self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
 
+            alg = solver.algorithm
             alg_node = (
                 SLV.AccelerationConstrainedHybridDynamicsAlgorithm
                 if alg == "ACHD"
                 else SLV["RecursiveNewtonEulerAlgorithm"]
-                if alg == "RNE"
-                else SLV[alg]
             )
             self.graph.add((solver_node, SLV.solver, alg_node))
 
@@ -3222,18 +3239,12 @@ class MotionSpecDatasetBuilder:
             }
             limit_quantity_types = {
                 "torque": QuantityType.Torque,
-                "linear-acceleration": QuantityType.LinearAcceleration,
-                "angular-acceleration": QuantityType.AngularAcceleration,
             }
             for target, quantity_type in limit_quantity_types.items():
                 saturation = solver_limits_by_target.get(target)
                 if saturation is None:
                     continue
-                signal_name = (
-                    f"torque-output-{solver.name}"
-                    if target == "torque"
-                    else f"limit-target-{solver.name}-{target}"
-                )
+                signal_name = f"torque-output-{solver.name}"
                 signal = self._owned_uri(signal_name, handler)
                 self._add_quantity(signal, quantity_type)
                 self._emit_saturation(
@@ -3338,22 +3349,6 @@ class MotionSpecDatasetBuilder:
                         (spec_node, SLV["attached-to"], self._owned_uri(joint_name, qty))
                     )
                 self.graph.add((driver_node, SLV["joint-force"], spec_node))
-
-        for vel_solver in getattr(solver, "velocity_solvers", []):
-            vs_node = self._owned_uri(vel_solver.name, handler)
-            self.graph.add((vs_node, RDF.type, SLV.VelocityCompositionSolver))
-            self.graph.add((vs_node, SLV.configuration, Literal(vel_solver.configuration)))
-            v_qty = self._resolve_qty(vel_solver.velocity, world_qtys)
-            if v_qty:
-                self.graph.add((vs_node, SLV.velocity, URIRef(v_qty.uri)))
-
-        for force_solver in getattr(solver, "force_solvers", []):
-            fs_node = self._owned_uri(force_solver.name, handler)
-            self.graph.add((fs_node, RDF.type, SLV.ForceDistributionSolver))
-            self.graph.add((fs_node, SLV.configuration, Literal(force_solver.configuration)))
-            f_qty = self._resolve_qty(force_solver.force, world_qtys)
-            if f_qty:
-                self.graph.add((fs_node, SLV.force, URIRef(f_qty.uri)))
 
     def _controller_solver(self, handler: ConstraintHandler, ctrl: ControllerEntry) -> Any:
         """Return the shared semantic solver resolution for `ctrl`."""

@@ -356,8 +356,9 @@ class SolverLimits:
 
 
 @dataclass(eq=False)
-class SolverEntry(NamedNamespaceObject):
-    """A motion driver/solver (ACHD/RNE/...) assigned to an agent."""
+class SerialChainSolver(NamedNamespaceObject):
+    """A serial-chain dynamics solver (ACHD/RNE) over one ordered kinematic chain,
+    assigned to an agent."""
 
     parent: object
     name: str
@@ -368,11 +369,55 @@ class SolverEntry(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+        self.algorithm = {"achd": "ACHD", "rne": "RNE"}.get(self.algorithm, self.algorithm)
+
+
+@dataclass(eq=False)
+class MobilePlatformSolver(NamedNamespaceObject):
+    """A mobile-platform solver over two independent axes: quantity {velocity, force} x
+    operation {composition, distribution}. Composition aggregates drive/wheel quantities up
+    to the platform; distribution allocates a platform quantity down to the drives.
+    velocity-composition reconstructs the platform twist from measured wheel/drive
+    velocities; velocity-distribution maps a desired platform twist to drive/wheel
+    velocities; force-distribution (control allocation) maps a desired platform wrench to
+    drive/wheel forces; force-composition aggregates measured drive/wheel (pivot) forces up
+    to the platform wrench. All four are implemented by the hddc2b runtime."""
+
+    parent: object
+    name: str
+    agent: object
+    algorithm: str
+    configuration: str
+    quantity: ContextRef
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
         self.algorithm = {
-            "command-forwarding": "CommandForwarding",
+            "velocity-composition": "VelocityComposition",
             "velocity-distribution": "VelocityDistribution",
+            "force-composition": "ForceComposition",
             "force-distribution": "ForceDistribution",
         }.get(self.algorithm, self.algorithm)
+
+
+@dataclass(eq=False)
+class CommandForwardingSolver(NamedNamespaceObject):
+    """A pass-through solver forwarding a feed-forward controller's command directly to
+    an agent's device; neither a dynamics solver nor a platform kinematics/control-allocation
+    solver."""
+
+    parent: object
+    name: str
+    agent: object
+    algorithm: str = field(init=False, default="CommandForwarding")
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+# The closed set of solver mechanisms a `solvers { }` group may authored: exactly one of a
+# serial-chain dynamics solver, a mobile-platform velocity/force solver, or command forwarding.
+SolverEntry = SerialChainSolver | MobilePlatformSolver | CommandForwardingSolver
 
 
 @dataclass
@@ -393,27 +438,19 @@ class SolverRef:
         return self.solver.name
 
 
-@dataclass(eq=False, kw_only=True)
-class SolverAlias(SolverEntry):
-    """An alias referring to a SolverEntry."""
+@dataclass(eq=False)
+class SolverAlias(NamedNamespaceObject):
+    """An alias referring to a solver entry, whatever its mechanism."""
 
     parent: object
     name: str
     ref: SolverRef
-    agent: object = field(init=False)
-    algorithm: str = field(init=False)
-    limits: SolverLimits | None = field(init=False, default=None)
-    gravity_value: GravityValue | None = field(init=False, default=None)
 
     def __post_init__(self):
         if not self.name:
             self.name = self.ref.solver.name
-        NamedNamespaceObject.__init__(self, parent=self.parent, name=self.name)
+        super().__init__(parent=self.parent, name=self.name)
         self._uri = self.ref.solver.uri
-        self.agent = self.ref.solver.agent
-        self.algorithm = self.ref.solver.algorithm
-        self.limits = self.ref.solver.limits
-        self.gravity_value = self.ref.solver.gravity_value
 
 
 def _resolved_controller(item: ControllerEntry | ControllerAlias) -> ControllerEntry:

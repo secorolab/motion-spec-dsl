@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from motion_spec_dsl.classes import (
     ConstraintGroup,
+    MobilePlatformSolver,
     Model,
     UntilMonitorRef,
     WhenMonitorRef,
@@ -180,4 +181,34 @@ def validate_controller_solver_assembly(model: Model) -> None:
                     f"Controller '{controller.name}' references solver '{solver.name}', but "
                     f"handler '{handler.name}' does not assemble it.",
                     controller,
+                )
+
+
+_MOBILE_PLATFORM_QUANTITY_TYPE = {
+    "VelocityComposition": "VelocityTwist",
+    "VelocityDistribution": "VelocityTwist",
+    "ForceDistribution": "Wrench",
+    "ForceComposition": "Wrench",
+}
+
+
+def validate_mobile_platform_solver_quantity(model: Model) -> None:
+    """Require a mobile-platform solver's quantity kind to match its algorithm: a
+    velocity-twist for velocity-composition/velocity-distribution, a wrench for
+    force-distribution/force-composition.
+    """
+    for handler in constraint_handlers(model):
+        for item in handler.solvers:
+            solver = _resolved_solver(item)
+            if not isinstance(solver, MobilePlatformSolver):
+                continue
+            ref = solver.quantity
+            quantity = getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+            wanted = _MOBILE_PLATFORM_QUANTITY_TYPE[solver.algorithm]
+            if quantity is None or getattr(quantity, "type", None) != wanted:
+                got = getattr(quantity, "type", None)
+                raise semantic_error(
+                    f"Mobile-platform solver '{solver.name}' ({solver.algorithm}) requires a "
+                    f"'{wanted}' quantity, got '{got}'.",
+                    solver,
                 )

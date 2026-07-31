@@ -52,7 +52,7 @@ def _spatial_rows(motion) -> set[tuple[str, str]]:
     """The (subspace, axis) solver rows a motion actually commands."""
     return {
         (row.subspace, row.axis)
-        for solver in motion.arm_solvers
+        for solver in motion.serial_chain_solvers
         for row in (
             *solver.motion_driver.acceleration_constraint,
             *solver.motion_driver.cartesian_acceleration,
@@ -81,7 +81,7 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
     """
     sensors = [
         sensor
-        for solver in interaction_ir["arm_solvers"]
+        for solver in interaction_ir["serial_chain_solvers"]
         for sensor in (getattr(solver, "ft_sensors", None) or [])
     ]
     assert sensors, "scenex declares force-torque wrist_ft but no solver carries it"

@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motion_spec_dsl.classes import (
+    CommandForwardingSolver,
     ConstraintHandler,
     ConstraintSpecification,
     ControllerAlias,
@@ -15,6 +16,7 @@ from motion_spec_dsl.classes import (
     ControllerType,
     EqualityConstraint,
     QuantityType,
+    SerialChainSolver,
     SubSpace,
     WorldQuantity,
     WorldQuantityType,
@@ -70,19 +72,26 @@ POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
 
 
 def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | ControllerAlias):
-    """Resolve the authored, sole, or uniquely role-compatible solver for a controller."""
+    """Resolve the authored, sole, or uniquely role-compatible solver for a controller.
+
+    Only serial-chain dynamics and command-forwarding solvers bind implicitly to a
+    controller; a mobile-platform velocity/force solver is never an implicit controller
+    target -- it consumes an already-computed context signal, not a controller output.
+    """
     resolved = _resolved_controller(controller)
     explicit = getattr(getattr(resolved, "solver", None), "solver", None)
     if explicit is not None:
         return _resolved_solver(explicit)
-    solvers = [_resolved_solver(item) for item in handler.solvers]
+    solvers = [
+        _resolved_solver(item)
+        for item in handler.solvers
+        if isinstance(_resolved_solver(item), (SerialChainSolver, CommandForwardingSolver))
+    ]
     if len(solvers) == 1:
         return solvers[0]
     forwarding = resolved.type == ControllerType.FeedForward
     candidates = [
-        solver
-        for solver in solvers
-        if (str(solver.algorithm) == "CommandForwarding") == forwarding
+        solver for solver in solvers if isinstance(solver, CommandForwardingSolver) == forwarding
     ]
     return candidates[0] if len(candidates) == 1 else None
 
