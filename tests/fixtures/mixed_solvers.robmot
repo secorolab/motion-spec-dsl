@@ -1,0 +1,88 @@
+import "../../models/admittance_arc_single/admittance_arc_single.fsm"
+import "../../models/admittance_arc_single/admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/mixed-solvers/"
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+exec-context (ns=app) mixed-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        }
+    },
+    spec {
+        pose home-pose = snapshot of <shared.world.pose-ee-base>,
+        velocity-twist platform-velocity {
+            of: <kinova.base_link.base_link_origin>,
+            wrt: <kinova.base_link.base_link_origin>
+        },
+        wrench platform-force {
+            of:         <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        }
+    }
+}
+
+guarded-motion (ns=app) home {
+    move: "Hold the current end-effector pose"
+
+    context {}
+
+    when {}
+
+    while {
+        hold-position: keeping <shared.world.pose-ee-base>.position equal to <shared.spec.home-pose>.position
+    }
+
+    until all {
+        aligned: <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation
+    }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    monitors {
+        mon-home-settled: monitor <home.until> on activation trigger event aas.E_HOME_SETTLED after active for 0.3 s
+    }
+    controllers {
+        pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 }
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+        },
+        platform-velocity-solver: mobile-platform {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: velocity-composition,
+            configuration: "hddc2b_example_vel",
+            quantity: <shared.spec.platform-velocity>
+        },
+        platform-force-solver: mobile-platform {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: force-distribution,
+            configuration: "hddc2b_example_frc_sc1",
+            quantity: <shared.spec.platform-force>
+        },
+        platform-velocity-dist-solver: mobile-platform {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: velocity-distribution,
+            configuration: "hddc2b_example_vel_dist",
+            quantity: <shared.spec.platform-velocity>
+        },
+        platform-force-comp-solver: mobile-platform {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: force-composition,
+            configuration: "hddc2b_example_frc",
+            quantity: <shared.spec.platform-force>
+        }
+    }
+}
