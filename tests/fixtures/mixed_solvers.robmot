@@ -49,7 +49,7 @@ guarded-motion (ns=app) home {
 constraint-handler (ns=app) handler-home {
     handles: <home>
     monitors {
-        mon-home-settled: monitor <home.until> on activation trigger event aas.E_HOME_SETTLED after active for 0.3 s
+        mon-home-settled: monitor <home.until> on activation trigger event <aas.E_HOME_SETTLED> after active for 0.3 s
     }
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 }

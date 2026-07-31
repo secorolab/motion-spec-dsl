@@ -1284,8 +1284,8 @@ class MotionSpecDatasetBuilder:
         if view_spec is None:
             return URIRef(quantity.uri)
         scalar_type, view_type, view_subspace = view_spec
-        suffix = f"{quantity.name}.{subspace_raw}" + (f".{axis}" if axis is not None else "")
-        node = self._owned_uri(suffix, quantity)
+        suffix = f"{subspace_raw}" + (f".{axis}" if axis is not None else "")
+        node = URIRef(f"{quantity.uri}.{suffix}")
         self._add_quantity(node, scalar_type)
         super_node = (
             self._reference_output_node(quantity)
@@ -1327,7 +1327,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, GEOM_REL["with-respect-to"], pose_wrt))
                 self.graph.add((node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
 
-        view_node = self._owned_uri(f"view-{suffix}", quantity)
+        view_node = URIRef(f"{quantity.uri}.view-{suffix}")
         if view_node not in self._emitted_views:
             self._emit_view(view_node)
             if axis is None or quantity.type not in {
@@ -1531,8 +1531,8 @@ class MotionSpecDatasetBuilder:
         no unit at all.
         """
         for label, element in zip(labels, coords.values):
-            component_node = self._owned_uri(f"{name_prefix}.{label}", quantity)
-            view_node = self._owned_uri(f"view-{name_prefix}.{label}", quantity)
+            component_node = URIRef(f"{name_prefix}.{label}")
+            view_node = URIRef(f"{name_prefix}.{label}-view")
             if unit is None:
                 self.graph.add((component_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self._emit_quantity_kind(component_node, QUDT_KIND_BY_QUANTITY_TYPE[component_kind])
@@ -1584,8 +1584,8 @@ class MotionSpecDatasetBuilder:
 
         position = quantity.value.position
         orientation = quantity.value.orientation
-        position_node = self._owned_uri(f"{quantity.name}.position", quantity)
-        orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
+        position_node = URIRef(f"{quantity.uri}.position")
+        orientation_node = URIRef(f"{quantity.uri}.orientation")
         self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((position_node, RDF.type, GEOM_COORD.VectorXYZ))
         self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
@@ -1611,7 +1611,7 @@ class MotionSpecDatasetBuilder:
             self._emit_coordinate_components(
                 position_node, node, position.coords, ["x", "y", "z"],
                 QuantityType.Distance, MAP_EXT.position, position.unit, quantity,
-                f"{quantity.name}.position",
+                f"{quantity.uri}.position",
             )
 
         if orientation.ref is not None:
@@ -1621,7 +1621,7 @@ class MotionSpecDatasetBuilder:
             self._emit_coordinate_components(
                 orientation_node, node, orientation.quat.xyzw, ["x", "y", "z", "w"],
                 QuantityType.Dimensionless, MAP_EXT.orientation, None, quantity,
-                f"{quantity.name}.orientation",
+                f"{quantity.uri}.orientation",
             )
         elif orientation.direction_cosine is not None:
             dc = orientation.direction_cosine
@@ -1630,8 +1630,8 @@ class MotionSpecDatasetBuilder:
                 ("y", dc.y_axis, GEOM_COORD["direction-cosine-y"]),
                 ("z", dc.z_axis, GEOM_COORD["direction-cosine-z"]),
             ):
-                axis_prefix = f"{quantity.name}.orientation.{axis_label}-axis"
-                axis_node = self._owned_uri(axis_prefix, quantity)
+                axis_prefix = f"{quantity.uri}.orientation.{axis_label}-axis"
+                axis_node = URIRef(axis_prefix)
                 self.graph.add((axis_node, RDF.type, GEOM_COORD.VectorXYZ))
                 self.graph.add((orientation_node, pred, axis_node))
                 self._emit_coordinate_components(
@@ -1644,7 +1644,7 @@ class MotionSpecDatasetBuilder:
             self._emit_coordinate_components(
                 orientation_node, node, euler.angles, list(euler.axes),
                 QuantityType.Angle, MAP_EXT.orientation, euler.unit or "rad", quantity,
-                f"{quantity.name}.orientation",
+                f"{quantity.uri}.orientation",
             )
 
     def _emit_two_subspace_coordinate(self, node: URIRef, quantity: ContextQuantity) -> None:
@@ -1675,7 +1675,7 @@ class MotionSpecDatasetBuilder:
                  _ns_term(RBDYN_COORD, "force"), QuantityType.Force),
             )
         for label, coords, unit, pred, kind in subspaces:
-            subspace_node = self._owned_uri(f"{quantity.name}.{label}", quantity)
+            subspace_node = URIRef(f"{quantity.uri}.{label}")
             self.graph.add((subspace_node, RDF.type, QUDT_SCHEMA.Quantity))
             self.graph.add((subspace_node, RDF.type, GEOM_COORD.VectorXYZ))
             self._emit_quantity_kind(
@@ -1685,7 +1685,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, pred, subspace_node))
             self._emit_coordinate_components(
                 subspace_node, node, coords, ["x", "y", "z"], kind, MAP[label], unit, quantity,
-                f"{quantity.name}.{label}",
+                f"{quantity.uri}.{label}",
             )
 
     @staticmethod
@@ -2042,7 +2042,7 @@ class MotionSpecDatasetBuilder:
                 return self._reference_output_node(quantity)
             return URIRef(quantity.uri)
 
-        node = self._owned_uri(f"{quantity.name}-{suffix}", owner)
+        node = URIRef(f"{quantity.uri}-{suffix}")
         qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
         if qkind is None:
             qkind = QUDT_QKIND[quantity.type]
@@ -2088,13 +2088,13 @@ class MotionSpecDatasetBuilder:
         quantity = _resolved_context_quantity(quantity)
         if quantity.type == QuantityType.Pose:
             if subspace == "position":
-                position_node = self._owned_uri(f"{quantity.name}.position", quantity)
+                position_node = URIRef(f"{quantity.uri}.position")
                 self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((position_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
                 self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
                 return position_node
             if subspace == "orientation":
-                orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
+                orientation_node = URIRef(f"{quantity.uri}.orientation")
                 self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((orientation_node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((orientation_node, RDF.type, GEOM_COORD.OrientationCoordinate))

@@ -211,16 +211,8 @@ guarded-motion (ns=app) grasp-hold {
         spec {
             linear-distance support-lift = 0.06 m,
             linear-distance grasp-reach = 0.015 m,
-
-            linear-distance hold1-x = snapshot of <shared.world.pose-ee1-base>.position.x,
-            linear-distance hold1-y = snapshot of <shared.world.pose-ee1-base>.position.y,
-            linear-distance hold1-z = snapshot of <shared.world.pose-ee1-base>.position.z,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-
-            linear-distance hold2-x = snapshot of <shared.world.pose-ee2-base>.position.x,
-            linear-distance hold2-y = snapshot of <shared.world.pose-ee2-base>.position.y,
-            linear-distance hold2-z = snapshot of <shared.world.pose-ee2-base>.position.z,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
@@ -232,16 +224,16 @@ guarded-motion (ns=app) grasp-hold {
     }
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-x>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-y>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-z>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
         hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
         support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
         close1-gripper:    keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-x>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-y>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-z>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
         hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
         support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
         close2-gripper:    keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed>
@@ -415,16 +407,8 @@ guarded-motion (ns=app) open-grasp-hold {
         spec {
             linear-distance support-lift = 0.06 m,
             linear-distance place-z = 0.03 m,
-
-            linear-distance hold1-x = snapshot of <shared.world.pose-ee1-base>.position.x,
-            linear-distance hold1-y = snapshot of <shared.world.pose-ee1-base>.position.y,
-            linear-distance hold1-z = snapshot of <shared.world.pose-ee1-base>.position.z,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-
-            linear-distance hold2-x = snapshot of <shared.world.pose-ee2-base>.position.x,
-            linear-distance hold2-y = snapshot of <shared.world.pose-ee2-base>.position.y,
-            linear-distance hold2-z = snapshot of <shared.world.pose-ee2-base>.position.z,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
@@ -436,16 +420,16 @@ guarded-motion (ns=app) open-grasp-hold {
     }
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-x>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-y>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-z>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
         hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
         support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
         open1-gripper:     keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-x>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-y>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-z>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
         hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
         support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
         open2-gripper:     keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open>
@@ -511,16 +495,8 @@ guarded-motion (ns=app) recover {
     context {
         spec {
             linear-distance support-lift = 0.06 m,
-
-            linear-distance hold1-x = snapshot of <shared.world.pose-ee1-base>.position.x,
-            linear-distance hold1-y = snapshot of <shared.world.pose-ee1-base>.position.y,
-            linear-distance hold1-z = snapshot of <shared.world.pose-ee1-base>.position.z,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-
-            linear-distance hold2-x = snapshot of <shared.world.pose-ee2-base>.position.x,
-            linear-distance hold2-y = snapshot of <shared.world.pose-ee2-base>.position.y,
-            linear-distance hold2-z = snapshot of <shared.world.pose-ee2-base>.position.z,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
@@ -529,15 +505,15 @@ guarded-motion (ns=app) recover {
     when {}
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-x>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-y>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-z>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
         hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
         support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-x>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-y>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-z>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
         hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
         support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>
     }
@@ -573,7 +549,7 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
     monitors {
-        mon-pick-above-ready: monitor <pick-above.when> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>,
+        mon-pick-above-ready: monitor <pick-above.when> on activation trigger event <pp.E_PICK_ABOVE_READY> otherwise hold <home>,
         mon-pa1-advancing:    monitor <pick-above.advance1> while active set flag pa1-advancing,
         mon-pa2-advancing:    monitor <pick-above.advance2> while active set flag pa2-advancing
     }
@@ -596,7 +572,7 @@ constraint-handler (ns=app) handler-pick-above {
 constraint-handler (ns=app) handler-pick {
     handles: <pick>
     monitors {
-        mon-pick-ready: monitor <pick.when> on activation trigger event pp.E_PICK_READY otherwise hold <pick-above>
+        mon-pick-ready: monitor <pick.when> on activation trigger event <pp.E_PICK_READY> otherwise hold <pick-above>
     }
 
     controllers {
@@ -622,7 +598,7 @@ constraint-handler (ns=app) handler-pick {
 constraint-handler (ns=app) handler-close-grip {
     handles: <grasp-hold>
     monitors {
-        mon-grasp-ready: monitor <grasp-hold.when> on activation trigger event pp.E_GRASP_READY otherwise hold <pick>
+        mon-grasp-ready: monitor <grasp-hold.when> on activation trigger event <pp.E_GRASP_READY> otherwise hold <pick>
     }
 
     controllers {
@@ -656,8 +632,8 @@ constraint-handler (ns=app) handler-close-grip {
 constraint-handler (ns=app) handler-lift {
     handles: <lift>
     monitors {
-        mon-lift-ready:      monitor <lift.when> on activation trigger event pp.E_LIFT_READY otherwise hold <grasp-hold>,
-        mon-lift-grasp-lost: monitor <lift.until>    on activation trigger event pp.E_GRASP_LOST_LIFT
+        mon-lift-ready:      monitor <lift.when> on activation trigger event <pp.E_LIFT_READY> otherwise hold <grasp-hold>,
+        mon-lift-grasp-lost: monitor <lift.until>    on activation trigger event <pp.E_GRASP_LOST_LIFT>
     }
 
     controllers {
@@ -687,8 +663,8 @@ constraint-handler (ns=app) handler-lift {
 constraint-handler (ns=app) handler-place-above {
     handles: <place-above>
     monitors {
-        mon-place-above-ready:      monitor <place-above.when> on activation trigger event pp.E_PLACE_ABOVE_READY otherwise hold <lift>,
-        mon-place-above-grasp-lost: monitor <place-above.until>   on activation trigger event pp.E_GRASP_LOST_PLACE_ABOVE
+        mon-place-above-ready:      monitor <place-above.when> on activation trigger event <pp.E_PLACE_ABOVE_READY> otherwise hold <lift>,
+        mon-place-above-grasp-lost: monitor <place-above.until>   on activation trigger event <pp.E_GRASP_LOST_PLACE_ABOVE>
     }
 
     controllers {
@@ -718,8 +694,8 @@ constraint-handler (ns=app) handler-place-above {
 constraint-handler (ns=app) handler-place {
     handles: <place>
     monitors {
-        mon-place-ready:      monitor <place.when> on activation trigger event pp.E_PLACE_READY otherwise hold <place-above>,
-        mon-place-grasp-lost: monitor <place.until>        on activation trigger event pp.E_GRASP_LOST_PLACE
+        mon-place-ready:      monitor <place.when> on activation trigger event <pp.E_PLACE_READY> otherwise hold <place-above>,
+        mon-place-grasp-lost: monitor <place.until>        on activation trigger event <pp.E_GRASP_LOST_PLACE>
     }
 
     controllers {
@@ -749,7 +725,7 @@ constraint-handler (ns=app) handler-place {
 constraint-handler (ns=app) handler-open-grip {
     handles: <open-grasp-hold>
     monitors {
-        mon-open-ready: monitor <open-grasp-hold.when> on activation trigger event pp.E_OPEN_READY otherwise hold <place>
+        mon-open-ready: monitor <open-grasp-hold.when> on activation trigger event <pp.E_OPEN_READY> otherwise hold <place>
     }
 
     controllers {
@@ -779,8 +755,8 @@ constraint-handler (ns=app) handler-open-grip {
 constraint-handler (ns=app) handler-retreat {
     handles: <retreat>
     monitors {
-        mon-retreat-ready:   monitor <retreat.when> on activation trigger event pp.E_RETREAT_READY otherwise hold <open-grasp-hold>,
-        mon-retreat-settled: monitor <retreat.until>     on activation trigger event pp.E_RETREAT_SETTLED
+        mon-retreat-ready:   monitor <retreat.when> on activation trigger event <pp.E_RETREAT_READY> otherwise hold <open-grasp-hold>,
+        mon-retreat-settled: monitor <retreat.until>     on activation trigger event <pp.E_RETREAT_SETTLED>
     }
 
     controllers {
@@ -810,7 +786,7 @@ constraint-handler (ns=app) handler-retreat {
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
     monitors {
-        mon-recover-hold: monitor <recover.hold1-x> on activation trigger event pp.E_RECOVER
+        mon-recover-hold: monitor <recover.hold1-x> on activation trigger event <pp.E_RECOVER>
     }
 
     controllers {

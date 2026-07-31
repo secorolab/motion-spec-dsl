@@ -23,13 +23,14 @@ from motion_spec_dsl.classes.motion import (
     View,
     WorldContextDecl,
     _authored_enum,
-    _TIME_UNIT_SECONDS,
 )
 from motion_spec_dsl.classes.common import (
     IHasNamespaceDeclare,
     NamedNamespaceObject,
     NamespaceDeclLike,
 )
+
+_TIME_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}
 
 
 class ControllerType(StrEnum):

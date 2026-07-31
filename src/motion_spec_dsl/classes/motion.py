@@ -20,8 +20,6 @@ from motion_spec_dsl.classes.common import (
 if TYPE_CHECKING:
     from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
 
-_TIME_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}
-
 
 class NamespaceDeclare:
     """A namespace declaration: a prefix `name` and its `uri`."""
@@ -288,8 +286,6 @@ class GuardedMotion(IHasNamespaceDeclare):
 class QuantityContextDecl(NamedNamespaceObject):
     """A context declaration of quantities (world or context)."""
 
-    kind = None
-
     parent: object
     name: str = ""
     declaration: list[ContextQuantity | WorldQuantity] = field(default_factory=list)
@@ -297,28 +293,22 @@ class QuantityContextDecl(NamedNamespaceObject):
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
 
-    @property
-    def namespace(self):
-        assert self.kind is not None, "QuantityContextDecl must have 'kind' defined"
-        parent_namespace = getattr(self.parent, "namespace")
-        parent_name = getattr(self.parent, "name")
-        return Namespace(str(parent_namespace) + f"{parent_name}/{self.kind}/")
 
-
+# Empty, but textX binds these to the concrete rules and the builder dispatches on them.
 class WorldContextDecl(QuantityContextDecl):
-    kind = "World"
+    pass
 
 
 class PreContextDecl(QuantityContextDecl):
-    kind = "Pre"
+    pass
 
 
 class SpecContextDecl(QuantityContextDecl):
-    kind = "Spec"
+    pass
 
 
 class PostContextDecl(QuantityContextDecl):
-    kind = "Post"
+    pass
 
 
 @dataclass

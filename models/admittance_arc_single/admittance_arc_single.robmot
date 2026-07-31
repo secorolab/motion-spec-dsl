@@ -80,17 +80,15 @@ guarded-motion (ns=app) touchdown {
 
     context {
         spec {
-            pose start-pose       = snapshot of <shared.world.pose-ee-base>,
-            linear-distance hold-x = snapshot of <shared.world.pose-ee-base>.position.x,
-            linear-distance hold-y = snapshot of <shared.world.pose-ee-base>.position.y
+            pose start-pose       = snapshot of <shared.world.pose-ee-base>
         }
     }
 
     when {}
 
     while {
-        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.hold-x>,
-        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.hold-y>,
+        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x,
+        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y,
         lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel>,
         hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
     }
@@ -105,22 +103,18 @@ guarded-motion (ns=app) forward {
 
     context {
         spec {
-            pose start-pose              = snapshot of <shared.world.pose-ee-base>,
-            linear-distance target-x     = snapshot of <shared.world.pose-ee-base>.position.x + <shared.spec.forward-distance>,
-            linear-distance target-y     = snapshot of <shared.world.pose-ee-base>.position.y,
-            linear-distance target-z     = snapshot of <shared.world.pose-ee-base>.position.z,
-            pose target-pose = {
-                position: (<spec.target-x>, <spec.target-y>, <spec.target-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<spec.start-pose>.orientation.roll, <spec.start-pose>.orientation.pitch, <spec.start-pose>.orientation.yaw) }
-            }
+            pose start-pose          = snapshot of <shared.world.pose-ee-base>,
+            linear-distance target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
         }
     }
 
     when {}
 
     while {
-        move-forward: keeping <shared.world.pose-ee-base>.position equal to <spec.target-pose>.position,
-        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.target-pose>.orientation
+        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x>,
+        hold-y:       keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y,
+        hold-z:       keeping <shared.world.pose-ee-base>.position.z equal to <spec.start-pose>.position.z,
+        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
     }
 
     until {
@@ -143,18 +137,18 @@ guarded-motion (ns=app) arc-motion {
             linear-distance chord-y-hi = 0.33 m,
             linear-distance chord-z    = 0.0 m,
             linear-distance arc-height = 0.18 m,
-            pose start-pose            = snapshot of <shared.world.pose-ee-base> on event aas.E_ARC_ENTERED,
-            linear-distance end-x      = snapshot of <shared.world.pose-ee-base>.position.x + <spec.chord-x>,
-            linear-distance end-y      = snapshot of <shared.world.pose-ee-base>.position.y + <spec.chord-y>,
-            linear-distance end-y-lo   = snapshot of <shared.world.pose-ee-base>.position.y + <spec.chord-y-lo>,
-            linear-distance end-y-hi   = snapshot of <shared.world.pose-ee-base>.position.y + <spec.chord-y-hi>,
-            linear-distance end-z      = snapshot of <shared.world.pose-ee-base>.position.z + <spec.chord-z>,
+            pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
+            linear-distance end-x      = <spec.start-pose>.position.x + <spec.chord-x>,
+            linear-distance end-y      = <spec.start-pose>.position.y + <spec.chord-y>,
+            linear-distance end-y-lo   = <spec.start-pose>.position.y + <spec.chord-y-lo>,
+            linear-distance end-y-hi   = <spec.start-pose>.position.y + <spec.chord-y-hi>,
+            linear-distance end-z      = <spec.start-pose>.position.z + <spec.chord-z>,
             angle end-roll-delta       = -0.75 rad,
             angle end-pitch-delta      = 0.0 rad,
             angle end-yaw-delta        = 0.0 rad,
-            angle end-roll             = snapshot of <shared.world.pose-ee-base>.orientation.roll + <spec.end-roll-delta>,
-            angle end-pitch            = snapshot of <shared.world.pose-ee-base>.orientation.pitch + <spec.end-pitch-delta>,
-            angle end-yaw              = snapshot of <shared.world.pose-ee-base>.orientation.yaw + <spec.end-yaw-delta>,
+            angle end-roll             = <spec.start-pose>.orientation.roll + <spec.end-roll-delta>,
+            angle end-pitch            = <spec.start-pose>.orientation.pitch + <spec.end-pitch-delta>,
+            angle end-yaw              = <spec.start-pose>.orientation.yaw + <spec.end-yaw-delta>,
             pose end-pose = {
                 position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<spec.end-roll>, <spec.end-pitch>, <spec.end-yaw>) }
@@ -190,7 +184,7 @@ guarded-motion (ns=app) compliance {
 
     context {
         spec {
-            pose hold-orientation = snapshot of <shared.world.pose-ee-base> on event aas.E_ADMITTANCE_ENTERED,
+            pose hold-orientation = snapshot of <shared.world.pose-ee-base> on event <aas.E_ADMITTANCE_ENTERED>,
             admittance velocity-x = {
                 force: <shared.world.ext-force>.force.x,
                 mass: 2.0,
@@ -240,7 +234,7 @@ guarded-motion (ns=app) compliance {
 constraint-handler (ns=app) handler-home {
     handles: <home>
     monitors {
-        mon-home-settled: monitor <home.until> on activation trigger event aas.E_HOME_SETTLED after active for 0.3 s
+        mon-home-settled: monitor <home.until> on activation trigger event <aas.E_HOME_SETTLED> after active for 0.3 s
     }
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
@@ -258,7 +252,7 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-touchdown {
     handles: <touchdown>
     monitors {
-        mon-contact: monitor <touchdown.until> on activation trigger event aas.E_CONTACT after active for 0.3 s
+        mon-contact: monitor <touchdown.until> on activation trigger event <aas.E_CONTACT> after active for 0.3 s
     }
     controllers {
         pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
@@ -272,10 +266,12 @@ constraint-handler (ns=app) handler-touchdown {
 constraint-handler (ns=app) handler-forward {
     handles: <forward>
     monitors {
-        mon-forward-done: monitor <forward.reached-forward> on activation trigger event aas.E_FORWARD_DONE also publish to topic "/motion/forward_done" as "bdd_ros2_interfaces/msg/Trinary"
+        mon-forward-done: monitor <forward.reached-forward> on activation trigger event <aas.E_FORWARD_DONE> also publish to topic "/motion/forward_done" as "bdd_ros2_interfaces/msg/Trinary"
     }
     controllers {
         pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-y { constraint: <forward.hold-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-z { constraint: <forward.hold-z>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
     }
     solvers { <handler-home.arm-solver> }
@@ -285,9 +281,9 @@ constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
     monitors {
         mon-arc-advancing: monitor <arc-motion.advance> while active set flag arc-advancing,
-        mon-force-x: monitor <arc-motion.force-x> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
-        mon-force-y: monitor <arc-motion.force-y> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
-        mon-arc-complete: monitor <arc-motion.until> on activation trigger event aas.E_ARC_CONTACT after active for 0.3 s
+        mon-force-x: monitor <arc-motion.force-x> on activation trigger event <aas.E_FORCE_DETECTED> after active for 0.3 s,
+        mon-force-y: monitor <arc-motion.force-y> on activation trigger event <aas.E_FORCE_DETECTED> after active for 0.3 s,
+        mon-arc-complete: monitor <arc-motion.until> on activation trigger event <aas.E_ARC_CONTACT> after active for 0.3 s
     }
     controllers {
         pid ctrl-follow-tangent {
@@ -326,8 +322,8 @@ constraint-handler (ns=app) handler-arc {
 constraint-handler (ns=app) handler-admittance {
     handles: <compliance>
     monitors {
-        mon-released: monitor <compliance.released> on activation trigger event aas.E_FORCE_GONE after active for 0.3 s,
-        mon-table-contact: monitor <compliance.table-contact> on activation trigger event aas.E_TABLE_CONTACT after active for 0.3 s
+        mon-released: monitor <compliance.released> on activation trigger event <aas.E_FORCE_GONE> after active for 0.3 s,
+        mon-table-contact: monitor <compliance.table-contact> on activation trigger event <aas.E_TABLE_CONTACT> after active for 0.3 s
     }
     controllers {
         pid ctrl-comply-x {
