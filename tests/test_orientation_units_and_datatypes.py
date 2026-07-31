@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 from importlib.resources import files
 from pathlib import Path
 
@@ -60,6 +62,11 @@ OLD_SYNTAX_REJECTIONS = [
         " orientation: euler { axes: xyz extrinsic, roll: 0.0 rad, pitch: 0.0 rad, yaw: 0.0 rad } }",
         id="position_and_orientation_per_axis_form",
     ),
+    pytest.param(
+        'description: "Hold the current end-effector pose"',
+        'move: "Hold the current end-effector pose"',
+        id="motion_metadata_move_keyword",
+    ),
 ]
 
 
@@ -76,6 +83,36 @@ def test_unit_of_wrong_kind_is_a_parse_error(parse_mutated) -> None:
             "pose home-pose = { position: (0.1, 0.2, 0.3) rad,"
             " orientation: euler { axes: xyz extrinsic, angles: (0.0, 0.0, 0.0) rad } }",
         )
+
+
+WRONG_KIND_UNITS = [
+    pytest.param("force zero-force = (0.0, 0.0, 0.0) m", "Force", id="force_in_metres"),
+    pytest.param("duration settle = 0.3 m", "Duration", id="duration_in_metres"),
+    pytest.param("angle tilt = 0.5 m/s", "Angle", id="angle_in_speed"),
+]
+
+
+@pytest.mark.parametrize(("declaration", "message"), WRONG_KIND_UNITS)
+def test_unit_of_wrong_kind_for_its_quantity_is_rejected(
+    parse_mutated, declaration, message
+) -> None:
+    """The value rule is shared across quantity types, so the kind check is semantic."""
+    with pytest.raises(TextXSemanticError, match=message):
+        parse_mutated(ORIENTATION_ANCHOR, f"{ORIENTATION_ANCHOR},\n        {declaration}")
+
+
+EULER_CONVENTION_REJECTIONS = [
+    pytest.param(
+        "euler { axes: zyx extrinsic, angles: (0.1, 0.2, 0.3) rad }", id="unsupported_sequence"
+    ),
+    pytest.param("euler { axes: xyz, angles: (0.1, 0.2, 0.3) rad }", id="not_extrinsic"),
+]
+
+
+@pytest.mark.parametrize("orientation_block", EULER_CONVENTION_REJECTIONS)
+def test_euler_convention_is_validated(parse_mutated, orientation_block) -> None:
+    with pytest.raises(TextXSemanticError, match="xyz extrinsic"):
+        parse_mutated(ORIENTATION_ANCHOR, _pose_source(orientation_block))
 
 
 ORIENTATION_ANCHOR = "linear-velocity zero-linvel = 0.0 m/s"
@@ -124,11 +161,7 @@ def test_direction_cosine_orientation_emits_dcm_type(parse_mutated) -> None:
         parse_mutated,
         "direction-cosine { x: (1.0, 0.0, 0.0), y: (0.0, 1.0, 0.0), z: (0.0, 0.0, 1.0) }",
     )
-    # Intersect with OrientationCoordinate: a Pose-composite output is also tagged
-    # DirectionCosineXYZ by an unrelated, pre-existing emission path.
-    dc_subjects = set(graph.subjects(RDF.type, GEOM_COORD.DirectionCosineXYZ)) & set(
-        graph.subjects(RDF.type, GEOM_COORD.OrientationCoordinate)
-    )
+    dc_subjects = set(graph.subjects(RDF.type, GEOM_COORD.DirectionCosineXYZ))
     assert dc_subjects
     for s in dc_subjects:
         assert (s, RDF.type, URI_GEOM_TYPE_EULER_ANGLES) not in graph
@@ -146,6 +179,160 @@ def test_whole_value_reference_position_and_orientation(parse_mutated) -> None:
     )
     dataset, _ctx = MotionSpecDatasetBuilder(model).build()
     assert len(dataset.default_graph) > 0
+
+
+def test_motion_metadata_emits_name_and_optional_description(parse_mutated) -> None:
+    """A motion always carries schema:name; schema:description only when authored."""
+    from rdflib.namespace import SDO
+
+    described = parse_mutated(ORIENTATION_ANCHOR, ORIENTATION_ANCHOR)
+    graph = MotionSpecDatasetBuilder(described).build()[0].default_graph
+    named = {str(o) for o in graph.objects(None, SDO.name)}
+    assert "home" in named
+    assert "Hold the current end-effector pose" in {
+        str(o) for o in graph.objects(None, SDO.description)
+    }
+
+    plain = parse_mutated('    description: "Hold the current end-effector pose"\n', "")
+    plain_graph = MotionSpecDatasetBuilder(plain).build()[0].default_graph
+    assert "home" in {str(o) for o in plain_graph.objects(None, SDO.name)}
+    assert not set(plain_graph.objects(None, SDO.description))
+
+
+def _scene_orientation_types(spec, coord_type: str) -> set:
+    """Type triples scene-dsl's own emitter puts on an orientation coordinate for `spec`."""
+    from types import SimpleNamespace
+
+    from rdflib import Graph, URIRef
+
+    from scene_dsl.rdf.geom import add_orientation_coord
+
+    coord_uri = URIRef("https://example.test/pose/orientation-coord")
+    pose = SimpleNamespace(
+        orientation_uri=URIRef("https://example.test/pose/orientation"),
+        orientation_coord_uri=coord_uri,
+        of_frame=SimpleNamespace(uri=URIRef("https://example.test/frame/of")),
+        wrt=SimpleNamespace(uri=URIRef("https://example.test/frame/wrt")),
+        orientation=SimpleNamespace(spec=spec, coord_type=coord_type),
+    )
+    graph = Graph()
+    add_orientation_coord(graph, pose)
+    return set(graph.objects(coord_uri, RDF.type))
+
+
+# The representation-discriminating types both packages must agree on. Value encodings
+# differ by design: motion's components can be context references, scene's are literals.
+DISCRIMINATING_TYPES = {
+    URI_GEOM_TYPE_EULER_ANGLES,
+    URI_GEOM_TYPE_EXTRINSIC,
+    URI_GEOM_TYPE_QUATERNION,
+    GEOM_COORD.DirectionCosineXYZ,
+}
+
+
+def _scene_spec(coord_type: str):
+    """The scene-dsl orientation spec matching the authored block of the same coord type."""
+    from scene_dsl.classes.common import FloatVector
+    from scene_dsl.classes.geom import (
+        DirectionCosineOrientationSpec,
+        EulerOrientationSpec,
+        QuaternionOrientationSpec,
+    )
+
+    def vector(*values):
+        return FloatVector(None, list(values))
+
+    if coord_type == "euler":
+        return EulerOrientationSpec(None, "xyz", True, vector(0.1, 0.2, 0.3), "rad")
+    if coord_type == "quat":
+        return QuaternionOrientationSpec(None, vector(0.0, 0.0, 0.0, 1.0))
+    return DirectionCosineOrientationSpec(
+        None, vector(1.0, 0.0, 0.0), vector(0.0, 1.0, 0.0), vector(0.0, 0.0, 1.0)
+    )
+
+
+ORIENTATION_BLOCKS = {
+    "euler": "euler { axes: xyz extrinsic, angles: (0.1, 0.2, 0.3) rad }",
+    "quat": "quat { xyzw: (0.0, 0.0, 0.0, 1.0) }",
+    "direction-cosine": (
+        "direction-cosine { x: (1.0, 0.0, 0.0), y: (0.0, 1.0, 0.0), z: (0.0, 0.0, 1.0) }"
+    ),
+}
+
+
+@pytest.mark.parametrize("coord_type", sorted(ORIENTATION_BLOCKS))
+def test_orientation_types_match_scene_dsl(parse_mutated, coord_type) -> None:
+    """Cross-package contract: the same authored orientation must be typed identically by
+    motion's builder and by scene-dsl's own emitter."""
+    pytest.importorskip("scene_dsl.rdf.geom")
+    graph = _build(parse_mutated, ORIENTATION_BLOCKS[coord_type])
+    coord = next(
+        s
+        for s in graph.subjects(RDF.type, GEOM_COORD.OrientationCoordinate)
+        if str(s).endswith("test-pose.orientation")
+    )
+    motion_types = set(graph.objects(coord, RDF.type)) & DISCRIMINATING_TYPES
+    scene_types = _scene_orientation_types(_scene_spec(coord_type), coord_type)
+    assert motion_types == scene_types & DISCRIMINATING_TYPES
+
+
+def _orientation_coord_graph(graph):
+    """The test pose's orientation coordinate as a standalone graph, carrying only its
+    coordinate types -- the relation shapes want frames this fragment does not describe."""
+    from rdflib import Graph
+
+    from motion_spec.rdf_parser.vocab import GEOM_REL
+
+    coord = next(
+        s
+        for s in graph.subjects(RDF.type, GEOM_COORD.OrientationCoordinate)
+        if str(s).endswith("test-pose.orientation")
+    )
+    isolated = Graph()
+    for predicate, object_ in graph.predicate_objects(coord):
+        if (predicate, object_) == (RDF.type, GEOM_REL.Orientation):
+            continue
+        isolated.add((coord, predicate, object_))
+    return coord, isolated
+
+
+@pytest.mark.parametrize("coord_type", sorted(ORIENTATION_BLOCKS))
+def test_orientation_shapes_accept_the_emitted_triples(parse_mutated, coord_type) -> None:
+    """Each representation's SHACL cardinality shape must match what the builder emits."""
+    pyshacl = pytest.importorskip("pyshacl")
+    from rdflib import Graph
+
+    shapes = Graph().parse(METAMODELS / "geometry" / "geometry.shacl.ttl", format="turtle")
+    _coord, data = _orientation_coord_graph(_build(parse_mutated, ORIENTATION_BLOCKS[coord_type]))
+    conforms, _report, text = pyshacl.validate(
+        data_graph=data, shacl_graph=shapes, inference="none"
+    )
+    assert conforms, text
+
+
+ORIENTATION_SHAPE_VIOLATIONS = [
+    pytest.param("quat", GEOM_COORD["has-coordinate"], id="quaternion_missing_component"),
+    pytest.param(
+        "direction-cosine", GEOM_COORD["direction-cosine-z"], id="direction_cosine_missing_axis"
+    ),
+    pytest.param("euler", GEOM_COORD["axes-sequence"], id="euler_missing_axes_sequence"),
+]
+
+
+@pytest.mark.parametrize(("coord_type", "predicate"), ORIENTATION_SHAPE_VIOLATIONS)
+def test_orientation_shapes_reject_a_missing_component(
+    parse_mutated, coord_type, predicate
+) -> None:
+    pyshacl = pytest.importorskip("pyshacl")
+    from rdflib import Graph
+
+    shapes = Graph().parse(METAMODELS / "geometry" / "geometry.shacl.ttl", format="turtle")
+    coord, data = _orientation_coord_graph(_build(parse_mutated, ORIENTATION_BLOCKS[coord_type]))
+    data.remove((coord, predicate, next(data.objects(coord, predicate))))
+    conforms, _report, _text = pyshacl.validate(
+        data_graph=data, shacl_graph=shapes, inference="none"
+    )
+    assert not conforms
 
 
 ARITY_REJECTIONS = [
@@ -256,6 +443,61 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
     assert any(graph.objects(None, GEOM_COORD["linear-velocity"]))
     assert any(graph.objects(None, GEOM_COORD["angular-acceleration"]))
     assert any(graph.objects(None, GEOM_COORD["linear-acceleration"]))
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+ORIENTATION_CODEGEN = [
+    pytest.param(
+        "quaternion_pose",
+        "KDL::Rotation::Quaternion(0.0, 0.0, 0.0, 1.0)",
+        id="quaternion",
+    ),
+    pytest.param(
+        "direction_cosine_pose",
+        "KDL::Rotation(KDL::Vector(1.0, 0.0, 0.0), KDL::Vector(0.0, 1.0, 0.0),"
+        " KDL::Vector(0.0, 0.0, 1.0))",
+        id="direction_cosine",
+    ),
+]
+
+
+def _kdl_include() -> Path | None:
+    """An installed KDL include directory, or None when the C++ toolchain is unavailable."""
+    if shutil.which("g++") is None:
+        return None
+    root = Path(__file__).resolve().parents[3]
+    include = root / "install" / "orocos_kdl" / "include"
+    return include if (include / "kdl" / "frames.hpp").is_file() else None
+
+
+@pytest.mark.parametrize(("fixture", "expected"), ORIENTATION_CODEGEN)
+def test_orientation_representation_generates_compiling_cpp(
+    tmp_path: Path, fixture: str, expected: str
+) -> None:
+    """Each representation reaches the backend as its own KDL rotation constructor, and that
+    constructor compiles."""
+    from motion_spec.generation.pipeline import generate_model
+
+    generation = tmp_path / fixture
+    generation.mkdir()
+    generate_model(FIXTURES / f"{fixture}.robmot", generation, stage="code")
+    header = generation / "generated" / "controller" / "headers" / "motion_home.hpp"
+    source = header.read_text()
+    assert expected in source
+    assert "KDL::Rotation::RPY" not in source
+
+    include = _kdl_include()
+    if include is None:
+        pytest.skip("no g++ or installed orocos_kdl headers")
+    snippet = tmp_path / f"{fixture}.cpp"
+    snippet.write_text(
+        f"#include <kdl/frames.hpp>\nint main() {{ KDL::Rotation r = {expected}; return r == r; }}\n"
+    )
+    subprocess.run(
+        ["g++", "-fsyntax-only", f"-I{include}", "-I/usr/include/eigen3", str(snippet)],
+        check=True,
+    )
 
 
 @pytest.fixture(scope="module")

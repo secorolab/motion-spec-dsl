@@ -99,7 +99,6 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
             QUDT_SCHEMA.Quantity,
             GEOM_REL.Pose,
             GEOM_COORD.PoseCoordinate,
-            GEOM_COORD.DirectionCosineXYZ,
             GEOM_COORD.VectorXYZ,
         ),
         (QUDT_QKIND.PlaneAngle, URI_QUDT_QK_LENGTH),

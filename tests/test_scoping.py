@@ -116,58 +116,44 @@ guarded-motion (ns=app) m1 {
         mm.model_from_str(src, file_name=str(MODELS / "probe.robmot"))
 
 
-def test_progress_requires_a_tracking_equality():
+def test_path_following_splits_driver_geometry_and_guard():
+    """A path fixes geometry but not timing, so the three roles are separate constraints and
+    none of them may be restated as a setpoint on the same path."""
     source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
+    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
     metamodel = motion_spec_metamodel()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    model = metamodel.model_from_str(source, file_name=model_path)
-    handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
-    assert len(handler.progress) == 1
-    assert not hasattr(handler.motion, "progress")
 
-    untracked = source.replace(
-        "equal to <spec.approach-path>.position", "equal to <spec.goal-pose>.position"
-    ).replace(
-        "equal to <spec.approach-path>.orientation", "equal to <spec.goal-pose>.orientation"
-    )
-    with pytest.raises(TextXSemanticError, match="needs a WHILE equality"):
-        metamodel.model_from_str(untracked, file_name=model_path)
+    driver = "moving <shared.world.pose-ee-base> along <spec.approach-path> at <spec.approach-speed>"
+    with pytest.raises(TextXSemanticError, match="drop the comparison"):
+        metamodel.model_from_str(
+            source.replace(driver, f"{driver} equal to <spec.approach-speed>"),
+            file_name=model_path,
+        )
 
+    with pytest.raises(TextXSemanticError, match="one-sided"):
+        metamodel.model_from_str(
+            source.replace("more than <spec.min-approach-speed>", "less than <spec.approach-speed>"),
+            file_name=model_path,
+        )
 
-def test_progress_policy_names_and_paths_are_unique():
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    progress_block = (
-        "        approach: constraint {\n"
-        "            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz\n"
-        "        }"
-    )
-    duplicate_name = source.replace(progress_block, f"{progress_block},\n{progress_block}")
-    with pytest.raises(TextXSemanticError, match="duplicate progress policy name"):
-        motion_spec_metamodel().model_from_str(duplicate_name, file_name=model_path)
+    with pytest.raises(TextXSemanticError, match="already follows"):
+        metamodel.model_from_str(
+            source.replace(
+                "advance:    progress of <shared.world.pose-ee-base> along "
+                "<spec.approach-path> more than <spec.min-approach-speed>",
+                "advance:    progress of <shared.world.pose-ee-base> along "
+                "<spec.approach-path> more than <spec.min-approach-speed>,\n"
+                "        pinned: keeping <shared.world.pose-ee-base>.position equal to "
+                "<spec.approach-path>.position",
+            ),
+            file_name=model_path,
+        )
 
-    duplicate_path = source.replace(
-        "along <pick-above.spec.approach-path>",
-        "along { <pick-above.spec.approach-path>, <pick-above.spec.approach-path> }",
-    )
-    with pytest.raises(TextXSemanticError, match="selects path 'approach-path' more than once"):
-        motion_spec_metamodel().model_from_str(duplicate_path, file_name=model_path)
-
-
-def test_progress_objective_is_an_authored_model_concept():
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    with_objective = source.replace(
-        "        approach: constraint {\n"
-        "            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz\n"
-        "        }",
-        "        approach: constraint {\n"
-        "            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz\n"
-        "        },\n"
-        "        approach-objective: objective {\n"
-        "            maximize <pick-above.spec.s> along <pick-above.spec.approach-path>\n"
-        "        }",
-    )
-    model = motion_spec_metamodel().model_from_str(with_objective, file_name=model_path)
-    handler = next(spec for spec in model.specs if spec.name == "handler-pick-above")
-    assert [entry.name for entry in handler.progress] == ["approach", "approach-objective"]
+    with pytest.raises(TextXSemanticError, match="'.position' or '.orientation'"):
+        metamodel.model_from_str(
+            source.replace(
+                "keeping <shared.world.pose-ee-base>.position    on <spec.approach-path>",
+                "keeping <shared.world.pose-ee-base>.position.x  on <spec.approach-path>",
+            ),
+            file_name=model_path,
+        )

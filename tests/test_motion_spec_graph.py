@@ -16,8 +16,10 @@ from rdflib.namespace import RDF
 from motion_spec.rdf_parser.ir import Parser, _load_graph, generate_ir
 from motion_spec.rdf_parser.vocab import (
     ALGO_EXT,
+    CSTR,
     CSTR_HDL,
     CSTR_HDL_EXT,
+    GEOM_OP_EXT,
     MAP,
     MAP_EXT,
     SLV,
@@ -74,17 +76,18 @@ def test_generated_jsonld_compacts_hierarchical_identifiers(generated_model: Pat
                 collect(item)
 
     collect(document.get("@graph", []))
-    assert "app:pick-above/while/follow-pos" in identifiers
+    assert "app:pick-above/while/follow-lat" in identifiers
     assert not any(identifier.startswith(("http://", "https://", "/")) for identifier in identifiers)
 
 
 def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_model: Path) -> None:
     graph = _load_graph(generated_dual_model)[1]
     assert len(set(graph.subjects(RDF.type, CSTR_HDL_EXT["LinearJerk"]))) == 1
-    entries = set(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
-    (handler_node,) = set(graph.subjects(ALGO_EXT.progress, None))
-    assert set(graph.objects(handler_node, ALGO_EXT.progress)) == entries
-    assert len(Parser(graph).constraint_handler(handler_node).progress) == 2
+    # Each arm follows its own path, so each gets its own projection and its own local frame.
+    projections = set(graph.subjects(RDF.type, GEOM_OP_EXT.PathProjection))
+    assert len(projections) == 2
+    assert len({graph.value(node, GEOM_OP_EXT.path) for node in projections}) == 2
+    assert len({graph.value(node, GEOM_OP_EXT.tangent) for node in projections}) == 2
 
     ir = generate_ir(generated_dual_model)
     profiles = [value for value in ir["closures"].values() if value.get("type") == "VelocityProfile"]
@@ -94,16 +97,14 @@ def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_mo
     assert all(str(profile["shape"]) == "s_curve" and profile["in"] for profile in motion_profiles)
     assert all(profile["maximum_jerk"] == "max_lower_jerk" for profile in motion_profiles)
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
-    assert {entry.parameter for entry in pick_above.progress_constraints} == {
-        "alpha1",
-        "alpha2",
+    assert {entry["parameter"] for entry in pick_above.path_projections} == {
+        "arm1_approach_path_s",
+        "arm2_approach_path_s",
     }
-    assert {entry.id for entry in pick_above.progress_constraints} == {
-        "arm1_approach",
-        "arm2_approach",
+    assert {entry["along_speed"] for entry in pick_above.path_projections} == {
+        "arm1_approach_path_along_speed",
+        "arm2_approach_path_along_speed",
     }
-    assert all(len(entry.paths) == 1 for entry in pick_above.progress_constraints)
-    assert all(entry.errors for entry in pick_above.progress_constraints)
 
 
 def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Path) -> None:
@@ -174,21 +175,15 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     assert len(forwarded) == 6
     assert all(command.target for command in forwarded)
     graph = _load_graph(generated_model)[1]
-    entries = list(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
-    assert len(entries) == 1
-    (handler_node,) = graph.subjects(ALGO_EXT.progress, entries[0])
-    motion_node = graph.value(handler_node, CSTR_HDL.motion)
-    assert CSTR_HDL.ConstraintHandler in graph[handler_node : RDF.type]
-    assert (motion_node, ALGO_EXT.progress, entries[0]) not in graph
-    parsed_handler = Parser(graph).constraint_handler(handler_node)
-    assert len(parsed_handler.progress) == 1
-    assert not hasattr(parsed_handler.motion, "progress")
-    assert graph.value(entries[0], ALGO_EXT.parameter) is not None
-    assert graph.value(entries[0], ALGO_EXT.path) is not None
-    assert not any(
-        graph.value(profile, ALGO_EXT.out) == graph.value(entries[0], ALGO_EXT.parameter)
-        for profile in graph.subjects(RDF.type, ALGO_EXT.VelocityProfile)
+    # The progress guard is a lower bound on the measured speed along the path, so it names
+    # the same path as the projection and never produces the parameter itself.
+    (guard,) = list(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
+    (projection,) = list(graph.subjects(RDF.type, GEOM_OP_EXT.PathProjection))
+    assert graph.value(guard, GEOM_OP_EXT.path) == graph.value(projection, GEOM_OP_EXT.path)
+    assert graph.value(guard, CSTR.quantity) == graph.value(
+        projection, GEOM_OP_EXT["along-speed"]
     )
+    assert CSTR.GreaterThanConstraint in graph[guard : RDF.type]
     forwarding_solvers = set(graph.subjects(RDF.type, SLV_EXT.CommandForwardingSolver))
     assert forwarding_solvers
     assert all(graph.value(solver, SLV.output) is not None for solver in forwarding_solvers)
@@ -199,69 +194,25 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
 
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
     scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
-    interpolation = next(closure for closure in scheduled if closure["type"] == "LinearPath")
-    assert (interpolation["setpoint"], interpolation["path_parameter"]) == (
-        "reference",
-        "s",
+    projection_call = next(
+        closure for closure in scheduled if closure["type"] == "PathProjection"
     )
-    assert interpolation["assign_goal"]
+    assert projection_call["shape"] == "LinearPath"
+    assert (projection_call["setpoint"], projection_call["path_parameter"]) == (
+        "reference",
+        "approach_path_s",
+    )
+    assert projection_call["assign_goal"]
     assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
     assert any(component["id"] == "goal_pose" for component in pick_above.declared_pose_components)
-    assert len(pick_above.progress_constraints) == 1
-    entry = pick_above.progress_constraints[0]
-    assert entry.parameter == "s"
-    assert entry.id == "approach"
-    assert entry.paths == ["lerp_approach_path"]
-    assert len(entry.errors) == 6
+    # The progress guard is a monitored condition, never a solver row: the schedule holds
+    # exactly the 1 tangent + 2 normal + 3 angular controllers, and the guard appears only as
+    # a while monitor over its along-speed error.
+    assert [closure["type"] for closure in scheduled].count("Controller") == 6
+    assert not any("advance" in closure["id"] and closure["type"] == "Controller" for closure in scheduled)
+    assert len(pick_above.while_monitors) == 1
+    assert pick_above.while_monitors[0].monitor_type == "LevelTriggeredMonitor"
     assert all(closure["type"] != "VelocityProfile" for closure in scheduled)
-
-
-def test_one_named_progress_policy_synchronizes_two_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One shared parameter is gated by the union of both paths' controller errors."""
-    monkeypatch.setenv("METAMODELS_PATH", str(METAMODELS))
-    model_path = MODELS / "pick_place_dual" / "pick_place_dual.robmot"
-    source = model_path.read_text().replace(
-        "            path-parameter alpha1,", "            path-parameter s,"
-    ).replace("            path-parameter alpha2,\n", "").replace(
-        """    progress {
-        arm1-approach: constraint {
-            advance <pick-above.spec.alpha1> along <pick-above.spec.arm1-approach-path> at 1.0 Hz
-        },
-        arm2-approach: constraint {
-            advance <pick-above.spec.alpha2> along <pick-above.spec.arm2-approach-path> at 1.0 Hz
-        }
-    }""",
-        """    progress {
-        dual-approach: constraint {
-            advance <pick-above.spec.s> along {
-                <pick-above.spec.arm1-approach-path>,
-                <pick-above.spec.arm2-approach-path>
-            } at 1.0 Hz
-        }
-    }""",
-    )
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_str(source, file_name=str(model_path))
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-
-    manifest = tmp_path / "pick_place_dual-app.ld.json"
-    graph = _load_graph(manifest)[1]
-    (entry_node,) = graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint)
-    assert len(set(graph.objects(entry_node, ALGO_EXT.path))) == 2
-
-    ir = generate_ir(manifest)
-    pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
-    (entry,) = pick_above.progress_constraints
-    assert entry.id == "dual_approach"
-    assert entry.parameter == "s"
-    assert set(entry.paths) == {
-        "lerp_arm1_approach_path",
-        "lerp_arm2_approach_path",
-    }
-    assert len(entry.constraints) == 4
-    assert len(entry.errors) == 12
 
 
 def test_generated_manifest_is_portable(generated_model: Path) -> None:

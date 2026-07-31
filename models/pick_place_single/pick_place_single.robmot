@@ -73,7 +73,8 @@ guarded-motion (ns=app) pick-above {
     context {
         spec {
             linear-distance above-z      = 0.26 m,
-            path-parameter s,
+            linear-velocity approach-speed     = 0.08 m/s,
+            linear-velocity min-approach-speed = 0.005 m/s,
             pose start-pose              = snapshot of <shared.world.pose-ee-base>,
             linear-distance start-cube-x = snapshot of <shared.world.pose-cube-base>.position.x,
             linear-distance start-cube-y = snapshot of <shared.world.pose-cube-base>.position.y,
@@ -93,8 +94,10 @@ guarded-motion (ns=app) pick-above {
     }
 
     while {
-        follow-pos: keeping <shared.world.pose-ee-base>.position    equal to <spec.approach-path>.position,
-        follow-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.approach-path>.orientation
+        follow-tan: moving <shared.world.pose-ee-base> along <spec.approach-path> at <spec.approach-speed>,
+        follow-lat: keeping <shared.world.pose-ee-base>.position    on <spec.approach-path>,
+        follow-ori: keeping <shared.world.pose-ee-base>.orientation on <spec.approach-path>,
+        advance:    progress of <shared.world.pose-ee-base> along <spec.approach-path> more than <spec.min-approach-speed>
     }
 
     until {}
@@ -386,18 +389,15 @@ constraint-handler (ns=app) handler-home {
 
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
-    progress {
-        approach: constraint {
-            advance <pick-above.spec.s> along <pick-above.spec.approach-path> at 1.0 Hz
-        }
-    }
     monitors {
-        mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>
+        mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event pp.E_PICK_ABOVE_READY otherwise hold <home>,
+        mon-pa-advancing:     monitor <pick-above.advance> while active set flag pa-advancing
     }
 
     controllers {
-        pid ctrl-pa-follow-pos { constraint: <pick-above.follow-pos>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid ctrl-pa-follow-ori { constraint: <pick-above.follow-ori>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 }
+        pid ctrl-pa-follow-tan { constraint: <pick-above.follow-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 },
+        pid ctrl-pa-follow-lat { constraint: <pick-above.follow-lat>, measured-derivative: <shared.world.twist-ee-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-pa-follow-ori { constraint: <pick-above.follow-ori>, measured-derivative: <shared.world.twist-ee-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 }
     }
 
     solvers {

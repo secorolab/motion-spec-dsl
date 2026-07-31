@@ -712,6 +712,48 @@ class ElapsedTime:
 
 
 @dataclass
+class ProgressAlong:
+    """How fast a moved frame is travelling along a path, measured on the path's tangent.
+
+    A path constrains geometry but not timing, so the rate of travel along it has to be
+    stated as its own constraint rather than baked into the path parameter.
+    """
+
+    moved: object
+    path: object
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class MovingAlong:
+    """A drive along a path at a commanded speed, holding the frame on the path's geometry.
+
+    This is the driver of the motion, not a comparison, so it carries no relation: the
+    tangent is commanded at `speed` while the directions normal to it are held at zero.
+    """
+
+    moved: object
+    path: object
+    speed: object
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class OnPath:
+    """A moved frame held on a path's geometry, with no timing along it.
+
+    The path is the reference, evaluated at the frame's own closest-point projection, so
+    this constrains only the directions normal to the path -- the tangent is left to the
+    driver that commands a speed along it.
+    """
+
+    moved: object
+    path: object
+    selector: "SelectorTail | None" = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
 class SelectorTail:
     """The subspace/axis selector applied to a quantity in a view or reference."""
 
@@ -738,8 +780,20 @@ class View:
     distance_from: WorldQuantity | None = None
     distance_to: WorldQuantity | None = None
     elapsed: ElapsedTime | None = None
+    progress: ProgressAlong | None = None
+    moving: MovingAlong | None = None
+    on: OnPath | None = None
 
     def __post_init__(self):
+        # An on-path view still selects a subspace of a world quantity, so it fills the same
+        # slots every other view does and needs no special case downstream.
+        if self.on is not None:
+            self.quantity = self.on.moved
+            self.selector = self.on.selector
+        # Driving along a path and guarding progress along it both act on the one speed
+        # measured along the tangent, so they command in the linear-velocity subspace.
+        if self.moving is not None or self.progress is not None:
+            self.subspace = SubSpace.LinVel
         if self.selector is not None:
             self.subspace = self.selector.subspace
             self.axis = self.selector.axis

@@ -133,7 +133,8 @@ guarded-motion (ns=app) arc-motion {
 
     context {
         spec {
-            path-parameter s,
+            linear-velocity arc-speed     = 0.05 m/s,
+            linear-velocity min-arc-speed = 0.005 m/s,
             direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
                 = (0.9863939238, 0.1643989873, 0.0),
             linear-distance chord-x    = -0.05 m,
@@ -170,8 +171,10 @@ guarded-motion (ns=app) arc-motion {
     when {}
 
     while {
-        follow-position: keeping <shared.world.pose-ee-base>.position equal to <spec.arc-path>.position,
-        follow-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.arc-path>.orientation,
+        follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> at <spec.arc-speed>,
+        follow-position: keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
+        follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
+        advance: progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
         force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
         force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
     }
@@ -280,17 +283,20 @@ constraint-handler (ns=app) handler-forward {
 
 constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
-    progress {
-        arc-progress: constraint {
-            advance <arc-motion.spec.s> along <arc-motion.spec.arc-path> at 0.1 Hz
-        }
-    }
     monitors {
+        mon-arc-advancing: monitor <arc-motion.advance> while active set flag arc-advancing,
         mon-force-x: monitor <arc-motion.force-x> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
         mon-force-y: monitor <arc-motion.force-y> on activation trigger event aas.E_FORCE_DETECTED after active for 0.3 s,
         mon-arc-complete: monitor <arc-motion.until> on activation trigger event aas.E_ARC_CONTACT after active for 0.3 s
     }
     controllers {
+        pid ctrl-follow-tangent {
+            constraint: <arc-motion.follow-tangent>,
+            Kp: 20,
+            Ki: 4,
+            Kd: 0,
+            decay: 0
+        },
         pid ctrl-follow-position {
             constraint: <arc-motion.follow-position>,
             measured-derivative: <shared.world.twist-ee-base>.linvel,

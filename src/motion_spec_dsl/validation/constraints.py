@@ -12,26 +12,28 @@ from textx import get_children_of_type
 
 from motion_spec_dsl.classes import (
     AccelerationTwistCoordinate,
+    ConstraintSpecification,
     ContextQuantity,
     ContextRef,
     Coordinates,
     DirectionCosineXYZ,
     EqualityConstraint,
     EulerAngles,
+    GreaterThanConstraint,
     Measure,
     Model,
     PathValue,
     QuantityType,
     Quaternion,
+    ReferenceGeneratorType,
     VectorXYZ,
     VelocityTwistCoordinate,
     WrenchCoordinate,
     _resolved_context_quantity,
-    _resolved_spec,
 )
 from motion_spec_dsl.validation.common import (
-    constraint_handlers,
     motion_constraint_items,
+    motion_constraints,
     motion_specs,
     semantic_error,
 )
@@ -136,52 +138,6 @@ def validate_static_path_geometry(model: Model) -> None:
         _validate_path_geometry(quantity)
 
 
-def _progress_paths(entry) -> list[ContextQuantity]:
-    paths = []
-    seen: set[ContextQuantity] = set()
-    for ref in entry.path_refs:
-        path = _resolved_ref_quantity(ref)
-        if path is None:
-            continue
-        if path in seen:
-            raise semantic_error(
-                f"Progress policy '{entry.name}' selects path '{path.name}' more than once.",
-                ref,
-            )
-        seen.add(path)
-        paths.append(path)
-    return paths
-
-
-def _require_progress_tracking_constraint(motion, entry, path: ContextQuantity) -> None:
-    """Require an active WHILE equality to track each progress path."""
-    for item in motion.while_.constraints:
-        constraint = _resolved_spec(item)
-        if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
-            continue
-        if _resolved_ref_quantity(constraint.expr.reference) is path:
-            return
-    raise semantic_error(
-        f"Progress along '{path.name}' needs a WHILE equality constraint tracking that path.",
-        entry,
-    )
-
-
-def validate_progress_structure(model: Model) -> None:
-    """Check progress identity and its structural link to active tracking constraints."""
-    for handler in constraint_handlers(model):
-        names: set[str] = set()
-        for entry in handler.progress:
-            if entry.name in names:
-                raise semantic_error(
-                    f"Handler '{handler.name}' has duplicate progress policy name '{entry.name}'.",
-                    entry,
-                )
-            names.add(entry.name)
-            for path in _progress_paths(entry):
-                _require_progress_tracking_constraint(handler.motion, entry, path)
-
-
 def validate_euler_convention(model: Model) -> None:
     """Reject any Euler orientation block but extrinsic-XYZ, the only convention the backend
     supports, and require exactly 3 angle components."""
@@ -214,6 +170,157 @@ def validate_direction_cosine_components(model: Model) -> None:
         _require_arity(orientation.x_axis, 3, "Direction-cosine 'x'", orientation)
         _require_arity(orientation.y_axis, 3, "Direction-cosine 'y'", orientation)
         _require_arity(orientation.z_axis, 3, "Direction-cosine 'z'", orientation)
+
+
+def _path_operand(view) -> object | None:
+    """The driver, geometry or guard operand of a view that names a path."""
+    return (
+        getattr(view, "moving", None)
+        or getattr(view, "on", None)
+        or getattr(view, "progress", None)
+    )
+
+
+def _path_of(view) -> object | None:
+    """The context path a path-following view names, if it resolves to one."""
+    operand = _path_operand(view)
+    quantity = getattr(getattr(operand, "path", None), "quantity", None)
+    return _resolved_context_quantity(quantity) if quantity is not None else None
+
+
+_ON_PATH_SUBSPACES = ("position", "orientation")
+
+
+def _require_path_reference(spec: ConstraintSpecification, operand) -> None:
+    """Require the operand's `path` to name a declared geometric path."""
+    path = _path_of(spec.view)
+    if path is None or path.type != ReferenceGeneratorType.Path:
+        raise semantic_error(
+            f"'{spec.name}' follows a path, so its reference must be a declared 'path'.",
+            operand,
+        )
+
+
+def _require_speed_reference(spec: ConstraintSpecification, ref: ContextRef, role: str) -> None:
+    """Require a speed operand to be a linear-velocity quantity rather than a bare number."""
+    quantity = _resolved_ref_quantity(ref)
+    if quantity is None or quantity.type != QuantityType.LinearVelocity:
+        raise semantic_error(
+            f"'{spec.name}' states a {role} along a path, which is a linear velocity.",
+            spec,
+        )
+
+
+def validate_path_following(model: Model) -> None:
+    """Check the driver/geometry/guard split a path specification rests on.
+
+    A path constrains geometry but not timing, so `moving ... along ... at ...` drives the
+    motion and `keeping ... on ...` holds it on the geometry -- neither compares anything, so
+    neither carries a relation -- while `progress ... along ...` only guards continuation and
+    must. Every other view still compares something, and the grammar can no longer require it.
+    """
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        view = spec.view
+        driver = getattr(view, "moving", None)
+        geometry = getattr(view, "on", None)
+        guard = getattr(view, "progress", None)
+        if driver is not None or geometry is not None:
+            if spec.expr is not None:
+                raise semantic_error(
+                    f"'{spec.name}' constrains motion to a path's geometry, so the path is its "
+                    "reference; drop the comparison.",
+                    spec,
+                )
+        elif spec.expr is None:
+            raise semantic_error(f"Constraint '{spec.name}' is missing its relation.", spec)
+        elif guard is not None and not isinstance(spec.expr, GreaterThanConstraint):
+            raise semantic_error(
+                f"'{spec.name}' guards progress along a path, which is one-sided: use "
+                "'more than'.",
+                spec,
+            )
+
+        operand = driver or geometry or guard
+        if operand is None:
+            continue
+        _require_path_reference(spec, operand)
+        if driver is not None:
+            _require_speed_reference(spec, driver.speed, "commanded speed")
+        elif guard is not None:
+            _require_speed_reference(spec, spec.expr.threshold, "minimum speed")
+        else:
+            subspace = str(getattr(view.subspace, "value", view.subspace or ""))
+            if subspace not in _ON_PATH_SUBSPACES or view.axis is not None:
+                raise semantic_error(
+                    f"'{spec.name}' must hold either '.position' or '.orientation' on the path: "
+                    "the two are separate control laws and the tangent belongs to the driver.",
+                    spec,
+                )
+
+    for motion in motion_specs(model):
+        followed = {
+            _path_of(spec.view): spec
+            for spec in motion_constraints(motion)
+            if getattr(spec.view, "moving", None) is not None
+            or getattr(spec.view, "on", None) is not None
+        }
+        followed.pop(None, None)
+        if not followed:
+            continue
+        for spec in motion_constraints(motion):
+            if not isinstance(spec.expr, EqualityConstraint):
+                continue
+            reference = _resolved_ref_quantity(spec.expr.reference)
+            if reference in followed:
+                raise semantic_error(
+                    f"'{spec.name}' pins '{motion.name}' to a setpoint on the same path "
+                    f"'{followed[reference].name}' already follows. A path constrains geometry, "
+                    "not timing; drop the equality.",
+                    spec,
+                )
+
+
+# Types absent here carry no bare Measure/VectorXYZ value (pose, the two-subspace types).
+_UNITS_BY_QUANTITY_TYPE: dict[QuantityType, tuple[str, ...]] = {
+    QuantityType.Position: ("mm", "cm", "m"),
+    QuantityType.Distance: ("mm", "cm", "m"),
+    QuantityType.Direction: ("1",),
+    QuantityType.FreeVector: ("1",),
+    QuantityType.Orientation: ("rad", "deg"),
+    QuantityType.Angle: ("rad", "deg"),
+    QuantityType.PlaneAngle: ("rad", "deg"),
+    QuantityType.LinearVelocity: ("m/s", "cm/s"),
+    QuantityType.AngularVelocity: ("rad/s", "deg/s"),
+    QuantityType.LinearAcceleration: ("m/s^2",),
+    QuantityType.AngularAcceleration: ("rad/s^2", "deg/s^2"),
+    QuantityType.LinearJerk: ("m/s^3",),
+    QuantityType.Force: ("N",),
+    QuantityType.Torque: ("Nm",),
+    QuantityType.Duration: ("s", "ms"),
+    QuantityType.Dimensionless: ("1",),
+    QuantityType.PathParameter: ("1",),
+}
+
+
+def validate_unit_kinds(model: Model) -> None:
+    """Reject a unit that does not belong to its quantity's kind. The grammar cannot decide
+    this -- the value rule is shared across every quantity type -- so it is checked here,
+    where the message can name the quantity and the units it does accept.
+    """
+    for item in get_children_of_type(ContextQuantity, model):
+        quantity = _resolved_context_quantity(item)
+        allowed = _UNITS_BY_QUANTITY_TYPE.get(quantity.type)
+        value = quantity.value
+        if allowed is None or not isinstance(value, (Measure, VectorXYZ)):
+            continue
+        unit = getattr(value, "unit", None)
+        if unit is None or unit in allowed:
+            continue
+        raise semantic_error(
+            f"'{quantity.name}' is a {quantity.type} quantity: '{unit}' is not one of its "
+            f"units ({', '.join(allowed)}).",
+            quantity,
+        )
 
 
 _TWO_SUBSPACE_TYPE_NAMES = {

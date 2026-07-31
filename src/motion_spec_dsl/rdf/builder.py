@@ -96,7 +96,6 @@ from motion_spec_dsl.classes import (
     PostContextDecl,
     PreContextDecl,
     ProfileSpec,
-    ProgressConstraint,
     AdmittanceSpec,
     AccelerationTwistCoordinate,
     QuantityType,
@@ -171,6 +170,15 @@ _MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
 }
 
 
+def _path_operand(view: Any) -> Any | None:
+    """The driver, geometry or guard operand of a view that follows a path."""
+    return (
+        getattr(view, "moving", None)
+        or getattr(view, "on", None)
+        or getattr(view, "progress", None)
+    )
+
+
 def _constraint_type_iri(scalar_t: Any) -> URIRef:
     """Grounded domain-constraint IRI for a scalar quantity type."""
     name = CSTR_TYPE_NAME.get(scalar_t, scalar_t)
@@ -225,6 +233,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
         self._emitted_orientation_coords: set[URIRef] = set()
+        self._path_projections: set[URIRef] = set()
         self._motion_time_endpoints_index: dict[str, tuple[URIRef, URIRef]] = {}
 
     def build(self) -> tuple[Dataset, dict[str, str]]:
@@ -276,9 +285,9 @@ class MotionSpecDatasetBuilder:
 
             self._emit_world_quantities(world_qtys)
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
+            self._emit_path_following(constraints, world_qtys)
             self._emit_constraints(motion, constraints, world_qtys)
             self._emit_motion_spec(motion)
-            self._emit_progress_objectives(handler, motion)
             self._emit_scalar_views(motion, constraints, world_qtys)
             self._emit_map_operations(motion, constraints, world_qtys)
             self._emit_constraint_handler(
@@ -1808,7 +1817,6 @@ class MotionSpecDatasetBuilder:
         if value_kind == GEOM_REL.Pose:
             self.graph.add((node, RDF.type, GEOM_REL.Pose))
             self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
-            self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
             self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], URI_QUDT_QK_LENGTH))
@@ -1867,77 +1875,151 @@ class MotionSpecDatasetBuilder:
                 return name
         raise ValueError(f"PathValue on '{quantity.name}' has no populated spec")
 
-    def _emit_progress_objectives(
-        self, handler: ConstraintHandler, motion: GuardedMotion
-    ) -> None:
-        """Emit each explicit progress entry (constraint-form advancement law, or
-        objective-form maximization request) and the path evaluator(s) it governs.
-        """
-        handler_node = URIRef(handler.uri)
-        for entry in handler.progress:
-            is_constraint = isinstance(entry, ProgressConstraint)
-            parameter = _resolved_context_quantity(_context_quantity(entry.parameter))
-            paths = [
-                _resolved_context_quantity(_context_quantity(path_ref))
-                for path_ref in entry.path_refs
-            ]
-            entry_node = URIRef(entry.uri)
-            entry_type = ALGO_EXT.ProgressConstraint if is_constraint else ALGO_EXT.ProgressObjective
-            self.graph.add((entry_node, RDF.type, entry_type))
-            self.graph.add((entry_node, ALGO_EXT.parameter, URIRef(parameter.uri)))
-            self.graph.add((handler_node, ALGO_EXT.progress, entry_node))
-            if is_constraint:
-                advancement_node = URIRef(f"{entry.uri}/advancement")
-                self._emit_scalar_quantity(
-                    advancement_node,
-                    entry.advancement,
-                    NS_MM_QUDT_QTY["Frequency"],
-                    QUDT_UNIT.HZ,
-                )
-                self.graph.add((entry_node, ALGO_EXT.advancement, advancement_node))
-            for path in paths:
-                shape = self._path_shape(path)
-                path_node = self._owned_uri(f"{shape}-{path.name}", path)
-                self._emit_path_evaluator(path, path_node, entry.parameter, shape)
-                self.graph.add((entry_node, ALGO_EXT.path, path_node))
-                if not is_constraint:
-                    continue
-                for item in motion.while_.constraints:
-                    constraint = _resolved_spec(item)
-                    if constraint.disabled or not isinstance(constraint.expr, EqualityConstraint):
-                        continue
-                    reference = _context_quantity(constraint.expr.reference)
-                    if isinstance(reference, ContextQuantity):
-                        reference = _resolved_context_quantity(reference)
-                    if reference is path:
-                        self.graph.add(
-                            (entry_node, CSTR_HDL.constraint, URIRef(constraint.uri))
-                        )
+    def _along_path_scalar(self, spec: ConstraintSpecification) -> tuple[str, Any] | None:
+        """The scalar a driver or progress guard measures: the speed along its path."""
+        operand = spec.view.moving or spec.view.progress
+        if operand is None:
+            return None
+        path = _resolved_context_quantity(_context_quantity(operand.path))
+        return f"{path.name}-along-speed", QuantityType.LinearVelocity
 
-    def _emit_path_evaluator(
-        self,
-        quantity: ContextQuantity,
-        path_node: URIRef,
-        path_parameter: Any,
-        spec_prefix: str,
-    ) -> None:
-        """Emit the operator that turns a position along a path into the pose setpoint.
+    def _path_geometry_node(self, path: ContextQuantity) -> URIRef:
+        """The node carrying `path`'s geometry (its shape and that shape's inputs)."""
+        return self._owned_uri(f"{self._path_shape(path)}-{path.name}", path)
 
-        The evaluator *is* the declaration's reference generator: it owns the path parameter
-        and produces the setpoint pose, so the declared quantity needs no node of its own.
+    def _emit_along_path_constraint(
+        self, node: URIRef, spec: ConstraintSpecification, motion: GuardedMotion
+    ) -> None:
+        """Emit a driver or a progress guard on the speed measured along a path.
+
+        Both read the same measured quantity. The driver commands it, which is what moves the
+        robot along the path; the guard only bounds it from below, so it decides whether the
+        current control action may go on and never contributes a solver row.
         """
-        eval_node = self._owned_uri(f"{spec_prefix}-eval-{quantity.name}", quantity)
-        self.graph.add((eval_node, RDF.type, GEOM_OP_EXT.PathEvaluator))
-        self.graph.add((eval_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
-        self.graph.add((eval_node, GEOM_OP_EXT.path, path_node))
+        operand = spec.view.moving or spec.view.progress
+        path = _resolved_context_quantity(_context_quantity(operand.path))
+        self.graph.add((node, RDF.type, CSTR.Constraint))
+        self.graph.add((node, RDF.type, _constraint_type_iri(QuantityType.LinearVelocity)))
+        self.graph.add((node, CSTR.quantity, self._path_along_speed_node(path)))
+        self.graph.add((node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
+        if spec.view.moving is not None:
+            self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
+            ref_node = self._emit_context_ref_node(operand.speed, motion, f"{spec.name}-ref")
+            self.graph.add((node, CSTR["reference-value"], ref_node))
+            self._reference_value_index[node] = ref_node
+            return
+        self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
+        self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
+        self.graph.add((node, RDF.type, ALGO_EXT.ProgressConstraint))
         self.graph.add(
             (
-                eval_node,
-                _ns_term(GEOM_OP_EXT, "path-parameter"),
-                self._emit_context_ref_node(path_parameter, quantity, "path-parameter"),
+                node,
+                CSTR.threshold,
+                self._emit_context_ref_node(spec.expr.threshold, motion, f"{spec.name}-threshold"),
             )
         )
-        self.graph.add((eval_node, GEOM_OP.out, self._reference_output_node(quantity)))
+
+    def _path_along_speed_node(self, path: ContextQuantity) -> URIRef:
+        """The measured speed of the followed frame along `path`, shared by driver and guard."""
+        return self._owned_uri(f"{path.name}-along-speed", path)
+
+    def _measured_twist_of(
+        self, moved: WorldQuantity, world_qtys: dict[str, WorldQuantity]
+    ) -> WorldQuantity:
+        """The velocity twist of the same frame pair as `moved`.
+
+        Speed along a path is a measured speed at the attachment point, so it reads the twist
+        of exactly the frame being followed rather than differentiating its pose.
+        """
+        context = f"Path following of '{moved.name}'"
+        of_frame, wrt_frame = self._pose_frames(moved, context)
+        twist = next(
+            (
+                quantity
+                for quantity in world_qtys.values()
+                if quantity.type == WorldQuantityType.VelocityTwist
+                and isinstance(quantity.props, GeometricProps)
+                and _geo_prop(quantity.props, "of") == of_frame
+                and _geo_prop(quantity.props, "wrt") == wrt_frame
+            ),
+            None,
+        )
+        if twist is None:
+            raise ValueError(
+                f"{context} needs a declared 'velocity-twist' of <{of_frame}> "
+                f"wrt <{wrt_frame}> to measure the speed along the path."
+            )
+        return twist
+
+    def _emit_path_projection(
+        self,
+        path: ContextQuantity,
+        moved: WorldQuantity,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> None:
+        """Emit the operator that projects a measured pose onto a path.
+
+        The projection replaces a commanded path parameter: it measures where on the path the
+        frame already is, and reports the pose there together with the local frame that
+        separates travelling along the path from leaving it. Nothing upstream can outrun the
+        robot because nothing upstream writes the parameter.
+        """
+        projection_node = self._owned_uri(f"projection-{path.name}", path)
+        if projection_node in self._path_projections:
+            return
+        self._path_projections.add(projection_node)
+
+        path_node = self._path_geometry_node(path)
+        as_seen_by_name = _geo_prop(moved.props, "as-seen-by") or _geo_prop(moved.props, "wrt")
+        if as_seen_by_name is None:
+            raise ValueError(
+                f"Path following of '{moved.name}' needs an 'as-seen-by' or 'wrt' frame."
+            )
+        as_seen_by = self._owned_uri(as_seen_by_name, moved)
+
+        parameter_node = self._owned_uri(f"{path.name}-s", path)
+        self.graph.add((parameter_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_quantity_kind(parameter_node, NS_MM_QUDT_QTY["Dimensionless"])
+        self.graph.add((parameter_node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+
+        speed_node = self._path_along_speed_node(path)
+        self._add_quantity(speed_node, QuantityType.LinearVelocity)
+
+        self.graph.add((projection_node, RDF.type, GEOM_OP_EXT.PathProjection))
+        self.graph.add((projection_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
+        self.graph.add((projection_node, GEOM_OP_EXT.path, path_node))
+        self.graph.add((projection_node, GEOM_OP["in"], URIRef(moved.uri)))
+        self.graph.add(
+            (
+                projection_node,
+                CSTR_HDL["measured-velocity"],
+                URIRef(self._measured_twist_of(moved, world_qtys).uri),
+            )
+        )
+        self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, "path-parameter"), parameter_node))
+        self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, "along-speed"), speed_node))
+        for term in ("tangent", "normal-a", "normal-b"):
+            direction_node = self._owned_uri(f"{path.name}-{term}", path)
+            self.graph.add((direction_node, RDF.type, QUDT_SCHEMA.Quantity))
+            self._emit_direction_coordinate(direction_node, as_seen_by)
+            self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, term), direction_node))
+        self.graph.add((projection_node, GEOM_OP.out, self._reference_output_node(path)))
+
+    def _emit_path_following(
+        self,
+        constraints: list[ConstraintSpecification],
+        world_qtys: dict[str, WorldQuantity],
+    ) -> None:
+        """Emit one projection per path a motion's constraints follow."""
+        for spec in constraints:
+            operand = _path_operand(spec.view)
+            if operand is None:
+                continue
+            path = _resolved_context_quantity(_context_quantity(operand.path))
+            moved = self._resolve_qty(operand.moved, world_qtys)
+            if moved is None:
+                raise ValueError(f"Constraint '{spec.name}' follows a path with an unknown frame.")
+            self._emit_path_projection(path, moved, world_qtys)
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         """Resolve a context reference to its value node: a subspace view, a passthrough source,
@@ -2062,6 +2144,10 @@ class MotionSpecDatasetBuilder:
                 self._emit_elapsed_constraint(node, spec, motion)
                 continue
 
+            if spec.view.moving is not None or spec.view.progress is not None:
+                self._emit_along_path_constraint(node, spec, motion)
+                continue
+
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None:
                 raise ValueError(f"Constraint '{spec.name}' does not resolve to a world quantity.")
@@ -2097,6 +2183,17 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, _constraint_type_iri(scalar_t)))
             if qty_node is not None:
                 self.graph.add((node, CSTR.quantity, qty_node))
+
+            if spec.view.on is not None:
+                # The path is the reference: it is evaluated where the frame already is, so
+                # this states no target of its own and needs no authored comparison.
+                path = _resolved_context_quantity(_context_quantity(spec.view.on.path))
+                self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
+                ref_node = self._emit_context_ref_view_node(path, subspace, axis)
+                self.graph.add((node, CSTR["reference-value"], ref_node))
+                self._reference_value_index[node] = ref_node
+                self.graph.add((node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
+                continue
 
             expr = spec.expr
             if isinstance(expr, EqualityConstraint):
@@ -2440,7 +2537,8 @@ class MotionSpecDatasetBuilder:
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
         self.graph.add((motion_node, SDO.name, Literal(motion.name)))
-        if motion.description is not None:
+        # textX leaves an unmatched optional STRING as '', not None.
+        if motion.description:
             self.graph.add((motion_node, SDO.description, Literal(motion.description)))
         raw_when_logic = getattr(motion.when, "logic", None)
         when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
@@ -2901,8 +2999,9 @@ class MotionSpecDatasetBuilder:
             if spec.disabled:
                 continue
 
+            along_path = self._along_path_scalar(spec)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None:
+            if qty is None and along_path is None:
                 raise ValueError(
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )
@@ -2910,7 +3009,7 @@ class MotionSpecDatasetBuilder:
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             shared = spec in shared_spec_ids
-            scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
+            scalar_t = along_path[1] if along_path else (_scalar_type(qty, subspace, axis) if qty else subspace)
             command = controller_command_record(ctrl)
 
             authored_ctrl_node = URIRef(ctrl.uri)
@@ -2920,12 +3019,15 @@ class MotionSpecDatasetBuilder:
             measured_derivative = getattr(ctrl.params, "measured_derivative", None)
             derivative_quantity = getattr(measured_derivative, "quantity", None)
             if isinstance(derivative_quantity, WorldQuantity):
+                # An authored axis names one scalar; a bare subspace leaves the choice to the
+                # per-axis controller, which reads the component matching the axis it drives.
+                derivative_node = (
+                    self._emit_profile_view_node(measured_derivative, handler)
+                    if getattr(measured_derivative, "axis", None) is not None
+                    else URIRef(_resolved_world_quantity(derivative_quantity).uri)
+                )
                 self.graph.add(
-                    (
-                        authored_ctrl_node,
-                        CSTR_HDL["measured-velocity"],
-                        URIRef(_resolved_world_quantity(derivative_quantity).uri),
-                    )
+                    (authored_ctrl_node, CSTR_HDL["measured-velocity"], derivative_node)
                 )
             solver = self._controller_solver(handler, ctrl)
             if solver is not None:
@@ -2941,8 +3043,8 @@ class MotionSpecDatasetBuilder:
 
             controller_error_id: str | None = None
             evaluator_error_id: str | None = None
-            if qty is not None:
-                sid = _scalar_id(qty, subspace, axis)
+            if qty is not None or along_path is not None:
+                sid = along_path[0] if along_path else _scalar_id(qty, subspace, axis)
                 candidate_error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
                 if ctrl.type != ControllerType.FeedForward:
                     controller_error_id = candidate_error_id
@@ -2958,7 +3060,7 @@ class MotionSpecDatasetBuilder:
                 and subspace in {"pose", "position", "orientation", "distance", "rotation"}
                 and axis is None
                 and command.controlled_axes
-                and isinstance(spec.expr, EqualityConstraint)
+                and (isinstance(spec.expr, EqualityConstraint) or spec.view.on is not None)
                 and not _is_distance_view(spec)
             ):
                 self.graph.add((handler_node, CSTR_HDL.controllers, authored_ctrl_node))
@@ -3173,15 +3275,16 @@ class MotionSpecDatasetBuilder:
             if getattr(spec.view, "is_elapsed", False):
                 error_node = self._elapsed_quantity_node(spec, cref.motion)
             else:
+                along_path = self._along_path_scalar(spec)
                 qty = self._resolve_constraint_quantity(spec, world_qtys)
-                if qty is None:
+                if qty is None and along_path is None:
                     raise ValueError(
                         f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
                     )
                 subspace = _view_subspace(spec)
                 axis_raw = spec.view.axis
                 axis = semantic_axis_label(axis_raw)
-                scalar_t = _scalar_type(qty, subspace, axis)
+                scalar_t = along_path[1] if along_path else _scalar_type(qty, subspace, axis)
                 error_id = f"{_evaluator_id(spec)}-err"
                 error_node = self._owned_uri(error_id, spec.parent)
                 if error_id not in seen_error_ids:
@@ -3408,7 +3511,7 @@ class MotionSpecDatasetBuilder:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None:
+            if qty is None and self._along_path_scalar(spec) is None:
                 raise ValueError(
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )

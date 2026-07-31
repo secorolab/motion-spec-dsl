@@ -83,6 +83,12 @@ View:
     |
     elapsed=ElapsedTime
     |
+    progress=ProgressAlong
+    |
+    moving=MovingAlong
+    |
+    on=OnPath
+    |
     (
         "<" quantity=[WorldQuantity|FQN] ">"
         selector=SelectorTail?
@@ -91,6 +97,18 @@ View:
 
 ElapsedTime:
     marker?="elapsed"
+;
+
+ProgressAlong:
+    "progress" "of" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef
+;
+
+MovingAlong:
+    "moving" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef "at" speed=ContextRef
+;
+
+OnPath:
+    "<" moved=[WorldQuantity|FQN] ">" selector=SelectorTail? "on" path=ContextRef
 ;
 
 SelectorTail:
