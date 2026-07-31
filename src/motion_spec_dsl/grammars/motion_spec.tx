@@ -16,7 +16,7 @@ ContextSpec:
 
 GuardedMotion:
     "guarded-motion" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        ("move"       ":" move=STRING)?
+        ("description" ":" description=STRING)?
         "context"  "{" context*=MotionContextItem[","] "}"
         sections+=ConstraintSection
     "}"

@@ -92,7 +92,7 @@ def test_authored_output_limit_binds_to_derived_signal(
         "linear-velocity zero-linvel = 0.0 m/s,",
         "linear-velocity zero-linvel = 0.0 m/s,\n"
         # The signal saturated is the solver's acceleration-energy row, not a velocity.
-        "        linear-acceleration output-limit = 10.0 m/s2,",
+        "        linear-acceleration output-limit = 10.0 m/s^2,",
     ).replace(
         "constraint: <pick.hold-x>,     Kp:",
         "constraint: <pick.hold-x>, output-saturation: saturation { "

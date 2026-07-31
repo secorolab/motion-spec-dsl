@@ -19,9 +19,16 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from rdflib.graph import Dataset
-from rdflib.namespace import Namespace, RDF, XSD
+from rdflib.namespace import Namespace, RDF, SDO, XSD
 from rdflib.term import Literal, URIRef
-from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH, URI_QUDT_QK_MASS
+from rdf_utils.models.vocab import (
+    URI_GEOM_PRED_AXES_SEQ,
+    URI_GEOM_TYPE_EULER_ANGLES,
+    URI_GEOM_TYPE_EXTRINSIC,
+    URI_GEOM_TYPE_QUATERNION,
+    URI_QUDT_QK_LENGTH,
+    URI_QUDT_QK_MASS,
+)
 from rdf_utils.namespace import (
     NS_MM_GEOM_REL,
     NS_MM_QUDT_QTY,
@@ -91,9 +98,16 @@ from motion_spec_dsl.classes import (
     ProfileSpec,
     ProgressConstraint,
     AdmittanceSpec,
+    AccelerationTwistCoordinate,
     QuantityType,
     ReferenceGeneratorType,
-    PoseValue,
+    Coordinates,
+    DirectionCosineXYZ,
+    EulerAngles,
+    OrientationCoordinate,
+    PoseCoordinate,
+    PositionCoordinate,
+    Quaternion,
     ReferenceValue,
     SaturationSpec,
     Measure,
@@ -106,10 +120,12 @@ from motion_spec_dsl.classes import (
     PathValue,
     UntilMonitorRef,
     WhenMonitorRef,
-    VectorQuantity,
+    VectorXYZ,
+    VelocityTwistCoordinate,
     WorldContextDecl,
     WorldQuantity,
     WorldQuantityType,
+    WrenchCoordinate,
     _resolved_context_quantity,
     _flatten_constraint_items,
     _resolved_spec,
@@ -1003,6 +1019,43 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_uri, MAP.subspace, subspace))
         self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
+    @staticmethod
+    def _is_euler_orientation(orientation: OrientationCoordinate | None) -> bool:
+        """True for an Euler-represented (or unresolvable/derived) orientation -- the only
+        case the RAD-unit, PlaneAngle-kind pairing applies to."""
+        return orientation is None or (orientation.quat is None and orientation.direction_cosine is None)
+
+    def _emit_orientation_type(
+        self, node: URIRef, orientation: OrientationCoordinate | None
+    ) -> None:
+        """Type an orientation coordinate node by the representation the author actually
+        wrote, and emit or withdraw its PlaneAngle-kind/RAD-unit pairing to match:
+        Euler angles are a radian scalar per axis, quaternion and direction-cosine
+        components are dimensionless.
+
+        `orientation=None` covers sites with no authored coordinate to inspect (a
+        runtime-decomposed view, or a quantity typed 'orientation' directly); those
+        default to extrinsic-XYZ Euler, this DSL's KDL backend convention (RPY).
+        """
+        quat = orientation.quat if orientation is not None else None
+        direction_cosine = orientation.direction_cosine if orientation is not None else None
+        if quat is not None:
+            self.graph.add((node, RDF.type, URI_GEOM_TYPE_QUATERNION))
+        elif direction_cosine is not None:
+            self.graph.add((node, RDF.type, GEOM_COORD.DirectionCosineXYZ))
+        else:
+            euler = orientation.euler if orientation is not None else None
+            self.graph.add((node, RDF.type, URI_GEOM_TYPE_EULER_ANGLES))
+            self.graph.add((node, RDF.type, URI_GEOM_TYPE_EXTRINSIC))
+            self.graph.add((node, URI_GEOM_PRED_AXES_SEQ, Literal(euler.axes if euler else "xyz")))
+
+        if self._is_euler_orientation(orientation):
+            self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+        else:
+            self.graph.remove((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+            self.graph.remove((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+
     def _register_pose_orientation_view(
         self,
         scalar_uri: URIRef,
@@ -1022,10 +1075,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((scalar_uri, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((scalar_uri, RDF.type, GEOM_REL.Orientation))
         self.graph.add((scalar_uri, RDF.type, GEOM_COORD.OrientationCoordinate))
-        self.graph.add((scalar_uri, RDF.type, GEOM_COORD["EulerAngles"]))
-        self.graph.add((scalar_uri, GEOM_COORD["axes-sequence"], Literal("xyz")))
-        self.graph.add((scalar_uri, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-        self.graph.add((scalar_uri, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+        self._emit_orientation_type(scalar_uri, None)
         self.graph.add((scalar_uri, GEOM_REL.of, self._owned_uri(of_frame, quantity)))
         self.graph.add(
             (scalar_uri, GEOM_REL["with-respect-to"], self._owned_uri(wrt_frame, quantity))
@@ -1257,8 +1307,9 @@ class MotionSpecDatasetBuilder:
         ):
             self.graph.add((node, RDF.type, GEOM_REL.Orientation))
             self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
-            self.graph.add((node, RDF.type, GEOM_COORD["EulerAngles"]))
-            self.graph.add((node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+            authored = quantity.value if isinstance(quantity.value, PoseCoordinate) else None
+            orientation = authored.orientation if authored is not None else None
+            self._emit_orientation_type(node, orientation)
             self.graph.add((super_node, GEOM_COORD["has-coordinate"], node))
             coords = self._frame_coords(super_node)
             if coords is not None:
@@ -1309,7 +1360,7 @@ class MotionSpecDatasetBuilder:
             if quantity.type == QuantityType.Duration and isinstance(quantity.value, Measure):
                 self._emit_duration_measure(node, quantity.value)
                 continue
-            if isinstance(quantity.value, PoseValue):
+            if isinstance(quantity.value, PoseCoordinate):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
                 continue
             qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
@@ -1320,8 +1371,7 @@ class MotionSpecDatasetBuilder:
             if quantity.type == QuantityType.Orientation:
                 self.graph.add((node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((node, RDF.type, GEOM_COORD.OrientationCoordinate))
-                self.graph.add((node, RDF.type, GEOM_COORD["EulerAngles"]))
-                self.graph.add((node, GEOM_COORD["axes-sequence"], Literal("xyz")))
+                self._emit_orientation_type(node, None)
             self._emit_context_composite_metadata(node, quantity, constraints, world_qtys)
             if quantity.value is None:
                 if quantity.type == QuantityType.PathParameter:
@@ -1408,6 +1458,12 @@ class MotionSpecDatasetBuilder:
                 elif quantity.type == QuantityType.Position:
                     self._emit_snapshot_position_metadata(node, quantity)
                 continue
+            if isinstance(
+                quantity.value,
+                (VelocityTwistCoordinate, AccelerationTwistCoordinate, WrenchCoordinate),
+            ):
+                self._emit_two_subspace_coordinate(node, quantity)
+                continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, Measure):
                 self.graph.add(
@@ -1417,17 +1473,14 @@ class MotionSpecDatasetBuilder:
                         Literal(float(quantity.value.value), datatype=XSD.double),
                     )
                 )
-            elif isinstance(quantity.value, VectorQuantity):
+            elif isinstance(quantity.value, VectorXYZ):
                 self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-                self.graph.add(
-                    (node, GEOM_COORD.x, Literal(float(quantity.value.x), datatype=XSD.double))
-                )
-                self.graph.add(
-                    (node, GEOM_COORD.y, Literal(float(quantity.value.y), datatype=XSD.double))
-                )
-                self.graph.add(
-                    (node, GEOM_COORD.z, Literal(float(quantity.value.z), datatype=XSD.double))
-                )
+                for label, element in zip(("x", "y", "z"), quantity.value.coords.values):
+                    if element.ref is not None:
+                        value_obj = self._emit_context_ref_node(element.ref, quantity, label)
+                    else:
+                        value_obj = Literal(float(element.value), datatype=XSD.double)
+                    self.graph.add((node, GEOM_COORD[label], value_obj))
 
     def _emit_velocity_profile_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
         """Emit a well-typed placeholder for a velocity-profile reference; the per-controller
@@ -1451,6 +1504,54 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]))
 
+    def _emit_coordinate_components(
+        self,
+        container_node: URIRef,
+        superobject: URIRef,
+        coords: Coordinates,
+        labels: list[str],
+        component_kind: Any,
+        subspace: URIRef,
+        unit: str | None,
+        quantity: ContextQuantity,
+        name_prefix: str,
+    ) -> None:
+        """Emit each element of `coords` as a has-coordinate child of `container_node`, with
+        a map:View back to `superobject`: a literal QUDT value in `unit`, or a reference.
+        `unit=None` means dimensionless -- quaternion/direction-cosine components carry
+        no unit at all.
+        """
+        for label, element in zip(labels, coords.values):
+            component_node = self._owned_uri(f"{name_prefix}.{label}", quantity)
+            view_node = self._owned_uri(f"view-{name_prefix}.{label}", quantity)
+            if unit is None:
+                self.graph.add((component_node, RDF.type, QUDT_SCHEMA.Quantity))
+                self._emit_quantity_kind(component_node, QUDT_KIND_BY_QUANTITY_TYPE[component_kind])
+            else:
+                self._add_quantity(component_node, component_kind)
+                if component_kind == QuantityType.Distance:
+                    self._retag_as_position_kind(component_node)
+            self.graph.add((container_node, GEOM_COORD["has-coordinate"], component_node))
+            self._emit_view(view_node)
+            self.graph.add((view_node, MAP.superobject, superobject))
+            self.graph.add((view_node, MAP.subobject, component_node))
+            self.graph.add((view_node, MAP.subspace, subspace))
+            self.graph.add((view_node, MAP.axis, _ns_term(MAP, label)))
+            if element.ref is not None:
+                ref_node = self._emit_context_ref_node(element.ref, quantity, label)
+                self.graph.add((component_node, CSTR["reference-value"], ref_node))
+            else:
+                self.graph.add(
+                    (
+                        component_node,
+                        QUDT_SCHEMA.value,
+                        Literal(float(element.value), datatype=XSD.double),
+                    )
+                )
+                if unit is not None:
+                    self.graph.remove((component_node, QUDT_SCHEMA.unit, None))
+                    self.graph.add((component_node, QUDT_SCHEMA.unit, _dsl_unit(unit)))
+
     def _emit_pose_value_quantity(
         self,
         node: URIRef,
@@ -1461,7 +1562,7 @@ class MotionSpecDatasetBuilder:
         """Emit a literal pose value: its pose coordinate, per-axis position/orientation
         component nodes with map:Views, and each component's reference or literal value.
         """
-        assert isinstance(quantity.value, PoseValue)
+        assert isinstance(quantity.value, PoseCoordinate)
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, GEOM_REL.Pose))
         self.graph.add((node, RDF.type, GEOM_COORD.PoseCoordinate))
@@ -1472,6 +1573,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self._emit_declared_pose_frame_metadata(node, quantity)
 
+        position = quantity.value.position
+        orientation = quantity.value.orientation
         position_node = self._owned_uri(f"{quantity.name}.position", quantity)
         orientation_node = self._owned_uri(f"{quantity.name}.orientation", quantity)
         self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -1481,10 +1584,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((orientation_node, RDF.type, GEOM_REL.Orientation))
         self.graph.add((orientation_node, RDF.type, GEOM_COORD.OrientationCoordinate))
-        self.graph.add((orientation_node, RDF.type, GEOM_COORD["EulerAngles"]))
-        self.graph.add((orientation_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
-        self.graph.add((orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-        self.graph.add((orientation_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+        self._emit_orientation_type(orientation_node, orientation)
         self.graph.add((node, GEOM_COORD["has-coordinate"], position_node))
         self.graph.add((node, GEOM_COORD["has-coordinate"], orientation_node))
 
@@ -1495,57 +1595,89 @@ class MotionSpecDatasetBuilder:
             self.graph.add((orientation_node, GEOM_REL["with-respect-to"], pose_wrt))
             self.graph.add((orientation_node, GEOM_COORD["as-seen-by"], pose_asb or pose_wrt))
 
-        for term in quantity.value.position.terms:
-            component_node = self._owned_uri(f"{quantity.name}.position.{term.axis}", quantity)
-            view_node = self._owned_uri(f"view-{quantity.name}.position.{term.axis}", quantity)
-            self._add_quantity(component_node, QuantityType.Distance)
-            self._retag_as_position_kind(component_node)
-            self.graph.add((position_node, GEOM_COORD["has-coordinate"], component_node))
-            self._emit_view(view_node)
-            self.graph.add((view_node, MAP.superobject, node))
-            self.graph.add((view_node, MAP.subobject, component_node))
-            self.graph.add((view_node, MAP.subspace, MAP_EXT.position))
-            self.graph.add((view_node, MAP.axis, MAP[term.axis]))
-            if term.ref is not None:
-                ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
-                self.graph.add((component_node, CSTR["reference-value"], ref_node))
-            else:
-                self.graph.add(
-                    (
-                        component_node,
-                        QUDT_SCHEMA.value,
-                        Literal(float(term.value), datatype=XSD.double),
-                    )
-                )
-                self.graph.add((component_node, QUDT_SCHEMA.unit, _dsl_unit(term.unit)))
+        if position.ref is not None:
+            ref_node = self._emit_context_ref_node(position.ref, quantity, "position")
+            self.graph.add((position_node, CSTR["reference-value"], ref_node))
+        else:
+            self._emit_coordinate_components(
+                position_node, node, position.coords, ["x", "y", "z"],
+                QuantityType.Distance, MAP_EXT.position, position.unit, quantity,
+                f"{quantity.name}.position",
+            )
 
-        for term in quantity.value.orientation.terms:
-            axis = {
-                "roll": "x",
-                "pitch": "y",
-                "yaw": "z",
-            }[term.axis]
-            component_node = self._owned_uri(f"{quantity.name}.orientation.{axis}", quantity)
-            view_node = self._owned_uri(f"view-{quantity.name}.orientation.{axis}", quantity)
-            self._add_quantity(component_node, QuantityType.Angle)
-            self.graph.add((orientation_node, GEOM_COORD["has-coordinate"], component_node))
-            self._emit_view(view_node)
-            self.graph.add((view_node, MAP.superobject, node))
-            self.graph.add((view_node, MAP.subobject, component_node))
-            self.graph.add((view_node, MAP.subspace, MAP_EXT.orientation))
-            self.graph.add((view_node, MAP.axis, MAP[axis]))
-            if term.ref is not None:
-                ref_node = self._emit_context_ref_node(term.ref, quantity, term.axis)
-                self.graph.add((component_node, CSTR["reference-value"], ref_node))
-            else:
-                self.graph.add(
-                    (
-                        component_node,
-                        QUDT_SCHEMA.value,
-                        Literal(float(term.value), datatype=XSD.double),
-                    )
+        if orientation.ref is not None:
+            ref_node = self._emit_context_ref_node(orientation.ref, quantity, "orientation")
+            self.graph.add((orientation_node, CSTR["reference-value"], ref_node))
+        elif orientation.quat is not None:
+            self._emit_coordinate_components(
+                orientation_node, node, orientation.quat.xyzw, ["x", "y", "z", "w"],
+                QuantityType.Dimensionless, MAP_EXT.orientation, None, quantity,
+                f"{quantity.name}.orientation",
+            )
+        elif orientation.direction_cosine is not None:
+            dc = orientation.direction_cosine
+            for axis_label, axis_coords, pred in (
+                ("x", dc.x_axis, GEOM_COORD["direction-cosine-x"]),
+                ("y", dc.y_axis, GEOM_COORD["direction-cosine-y"]),
+                ("z", dc.z_axis, GEOM_COORD["direction-cosine-z"]),
+            ):
+                axis_prefix = f"{quantity.name}.orientation.{axis_label}-axis"
+                axis_node = self._owned_uri(axis_prefix, quantity)
+                self.graph.add((axis_node, RDF.type, GEOM_COORD.VectorXYZ))
+                self.graph.add((orientation_node, pred, axis_node))
+                self._emit_coordinate_components(
+                    axis_node, node, axis_coords, ["x", "y", "z"],
+                    QuantityType.Dimensionless, MAP_EXT.orientation, None, quantity,
+                    axis_prefix,
                 )
-                self.graph.add((component_node, QUDT_SCHEMA.unit, _dsl_unit(term.unit)))
+        else:
+            euler = orientation.euler
+            self._emit_coordinate_components(
+                orientation_node, node, euler.angles, list(euler.axes),
+                QuantityType.Angle, MAP_EXT.orientation, euler.unit or "rad", quantity,
+                f"{quantity.name}.orientation",
+            )
+
+    def _emit_two_subspace_coordinate(self, node: URIRef, quantity: ContextQuantity) -> None:
+        """Emit a literal velocity-twist/acceleration-twist/wrench value: its two named
+        subspace vectors, each an authored Coordinates tuple in its own unit.
+        """
+        value = quantity.value
+        if isinstance(value, VelocityTwistCoordinate):
+            subspaces = (
+                ("angular-velocity", value.angular, value.angular_unit,
+                 GEOM_COORD["angular-velocity"], QuantityType.AngularVelocity),
+                ("linear-velocity", value.linear, value.linear_unit,
+                 GEOM_COORD["linear-velocity"], QuantityType.LinearVelocity),
+            )
+        elif isinstance(value, AccelerationTwistCoordinate):
+            subspaces = (
+                ("angular-acceleration", value.angular, value.angular_unit,
+                 GEOM_COORD["angular-acceleration"], QuantityType.AngularAcceleration),
+                ("linear-acceleration", value.linear, value.linear_unit,
+                 GEOM_COORD["linear-acceleration"], QuantityType.LinearAcceleration),
+            )
+        else:
+            assert isinstance(value, WrenchCoordinate)
+            subspaces = (
+                ("torque", value.torque, value.torque_unit,
+                 _ns_term(RBDYN_COORD, "torque"), QuantityType.Torque),
+                ("force", value.force, value.force_unit,
+                 _ns_term(RBDYN_COORD, "force"), QuantityType.Force),
+            )
+        for label, coords, unit, pred, kind in subspaces:
+            subspace_node = self._owned_uri(f"{quantity.name}.{label}", quantity)
+            self.graph.add((subspace_node, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((subspace_node, RDF.type, GEOM_COORD.VectorXYZ))
+            self._emit_quantity_kind(
+                subspace_node, QUDT_KIND_BY_QUANTITY_TYPE.get(kind) or QUDT_QKIND[kind]
+            )
+            self.graph.add((subspace_node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(kind, QUDT_UNIT.UNITLESS)))
+            self.graph.add((node, pred, subspace_node))
+            self._emit_coordinate_components(
+                subspace_node, node, coords, ["x", "y", "z"], kind, MAP[label], unit, quantity,
+                f"{quantity.name}.{label}",
+            )
 
     @staticmethod
     def _lerp_value_kind(lerp) -> Any | None:
@@ -1582,8 +1714,13 @@ class MotionSpecDatasetBuilder:
             )
         as_seen_by_node = self._owned_uri(as_seen_by_name, quantity)
         vector: tuple[float, float, float] | None = None
-        if isinstance(quantity.value, VectorQuantity):
-            vector = (float(quantity.value.x), float(quantity.value.y), float(quantity.value.z))
+        if isinstance(quantity.value, VectorXYZ):
+            elements = quantity.value.coords.values
+            if len(elements) != 3 or any(e.ref is not None for e in elements):
+                raise ValueError(
+                    f"Direction quantity '{quantity.name}' value must be 3 literal components."
+                )
+            vector = tuple(float(e.value) for e in elements)
         elif quantity.value is not None:
             raise ValueError(
                 f"Direction quantity '{quantity.name}' value must be a Vector literal."
@@ -1841,17 +1978,14 @@ class MotionSpecDatasetBuilder:
                     Literal(float(ref.literal_value.value), datatype=XSD.double),
                 )
             )
-        elif isinstance(ref.literal_value, VectorQuantity):
+        elif isinstance(ref.literal_value, VectorXYZ):
             self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-            self.graph.add(
-                (node, GEOM_COORD.x, Literal(float(ref.literal_value.x), datatype=XSD.double))
-            )
-            self.graph.add(
-                (node, GEOM_COORD.y, Literal(float(ref.literal_value.y), datatype=XSD.double))
-            )
-            self.graph.add(
-                (node, GEOM_COORD.z, Literal(float(ref.literal_value.z), datatype=XSD.double))
-            )
+            for label, element in zip(("x", "y", "z"), ref.literal_value.coords.values):
+                if element.ref is not None:
+                    value_obj = self._emit_context_ref_node(element.ref, owner, f"{suffix}-{label}")
+                else:
+                    value_obj = Literal(float(element.value), datatype=XSD.double)
+                self.graph.add((node, GEOM_COORD[label], value_obj))
         return node
 
     def _constraint_reference_node(
@@ -1882,12 +2016,10 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((orientation_node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((orientation_node, RDF.type, GEOM_COORD.OrientationCoordinate))
-                self.graph.add((orientation_node, RDF.type, GEOM_COORD["EulerAngles"]))
-                self.graph.add((orientation_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
-                self.graph.add(
-                    (orientation_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle)
+                authored = quantity.value if isinstance(quantity.value, PoseCoordinate) else None
+                self._emit_orientation_type(
+                    orientation_node, authored.orientation if authored is not None else None
                 )
-                self.graph.add((orientation_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
                 pose_node = URIRef(quantity.uri)
                 self.graph.add((pose_node, GEOM_COORD["has-coordinate"], orientation_node))
                 coords = self._frame_coords(pose_node)
@@ -1907,10 +2039,7 @@ class MotionSpecDatasetBuilder:
             elif subspace == "orientation":
                 self.graph.add((ref_node, RDF.type, GEOM_REL.Orientation))
                 self.graph.add((ref_node, RDF.type, GEOM_COORD.OrientationCoordinate))
-                self.graph.add((ref_node, RDF.type, GEOM_COORD["EulerAngles"]))
-                self.graph.add((ref_node, GEOM_COORD["axes-sequence"], Literal("xyz")))
-                self.graph.add((ref_node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-                self.graph.add((ref_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+                self._emit_orientation_type(ref_node, None)
         return ref_node
 
     def _emit_constraints(
@@ -2310,6 +2439,9 @@ class MotionSpecDatasetBuilder:
         """
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
+        self.graph.add((motion_node, SDO.name, Literal(motion.name)))
+        if motion.description is not None:
+            self.graph.add((motion_node, SDO.description, Literal(motion.description)))
         raw_when_logic = getattr(motion.when, "logic", None)
         when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
         if raw_when_logic == "any" and when_constraints:
@@ -3203,33 +3335,20 @@ class MotionSpecDatasetBuilder:
                 if gravity_ref is not None:
                     gravity_value_node = URIRef(gravity_ref.uri)
                 else:
-                    gravity_vector = gravity_value.literal
                     gravity_value_node = self._owned_uri(f"gravity-value-{solver.name}", handler)
                     self._add_quantity(gravity_value_node, QuantityType.FreeVector)
                     self.graph.add((gravity_value_node, RDF.type, GEOM_COORD.VectorXYZ))
+                    for label, element in zip(("x", "y", "z"), gravity_value.coords.values):
+                        if element.ref is not None:
+                            value_obj = self._emit_context_ref_node(
+                                element.ref, handler, f"gravity-{label}"
+                            )
+                        else:
+                            value_obj = Literal(float(element.value), datatype=XSD.double)
+                        self.graph.add((gravity_value_node, GEOM_COORD[label], value_obj))
+                    self.graph.remove((gravity_value_node, QUDT_SCHEMA.unit, None))
                     self.graph.add(
-                        (
-                            gravity_value_node,
-                            GEOM_COORD.x,
-                            Literal(float(gravity_vector.x), datatype=XSD.double),
-                        )
-                    )
-                    self.graph.add(
-                        (
-                            gravity_value_node,
-                            GEOM_COORD.y,
-                            Literal(float(gravity_vector.y), datatype=XSD.double),
-                        )
-                    )
-                    self.graph.add(
-                        (
-                            gravity_value_node,
-                            GEOM_COORD.z,
-                            Literal(float(gravity_vector.z), datatype=XSD.double),
-                        )
-                    )
-                    self.graph.add(
-                        (gravity_value_node, QUDT_SCHEMA.unit, _dsl_unit(gravity_vector.unit))
+                        (gravity_value_node, QUDT_SCHEMA.unit, _dsl_unit(gravity_value.unit))
                     )
                 self.graph.add((solver_node, SLV.gravity, gravity_value_node))
 

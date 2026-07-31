@@ -55,33 +55,83 @@ class Model:
 
 
 @dataclass
-class PositionTerm:
+class CoordinateElement:
     parent: object
-    axis: str
-    value: float = 0.0
-    unit: str = "m"
+    value: float | None = None
     ref: object | None = None
 
 
 @dataclass
-class PositionValue:
+class Coordinates:
     parent: object
-    terms: list[PositionTerm] = field(default_factory=list)
+    values: list[CoordinateElement] = field(default_factory=list)
 
 
 @dataclass
-class OrientationTerm:
+class PositionCoordinate:
     parent: object
-    axis: str
-    value: float = 0.0
+    ref: object | None = None
+    coords: Coordinates | None = None
+    unit: str = ""
+
+
+@dataclass
+class EulerAngles:
+    parent: object
+    axes: str = "xyz"
+    extrinsic: bool = False
+    angles: Coordinates | None = None
     unit: str = "rad"
-    ref: object | None = None
 
 
 @dataclass
-class OrientationValue:
+class Quaternion:
     parent: object
-    terms: list[OrientationTerm] = field(default_factory=list)
+    xyzw: Coordinates | None = None
+
+
+@dataclass
+class DirectionCosineXYZ:
+    parent: object
+    x_axis: Coordinates | None = None
+    y_axis: Coordinates | None = None
+    z_axis: Coordinates | None = None
+
+
+@dataclass
+class OrientationCoordinate:
+    parent: object
+    ref: object | None = None
+    euler: EulerAngles | None = None
+    quat: Quaternion | None = None
+    direction_cosine: DirectionCosineXYZ | None = None
+
+
+@dataclass
+class VelocityTwistCoordinate:
+    parent: object
+    angular: Coordinates | None = None
+    angular_unit: str = ""
+    linear: Coordinates | None = None
+    linear_unit: str = ""
+
+
+@dataclass
+class AccelerationTwistCoordinate:
+    parent: object
+    angular: Coordinates | None = None
+    angular_unit: str = ""
+    linear: Coordinates | None = None
+    linear_unit: str = ""
+
+
+@dataclass
+class WrenchCoordinate:
+    parent: object
+    torque: Coordinates | None = None
+    torque_unit: str = ""
+    force: Coordinates | None = None
+    force_unit: str = ""
 
 
 @dataclass
@@ -199,10 +249,10 @@ class AdmittanceSpec:
 
 
 @dataclass
-class PoseValue:
+class PoseCoordinate:
     parent: object
-    position: PositionValue
-    orientation: OrientationValue
+    position: PositionCoordinate
+    orientation: OrientationCoordinate
 
 
 @dataclass
@@ -212,7 +262,7 @@ class GuardedMotion(IHasNamespaceDeclare):
     parent: object
     ns: NamespaceDeclLike
     name: str
-    move: str | None
+    description: str | None
     context: list[
         WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl | ContextDeclReference
     ]
@@ -439,13 +489,16 @@ class ContextQuantity(NamedNamespaceObject):
     type: ContextDeclarationType
     value: (
         Measure
-        | VectorQuantity
+        | VectorXYZ
         | ReferenceValue
         | SnapshotValue
         | PathValue
         | ProfileSpec
         | AdmittanceSpec
-        | PoseValue
+        | PoseCoordinate
+        | VelocityTwistCoordinate
+        | AccelerationTwistCoordinate
+        | WrenchCoordinate
         | None
     ) = None
     props: GeometricProps | None = field(default=None, kw_only=True)
@@ -503,10 +556,8 @@ class Measure:
 
 
 @dataclass
-class VectorQuantity:
-    x: float = 0.0
-    y: float = 0.0
-    z: float = 0.0
+class VectorXYZ:
+    coords: Coordinates | None = None
     unit: str = ""
     parent: object | None = field(default=None, repr=False, compare=False)
 
@@ -709,7 +760,7 @@ class ContextRef:
     quantity: ContextQuantity | None = None
     inline_quantity: ContextQuantity | None = None
     context_scope: str | None = None
-    literal_value: Measure | VectorQuantity | None = None
+    literal_value: Measure | VectorXYZ | None = None
     bare: Measure | None = None
     subspace: SubSpace | None = None
     axis: Axis | None = None

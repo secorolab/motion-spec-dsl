@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from rdflib import URIRef
-from rdflib.namespace import DefinedNamespace, Namespace
+from rdflib.namespace import DefinedNamespace, Namespace, SDO, XSD
 from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
@@ -152,16 +152,18 @@ DSL_UNIT: dict[str, Any] = {
     "rad/s": QUDT_UNIT["RAD-PER-SEC"],
     "rad": QUDT_UNIT["RAD"],
     "m/s": QUDT_UNIT["M-PER-SEC"],
-    "m/s3": QUDT_UNIT["M-PER-SEC3"],
+    "m/s^3": QUDT_UNIT["M-PER-SEC3"],
     "m": QUDT_UNIT.M,
+    "mm": QUDT_UNIT["MilliM"],
     "Nm": QUDT_UNIT["N-M"],
     "N": QUDT_UNIT.N,
     "deg/s": QUDT_UNIT["DEG-PER-SEC"],
     "deg": QUDT_UNIT["DEG"],
     "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
     "cm": QUDT_UNIT["CentiM"],
-    "m/s2": QUDT_UNIT["M-PER-SEC2"],
-    "rad/s2": QUDT_UNIT["RAD-PER-SEC2"],
+    "m/s^2": QUDT_UNIT["M-PER-SEC2"],
+    "rad/s^2": QUDT_UNIT["RAD-PER-SEC2"],
+    "deg/s^2": QUDT_UNIT["DEG-PER-SEC2"],
     "s": QUDT_UNIT["SEC"],
     "ms": QUDT_UNIT["MilliSEC"],
     "1": QUDT_UNIT.UNITLESS,
@@ -238,4 +240,6 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("geom-path", GEOM_PATH),
     ("ros", ROS),
     ("time", TIME),
+    ("schema", SDO),
+    ("xsd", XSD),
 )

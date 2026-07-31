@@ -71,7 +71,7 @@ context (ns=app) shared {
 }
 
 guarded-motion (ns=app) home {
-    move: "Hold both TCPs at their startup home poses"
+    description: "Hold both TCPs at their startup home poses"
 
     context {
         spec {
@@ -93,7 +93,7 @@ guarded-motion (ns=app) home {
 }
 
 guarded-motion (ns=app) pick-above {
-    move: "Move both TCPs to the pre-grasp position above their cubes along paths"
+    description: "Move both TCPs to the pre-grasp position above their cubes along paths"
 
     context {
         spec {
@@ -103,8 +103,8 @@ guarded-motion (ns=app) pick-above {
             linear-distance start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x,
             linear-distance start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y,
             pose goal1-pose = {
-                position: { x: <spec.start1-cube-x>, y: <spec.start1-cube-y>, z: <spec.above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.start1-cube-x>, <spec.start1-cube-y>, <spec.above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
             path arm1-approach-path = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose> },
 
@@ -113,8 +113,8 @@ guarded-motion (ns=app) pick-above {
             linear-distance start2-cube-x = snapshot of <shared.world.pose-cube2-base>.position.x,
             linear-distance start2-cube-y = snapshot of <shared.world.pose-cube2-base>.position.y,
             pose goal2-pose = {
-                position: { x: <spec.start2-cube-x>, y: <spec.start2-cube-y>, z: <spec.above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.start2-cube-x>, <spec.start2-cube-y>, <spec.above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
             path arm2-approach-path = lerp { start: <spec.start2-pose>, goal: <spec.goal2-pose> }
         }
@@ -136,7 +136,7 @@ guarded-motion (ns=app) pick-above {
 }
 
 guarded-motion (ns=app) pick {
-    move: "Lower both TCPs straight down to the grasp height at their cubes"
+    description: "Lower both TCPs straight down to the grasp height at their cubes"
 
     context {
         spec {
@@ -144,8 +144,8 @@ guarded-motion (ns=app) pick {
             linear-distance pre-grasp-reach = 0.3 m,
             linear-distance support-lift = 0.06 m,
             linear-velocity max-lower-velocity = 0.10 m/s,
-            linear-acceleration max-lower-acceleration = 0.30 m/s2,
-            linear-jerk max-lower-jerk = 2.0 m/s3,
+            linear-acceleration max-lower-acceleration = 0.30 m/s^2,
+            linear-jerk max-lower-jerk = 2.0 m/s^3,
             velocity-profile lower1-profile = profile {
                 max-velocity: <spec.max-lower-velocity>,
                 max-acceleration: <spec.max-lower-acceleration>,
@@ -165,16 +165,16 @@ guarded-motion (ns=app) pick {
             linear-distance grasp1-y = snapshot of <shared.world.pose-cube1-base>.position.y,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose pick1-ori-pose = {
-                position: { x: 0.0 m, y: 0.0 m, z: 0.0 m },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (0.0, 0.0, 0.0) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
 
             linear-distance grasp2-x = snapshot of <shared.world.pose-cube2-base>.position.x,
             linear-distance grasp2-y = snapshot of <shared.world.pose-cube2-base>.position.y,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose pick2-ori-pose = {
-                position: { x: 0.0 m, y: 0.0 m, z: 0.0 m },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (0.0, 0.0, 0.0) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             }
         }
     }
@@ -202,7 +202,7 @@ guarded-motion (ns=app) pick {
 }
 
 guarded-motion (ns=app) grasp-hold {
-    move: "Hold both TCPs at their current base-frame poses while the grippers close"
+    description: "Hold both TCPs at their current base-frame poses while the grippers close"
 
     context {
         spec {
@@ -248,7 +248,7 @@ guarded-motion (ns=app) grasp-hold {
 }
 
 guarded-motion (ns=app) lift {
-    move: "Raise both TCPs straight up while holding the cubes"
+    description: "Raise both TCPs straight up while holding the cubes"
 
     context {
         spec {
@@ -260,16 +260,16 @@ guarded-motion (ns=app) lift {
             linear-distance lift1-start-y = snapshot of <shared.world.pose-ee1-base>.position.y,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose lift1-ori-pose = {
-                position: { x: 0.0 m, y: 0.0 m, z: 0.0 m },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (0.0, 0.0, 0.0) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
 
             linear-distance lift2-start-x = snapshot of <shared.world.pose-ee2-base>.position.x,
             linear-distance lift2-start-y = snapshot of <shared.world.pose-ee2-base>.position.y,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose lift2-ori-pose = {
-                position: { x: 0.0 m, y: 0.0 m, z: 0.0 m },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (0.0, 0.0, 0.0) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             }
         }
     }
@@ -302,7 +302,7 @@ guarded-motion (ns=app) lift {
 }
 
 guarded-motion (ns=app) place-above {
-    move: "Move both TCPs laterally to the pre-place position above their place locations"
+    description: "Move both TCPs laterally to the pre-place position above their place locations"
 
     context {
         spec {
@@ -314,14 +314,14 @@ guarded-motion (ns=app) place-above {
 
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-above = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
 
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-above = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             }
         }
     }
@@ -354,7 +354,7 @@ guarded-motion (ns=app) place-above {
 }
 
 guarded-motion (ns=app) place {
-    move: "Lower both TCPs with cubes straight down to the place height"
+    description: "Lower both TCPs with cubes straight down to the place height"
 
     context {
         spec {
@@ -366,14 +366,14 @@ guarded-motion (ns=app) place {
 
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-place = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
 
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-place = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             }
         }
     }
@@ -406,7 +406,7 @@ guarded-motion (ns=app) place {
 }
 
 guarded-motion (ns=app) open-grasp-hold {
-    move: "Hold both TCPs at place pose while the grippers open"
+    description: "Hold both TCPs at place pose while the grippers open"
 
     context {
         spec {
@@ -452,7 +452,7 @@ guarded-motion (ns=app) open-grasp-hold {
 }
 
 guarded-motion (ns=app) retreat {
-    move: "Move both TCPs straight up to the pre-grasp height above the place locations"
+    description: "Move both TCPs straight up to the pre-grasp height above the place locations"
 
     context {
         spec {
@@ -463,14 +463,14 @@ guarded-motion (ns=app) retreat {
 
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-retreat = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             },
 
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-retreat = {
-                position: { x: <spec.place-x>, y: <spec.place-y>, z: <spec.place-above-z> },
-                orientation: { roll: <shared.spec.grasp-roll>, pitch: <shared.spec.grasp-pitch>, yaw: <shared.spec.grasp-yaw> }
+                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-roll>, <shared.spec.grasp-pitch>, <shared.spec.grasp-yaw>) }
             }
         }
     }
@@ -503,7 +503,7 @@ guarded-motion (ns=app) retreat {
 }
 
 guarded-motion (ns=app) recover {
-    move: "Fallback recovery: capture both current poses on entry and hold them"
+    description: "Fallback recovery: capture both current poses on entry and hold them"
 
     context {
         spec {
@@ -557,12 +557,12 @@ constraint-handler (ns=app) handler-home {
         arm1-solver: serial-chain {
             agent:     <pickplace_agents.arm1>,
             algorithm: achd,
-            gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+            gravity:   (0.0, 0.0, -9.81) m/s^2
         },
         arm2-solver: serial-chain {
             agent:     <pickplace_agents.arm2>,
             algorithm: achd,
-            gravity:   { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+            gravity:   (0.0, 0.0, -9.81) m/s^2
         }
     }
 }

@@ -15,7 +15,7 @@ from typing import Any
 import pyshacl
 from pyld import jsonld
 from rdf_utils.resolver import IriToFileResolver, install_resolver
-from rdflib import Dataset, URIRef
+from rdflib import Dataset, Graph, Literal, URIRef
 from rdflib.namespace import Namespace
 from textx import GeneratorDesc, LanguageDesc, metamodel_from_file
 from textx.scoping import providers as scoping_providers
@@ -33,36 +33,39 @@ from motion_spec_dsl.classes import (
     ControllerAlias,
     ControllerEntry,
     ControllerRef,
+    Coordinates,
+    CoordinateElement,
+    DirectionCosineXYZ,
     FeedForwardControllerParams,
     ImpedanceControllerParams,
     PIDControllerParams,
     ElapsedTime,
     ExecutionContext,
     EqualityConstraint,
+    EulerAngles,
     Figure8Spec,
     GeoPropPair,
     GeometricProps,
     GravityValue,
-    GravityVector,
     GreaterThanConstraint,
     EventName,
     Import,
     LessThanConstraint,
     LerpSpec,
+    AccelerationTwistCoordinate,
     Model,
     MonitorEntry,
     GuardedMotion,
     NamespaceDeclare,
-    OrientationTerm,
-    OrientationValue,
+    OrientationCoordinate,
     PostContextDecl,
-    PoseValue,
+    PoseCoordinate,
     PreContextDecl,
-    PositionTerm,
-    PositionValue,
+    PositionCoordinate,
     ProfileSpec,
     ProgressConstraint,
     ProgressObjective,
+    Quaternion,
     ReferenceValue,
     ROSTopic,
     AdmittanceSpec,
@@ -82,13 +85,15 @@ from motion_spec_dsl.classes import (
     ContextQuantity,
     ContextPath,
     PathValue,
-    VectorQuantity,
+    VectorXYZ,
+    VelocityTwistCoordinate,
     View,
     WorldContextDecl,
     WorldQuantityAlias,
     WorldQuantity,
     WhenSection,
     WhileSection,
+    WrenchCoordinate,
     UntilSection,
     UntilMonitorRef,
     WhenMonitorRef,
@@ -109,11 +114,17 @@ LANGUAGE_CLASSES = [
     Import,
     ExecutionContext,
     ContextSpec,
-    PositionValue,
-    PositionTerm,
-    OrientationValue,
-    OrientationTerm,
-    PoseValue,
+    Coordinates,
+    CoordinateElement,
+    PositionCoordinate,
+    OrientationCoordinate,
+    EulerAngles,
+    Quaternion,
+    DirectionCosineXYZ,
+    PoseCoordinate,
+    VelocityTwistCoordinate,
+    AccelerationTwistCoordinate,
+    WrenchCoordinate,
     GuardedMotion,
     PathValue,
     LerpSpec,
@@ -133,12 +144,11 @@ LANGUAGE_CLASSES = [
     GeometricProps,
     GeoPropPair,
     GravityValue,
-    GravityVector,
     ContextQuantity,
     ContextQuantityAlias,
     ContextPath,
     Measure,
-    VectorQuantity,
+    VectorXYZ,
     ReferenceValue,
     SnapshotValue,
     ConstraintAlias,
@@ -269,22 +279,97 @@ motion_spec_lang = LanguageDesc(
 )
 
 
-def _canonicalize_jsonld(text: str) -> str:
-    """Compact graph identifiers and order nodes so emission is stable across runs.
+_JSONLD_NATIVE_XSD_LOCALS = {"integer", "double"}
+
+
+def _numeric_datatype_index(graph: Graph) -> dict[tuple[str, str], str]:
+    """Map (subject IRI, predicate IRI) -> 'integer'|'double' for every literal in `graph`
+    typed with one of the two XSD datatypes JSON-LD compaction silently turns into bare,
+    untyped JSON numbers. Read directly off the source RDF literals -- never inferred from
+    the compacted JSON value's Python shape, so a genuine xsd:double stays xsd:double even
+    when its value happens to be a whole number, and booleans (a different datatype
+    entirely) are never touched.
+    """
+    index: dict[tuple[str, str], str] = {}
+    for s, p, o in graph:
+        if not isinstance(o, Literal) or o.datatype is None:
+            continue
+        local = str(o.datatype).rsplit("#", 1)[-1]
+        if local in _JSONLD_NATIVE_XSD_LOCALS:
+            index[(str(s), str(p))] = local
+    return index
+
+
+def _expand_curie(value: Any, context: dict[str, str]) -> Any:
+    """Expand a compacted `prefix:local` term back to its full IRI using `context`, the
+    same prefix map the compaction step used -- so it inverts that exact compaction rather
+    than guessing.
+    """
+    if not isinstance(value, str) or "://" in value:
+        return value
+    prefix, sep, rest = value.partition(":")
+    if not sep:
+        return value
+    ns = context.get(prefix)
+    return f"{ns}{rest}" if ns is not None else value
+
+
+def _wrap_numeric(value: Any, local: str) -> Any:
+    if isinstance(value, list):
+        return [_wrap_numeric(v, local) for v in value]
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    coerced = int(value) if local == "integer" else float(value)
+    return {"@value": coerced, "@type": f"xsd:{local}"}
+
+
+def _rewrap_numeric_literals(
+    value: Any, index: dict[tuple[str, str], str], context: dict[str, str]
+) -> Any:
+    """Recreate the explicit xsd:integer/xsd:double value objects JSON-LD compaction
+    dropped, using `index` (sourced from the pre-serialization graph) to tell which
+    (subject, predicate) pairs need it back.
+    """
+    if isinstance(value, list):
+        return [_rewrap_numeric_literals(v, index, context) for v in value]
+    if not isinstance(value, dict):
+        return value
+    subject = _expand_curie(value.get("@id"), context)
+    result = {}
+    for key, val in value.items():
+        recursed = _rewrap_numeric_literals(val, index, context)
+        if subject is not None and key not in ("@id", "@type"):
+            local = index.get((subject, _expand_curie(key, context)))
+            if local is not None:
+                recursed = _wrap_numeric(recursed, local)
+        result[key] = recursed
+    return result
+
+
+def _canonicalize_jsonld(text: str, graph: Graph | None = None) -> str:
+    """Compact graph identifiers, restore explicit numeric datatypes, and order nodes so
+    emission is stable across runs.
 
     rdflib's JSON-LD serializer lays out ``@graph`` nodes in hash-seeded set order
     and does not compact hierarchical identifiers against a parent prefix. Compacting
     identifiers from the emitted context and sorting by ``@id`` yields a deterministic,
-    semantically identical document.
+    semantically identical document. Compaction also applies JSON-LD's native-type
+    rule, silently turning every xsd:integer/xsd:double literal into a bare JSON number;
+    passing `graph` (the pre-serialization source) restores those as explicit value
+    objects. Booleans and every other datatype pass through untouched.
     """
     doc = json.loads(text)
     context = doc.get("@context") if isinstance(doc, dict) else None
     if context:
         doc = jsonld.compact(doc, context)
-    graph = doc.get("@graph") if isinstance(doc, dict) else None
-    if isinstance(graph, list):
-        graph = [_sort_lists(node) for node in graph]
-        doc["@graph"] = sorted(graph, key=lambda node: node.get("@id", ""))
+    graph_nodes = doc.get("@graph") if isinstance(doc, dict) else None
+    if isinstance(graph_nodes, list):
+        if graph is not None and context:
+            index = _numeric_datatype_index(graph)
+            if index:
+                graph_nodes = [_rewrap_numeric_literals(n, index, context) for n in graph_nodes]
+        graph_nodes = [_sort_lists(node) for node in graph_nodes]
+        doc["@graph"] = sorted(graph_nodes, key=lambda node: node.get("@id", ""))
         return json.dumps(doc, indent=2)
     return text
 
@@ -567,7 +652,9 @@ def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     named_graph = dataset.graph(URIRef(fsm_ref))
     for triple in graph:
         named_graph.add(triple)
-    return dataset.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
+    serialized = dataset.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
+    serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
+    return _canonicalize_jsonld(serialized, graph)
 
 
 def _gen_scenex(model, output_dir: Path) -> list[str]:
@@ -584,11 +671,10 @@ def _gen_scenex(model, output_dir: Path) -> list[str]:
 
         jsonld_name = f"{Path(imp.importURI).stem}.scenex.ld.json"
         jsonld_path = output_dir / jsonld_name
-        serialized = create_scenex_model_graph(loaded[0]).serialize(
-            format="json-ld", auto_compact=True, indent=2
-        )
+        scene_graph = create_scenex_model_graph(loaded[0])
+        serialized = scene_graph.serialize(format="json-ld", auto_compact=True, indent=2)
         serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
-        jsonld_path.write_text(_canonicalize_jsonld(serialized))
+        jsonld_path.write_text(_canonicalize_jsonld(serialized, scene_graph))
         print(f"  wrote {jsonld_path}")
         jsonld_names.append(jsonld_name)
     return jsonld_names
@@ -674,7 +760,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     provenance_path = output_dir / provenance_name
     serialized = dataset.default_graph.serialize(format="json-ld", indent=2, context=context)
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
-    serialized = _canonicalize_jsonld(serialized)
+    serialized = _canonicalize_jsonld(serialized, dataset.default_graph)
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 

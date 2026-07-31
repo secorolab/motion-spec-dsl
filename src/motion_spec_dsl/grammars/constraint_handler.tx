@@ -157,11 +157,4 @@ SolverLimits:
 ;
 TorqueLimit: target="torque" ":" saturation=SaturationSpec ;
 
-GravityVector:
-    "{" "x" ":" x=FLOAT ","
-        "y" ":" y=FLOAT ","
-        "z" ":" z=FLOAT unit=Unit
-    "}"
-;
-
-GravityValue: ("=")? literal=GravityVector | ref=ContextRef ;
+GravityValue: ("=")? coords=Coordinates unit=LinearAccelerationUnit | ref=ContextRef ;

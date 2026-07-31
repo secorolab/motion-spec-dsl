@@ -15,6 +15,7 @@ from motion_spec_dsl.classes.motion import (
     ContextDeclReference,
     ContextRef,
     ConstraintRef,
+    Coordinates,
     GuardedMotion,
     Measure,
     QuantityType,
@@ -47,21 +48,11 @@ class ControllerParamName(StrEnum):
 
 
 @dataclass
-class GravityVector:
-    """A concrete gravity vector expressed in the selected solver chain's root frame."""
-
-    x: float = 0.0
-    y: float = 0.0
-    z: float = 0.0
-    unit: str = ""
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-
-@dataclass
 class GravityValue:
-    """A solver gravity setting, authored either as a vector or a spec reference."""
+    """A solver gravity setting, authored either as literal coordinates or a spec reference."""
 
-    literal: GravityVector | None = None
+    coords: Coordinates | None = None
+    unit: str = ""
     ref: ContextRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 

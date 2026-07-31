@@ -31,7 +31,7 @@ GeoPropPair:
 ;
 
 QuantityValue:
-    ScalarQuantity | VectorQuantity
+    ScalarQuantity | VectorXYZ
 ;
 
 ScalarQuantity:
@@ -40,13 +40,12 @@ ScalarQuantity:
 
 Measure: value=FLOAT unit=Unit ;
 
-VectorQuantity:
-    "=" "{"
-    "x" ":" x=FLOAT ","
-    "y" ":" y=FLOAT ","
-    "z" ":" z=FLOAT (unit=Unit)?
-    "}"
+VectorXYZ:
+    "=" coords=Coordinates (unit=Unit)?
 ;
+
+Coordinates: "(" values+=CoordinateElement[","] ")" ;
+CoordinateElement: value=FLOAT | ref=ContextRef ;
 
 QuantityType:
     ContextQuantityWithGeometryType | ScalarQuantityType
@@ -116,29 +115,53 @@ Axis:
 LinearAxis: "x" | "y" | "z" ;
 AngularAxis: "roll" | "pitch" | "yaw" ;
 
-// Compact DSL unit spellings only. Verbose QUDT spellings belong in JSON-LD,
-// not authored .robmot files.
+LengthUnit: 'mm' | 'cm' | 'm' ;
+AngleUnit: 'rad' | 'deg' ;
+AngularVelocityUnit: 'rad/s' | 'deg/s' ;
+AngularAccelerationUnit: 'rad/s^2' | 'deg/s^2' ;
+LinearVelocityUnit: "m/s" | "cm/s" ;
+LinearAccelerationUnit: 'm/s^2' ;
+LinearJerkUnit: 'm/s^3' ;
+ForceUnit: 'N' ;
+TorqueUnit: 'Nm' ;
+TimeUnit: 's' | 'ms' ;
+DimensionlessUnit: '1' ;
+
 Unit:
-    "rad/s2" | "rad/s" | "m/s3" | "m/s2" | "m/s" | "cm/s" | "deg/s" |
-    "Nm" | "rad" | "deg" | "cm" | "ms" | "m" | "s" | "N" | "1"
+    LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
+    AngularAccelerationUnit | AngularVelocityUnit |
+    LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | DimensionlessUnit
 ;
 
 // Context quantities: values, poses, snapshots, and references.
 
-PositionValue:
-    "{" (terms*=PositionTerm[","])? "}"
+PositionCoordinate:
+    ref=ContextRef | coords=Coordinates unit=LengthUnit
 ;
 
-PositionTerm:
-    axis=LinearAxis ":" (value=FLOAT unit=Unit | ref=ContextRef)
+OrientationCoordinate:
+    ref=ContextRef | euler=EulerAngles | quat=Quaternion
+    | direction_cosine=DirectionCosineXYZ
 ;
 
-OrientationValue:
-    "{" (terms*=OrientationTerm[","])? "}"
+EulerAxes: 'xyz' | 'xzy' | 'yxz' | 'yzx' | 'zxy' | 'zyx' ;
+
+EulerAngles:
+    "euler" "{" "axes" ":" axes=EulerAxes extrinsic?="extrinsic"
+        "," "angles" ":" angles=Coordinates (unit=AngleUnit)?
+    "}"
 ;
 
-OrientationTerm:
-    axis=AngularAxis ":" (value=FLOAT unit=Unit | ref=ContextRef)
+Quaternion:
+    "quat" "{" "xyzw" ":" xyzw=Coordinates "}"
+;
+
+DirectionCosineXYZ:
+    "direction-cosine" "{"
+        "x" ":" x_axis=Coordinates ","
+        "y" ":" y_axis=Coordinates ","
+        "z" ":" z_axis=Coordinates
+    "}"
 ;
 
 ContextQuantity:
@@ -157,7 +180,26 @@ QuantityAliasType:
 ;
 
 PlainContextQuantityValue:
-    QuantityValue | SnapshotValue | PoseValue | ReferenceValue
+    QuantityValue | SnapshotValue | PoseCoordinate | VelocityTwistCoordinate
+    | AccelerationTwistCoordinate | WrenchCoordinate | ReferenceValue
+;
+
+VelocityTwistCoordinate:
+    "=" "{" "angular-velocity" ":" angular=Coordinates angular_unit=AngularVelocityUnit ","
+            "linear-velocity"  ":" linear=Coordinates  linear_unit=LinearVelocityUnit
+    "}"
+;
+
+AccelerationTwistCoordinate:
+    "=" "{" "angular-acceleration" ":" angular=Coordinates angular_unit=AngularAccelerationUnit ","
+            "linear-acceleration"  ":" linear=Coordinates  linear_unit=LinearAccelerationUnit
+    "}"
+;
+
+WrenchCoordinate:
+    "=" "{" "torque" ":" torque=Coordinates torque_unit=TorqueUnit ","
+            "force"  ":" force=Coordinates  force_unit=ForceUnit
+    "}"
 ;
 
 AdmittanceSpec:
@@ -169,8 +211,6 @@ AdmittanceSpec:
         "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=LinearVelocityUnit)?
     "}"
 ;
-
-LinearVelocityUnit: "m/s" | "cm/s" ;
 
 ProfileSpec:
     "=" "profile" "{"
@@ -189,10 +229,10 @@ SnapshotValue:
     ("on" "event" trigger=EventName)?
 ;
 
-PoseValue:
+PoseCoordinate:
     "=" "{"
-        "position" ":" position=PositionValue ","
-        "orientation" ":" orientation=OrientationValue
+        "position" ":" position=PositionCoordinate ","
+        "orientation" ":" orientation=OrientationCoordinate
     "}"
 ;
 

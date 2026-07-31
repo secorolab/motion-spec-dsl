@@ -53,7 +53,7 @@ context (ns=app) shared {
 }
 
 guarded-motion (ns=app) home {
-    move: "Hold the current end-effector pose"
+    description: "Hold the current end-effector pose"
 
     context {
         spec {
@@ -76,7 +76,7 @@ guarded-motion (ns=app) home {
 }
 
 guarded-motion (ns=app) touchdown {
-    move: "Lower the TCP until it contacts the table"
+    description: "Lower the TCP until it contacts the table"
 
     context {
         spec {
@@ -101,7 +101,7 @@ guarded-motion (ns=app) touchdown {
 }
 
 guarded-motion (ns=app) forward {
-    move: "Move the TCP forward five centimetres"
+    description: "Move the TCP forward five centimetres"
 
     context {
         spec {
@@ -110,16 +110,8 @@ guarded-motion (ns=app) forward {
             linear-distance target-y     = snapshot of <shared.world.pose-ee-base>.position.y,
             linear-distance target-z     = snapshot of <shared.world.pose-ee-base>.position.z,
             pose target-pose = {
-                position: {
-                    x: <spec.target-x>,
-                    y: <spec.target-y>,
-                    z: <spec.target-z>
-                },
-                orientation: {
-                    roll:  <spec.start-pose>.orientation.roll,
-                    pitch: <spec.start-pose>.orientation.pitch,
-                    yaw:   <spec.start-pose>.orientation.yaw
-                }
+                position: (<spec.target-x>, <spec.target-y>, <spec.target-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<spec.start-pose>.orientation.roll, <spec.start-pose>.orientation.pitch, <spec.start-pose>.orientation.yaw) }
             }
         }
     }
@@ -137,16 +129,13 @@ guarded-motion (ns=app) forward {
 }
 
 guarded-motion (ns=app) arc-motion {
-    move: "Trace an arc toward the table and yield to an external X force"
+    description: "Trace an arc toward the table and yield to an external X force"
 
     context {
         spec {
             path-parameter s,
-            direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> } = {
-                x: 0.9863939238,
-                y: 0.1643989873,
-                z: 0.0
-            },
+            direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
+                = (0.9863939238, 0.1643989873, 0.0),
             linear-distance chord-x    = -0.05 m,
             linear-distance chord-y    = 0.30 m,
             linear-distance chord-y-lo = 0.27 m,
@@ -166,16 +155,8 @@ guarded-motion (ns=app) arc-motion {
             angle end-pitch            = snapshot of <shared.world.pose-ee-base>.orientation.pitch + <spec.end-pitch-delta>,
             angle end-yaw              = snapshot of <shared.world.pose-ee-base>.orientation.yaw + <spec.end-yaw-delta>,
             pose end-pose = {
-                position: {
-                    x: <spec.end-x>,
-                    y: <spec.end-y>,
-                    z: <spec.end-z>
-                },
-                orientation: {
-                    roll:  <spec.end-roll>,
-                    pitch: <spec.end-pitch>,
-                    yaw:   <spec.end-yaw>
-                }
+                position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
+                orientation: euler { axes: xyz extrinsic, angles: (<spec.end-roll>, <spec.end-pitch>, <spec.end-yaw>) }
             },
             path arc-path = arc {
                 start:        <spec.start-pose>,
@@ -202,7 +183,7 @@ guarded-motion (ns=app) arc-motion {
 }
 
 guarded-motion (ns=app) compliance {
-    move: "Yield along the measured external force"
+    description: "Yield along the measured external force"
 
     context {
         spec {
@@ -266,7 +247,7 @@ constraint-handler (ns=app) handler-home {
         arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
             algorithm: achd,
-            gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+            gravity: (0.0, 0.0, -9.81) m/s^2
         }
     }
 }
@@ -331,7 +312,7 @@ constraint-handler (ns=app) handler-arc {
         rne-arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
             algorithm: rne,
-            gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+            gravity: (0.0, 0.0, -9.81) m/s^2
         }
     }
 }

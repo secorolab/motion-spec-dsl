@@ -31,7 +31,7 @@ context (ns=app) shared {
 }
 
 guarded-motion (ns=app) home {
-    move: "Hold the current end-effector pose"
+    description: "Hold the current end-effector pose"
 
     context {}
 
@@ -58,7 +58,7 @@ constraint-handler (ns=app) handler-home {
         arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
             algorithm: achd,
-            gravity: { x: 0.0, y: 0.0, z: -9.81 m/s2 }
+            gravity: (0.0, 0.0, -9.81) m/s^2
         },
         platform-velocity-solver: mobile-platform {
             agent: <agents.kinova_ft_2f85>,
