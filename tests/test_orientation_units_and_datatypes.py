@@ -628,18 +628,49 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     )
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
 
-    from motion_spec.rdf_parser.vocab import GEOM_OP_EXT, QUDT_SCHEMA
+    from motion_spec.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT, GEOM_REL, QUDT_SCHEMA
 
     relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
     assert len(relative) == 1
     orientation = relative.pop()
 
-    base = graph.value(orientation, GEOM_OP_EXT["rotation-base"])
-    assert base is not None and str(base).endswith("home-pose")
+    in1 = graph.value(orientation, GEOM_OP["in1"])
+    in2 = graph.value(orientation, GEOM_OP["in2"])
+    assert in1 is not None and in2 is not None
 
-    delta = graph.value(orientation, GEOM_OP_EXT["rotation-delta"])
+    def is_delta(node):
+        return (node, RDF.type, GEOM_COORD.OrientationCoordinate) in graph
+
+    # No frame named: the delta turns in the base's own body frame, so it composes post
+    # (base first).
+    assert not is_delta(in1) and is_delta(in2)
+    base, delta = in1, in2
+    assert str(base).endswith("home-pose")
+
     values = sorted(
         float(graph.value(c, QUDT_SCHEMA.value))
         for c in graph.objects(delta, GEOM_COORD["has-coordinate"])
     )
     assert values == [-0.75, 0.0, 0.0]
+
+    orientation_of = graph.value(orientation, GEOM_REL["of"])
+    assert orientation_of is not None
+    assert graph.value(delta, GEOM_COORD["as-seen-by"]) == orientation_of
+
+    for predicate in ("rotation-base", "rotation-delta", "rotation-in-frame"):
+        assert not list(graph.objects(orientation, GEOM_OP_EXT[predicate]))
+
+
+def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:
+    """A delta that turns in neither the base's body frame nor its own basis needs a change
+    of basis to compose, which is not supported."""
+    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    model = parse_mutated(
+        anchor,
+        f"{anchor},\n            pose turned-pose = "
+        "{ position: (0.1, 0.2, 0.3) m,"
+        " orientation: <spec.home-pose>.orientation rotated in <kinova.bracelet_link.pinch_site> by"
+        " euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad } }",
+    )
+    with pytest.raises(ValueError, match="neither the base's body frame"):
+        MotionSpecDatasetBuilder(model).build()

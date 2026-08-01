@@ -188,6 +188,21 @@ def _constraint_type_iri(scalar_t: Any) -> URIRef:
     return _ns_term(CSTR, f"{name}Constraint")
 
 
+def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
+    """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
+    source quantity when the pose declares none. None when they are not resolvable."""
+    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+    if _geo_prop(props, "of") is None:
+        source = getattr(getattr(quantity, "value", None), "source", None)
+        source_props = getattr(getattr(source, "quantity", None), "props", None)
+        props = source_props if isinstance(source_props, GeometricProps) else None
+    of_frame = _geo_prop(props, "of")
+    wrt_frame = _geo_prop(props, "wrt")
+    if of_frame is None or wrt_frame is None:
+        return None
+    return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
+
+
 class MotionSpecDatasetBuilder:
     """Builds the motion-specification RDF dataset from a parsed DSL `Model`.
 
@@ -1657,10 +1672,13 @@ class MotionSpecDatasetBuilder:
             )
 
     def _emit_relative_orientation(self, orientation_node, relative, quantity) -> None:
-        """Emit an orientation composed from a base orientation and a delta rotation.
+        """Emit an orientation composed from a base orientation and a delta rotation, using
+        comp-rob2b's `geom-op:in1`/`in2` composition slots -- this node is itself the composite.
 
-        The base is never decomposed, so no rotation parameterisation is round-tripped;
-        the backend composes the two rotations directly.
+        The base is never decomposed, so no rotation parameterisation is round-tripped. The
+        delta's `as-seen-by` is its coordinate basis, and it decides slot order: turning in the
+        base's own body frame composes post (base * delta, `in1`=base), turning in the basis the
+        base is expressed in composes pre (delta * base, `in1`=delta).
         """
         self.graph.add((orientation_node, RDF.type, GEOM_OP_EXT.RelativeOrientation))
         # Bind to the pose itself, not its orientation subobject: the backend reads the
@@ -1671,21 +1689,48 @@ class MotionSpecDatasetBuilder:
             if isinstance(base_quantity, ContextQuantity)
             else self._emit_context_ref_node(relative.base, quantity, "orientation-base")
         )
-        self.graph.add((orientation_node, _ns_term(GEOM_OP_EXT, "rotation-base"), base_node))
-        if relative.frame is not None:
-            self.graph.add(
-                (
-                    orientation_node,
-                    _ns_term(GEOM_OP_EXT, "rotation-in-frame"),
-                    self._owned_uri(_node_name(relative.frame), quantity),
-                )
+
+        if not isinstance(base_quantity, ContextQuantity):
+            raise ValueError(
+                f"Relative orientation on '{quantity.uri}' needs a resolvable base pose to "
+                "derive its composition frames."
             )
+        frames = _pose_frame_names(base_quantity)
+        if frames is None:
+            raise ValueError(
+                f"Relative orientation on '{quantity.uri}' cannot resolve its base pose's "
+                "of/with-respect-to/as-seen-by frames."
+            )
+        of_frame, _wrt_frame, base_as_seen_by = frames
+        of_frame_node = self._owned_uri(of_frame, base_quantity)
+        base_as_seen_by_node = self._owned_uri(base_as_seen_by, base_quantity)
+        self.graph.add((orientation_node, GEOM_REL.of, of_frame_node))
+        self.graph.add((orientation_node, GEOM_COORD["as-seen-by"], base_as_seen_by_node))
+        delta_basis = (
+            self._owned_uri(str(getattr(relative.frame, "uri", relative.frame)), quantity)
+            if relative.frame is not None
+            else of_frame_node
+        )
 
         delta_node = URIRef(f"{quantity.uri}.orientation-delta")
         self.graph.add((delta_node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((delta_node, RDF.type, GEOM_COORD.OrientationCoordinate))
         self._emit_orientation_type(delta_node, relative)
-        self.graph.add((orientation_node, _ns_term(GEOM_OP_EXT, "rotation-delta"), delta_node))
+        self.graph.add((delta_node, GEOM_COORD["as-seen-by"], delta_basis))
+
+        if delta_basis == of_frame_node:
+            in1, in2 = base_node, delta_node
+        elif delta_basis == base_as_seen_by_node:
+            in1, in2 = delta_node, base_node
+        else:
+            raise ValueError(
+                f"Relative orientation on '{quantity.uri}' turns its delta in '{delta_basis}', "
+                f"which is neither the base's body frame '{of_frame_node}' nor its coordinate "
+                f"basis '{base_as_seen_by_node}'. Composing it needs a change of basis, which is "
+                "not supported."
+            )
+        self.graph.add((orientation_node, GEOM_OP.in1, in1))
+        self.graph.add((orientation_node, GEOM_OP.in2, in2))
 
         if relative.quat is not None:
             coords, labels, unit = relative.quat.xyzw, ["x", "y", "z", "w"], None
