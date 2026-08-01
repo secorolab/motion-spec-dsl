@@ -29,7 +29,10 @@ from motion_spec_dsl.classes.context import (
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
 
 from motion_spec_dsl.rdf.model import WORLD_SPECS
-from motion_spec_dsl.classes.units import _dsl_unit as _dsl_unit, _si_value as _si_value
+from motion_spec_dsl.classes.units import (
+    _dsl_unit as _dsl_unit,
+    _si_seconds as _si_seconds,
+)
 
 
 def _ns_term(namespace: Any, name: str) -> URIRef:

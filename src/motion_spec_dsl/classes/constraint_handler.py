@@ -31,7 +31,6 @@ from motion_spec_dsl.classes.motion_spec import (
     SpecContextDecl,
     WorldContextDecl,
 )
-from motion_spec_dsl.classes.units import _si_value
 
 
 class ControllerType(StrEnum):
@@ -183,7 +182,12 @@ class MonitorEntry(NamedNamespaceObject):
             raise ValueError(
                 f"Monitor '{self.name}' debounce unit '{self.debounce.unit}' must be 's' or 'ms'."
             )
-        return _si_value(self.debounce.value, self.debounce.unit)
+        return float(self.debounce.value)
+
+    @property
+    def debounce_unit(self) -> str | None:
+        """The unit the debounce was written in, which travels with its value."""
+        return None if self.debounce is None else self.debounce.unit
 
 
 @dataclass

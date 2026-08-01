@@ -186,7 +186,7 @@ from motion_spec_dsl.rdf.common import (
     _scalar_type,
     _evaluator_id,
     _dsl_unit,
-    _si_value,
+    _si_seconds,
     _context_quantity,
     _resolved_constraint_items,
     _DistancePlan,
@@ -358,7 +358,7 @@ class MotionSpecDatasetBuilder:
         timestep = URIRef(f"{context.uri}.timestep")
         self._emit_scalar_quantity(
             timestep,
-            _si_value(context.timestep, context.timestep_unit),
+            float(context.timestep),
             NS_MM_QUDT_QTY["Time"],
             _dsl_unit(context.timestep_unit),
         )
@@ -1686,7 +1686,7 @@ class MotionSpecDatasetBuilder:
                         node,
                         QUDT_SCHEMA.value,
                         Literal(
-                            _si_value(quantity.value.value, quantity.value.unit),
+                            float(quantity.value.value),
                             datatype=XSD.double,
                         ),
                     )
@@ -1698,7 +1698,7 @@ class MotionSpecDatasetBuilder:
                         value_obj = self._emit_context_ref_node(element.ref, quantity, label)
                     else:
                         value_obj = Literal(
-                            _si_value(element.value, quantity.value.unit), datatype=XSD.double
+                            float(element.value), datatype=XSD.double
                         )
                     self.graph.add((node, GEOM_COORD[label], value_obj))
 
@@ -1750,7 +1750,7 @@ class MotionSpecDatasetBuilder:
 
         def _literal(element):
             return Literal(
-                _si_value(element.value, unit) if unit is not None else float(element.value),
+                float(element.value) if unit is not None else float(element.value),
                 datatype=XSD.double,
             )
 
@@ -2115,7 +2115,7 @@ class MotionSpecDatasetBuilder:
                 "geometry", f"Relative orientation '{quantity.uri}' has symbolic components"
             )
         for predicate, element in zip(predicates, coords.values):
-            value = _si_value(element.value, unit) if unit is not None else float(element.value)
+            value = float(element.value) if unit is not None else float(element.value)
             self.graph.add((node, predicate, Literal(value, datatype=XSD.double)))
 
     def _emit_two_subspace_coordinate(self, node: URIRef, quantity: ContextQuantity) -> None:
@@ -2174,7 +2174,7 @@ class MotionSpecDatasetBuilder:
                         self.graph,
                         node,
                         predicate,
-                        tuple(_si_value(element.value, unit) for element in coords.values),
+                        tuple(float(element.value) for element in coords.values),
                     )
                 else:
                     self._emit_coordinate_components(
@@ -2595,7 +2595,7 @@ class MotionSpecDatasetBuilder:
                     node,
                     QUDT_SCHEMA.value,
                     Literal(
-                        _si_value(ref.literal_value.value, ref.literal_value.unit),
+                        float(ref.literal_value.value),
                         datatype=XSD.double,
                     ),
                 )
@@ -2607,7 +2607,7 @@ class MotionSpecDatasetBuilder:
                     value_obj = self._emit_context_ref_node(element.ref, owner, f"{suffix}-{label}")
                 else:
                     value_obj = Literal(
-                        _si_value(element.value, ref.literal_value.unit), datatype=XSD.double
+                        float(element.value), datatype=XSD.double
                     )
                 self.graph.add((node, GEOM_COORD[label], value_obj))
         return node
@@ -2849,7 +2849,7 @@ class MotionSpecDatasetBuilder:
         max_velocity_node = URIRef(f"{op_node}-max-velocity")
         self._emit_scalar_quantity(
             max_velocity_node,
-            _si_value(spec_val.max_velocity, spec_val.max_velocity_unit or "m/s"),
+            float(spec_val.max_velocity),
             QUDT_QKIND.LinearVelocity,
             QUDT_UNIT["M-PER-SEC"],
         )
@@ -3067,7 +3067,7 @@ class MotionSpecDatasetBuilder:
             (
                 node,
                 TIME.numericDuration,
-                Literal(_si_value(value.value, value.unit), datatype=XSD.decimal),
+                Literal(_si_seconds(value.value, value.unit), datatype=XSD.decimal),
             )
         )
         self.graph.add((node, TIME.unitType, TIME.unitSecond))
@@ -3797,7 +3797,7 @@ class MotionSpecDatasetBuilder:
                             debounce_node,
                             mon.debounce_duration,
                             NS_MM_QUDT_QTY["Time"],
-                            QUDT_UNIT.SEC,
+                            _dsl_unit(mon.debounce_unit),
                         )
                         self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
                 else:
@@ -3888,7 +3888,7 @@ class MotionSpecDatasetBuilder:
                         debounce_node,
                         mon.debounce_duration,
                         NS_MM_QUDT_QTY["Time"],
-                        QUDT_UNIT.SEC,
+                        _dsl_unit(mon.debounce_unit),
                     )
                     self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
             else:
@@ -3988,7 +3988,7 @@ class MotionSpecDatasetBuilder:
                             )
                         else:
                             value_obj = Literal(
-                                _si_value(element.value, gravity_value.unit), datatype=XSD.double
+                                float(element.value), datatype=XSD.double
                             )
                         self.graph.add((gravity_value_node, GEOM_COORD[label], value_obj))
                     self.graph.remove((gravity_value_node, QUDT_SCHEMA.unit, None))
