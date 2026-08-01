@@ -536,12 +536,12 @@ constraint-handler (ns=app) handler-home {
         arm1-solver: serial-chain {
             agent:     <pickplace_agents.arm1>,
             algorithm: achd,
-            gravity:   (0.0, 0.0, -9.81) m/s^2
+            gravity:   (0.0, 0.0, 9.81) m/s^2
         },
         arm2-solver: serial-chain {
             agent:     <pickplace_agents.arm2>,
             algorithm: achd,
-            gravity:   (0.0, 0.0, -9.81) m/s^2
+            gravity:   (0.0, 0.0, 9.81) m/s^2
         }
     }
 }

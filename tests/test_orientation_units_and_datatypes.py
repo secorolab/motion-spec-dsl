@@ -42,13 +42,13 @@ def test_kdl_rpy_is_extrinsic_xyz() -> None:
 
 OLD_SYNTAX_REJECTIONS = [
     pytest.param(
-        "gravity: (0.0, 0.0, -9.81) m/s^2",
-        "gravity: { x: 0.0, y: 0.0, z: -9.81 m/s^2 }",
+        "gravity: (0.0, 0.0, 9.81) m/s^2",
+        "gravity: { x: 0.0, y: 0.0, z: 9.81 m/s^2 }",
         id="gravity_brace_form",
     ),
     pytest.param(
-        "gravity: (0.0, 0.0, -9.81) m/s^2",
-        "gravity: (0.0, 0.0, -9.81) m/s2",
+        "gravity: (0.0, 0.0, 9.81) m/s^2",
+        "gravity: (0.0, 0.0, 9.81) m/s2",
         id="gravity_old_unit_spelling",
     ),
     pytest.param(
