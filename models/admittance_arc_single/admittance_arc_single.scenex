@@ -51,6 +51,25 @@ ktree (ns=aas_mjc) world_tree {
                 orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
             }
         }
+        // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
+        frame table_com {
+            pose table_com_in_table_top {
+                wrt: <table.table_top>
+                xyz: (0.0, 0.0, -0.05100416904566816) m
+                orientation: quat {
+                    xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                }
+            }
+        }
+        inertia {
+            frame: <table_com>
+            mass: 84.26442414492935 kg
+            inertia-matrix: (
+                (32.454207471081375, 0.0, 0.0),
+                (0.0, 21.92592723136972, 0.0),
+                (0.0, 0.0, 12.75746156052865)
+            ) kg*m^2
+        }
     }
 
     joints {
