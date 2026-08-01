@@ -609,3 +609,37 @@ def test_canonical_jsonld_stable_across_two_generations(tmp_path_factory) -> Non
     a = (tmp_a / "pick_place_single.ld.json").read_text()
     b = (tmp_b / "pick_place_single.ld.json").read_text()
     assert a == b
+
+
+def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> None:
+    """A base orientation turned by a delta must never be decomposed into angles.
+
+    Reading a measured rotation's components gives a rotation vector while `euler` rebuilds
+    from Euler angles; the two disagree by over a radian for a general pose, so the
+    composition has to reach the graph as base + delta, not as three scalars.
+    """
+    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    model = parse_mutated(
+        anchor,
+        f"{anchor},\n            pose turned-pose = "
+        "{ position: (0.1, 0.2, 0.3) m,"
+        " orientation: <spec.home-pose>.orientation rotated by"
+        " euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad } }",
+    )
+    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+
+    from motion_spec.rdf_parser.vocab import GEOM_OP_EXT, QUDT_SCHEMA
+
+    relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
+    assert len(relative) == 1
+    orientation = relative.pop()
+
+    base = graph.value(orientation, GEOM_OP_EXT["rotation-base"])
+    assert base is not None and str(base).endswith("home-pose")
+
+    delta = graph.value(orientation, GEOM_OP_EXT["rotation-delta"])
+    values = sorted(
+        float(graph.value(c, QUDT_SCHEMA.value))
+        for c in graph.objects(delta, GEOM_COORD["has-coordinate"])
+    )
+    assert values == [-0.75, 0.0, 0.0]

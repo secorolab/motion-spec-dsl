@@ -127,11 +127,10 @@ SubSpace:
 ;
 
 Axis:
-    "x" | "y" | "z" | "roll" | "pitch" | "yaw"
+    "x" | "y" | "z"
 ;
 
 LinearAxis: "x" | "y" | "z" ;
-AngularAxis: "roll" | "pitch" | "yaw" ;
 
 LengthUnit: 'mm' | 'cm' | 'm' ;
 AngleUnit: 'rad' | 'deg' ;
@@ -158,8 +157,13 @@ PositionCoordinate:
 ;
 
 OrientationCoordinate:
-    ref=ContextRef | euler=EulerAngles | quat=Quaternion
+    relative=RelativeOrientation | ref=ContextRef | euler=EulerAngles | quat=Quaternion
     | direction_cosine=DirectionCosineXYZ
+;
+
+RelativeOrientation:
+    base=ContextRef "rotated" ("in" "<" frame=[scene.Frame|FQN] ">")? "by"
+        (euler=EulerAngles | quat=Quaternion | direction_cosine=DirectionCosineXYZ)
 ;
 
 EulerAxes: 'xyz' | 'xzy' | 'yxz' | 'yzx' | 'zxy' | 'zyx' ;

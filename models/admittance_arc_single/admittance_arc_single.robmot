@@ -141,15 +141,9 @@ guarded-motion (ns=app) arc-motion {
             linear-distance end-y-lo   = <spec.start-pose>.position.y + <spec.chord-y-lo>,
             linear-distance end-y-hi   = <spec.start-pose>.position.y + <spec.chord-y-hi>,
             linear-distance end-z      = <spec.start-pose>.position.z + <spec.chord-z>,
-            angle end-roll-delta       = -0.75 rad,
-            angle end-pitch-delta      = 0.0 rad,
-            angle end-yaw-delta        = 0.0 rad,
-            angle end-roll             = <spec.start-pose>.orientation.roll + <spec.end-roll-delta>,
-            angle end-pitch            = <spec.start-pose>.orientation.pitch + <spec.end-pitch-delta>,
-            angle end-yaw              = <spec.start-pose>.orientation.yaw + <spec.end-yaw-delta>,
             pose end-pose = {
                 position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<spec.end-roll>, <spec.end-pitch>, <spec.end-yaw>) }
+                orientation: <spec.start-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad }
             },
             path arc-path = arc {
                 start:        <spec.start-pose>,

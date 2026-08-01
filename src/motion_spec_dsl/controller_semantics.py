@@ -97,15 +97,10 @@ def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | 
 
 
 def axis_label(axis: object | None) -> str | None:
-    """Map a roll/pitch/yaw (or already-x/y/z) axis token to `x`/`y`/`z`."""
+    """Normalise an axis token to its `x`/`y`/`z` string."""
     if axis is None:
         return None
-    raw = str(getattr(axis, "value", axis))
-    return {
-        "roll": "x",
-        "pitch": "y",
-        "yaw": "z",
-    }.get(raw, raw)
+    return str(getattr(axis, "value", axis))
 
 
 def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:

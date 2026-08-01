@@ -97,9 +97,22 @@ class DirectionCosineXYZ:
 
 
 @dataclass
+class RelativeOrientation:
+    """A base orientation turned by a delta, composed rather than decomposed."""
+
+    parent: object
+    base: object | None = None
+    frame: object | None = None
+    euler: EulerAngles | None = None
+    quat: Quaternion | None = None
+    direction_cosine: DirectionCosineXYZ | None = None
+
+
+@dataclass
 class OrientationCoordinate:
     parent: object
     ref: object | None = None
+    relative: RelativeOrientation | None = None
     euler: EulerAngles | None = None
     quat: Quaternion | None = None
     direction_cosine: DirectionCosineXYZ | None = None
@@ -690,9 +703,6 @@ class Axis(StrEnum):
     X = "x"
     Y = "y"
     Z = "z"
-    Roll = "roll"
-    Pitch = "pitch"
-    Yaw = "yaw"
 
 
 @dataclass

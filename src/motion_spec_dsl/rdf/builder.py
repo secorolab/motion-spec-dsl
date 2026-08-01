@@ -1614,7 +1614,9 @@ class MotionSpecDatasetBuilder:
                 f"{quantity.uri}.position",
             )
 
-        if orientation.ref is not None:
+        if orientation.relative is not None:
+            self._emit_relative_orientation(orientation_node, orientation.relative, quantity)
+        elif orientation.ref is not None:
             ref_node = self._emit_context_ref_node(orientation.ref, quantity, "orientation")
             self.graph.add((orientation_node, CSTR["reference-value"], ref_node))
         elif orientation.quat is not None:
@@ -1646,6 +1648,87 @@ class MotionSpecDatasetBuilder:
                 QuantityType.Angle, MAP_EXT.orientation, euler.unit or "rad", quantity,
                 f"{quantity.uri}.orientation",
             )
+
+    def _emit_relative_orientation(self, orientation_node, relative, quantity) -> None:
+        """Emit an orientation composed from a base orientation and a delta rotation.
+
+        The base is never decomposed, so no rotation parameterisation is round-tripped;
+        the backend composes the two rotations directly.
+        """
+        self.graph.add((orientation_node, RDF.type, GEOM_OP_EXT.RelativeOrientation))
+        # Bind to the pose itself, not its orientation subobject: the backend reads the
+        # composed rotation off the materialised frame.
+        base_quantity = _context_quantity(relative.base)
+        base_node = (
+            URIRef(_resolved_context_quantity(base_quantity).uri)
+            if isinstance(base_quantity, ContextQuantity)
+            else self._emit_context_ref_node(relative.base, quantity, "orientation-base")
+        )
+        self.graph.add((orientation_node, _ns_term(GEOM_OP_EXT, "rotation-base"), base_node))
+        if relative.frame is not None:
+            self.graph.add(
+                (
+                    orientation_node,
+                    _ns_term(GEOM_OP_EXT, "rotation-in-frame"),
+                    self._owned_uri(_node_name(relative.frame), quantity),
+                )
+            )
+
+        delta_node = URIRef(f"{quantity.uri}.orientation-delta")
+        self.graph.add((delta_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((delta_node, RDF.type, GEOM_COORD.OrientationCoordinate))
+        self._emit_orientation_type(delta_node, relative)
+        self.graph.add((orientation_node, _ns_term(GEOM_OP_EXT, "rotation-delta"), delta_node))
+
+        if relative.quat is not None:
+            coords, labels, unit = relative.quat.xyzw, ["x", "y", "z", "w"], None
+        elif relative.direction_cosine is not None:
+            dc = relative.direction_cosine
+            for axis_label, axis_coords, pred in (
+                ("x", dc.x_axis, GEOM_COORD["direction-cosine-x"]),
+                ("y", dc.y_axis, GEOM_COORD["direction-cosine-y"]),
+                ("z", dc.z_axis, GEOM_COORD["direction-cosine-z"]),
+            ):
+                axis_node = URIRef(f"{delta_node}.{axis_label}-axis")
+                self.graph.add((axis_node, RDF.type, GEOM_COORD.VectorXYZ))
+                self.graph.add((delta_node, pred, axis_node))
+                self._emit_delta_components(axis_node, axis_coords, ["x", "y", "z"], None, quantity)
+            return
+        else:
+            euler = relative.euler
+            self.graph.add((delta_node, GEOM_COORD["axes-sequence"], Literal(euler.axes)))
+            coords, labels, unit = euler.angles, list(euler.axes), euler.unit or "rad"
+        self._emit_delta_components(delta_node, coords, labels, unit, quantity)
+
+    def _emit_delta_components(self, container, coords, labels, unit, quantity) -> None:
+        """Emit the delta rotation's components, ordered by `labels`, as plain values.
+
+        These carry no map:View: the delta is authored on the composition, not a subspace
+        of the pose being defined, so the pose's own per-axis walk must not pick them up.
+        """
+        for label, element in zip(labels, coords.values):
+            component = URIRef(f"{container}.{label}")
+            self.graph.add((component, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((container, GEOM_COORD["has-coordinate"], component))
+            self.graph.add((component, MAP.axis, _ns_term(MAP, label)))
+            if unit is not None:
+                self.graph.add((component, QUDT_SCHEMA.unit, _dsl_unit(unit)))
+            if element.ref is not None:
+                self.graph.add(
+                    (
+                        component,
+                        CSTR["reference-value"],
+                        self._emit_context_ref_node(element.ref, quantity, f"delta-{label}"),
+                    )
+                )
+            else:
+                self.graph.add(
+                    (
+                        component,
+                        QUDT_SCHEMA.value,
+                        Literal(float(element.value), datatype=XSD.double),
+                    )
+                )
 
     def _emit_two_subspace_coordinate(self, node: URIRef, quantity: ContextQuantity) -> None:
         """Emit a literal velocity-twist/acceleration-twist/wrench value: its two named
