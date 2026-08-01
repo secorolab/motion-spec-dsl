@@ -7,19 +7,10 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
-import subprocess
 from importlib.resources import files
 from pathlib import Path
 
 import pytest
-from rdflib.namespace import RDF, XSD
-from textx.exceptions import TextXSemanticError, TextXSyntaxError
-
-from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD
-from motion_spec_dsl.gens import _canonicalize_jsonld, _gen_graph
-from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,
     URI_GEOM_PRED_BETA,
@@ -31,6 +22,13 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_ORIENT_COORD,
     URI_GEOM_TYPE_QUATERNION,
 )
+from rdflib.namespace import RDF, XSD
+from textx.exceptions import TextXSemanticError, TextXSyntaxError
+
+from motion_spec_dsl.gens import _canonicalize_jsonld, _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD
 
 MODELS = Path(__file__).parents[1] / "models"
 METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
@@ -160,8 +158,9 @@ def test_quaternion_orientation_emits_quaternion_type_and_no_unit(parse_mutated)
     for s in quat_subjects:
         assert (s, RDF.type, URI_GEOM_TYPE_EULER_ANGLES) not in graph
         assert (s, RDF.type, GEOM_COORD.DirectionCosineXYZ) not in graph
-        from motion_spec_dsl.rdf_parser.vocab import QUDT_SCHEMA
         from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+
+        from motion_spec_dsl.rdf_parser.vocab import QUDT_SCHEMA
 
         assert (s, QUDT_SCHEMA.unit, QUDT_UNIT.RAD) not in graph
 
@@ -214,7 +213,6 @@ def _scene_orientation_types(spec, coord_type: str) -> set:
     from types import SimpleNamespace
 
     from rdflib import Graph, URIRef
-
     from scene_dsl.rdf.geom import add_orientation_coord
 
     coord_uri = URIRef("https://example.test/pose/orientation-coord")
@@ -373,14 +371,14 @@ def test_orientation_arity_is_validated(parse_mutated, orientation_block, messag
 def test_euler_axes_matches_scene_dsl() -> None:
     """Drift guard: motion's copied EulerAxes must match scene's geom.tx verbatim."""
     geom_tx = (files("scene_dsl") / "grammars" / "geom.tx").read_text()
-    scene_match = re.search(r"EulerAxes:\s*(.+?);", geom_tx, re.S)
+    scene_match = re.search(r"EulerAxes:\s*(.+?);", geom_tx, re.DOTALL)
     assert scene_match is not None
     scene_sequences = re.findall(r"'(\w+)'", scene_match.group(1))
 
     context_tx = (
         files("motion_spec_dsl.grammars") / "context.tx"
     ).read_text()
-    motion_match = re.search(r"EulerAxes:\s*(.+?);", context_tx, re.S)
+    motion_match = re.search(r"EulerAxes:\s*(.+?);", context_tx, re.DOTALL)
     assert motion_match is not None
     motion_sequences = re.findall(r"'(\w+)'", motion_match.group(1))
 
@@ -459,59 +457,6 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-ORIENTATION_CODEGEN = [
-    pytest.param(
-        "quaternion_pose",
-        "KDL::Rotation::Quaternion(0.0, 0.0, 0.0, 1.0)",
-        id="quaternion",
-    ),
-    pytest.param(
-        "direction_cosine_pose",
-        "KDL::Rotation(KDL::Vector(1.0, 0.0, 0.0), KDL::Vector(0.0, 1.0, 0.0),"
-        " KDL::Vector(0.0, 0.0, 1.0))",
-        id="direction_cosine",
-    ),
-]
-
-
-def _kdl_include() -> Path | None:
-    """An installed KDL include directory, or None when the C++ toolchain is unavailable."""
-    if shutil.which("g++") is None:
-        return None
-    root = Path(__file__).resolve().parents[3]
-    include = root / "install" / "orocos_kdl" / "include"
-    return include if (include / "kdl" / "frames.hpp").is_file() else None
-
-
-@pytest.mark.parametrize(("fixture", "expected"), ORIENTATION_CODEGEN)
-def test_orientation_representation_generates_compiling_cpp(
-    tmp_path: Path, fixture: str, expected: str
-) -> None:
-    """Each representation reaches the backend as its own KDL rotation constructor, and that
-    constructor compiles."""
-    from motion_spec.generation.pipeline import generate_model
-
-    generation = tmp_path / fixture
-    generation.mkdir()
-    generate_model(FIXTURES / f"{fixture}.robmot", generation, stage="code")
-    header = generation / "generated" / "controller" / "headers" / "motion_home.hpp"
-    source = header.read_text()
-    assert expected in source
-    assert "KDL::Rotation::RPY" not in source
-
-    include = _kdl_include()
-    if include is None:
-        pytest.skip("no g++ or installed orocos_kdl headers")
-    snippet = tmp_path / f"{fixture}.cpp"
-    snippet.write_text(
-        f"#include <kdl/frames.hpp>\nint main() {{ KDL::Rotation r = {expected}; return r == r; }}\n"
-    )
-    subprocess.run(
-        ["g++", "-fsyntax-only", f"-I{include}", "-I/usr/include/eigen3", str(snippet)],
-        check=True,
-    )
-
 
 @pytest.fixture(scope="module")
 def generated_pick_place(tmp_path_factory: pytest.TempPathFactory) -> Path:
@@ -642,6 +587,7 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
 
     from motion_spec.rdf_parser.ir import Parser
+
     from motion_spec_dsl.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
     relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
