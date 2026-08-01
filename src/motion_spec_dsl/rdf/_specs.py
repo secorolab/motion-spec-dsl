@@ -102,7 +102,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
             GEOM_COORD.VectorXYZ,
         ),
         (QUDT_QKIND.PlaneAngle, URI_QUDT_QK_LENGTH),
-        (QUDT_UNIT.UNITLESS, QUDT_UNIT.M),
+        (QUDT_UNIT["RAD"], QUDT_UNIT.M),
         {
             "rotation": (
                 "rotation",
@@ -145,27 +145,6 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.Dimensionless: QUDT_UNIT.UNITLESS,
     QuantityType.PathParameter: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
-}
-
-DSL_UNIT: dict[str, Any] = {
-    "rad/s": QUDT_UNIT["RAD-PER-SEC"],
-    "rad": QUDT_UNIT["RAD"],
-    "m/s": QUDT_UNIT["M-PER-SEC"],
-    "m/s^3": QUDT_UNIT["M-PER-SEC3"],
-    "m": QUDT_UNIT.M,
-    "mm": QUDT_UNIT["MilliM"],
-    "Nm": QUDT_UNIT["N-M"],
-    "N": QUDT_UNIT.N,
-    "deg/s": QUDT_UNIT["DEG-PER-SEC"],
-    "deg": QUDT_UNIT["DEG"],
-    "cm/s": QUDT_UNIT["CentiM-PER-SEC"],
-    "cm": QUDT_UNIT["CentiM"],
-    "m/s^2": QUDT_UNIT["M-PER-SEC2"],
-    "rad/s^2": QUDT_UNIT["RAD-PER-SEC2"],
-    "deg/s^2": QUDT_UNIT["DEG-PER-SEC2"],
-    "s": QUDT_UNIT["SEC"],
-    "ms": QUDT_UNIT["MilliSEC"],
-    "1": QUDT_UNIT.UNITLESS,
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {

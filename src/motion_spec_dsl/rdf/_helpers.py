@@ -26,7 +26,8 @@ from motion_spec_dsl.classes import (
     _resolved_spec,
 )
 
-from motion_spec_dsl.rdf._specs import DSL_UNIT, WORLD_SPECS
+from motion_spec_dsl.rdf._specs import WORLD_SPECS
+from motion_spec_dsl.units import _dsl_unit as _dsl_unit, _si_value as _si_value
 
 
 def _ns_term(namespace: Any, name: str) -> URIRef:
@@ -128,32 +129,6 @@ def _evaluator_id(spec: ConstraintSpecification) -> str:
     if motion_name and section_kind:
         return f"eval-{motion_name}-{section_kind}-{spec.name}"
     return f"eval-{spec.name}"
-
-
-def _dsl_unit(unit_name: str) -> Any:
-    """Map a DSL unit token to its QUDT unit URI; raises on an unsupported token."""
-    try:
-        return DSL_UNIT[unit_name]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
-
-
-def _duration_seconds(value: float, unit_name: str) -> float:
-    """Normalize a timing value to fractional seconds, restricted to `'s'` or `'ms'`, so
-    every emitted OWL-Time Duration uses the one temporal unit."""
-    if unit_name not in {"s", "ms"}:
-        raise ValueError(f"Timing values must use 's' or 'ms', not '{unit_name}'.")
-    return float(value) * (0.001 if unit_name == "ms" else 1.0)
-
-
-def _linear_velocity_mps(value: float, unit: object | None) -> float:
-    """Convert a linear velocity to m/s (accepts `'m/s'` or `'cm/s'`, default m/s)."""
-    unit_name = str(getattr(unit, "value", unit)) if unit else "m/s"
-    if unit_name == "m/s":
-        return value
-    if unit_name == "cm/s":
-        return value / 100.0
-    raise ValueError(f"Linear velocity unit must be 'm/s' or 'cm/s', not '{unit_name}'.")
 
 
 def _context_quantity(ref: ContextRef) -> ContextQuantity | None:

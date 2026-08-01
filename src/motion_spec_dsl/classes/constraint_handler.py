@@ -29,8 +29,7 @@ from motion_spec_dsl.classes.common import (
     NamedNamespaceObject,
     NamespaceDeclLike,
 )
-
-_TIME_UNIT_SECONDS = {"s": 1.0, "ms": 0.001}
+from motion_spec_dsl.units import _si_value
 
 
 class ControllerType(StrEnum):
@@ -178,12 +177,11 @@ class MonitorEntry(NamedNamespaceObject):
     def debounce_duration(self) -> float | None:
         if self.debounce is None:
             return None
-        scale = _TIME_UNIT_SECONDS.get(self.debounce.unit)
-        if scale is None:
+        if self.debounce.unit not in ("s", "ms"):
             raise ValueError(
                 f"Monitor '{self.name}' debounce unit '{self.debounce.unit}' must be 's' or 'ms'."
             )
-        return self.debounce.value * scale
+        return _si_value(self.debounce.value, self.debounce.unit)
 
 
 @dataclass
