@@ -20,8 +20,14 @@ from motion_spec.rdf_parser.vocab import GEOM_COORD
 from motion_spec_dsl.registration import _canonicalize_jsonld, _gen_graph, motion_spec_metamodel
 from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
 from rdf_utils.models.vocab import (
+    URI_GEOM_PRED_ALPHA,
+    URI_GEOM_PRED_BETA,
+    URI_GEOM_PRED_GAMMA,
+    URI_GEOM_PRED_W,
+    URI_GEOM_TYPE_ANGLES_ABG,
     URI_GEOM_TYPE_EULER_ANGLES,
     URI_GEOM_TYPE_EXTRINSIC,
+    URI_GEOM_TYPE_ORIENT_COORD,
     URI_GEOM_TYPE_QUATERNION,
 )
 
@@ -120,7 +126,10 @@ ORIENTATION_ANCHOR = "linear-velocity zero-linvel = 0.0 m/s"
 
 def _pose_source(orientation_block: str) -> str:
     return (
-        f"{ORIENTATION_ANCHOR},\n        pose test-pose = "
+        f"{ORIENTATION_ANCHOR},\n        pose test-pose {{ "
+        "of: <gripper.g_base.g_pinch>, "
+        "wrt: <kinova.base_link.base_link_origin>, "
+        "as-seen-by: <kinova.base_link.base_link_origin> } = "
         "{ position: (0.1, 0.2, 0.3) m, orientation: " + orientation_block + " }"
     )
 
@@ -311,7 +320,7 @@ def test_orientation_shapes_accept_the_emitted_triples(parse_mutated, coord_type
 
 
 ORIENTATION_SHAPE_VIOLATIONS = [
-    pytest.param("quat", GEOM_COORD["has-coordinate"], id="quaternion_missing_component"),
+    pytest.param("quat", URI_GEOM_PRED_W, id="quaternion_missing_component"),
     pytest.param(
         "direction-cosine", GEOM_COORD["direction-cosine-z"], id="direction_cosine_missing_axis"
     ),
@@ -435,7 +444,10 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
         " linear-velocity: (0.0, 0.0, -0.05) m/s },\n"
         "        acceleration-twist at = { angular-acceleration: (0.0, 0.0, 0.0) rad/s^2,"
         " linear-acceleration: (0.0, 0.0, 0.0) m/s^2 },\n"
-        "        wrench w = { torque: (0.0, 0.0, 0.0) Nm, force: (0.0, 0.0, 10.0) N }",
+            "        wrench w { ref-point: <ft_tree.wrist_ft_body.wrist_ft_site>,"
+            " as-seen-by: <kinova.base_link.base_link_origin>,"
+            " of: <gripper.g_base.g_pinch> } ="
+            " { torque: (0.0, 0.0, 0.0) Nm, force: (0.0, 0.0, 10.0) N }",
     )
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
     assert set(graph.subjects(RDF.type, GEOM_COORD.VelocityTwistCoordinate))
@@ -628,7 +640,8 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     )
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
 
-    from motion_spec.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT, GEOM_REL, QUDT_SCHEMA
+    from motion_spec.rdf_parser.ir import Parser
+    from motion_spec.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
     relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
     assert len(relative) == 1
@@ -639,23 +652,31 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     assert in1 is not None and in2 is not None
 
     def is_delta(node):
-        return (node, RDF.type, GEOM_COORD.OrientationCoordinate) in graph
+        return (node, RDF.type, URI_GEOM_TYPE_ANGLES_ABG) in graph
 
     # No frame named: the delta turns in the base's own body frame, so it composes post
     # (base first).
     assert not is_delta(in1) and is_delta(in2)
     base, delta = in1, in2
     assert str(base).endswith("home-pose")
+    assert (delta, RDF.type, URI_GEOM_TYPE_ORIENT_COORD) not in graph
+    assert [
+        float(graph.value(delta, predicate))
+        for predicate in (URI_GEOM_PRED_ALPHA, URI_GEOM_PRED_BETA, URI_GEOM_PRED_GAMMA)
+    ] == [-0.75, 0.0, 0.0]
+    assert not list(graph.objects(delta, GEOM_COORD["has-coordinate"]))
+    assert not list(graph.objects(delta, GEOM_COORD["as-seen-by"]))
 
-    values = sorted(
-        float(graph.value(c, QUDT_SCHEMA.value))
-        for c in graph.objects(delta, GEOM_COORD["has-coordinate"])
-    )
-    assert values == [-0.75, 0.0, 0.0]
-
-    orientation_of = graph.value(orientation, GEOM_REL["of"])
-    assert orientation_of is not None
-    assert graph.value(delta, GEOM_COORD["as-seen-by"]) == orientation_of
+    operands = Parser(graph)._relative_orientation(orientation)
+    assert [set(operand) & {"pose", "delta"} for operand in operands] == [
+        {"pose"},
+        {"delta"},
+    ]
+    assert operands[1]["delta"] == [
+        {"value": -0.75},
+        {"value": 0.0},
+        {"value": 0.0},
+    ]
 
     for predicate in ("rotation-base", "rotation-delta", "rotation-in-frame"):
         assert not list(graph.objects(orientation, GEOM_OP_EXT[predicate]))

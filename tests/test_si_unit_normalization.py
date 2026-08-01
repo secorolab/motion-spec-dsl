@@ -11,8 +11,17 @@ from rdflib.compare import graph_diff, to_isomorphic
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
-from motion_spec.rdf_parser.vocab import GEOM_COORD, QUDT_SCHEMA, TIME
+from motion_spec.rdf_parser.vocab import GEOM_COORD, QUDT_SCHEMA, RBDYN_COORD, TIME
 from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
+from rdf_utils.collection import load_list_re
+from rdf_utils.models.vocab import (
+    URI_GEOM_PRED_ALPHA,
+    URI_GEOM_PRED_BETA,
+    URI_GEOM_PRED_GAMMA,
+    URI_GEOM_PRED_X,
+    URI_GEOM_PRED_Y,
+    URI_GEOM_PRED_Z,
+)
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 
 SPEC_ANCHOR = "linear-velocity zero-linvel = 0.0 m/s"
@@ -40,6 +49,23 @@ def _quantity_node(graph, name: str):
     ]
     assert len(matches) == 1, f"expected exactly one Quantity node for {name!r}, got {matches}"
     return matches[0]
+
+
+def _list_values(graph, predicate):
+    """Flatten numeric RDF-list values for a coordinate predicate."""
+    return [
+        float(value)
+        for head in graph.objects(None, predicate)
+        for value in load_list_re(graph, head, parse_uri=False)
+    ]
+
+
+def _xyz_values(graph):
+    return [
+        float(value)
+        for predicate in (URI_GEOM_PRED_X, URI_GEOM_PRED_Y, URI_GEOM_PRED_Z)
+        for value in graph.objects(None, predicate)
+    ]
 
 
 CONVERSIONS = [
@@ -132,7 +158,7 @@ def test_velocity_twist_both_subspaces_convert_to_si(parse_mutated):
         " linear-velocity: (5.0, 0.0, 0.0) cm/s }"
     )
     graph = _build(parse_mutated, SPEC_ANCHOR, decl)
-    values = {float(v) for v in graph.objects(None, QUDT_SCHEMA.value)}
+    values = _xyz_values(graph)
     assert any(v == pytest.approx(10.0 * math.pi / 180.0) for v in values)
     assert any(v == pytest.approx(0.05) for v in values)
     units = set(graph.objects(None, QUDT_SCHEMA.unit))
@@ -145,7 +171,7 @@ def test_acceleration_twist_both_subspaces_in_si(parse_mutated):
         " linear-acceleration: (2.0, 0.0, 0.0) m/s^2 }"
     )
     graph = _build(parse_mutated, SPEC_ANCHOR, decl)
-    values = {float(v) for v in graph.objects(None, QUDT_SCHEMA.value)}
+    values = _xyz_values(graph)
     assert any(v == pytest.approx(90.0 * math.pi / 180.0) for v in values)
     assert any(v == pytest.approx(2.0) for v in values)
     units = set(graph.objects(None, QUDT_SCHEMA.unit))
@@ -153,9 +179,16 @@ def test_acceleration_twist_both_subspaces_in_si(parse_mutated):
 
 
 def test_wrench_both_subspaces_in_si(parse_mutated):
-    decl = "wrench w-nonsi = { torque: (1.0, 0.0, 0.0) Nm, force: (3.0, 0.0, 0.0) N }"
+    decl = (
+        "wrench w-nonsi { ref-point: <ft_tree.wrist_ft_body.wrist_ft_site>,"
+        " as-seen-by: <kinova.base_link.base_link_origin>,"
+        " of: <gripper.g_base.g_pinch> } ="
+        " { torque: (1.0, 0.0, 0.0) Nm, force: (3.0, 0.0, 0.0) N }"
+    )
     graph = _build(parse_mutated, SPEC_ANCHOR, decl)
-    values = {float(v) for v in graph.objects(None, QUDT_SCHEMA.value)}
+    values = _list_values(graph, RBDYN_COORD.torque) + _list_values(
+        graph, RBDYN_COORD.force
+    )
     assert any(v == pytest.approx(1.0) for v in values)
     assert any(v == pytest.approx(3.0) for v in values)
     units = set(graph.objects(None, QUDT_SCHEMA.unit))
@@ -165,12 +198,26 @@ def test_wrench_both_subspaces_in_si(parse_mutated):
 
 def test_pose_position_and_orientation_convert_to_si(parse_mutated):
     decl = (
-        "pose pose-nonsi = { position: (5.0, 0.0, 0.0) cm,"
+        "pose pose-nonsi { of: <gripper.g_base.g_pinch>,"
+        " wrt: <kinova.base_link.base_link_origin>,"
+        " as-seen-by: <kinova.base_link.base_link_origin> } ="
+        " { position: (5.0, 0.0, 0.0) cm,"
         " orientation: euler { axes: xyz extrinsic, angles: (90.0, 0.0, 0.0) deg } }"
     )
     model = parse_mutated(POSE_ANCHOR, f"{POSE_ANCHOR},\n            {decl}")
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
-    values = {float(v) for v in graph.objects(None, QUDT_SCHEMA.value)}
+    values = {
+        float(v)
+        for predicate in (
+            URI_GEOM_PRED_X,
+            URI_GEOM_PRED_Y,
+            URI_GEOM_PRED_Z,
+            URI_GEOM_PRED_ALPHA,
+            URI_GEOM_PRED_BETA,
+            URI_GEOM_PRED_GAMMA,
+        )
+        for v in graph.objects(None, predicate)
+    }
     assert any(v == pytest.approx(0.05) for v in values)
     assert any(v == pytest.approx(math.pi / 2) for v in values)
     units = set(graph.objects(None, QUDT_SCHEMA.unit))

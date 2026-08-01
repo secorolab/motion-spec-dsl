@@ -9,7 +9,21 @@ from typing import Any
 
 from rdflib import URIRef
 from rdflib.namespace import DefinedNamespace, Namespace, SDO, XSD
-from rdf_utils.models.vocab import URI_QUDT_QK_LENGTH
+from rdf_utils.models.vocab import (
+    URI_GEOM_PRED_OF_ORIENT,
+    URI_GEOM_PRED_OF_POSE,
+    URI_GEOM_PRED_OF_POSITION,
+    URI_GEOM_TYPE_ORIENT,
+    URI_GEOM_TYPE_ORIENT_COORD,
+    URI_GEOM_TYPE_ORIENT_REF,
+    URI_GEOM_TYPE_POSE,
+    URI_GEOM_TYPE_POSE_COORD,
+    URI_GEOM_TYPE_POSE_REF,
+    URI_GEOM_TYPE_POSITION,
+    URI_GEOM_TYPE_POSITION_COORD,
+    URI_GEOM_TYPE_POSITION_REF,
+    URI_QUDT_QK_LENGTH,
+)
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
 from motion_spec.rdf_parser.vocab import (
@@ -49,6 +63,30 @@ class ROS(DefinedNamespace):
     Topic: URIRef
     _extras = ["channel-name", "type-name"]
     _NS = Namespace("https://index.ros.org/p/")
+
+
+# comp-rob2b's relation/coordinate split, per geometry domain
+# (coordinates.ttl:8-73): (<Domain>Reference, <Domain>Coordinate, of-<domain>, relation class)
+GEOM_DOMAIN_SPLIT: dict[str, tuple[URIRef, URIRef, URIRef, URIRef]] = {
+    "position": (
+        URI_GEOM_TYPE_POSITION_REF,
+        URI_GEOM_TYPE_POSITION_COORD,
+        URI_GEOM_PRED_OF_POSITION,
+        URI_GEOM_TYPE_POSITION,
+    ),
+    "orientation": (
+        URI_GEOM_TYPE_ORIENT_REF,
+        URI_GEOM_TYPE_ORIENT_COORD,
+        URI_GEOM_PRED_OF_ORIENT,
+        URI_GEOM_TYPE_ORIENT,
+    ),
+    "pose": (
+        URI_GEOM_TYPE_POSE_REF,
+        URI_GEOM_TYPE_POSE_COORD,
+        URI_GEOM_PRED_OF_POSE,
+        URI_GEOM_TYPE_POSE,
+    ),
+}
 
 
 # Each entry: (rdf_types, qkinds, units, prop_map)
@@ -121,7 +159,7 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         },
     ),
     WorldQuantityType.JointPosition: (
-        (QUDT_SCHEMA.Quantity, KC_STAT.JointPositionCoordinate),
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointPositionCoordinate),
         (QUDT_QKIND.PlaneAngle,),
         (QUDT_UNIT.RAD,),
         {},

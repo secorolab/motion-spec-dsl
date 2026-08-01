@@ -379,14 +379,22 @@ def _canonicalize_jsonld(text: str, graph: Graph | None = None) -> str:
 
 
 def _sort_lists(value: Any) -> Any:
-    """Recursively order every list in a node so within-node emission is total.
+    """Order JSON-LD set arrays while preserving semantic RDF-list order.
 
     JSON-LD arrays (``@type``, multi-valued properties) are unordered sets, so
     sorting them by canonical form removes the last hash-seed dependence rdflib's
-    serializer leaves behind after the top-level ``@graph`` sort.
+    serializer leaves behind after the top-level ``@graph`` sort. An ``@list``
+    array is ordered RDF data and must never be sorted.
     """
     if isinstance(value, dict):
-        return {k: _sort_lists(v) for k, v in value.items()}
+        return {
+            key: (
+                [_sort_lists(item) for item in child]
+                if key == "@list" and isinstance(child, list)
+                else _sort_lists(child)
+            )
+            for key, child in value.items()
+        }
     if isinstance(value, list):
         return sorted(
             (_sort_lists(v) for v in value),
