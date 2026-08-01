@@ -87,6 +87,43 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
     assert sensors, "scenex declares force-torque wrist_ft but no solver carries it"
     assert {s["name"] for s in sensors} == {"wrist_ft"}
     assert all(s["frame_site"] for s in sensors)
+    outputs = {
+        (
+            output.sensor_frame.id,
+            output.reference_point.id,
+            output.as_seen_by.id,
+        )
+        for solver in interaction_ir["serial_chain_solvers"]
+        for output in solver.output
+        if output.type == "Wrench" and output.sensor_name
+    }
+    assert outputs == {("wrist_ft_site", "wrist_ft_site", "base_link")}
+
+
+def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -> None:
+    source_path = MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    source = source_path.read_text().replace(
+        "            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,\n"
+        "            as-seen-by: <kinova.base_link.base_link_origin>,\n",
+        "",
+        1,
+    )
+    metamodel = motion_spec_metamodel()
+    model = metamodel.model_from_str(source, file_name=str(source_path))
+    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    ir = generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
+    outputs = [
+        output
+        for solver in ir["serial_chain_solvers"]
+        for output in solver.output
+        if output.type == "Wrench" and output.sensor_name
+    ]
+
+    assert outputs
+    assert {
+        (output.sensor_frame.id, output.reference_point.id, output.as_seen_by.id)
+        for output in outputs
+    } == {("wrist_ft_site", "wrist_ft_site", "wrist_ft_site")}
 
 
 def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: dict) -> None:
@@ -148,14 +185,15 @@ def test_until_groups_are_monitored_independently(interaction_ir: dict) -> None:
     assert set(released.group_constraint_ids) & set(table.group_constraint_ids) == set()
 
 
-def test_event_triggered_snapshot_carries_its_fsm_event(interaction_ir: dict) -> None:
-    """`snapshot ... on event E` re-samples on re-entry, and only in the declaring motion."""
+def test_arc_reentry_rebuilds_from_current_pose_to_the_fixed_target(
+    interaction_ir: dict,
+) -> None:
+    """Arc re-entry re-samples only its start; the initial pose still anchors its target."""
     arc = _motion(interaction_ir, "motion_arc_motion")
     triggered = [s for s in arc.snapshots if s.trigger_event]
-    assert triggered, "arc start pose re-samples on entry"
-    assert all(s.fsm_namespace for s in triggered)
     assert {s.trigger_event for s in triggered} == {"E_ARC_ENTERED"}
-    # The end pose stays initial-sampled: re-sampling it would move the goal.
-    assert [s.trigger_event for s in arc.snapshots if s.target_id.startswith("end_")] == [
-        None
-    ] * len([s for s in arc.snapshots if s.target_id.startswith("end_")])
+    assert all(s.fsm_namespace for s in triggered)
+    assert any(
+        s.trigger_event is None and s.target_id.endswith("initial_pose")
+        for s in arc.snapshots
+    )

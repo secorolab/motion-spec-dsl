@@ -988,14 +988,27 @@ class MotionSpecDatasetBuilder:
             if qty.type == WorldQuantityType.Wrench:
                 node = URIRef(qty.uri)
                 props = qty.props if isinstance(qty.props, GeometricProps) else None
-                reference_name = _geo_prop(props, "ref-point")
+                ft_sensor = next(
+                    (
+                        pair.sensor
+                        for pair in props.pairs
+                        if isinstance(pair, GeoPropPair)
+                        and pair.key == "ft-sensor"
+                        and pair.sensor is not None
+                    ),
+                    None,
+                ) if props is not None else None
+                sensor_frame_name = (
+                    str(ft_sensor.frame.uri) if ft_sensor is not None else None
+                )
+                reference_name = _geo_prop(props, "ref-point") or sensor_frame_name
                 reference_point = (
                     self._owned_uri(reference_name, qty)
                     if reference_name
                     else self._owned_uri(f"point-{qty.name}-origin", qty)
                 )
                 self.graph.add((reference_point, RDF.type, GEOM_ENT.Point))
-                seen_name = _geo_prop(props, "as-seen-by")
+                seen_name = _geo_prop(props, "as-seen-by") or sensor_frame_name
                 if seen_name is None:
                     raise ConstraintViolation(
                         "dynamics", f"Wrench '{qty.name}' has no as-seen-by frame"
@@ -1007,7 +1020,7 @@ class MotionSpecDatasetBuilder:
                     self._owned_uri(seen_name, qty),
                     self._owned_uri(acts_on_name, qty) if acts_on_name else None,
                 )
-                ft_ref = _geo_prop(props, "ft-sensor")
+                ft_ref = str(ft_sensor.uri) if ft_sensor is not None else None
                 if ft_ref:
                     self.graph.add((node, RDF.type, SOSA.Observation))
                     self.graph.add((node, SOSA.madeBySensor, URIRef(ft_ref)))

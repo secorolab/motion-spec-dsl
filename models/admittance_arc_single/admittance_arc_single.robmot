@@ -135,15 +135,16 @@ guarded-motion (ns=app) arc-motion {
             linear-distance chord-y-hi = 0.33 m,
             linear-distance chord-z    = 0.0 m,
             linear-distance arc-height = 0.18 m,
+            pose initial-pose          = snapshot of <shared.world.pose-ee-base>,
             pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
-            linear-distance end-x      = <spec.start-pose>.position.x + <spec.chord-x>,
-            linear-distance end-y      = <spec.start-pose>.position.y + <spec.chord-y>,
-            linear-distance end-y-lo   = <spec.start-pose>.position.y + <spec.chord-y-lo>,
-            linear-distance end-y-hi   = <spec.start-pose>.position.y + <spec.chord-y-hi>,
-            linear-distance end-z      = <spec.start-pose>.position.z + <spec.chord-z>,
+            linear-distance end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
+            linear-distance end-y      = <spec.initial-pose>.position.y + <spec.chord-y>,
+            linear-distance end-y-lo   = <spec.initial-pose>.position.y + <spec.chord-y-lo>,
+            linear-distance end-y-hi   = <spec.initial-pose>.position.y + <spec.chord-y-hi>,
+            linear-distance end-z      = <spec.initial-pose>.position.z + <spec.chord-z>,
             pose end-pose = {
                 position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
-                orientation: <spec.start-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad }
+                orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad }
             },
             path arc-path = arc {
                 start:        <spec.start-pose>,
