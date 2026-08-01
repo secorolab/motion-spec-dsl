@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Pure helper functions and path/plan records for RDF emission."""
+"""Pure helpers and plan records shared by motion-spec RDF emitters."""
 
 from __future__ import annotations
 
@@ -11,23 +11,25 @@ from typing import Any
 from rdflib.term import URIRef
 
 
-from motion_spec_dsl.controller_semantics import constraint_view_subspace
-from motion_spec_dsl.classes import (
+from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
+from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
+    _flatten_constraint_items,
+    _resolved_spec,
+)
+from motion_spec_dsl.classes.context import (
     ContextRef,
     GeoPropPair,
     GeometricProps,
-    GuardedMotion,
     QuantityType,
     ContextQuantity,
     WorldQuantity,
     WorldQuantityType,
-    _flatten_constraint_items,
-    _resolved_spec,
 )
+from motion_spec_dsl.classes.motion_spec import GuardedMotion
 
-from motion_spec_dsl.rdf._specs import WORLD_SPECS
-from motion_spec_dsl.units import _dsl_unit as _dsl_unit, _si_value as _si_value
+from motion_spec_dsl.rdf.model import WORLD_SPECS
+from motion_spec_dsl.classes.units import _dsl_unit as _dsl_unit, _si_value as _si_value
 
 
 def _ns_term(namespace: Any, name: str) -> URIRef:

@@ -10,8 +10,8 @@ from textx import metamodel_from_file
 from textx.exceptions import TextXSemanticError
 from textx.scoping import providers as scoping_providers
 
-from motion_spec_dsl.registration import motion_spec_metamodel
-from motion_spec_dsl.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.classes.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
 
 GRAMMAR = Path(__file__).parents[1] / "src/motion_spec_dsl/grammars/model.tx"
 MODELS = Path(__file__).parents[1] / "models"

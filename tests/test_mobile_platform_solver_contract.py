@@ -14,8 +14,9 @@ import pytest
 from rdflib import Dataset, Graph, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.rdf_parser.vocab import SLV, SLV_EXT
-from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
+from motion_spec_dsl.rdf_parser.vocab import SLV, SLV_EXT
+from motion_spec_dsl.gens import _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mixed_solvers.robmot"
 

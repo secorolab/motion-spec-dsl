@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Semantic validation entrypoint for fully constructed motion-spec DSL models."""
+"""Semantic validation entry point for parsed motion-spec models."""
 
 from __future__ import annotations
 
-from motion_spec_dsl.classes.motion import Model
-from motion_spec_dsl.validation.common import (
+from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.validation.common import (
     motion_constraint_items,
     motion_constraints,
 )
-from motion_spec_dsl.validation.constraints import (
+from motion_spec_dsl.classes.validation.constraints import (
     validate_direction_cosine_components,
     validate_euler_convention,
     validate_path_following,
@@ -20,13 +20,13 @@ from motion_spec_dsl.validation.constraints import (
     validate_unique_constraint_names,
     validate_unit_kinds,
 )
-from motion_spec_dsl.validation.handlers import (
+from motion_spec_dsl.classes.validation.handlers import (
     validate_controller_solver_assembly,
     validate_handler_constraint_assembly,
     validate_handler_requirements,
     validate_mobile_platform_solver_quantity,
 )
-from motion_spec_dsl.validation.names import validate_namespace_uris
+from motion_spec_dsl.classes.validation.names import validate_namespace_uris
 
 __all__ = [
     "motion_constraint_items",

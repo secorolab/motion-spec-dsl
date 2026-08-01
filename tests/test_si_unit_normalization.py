@@ -11,8 +11,8 @@ from rdflib.compare import graph_diff, to_isomorphic
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
-from motion_spec.rdf_parser.vocab import GEOM_COORD, QUDT_SCHEMA, RBDYN_COORD, TIME
-from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD, QUDT_SCHEMA, RBDYN_COORD, TIME
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdf_utils.collection import load_list_re
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,

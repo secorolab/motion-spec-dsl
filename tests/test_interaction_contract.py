@@ -15,7 +15,8 @@ from pathlib import Path
 import pytest
 
 from motion_spec.rdf_parser.ir import generate_ir
-from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
+from motion_spec_dsl.gens import _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
 
 
 MODELS = Path(__file__).parents[1] / "models"

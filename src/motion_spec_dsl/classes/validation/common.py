@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Shared helpers for semantic validation phases."""
+"""Shared helpers for validating parsed motion-spec models."""
 
 from __future__ import annotations
 
@@ -10,14 +10,16 @@ from collections.abc import Iterable
 from textx import get_location
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes import (
+from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
+from motion_spec_dsl.classes.constraints import (
     ConstraintAlias,
-    ConstraintHandler,
     ConstraintSpecification,
-    GuardedMotion,
-    Model,
     _flatten_constraint_items,
     _resolved_spec,
+)
+from motion_spec_dsl.classes.motion_spec import (
+    GuardedMotion,
+    Model,
 )
 
 

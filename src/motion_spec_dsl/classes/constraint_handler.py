@@ -11,25 +11,27 @@ from enum import StrEnum
 
 from rdflib.namespace import Namespace
 
-from motion_spec_dsl.classes.motion import (
-    ContextDeclReference,
-    ContextRef,
-    ConstraintRef,
-    Coordinates,
-    GuardedMotion,
-    Measure,
-    QuantityType,
-    SpecContextDecl,
-    View,
-    WorldContextDecl,
-    _authored_enum,
-)
 from motion_spec_dsl.classes.common import (
     IHasNamespaceDeclare,
     NamedNamespaceObject,
     NamespaceDeclLike,
 )
-from motion_spec_dsl.units import _si_value
+from motion_spec_dsl.classes.constraints import ConstraintRef
+from motion_spec_dsl.classes.context import (
+    ContextRef,
+    Measure,
+    QuantityType,
+    View,
+    _authored_enum,
+)
+from motion_spec_dsl.classes.coordinates import Coordinates
+from motion_spec_dsl.classes.motion_spec import (
+    ContextDeclReference,
+    GuardedMotion,
+    SpecContextDecl,
+    WorldContextDecl,
+)
+from motion_spec_dsl.classes.units import _si_value
 
 
 class ControllerType(StrEnum):

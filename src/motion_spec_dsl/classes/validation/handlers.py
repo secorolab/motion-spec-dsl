@@ -1,23 +1,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Constraint handler assembly and coverage validation."""
+"""Validate constraint-handler assembly and coverage."""
 
 from __future__ import annotations
 
-from motion_spec_dsl.classes import (
-    ConstraintGroup,
+from motion_spec_dsl.classes.constraint_handler import (
     MobilePlatformSolver,
-    Model,
     UntilMonitorRef,
     WhenMonitorRef,
     _resolved_controller,
     _resolved_solver,
+)
+from motion_spec_dsl.classes.constraints import (
+    ConstraintGroup,
     _flatten_constraint_items,
     _resolved_spec,
 )
-from motion_spec_dsl.controller_semantics import controller_solver
-from motion_spec_dsl.validation.common import (
+from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.controller_semantics import controller_solver
+from motion_spec_dsl.classes.validation.common import (
     constraint_handlers,
     motion_constraint_items,
     semantic_error,

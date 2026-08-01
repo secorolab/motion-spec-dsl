@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Reference resolution into imported executable scenes."""
+"""Resolve source-model references into imported executable scenes."""
 
 from __future__ import annotations
 

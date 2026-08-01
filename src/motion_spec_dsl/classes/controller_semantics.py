@@ -1,27 +1,31 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Authored controller semantics shared by RDF generation and validation."""
+"""Controller and solver semantics derived from the parsed DSL model."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from motion_spec_dsl.classes import (
+from motion_spec_dsl.classes.constraint_handler import (
     CommandForwardingSolver,
     ConstraintHandler,
-    ConstraintSpecification,
     ControllerAlias,
     ControllerEntry,
     ControllerType,
-    EqualityConstraint,
-    QuantityType,
     SerialChainSolver,
+    _resolved_controller,
+    _resolved_solver,
+)
+from motion_spec_dsl.classes.constraints import (
+    ConstraintSpecification,
+    EqualityConstraint,
+)
+from motion_spec_dsl.classes.context import (
+    QuantityType,
     SubSpace,
     WorldQuantity,
     WorldQuantityType,
-    _resolved_controller,
-    _resolved_solver,
     _resolved_world_quantity,
 )
 

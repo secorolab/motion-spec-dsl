@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Constant tables and namespace bindings for RDF emission."""
+"""Mappings from parsed model concepts to their RDF representation."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from rdf_utils.models.vocab import (
 )
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
-from motion_spec.rdf_parser.vocab import (
+from motion_spec_dsl.rdf_parser.vocab import (
     ALGO_EXT,
     AGN,
     APP,
@@ -58,7 +58,8 @@ from motion_spec.rdf_parser.vocab import (
     SOSA,
     TIME,
 )
-from motion_spec_dsl.classes.motion import QuantityType, WorldQuantityType
+from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
+
 
 class ROS(DefinedNamespace):
     Topic: URIRef

@@ -25,7 +25,7 @@ def base_source() -> str:
 @pytest.fixture
 def parse_source():
     """Parse DSL source as if it sat next to the base fixture, so imports resolve."""
-    from motion_spec_dsl.registration import motion_spec_metamodel
+    from motion_spec_dsl.langs import motion_spec_metamodel
 
     def _parse(source: str):
         return motion_spec_metamodel().model_from_str(source, file_name=str(BASE))

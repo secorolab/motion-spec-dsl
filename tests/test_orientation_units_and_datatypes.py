@@ -16,9 +16,10 @@ import pytest
 from rdflib.namespace import RDF, XSD
 from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
-from motion_spec.rdf_parser.vocab import GEOM_COORD
-from motion_spec_dsl.registration import _canonicalize_jsonld, _gen_graph, motion_spec_metamodel
-from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD
+from motion_spec_dsl.gens import _canonicalize_jsonld, _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,
     URI_GEOM_PRED_BETA,
@@ -159,7 +160,7 @@ def test_quaternion_orientation_emits_quaternion_type_and_no_unit(parse_mutated)
     for s in quat_subjects:
         assert (s, RDF.type, URI_GEOM_TYPE_EULER_ANGLES) not in graph
         assert (s, RDF.type, GEOM_COORD.DirectionCosineXYZ) not in graph
-        from motion_spec.rdf_parser.vocab import QUDT_SCHEMA
+        from motion_spec_dsl.rdf_parser.vocab import QUDT_SCHEMA
         from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 
         assert (s, QUDT_SCHEMA.unit, QUDT_UNIT.RAD) not in graph
@@ -290,7 +291,7 @@ def _orientation_coord_graph(graph):
     coordinate types -- the relation shapes want frames this fragment does not describe."""
     from rdflib import Graph
 
-    from motion_spec.rdf_parser.vocab import GEOM_REL
+    from motion_spec_dsl.rdf_parser.vocab import GEOM_REL
 
     coord = next(
         s
@@ -414,7 +415,7 @@ TWO_SUBSPACE_REJECTIONS = [
 
 @pytest.fixture
 def parse_mixed_solvers_mutated():
-    from motion_spec_dsl.registration import motion_spec_metamodel
+    from motion_spec_dsl.langs import motion_spec_metamodel
 
     fixture_path = Path(__file__).parent / "fixtures" / "mixed_solvers.robmot"
     source = fixture_path.read_text()
@@ -641,7 +642,7 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
 
     from motion_spec.rdf_parser.ir import Parser
-    from motion_spec.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
+    from motion_spec_dsl.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
     relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
     assert len(relative) == 1

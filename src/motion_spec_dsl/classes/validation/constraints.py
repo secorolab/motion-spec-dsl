@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Cross-object constraint and path invariants not expressible in textX or SHACL."""
+"""Validate constraint and path invariants not expressible in textX or SHACL."""
 
 from __future__ import annotations
 
@@ -10,28 +10,32 @@ import math
 
 from textx import get_children_of_type
 
-from motion_spec_dsl.classes import (
-    AccelerationTwistCoordinate,
+from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
+    EqualityConstraint,
+    GreaterThanConstraint,
+)
+from motion_spec_dsl.classes.context import (
     ContextQuantity,
     ContextRef,
-    Coordinates,
-    DirectionCosineXYZ,
-    EqualityConstraint,
-    EulerAngles,
-    GreaterThanConstraint,
     Measure,
-    Model,
-    PathValue,
     QuantityType,
-    Quaternion,
     ReferenceGeneratorType,
     VectorXYZ,
-    VelocityTwistCoordinate,
-    WrenchCoordinate,
     _resolved_context_quantity,
 )
-from motion_spec_dsl.validation.common import (
+from motion_spec_dsl.classes.coordinates import (
+    AccelerationTwistCoordinate,
+    Coordinates,
+    DirectionCosineXYZ,
+    EulerAngles,
+    Quaternion,
+    VelocityTwistCoordinate,
+    WrenchCoordinate,
+)
+from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.path import PathValue
+from motion_spec_dsl.classes.validation.common import (
     motion_constraint_items,
     motion_constraints,
     motion_specs,
@@ -106,9 +110,7 @@ def _validate_path_geometry(quantity: ContextQuantity) -> None:
             value.circle.plane_normal, f"Circle '{quantity.name}' plane-normal", value.circle
         )
     elif value.arc is not None:
-        _require_direction(
-            value.arc.plane_normal, f"Arc '{quantity.name}' plane-normal", value.arc
-        )
+        _require_direction(value.arc.plane_normal, f"Arc '{quantity.name}' plane-normal", value.arc)
     elif value.helix is not None:
         _require_direction(value.helix.axis, f"Helix '{quantity.name}' axis", value.helix)
         pitch = _static_scalar(value.helix.pitch)
@@ -235,8 +237,7 @@ def validate_path_following(model: Model) -> None:
             raise semantic_error(f"Constraint '{spec.name}' is missing its relation.", spec)
         elif guard is not None and not isinstance(spec.expr, GreaterThanConstraint):
             raise semantic_error(
-                f"'{spec.name}' guards progress along a path, which is one-sided: use "
-                "'more than'.",
+                f"'{spec.name}' guards progress along a path, which is one-sided: use 'more than'.",
                 spec,
             )
 

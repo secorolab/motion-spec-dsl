@@ -14,7 +14,7 @@ from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
 from motion_spec.rdf_parser.ir import _load_graph, generate_ir
-from motion_spec.rdf_parser.vocab import (
+from motion_spec_dsl.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR,
     CSTR_HDL,
@@ -27,9 +27,10 @@ from motion_spec.rdf_parser.vocab import (
     SLV_EXT,
 )
 from motion_spec_dsl.classes.constraint_handler import ROSTopic
-from motion_spec_dsl.rdf.builder import MotionSpecDatasetBuilder
-from motion_spec_dsl.registration import _gen_graph, motion_spec_metamodel
-from motion_spec_dsl.rdf._specs import ROS
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.gens import _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.rdf.model import ROS
 
 
 MODELS = Path(__file__).parents[1] / "models"

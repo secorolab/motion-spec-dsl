@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Validation of user-authored names."""
+"""Validate user-authored names."""
 
 from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from motion_spec_dsl.validation.common import semantic_error
+from motion_spec_dsl.classes.validation.common import semantic_error
 
 
 def validate_namespace_uris(model) -> None:
