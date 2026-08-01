@@ -160,7 +160,7 @@ from motion_spec_dsl.rdf._specs import (
     CSTR_TYPE_NAME,
     CONSTRAINT_TYPE_OVERRIDE,
     QUDT_KIND_BY_QUANTITY_TYPE,
-    _QKIND_PREFIX,
+    _QKIND_PREFIXES,
     CONTEXT_COMPOSITE_WORLD_TYPE,
     GRAPH_BINDINGS,
     ROS,
@@ -393,7 +393,7 @@ class MotionSpecDatasetBuilder:
         """Type `node` with `qkind`: always via hasQuantityKind, plus rdf:type for
         structural (non-QUDT) kinds. QUDT quantity-kinds are individuals, not classes.
         """
-        if not str(qkind).startswith(_QKIND_PREFIX):
+        if not str(qkind).startswith(_QKIND_PREFIXES):
             self.graph.add((node, RDF.type, qkind))
         elif qkind == QUDT_QKIND.PlaneAngle:
             # The angle shapes express quantity-kind membership with sh:class.
@@ -2940,7 +2940,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, CSTR_EXT.TimeConstraint))
 
         qty_node = self._elapsed_quantity_node(spec, motion)
-        self.graph.add((qty_node, RDF.type, TIME.Duration))
+        self.graph.add((qty_node, RDF.type, CSTR_EXT.ElapsedDurationCoordinate))
+        self.graph.add((qty_node, TIME.unitType, TIME.unitSecond))
         self.graph.add((node, CSTR.quantity, qty_node))
 
         entry_node, current_node = self._motion_time_endpoints(motion)
@@ -2948,7 +2949,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((interval_node, RDF.type, TIME.ProperInterval))
         self.graph.add((interval_node, TIME.hasBeginning, entry_node))
         self.graph.add((interval_node, TIME.hasEnd, current_node))
-        self.graph.add((interval_node, TIME.hasDuration, qty_node))
 
         if isinstance(expr, GreaterThanConstraint):
             self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))

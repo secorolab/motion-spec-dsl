@@ -49,6 +49,7 @@ from motion_spec.rdf_parser.vocab import (
     MOT,
     QUDT_QKIND,
     QUDT_SCHEMA,
+    QKIND_EXT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
@@ -211,12 +212,12 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Dimensionless: NS_MM_QUDT_QTY["Dimensionless"],
     QuantityType.Duration: NS_MM_QUDT_QTY["Time"],
     QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
-    QuantityType.LinearJerk: CSTR_HDL_EXT.LinearJerk,
+    QuantityType.LinearJerk: QKIND_EXT.LinearJerk,
 }
 
-# QUDT quantity-kinds are individuals, not classes; used to tell them apart from
-# structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) when emitting typing.
-_QKIND_PREFIX = str(QUDT_QKIND)
+# Quantity kinds are individuals, not classes; these namespaces distinguish them
+# from structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) during emission.
+_QKIND_PREFIXES = (str(QUDT_QKIND), str(QKIND_EXT))
 
 CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
     QuantityType.Pose: WorldQuantityType.Pose,
@@ -250,6 +251,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("mot", MOT),
     ("cstr-hdl", CSTR_HDL),
     ("cstr-hdl-ext", CSTR_HDL_EXT),
+    ("qkind-ext", QKIND_EXT),
     ("slv", SLV),
     ("slv-ext", SLV_EXT),
     ("sosa", SOSA),

@@ -36,11 +36,13 @@ def test_elapsed_greater_than_emits_native_time_constraint(parse_mutated):
     assert (cstr, RDF.type, CSTR.GreaterThanConstraint) in g
 
     measured = g.value(cstr, CSTR.quantity)
-    assert (measured, RDF.type, TIME.Duration) in g
+    assert (measured, RDF.type, CSTR_EXT.ElapsedDurationCoordinate) in g
     assert g.value(measured, TIME.numericDuration) is None  # runtime state, unmeasured
+    assert g.value(measured, TIME.unitType) == TIME.unitSecond
 
-    interval = next(g.subjects(TIME.hasDuration, measured))
+    interval = next(g.subjects(RDF.type, TIME.ProperInterval))
     assert (interval, RDF.type, TIME.ProperInterval) in g
+    assert g.value(interval, TIME.hasDuration) is None
     beginning = g.value(interval, TIME.hasBeginning)
     end = g.value(interval, TIME.hasEnd)
     assert (beginning, RDF.type, TIME.Instant) in g

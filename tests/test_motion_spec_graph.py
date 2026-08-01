@@ -13,15 +13,16 @@ import pytest
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.rdf_parser.ir import Parser, _load_graph, generate_ir
+from motion_spec.rdf_parser.ir import _load_graph, generate_ir
 from motion_spec.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR,
     CSTR_HDL,
-    CSTR_HDL_EXT,
     GEOM_OP_EXT,
     MAP,
     MAP_EXT,
+    QKIND_EXT,
+    QUDT_SCHEMA,
     SLV,
     SLV_EXT,
 )
@@ -82,7 +83,7 @@ def test_generated_jsonld_compacts_hierarchical_identifiers(generated_model: Pat
 
 def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_model: Path) -> None:
     graph = _load_graph(generated_dual_model)[1]
-    assert len(set(graph.subjects(RDF.type, CSTR_HDL_EXT["LinearJerk"]))) == 1
+    assert len(set(graph.subjects(QUDT_SCHEMA.hasQuantityKind, QKIND_EXT.LinearJerk))) == 1
     # Each arm follows its own path, so each gets its own projection and its own local frame.
     projections = set(graph.subjects(RDF.type, GEOM_OP_EXT.PathProjection))
     assert len(projections) == 2

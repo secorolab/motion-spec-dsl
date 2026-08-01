@@ -419,6 +419,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/task/map-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/solver-specification-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/path.shacl.ttl",
+        "https://secorolab.github.io/metamodels/qudt.shacl.ttl",
         "https://secorolab.github.io/metamodels/time.shacl.ttl",
     }
     # The manifest's iri-map only declares where *this model's* imported graphs live
