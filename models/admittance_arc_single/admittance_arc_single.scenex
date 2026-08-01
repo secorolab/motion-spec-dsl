@@ -10,7 +10,14 @@ ktree inst (ns=aas_mjc) gripper of <gripper_tree>
 ktree (ns=aas_mjc) ft_tree {
     body wrist_ft_body {
         frame wrist_ft_body_origin { }
-        frame wrist_ft_site { }
+        // The sensor reads at the body it is: ft_sensor.xml puts the site at its origin.
+        frame wrist_ft_site {
+            pose wrist_ft_site_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.0) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
     }
     joints { }
 }
