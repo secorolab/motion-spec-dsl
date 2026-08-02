@@ -92,7 +92,7 @@ MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
 UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
 WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;
 ControllerRef: handler=[ConstraintHandler|IRI_TRUNK] "." controller=[ControllerEntry|IRI_TRUNK] ;
-SolverRef: (handler=[ConstraintHandler|IRI_TRUNK] ".")? solver=[SolverEntry|IRI_TRUNK] ;
+SolverRef: solver=[SolverEntry|FQN] ;
 
 // A solver's mechanism family (serial-chain dynamics vs. mobile-platform kinematics/control
 // allocation) is a closed authoring choice, not a generic algorithm string: each family accepts

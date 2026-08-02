@@ -375,7 +375,6 @@ class SolverRef:
     """A reference to a solver by name."""
 
     solver: SolverEntry
-    handler: ConstraintHandler | None = field(default=None)
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
@@ -383,8 +382,6 @@ class SolverRef:
         return self.solver.name
 
     def __str__(self) -> str:
-        if self.handler is not None:
-            return f"{self.handler.name}.{self.solver.name}"
         return self.solver.name
 
 

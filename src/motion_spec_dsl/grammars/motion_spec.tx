@@ -121,9 +121,7 @@ OutsideConstraint:
     "outside" lower=ContextRef "and" upper=ContextRef
 ;
 
-ConstraintRef:
-    motion=[GuardedMotion|IRI_TRUNK] "." constraint=[ConstraintTarget|IRI_TRUNK]
-;
+ConstraintRef: target=[ConstraintTarget|FQN] ;
 
 // A monitor or controller may name a single constraint, or an until group monitored as one.
-ConstraintTarget: ConstraintSpecification | ConstraintGroup ;
+ConstraintTarget: ConstraintSpecification | ConstraintGroup | ConstraintAlias ;

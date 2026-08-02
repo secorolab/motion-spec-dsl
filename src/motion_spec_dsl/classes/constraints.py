@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from textx import get_parent_of_type
+
 from motion_spec_dsl.classes.common import NamedNamespaceObject
 from motion_spec_dsl.classes.context import ContextRef, View
 
@@ -55,9 +57,22 @@ class ConstraintGroup(NamedNamespaceObject):
 class ConstraintRef:
     """A reference to a constraint declared within a motion."""
 
-    motion: GuardedMotion
-    constraint: ConstraintSpecification
+    target: ConstraintSpecification | ConstraintGroup | ConstraintAlias
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def motion(self) -> GuardedMotion:
+        motion = get_parent_of_type("GuardedMotion", self.target)
+        assert motion is not None
+        return motion
+
+    @property
+    def constraint(self) -> ConstraintSpecification | ConstraintGroup:
+        return (
+            self.target.ref.constraint
+            if isinstance(self.target, ConstraintAlias)
+            else self.target
+        )
 
     @property
     def motion_name(self) -> str:
@@ -65,10 +80,10 @@ class ConstraintRef:
 
     @property
     def name(self) -> str:
-        return self.constraint.name
+        return self.target.name
 
     def __str__(self) -> str:
-        return f"{self.motion.name}.{self.constraint.name}"
+        return f"{self.motion.name}.{self.target.name}"
 
 
 @dataclass

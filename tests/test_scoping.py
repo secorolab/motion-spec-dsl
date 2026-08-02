@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from textx import metamodel_from_file
 from textx.exceptions import TextXSemanticError
-from textx.scoping import providers as scoping_providers
 
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.classes.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
@@ -35,7 +34,6 @@ def parse(world_items: str):
     mm.register_scope_providers(
         {
             "*.*": SceneRefProvider(),
-            "EventName.event": scoping_providers.PlainNameImportURI(),
         }
     )
     mm.register_model_processor(finalize_imported_scenes)
@@ -114,6 +112,39 @@ guarded-motion (ns=app) m1 {
 """
     with pytest.raises(TextXSemanticError, match="ambiguous.*c1.spec.support-z.*c2.spec.support-z"):
         mm.model_from_str(src, file_name=str(MODELS / "probe.robmot"))
+
+
+def test_solver_fqn_resolves_local_and_qualified_references():
+    model = motion_spec_metamodel().model_from_file(
+        MODELS / "pick_place_dual" / "pick_place_dual.robmot"
+    )
+    home = next(spec for spec in model.specs if spec.name == "handler-home")
+    pick_above = next(spec for spec in model.specs if spec.name == "handler-pick-above")
+
+    assert home.controllers[0].solver.solver is pick_above.controllers[0].solver.solver
+
+
+def test_constraint_fqn_resolves_specs_and_groups():
+    model = motion_spec_metamodel().model_from_file(
+        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    )
+    handler = next(spec for spec in model.specs if spec.name == "handler-admittance")
+    constraint_ref = handler.controllers[0].params.constraint
+    group_ref = handler.monitors[0].constraint
+
+    assert constraint_ref.motion is handler.motion
+    assert constraint_ref.constraint.name == "comply-x"
+    assert group_ref.motion is handler.motion
+    assert group_ref.constraint.name == "released"
+
+
+def test_event_scope_is_declared_by_the_grammar():
+    model = motion_spec_metamodel().model_from_file(
+        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    )
+    handler = next(spec for spec in model.specs if spec.name == "handler-home")
+
+    assert handler.monitors[0].event.event.name == "E_HOME_SETTLED"
 
 
 def test_path_following_splits_driver_geometry_and_guard():
