@@ -299,6 +299,7 @@ class GEOM_REL_EXT(DefinedNamespace):
 
 
 class GEOM_OP_EXT(DefinedNamespace):
+    ComposeOrientation: URIRef
     PoseDiffEvaluator: URIRef
     PoseToAngularDistance: URIRef
     PathProjection: URIRef

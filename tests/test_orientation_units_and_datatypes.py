@@ -590,21 +590,29 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
 
     from motion_spec_dsl.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
-    relative = set(graph.subjects(GEOM_OP.in1, None))
-    assert len(relative) == 1
-    orientation = relative.pop()
+    compositions = set(graph.subjects(RDF.type, GEOM_OP_EXT.ComposeOrientation))
+    assert len(compositions) == 1
+    composition = compositions.pop()
+    orientation = graph.value(composition, GEOM_OP["composite"])
+    assert orientation is not None
 
-    in1 = graph.value(orientation, GEOM_OP["in1"])
-    in2 = graph.value(orientation, GEOM_OP["in2"])
+    # The composed orientation is a plain coordinate: the operator, not a parameterisation,
+    # says where its value comes from.
+    assert (orientation, RDF.type, URI_GEOM_TYPE_ORIENT_COORD) in graph
+    assert (orientation, RDF.type, URI_GEOM_TYPE_EULER_ANGLES) not in graph
+    assert not list(graph.objects(orientation, GEOM_COORD["axes-sequence"]))
+
+    in1 = graph.value(composition, GEOM_OP["in1"])
+    in2 = graph.value(composition, GEOM_OP["in2"])
     assert in1 is not None and in2 is not None
 
     def is_delta(node):
         return (node, RDF.type, URI_GEOM_TYPE_ANGLES_ABG) in graph
 
-    # No frame named: the delta turns in the base's own body frame, so it composes post
-    # (base first).
-    assert not is_delta(in1) and is_delta(in2)
-    base, delta = in1, in2
+    # The declared base frame turns the delta in the pose's coordinate basis, so it composes
+    # pre (delta first).
+    assert is_delta(in1) and not is_delta(in2)
+    delta, base = in1, in2
     assert str(base).endswith("home-pose")
     assert (delta, RDF.type, URI_GEOM_TYPE_ORIENT_COORD) not in graph
     assert [
@@ -613,16 +621,33 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     ] == [-0.75, 0.0, 0.0]
     assert not list(graph.objects(delta, GEOM_COORD["as-seen-by"]))
 
+    # The composition result is representation-independent, so it has no Euler unit of its
+    # own. The IR reader must retain the delta's radians without requiring a result unit.
+    assert Parser(graph).orientation(orientation).unit.id == "UNITLESS"
+
     operands = Parser(graph)._relative_orientation(orientation)
     assert [set(operand) & {"pose", "delta"} for operand in operands] == [
-        {"pose"},
         {"delta"},
+        {"pose"},
     ]
     # The graph keeps the authored Euler triple; the reader hands codegen the quaternion.
-    assert operands[1]["representation"] == "quaternion"
-    assert [c["value"] for c in operands[1]["delta"]] == pytest.approx(
+    assert operands[0]["representation"] == "quaternion"
+    assert [c["value"] for c in operands[0]["delta"]] == pytest.approx(
         [-0.36627253, 0.0, 0.0, 0.93050762]
     )
+
+
+def test_relative_orientation_requires_an_explicit_basis_for_quaternions(parse_mutated) -> None:
+    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    model = parse_mutated(
+            anchor,
+            f"{anchor},\n            pose turned-pose = "
+            "{ position: (0.1, 0.2, 0.3) m,"
+            " orientation: <spec.home-pose>.orientation rotated by"
+            " quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
+    )
+    with pytest.raises(ValueError, match="explicit basis frame"):
+        MotionSpecDatasetBuilder(model).build()
 
 
 def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:

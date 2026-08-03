@@ -216,6 +216,8 @@ def _artifact_role(name: str) -> str:
         return "fsm_graphviz"
     if name.endswith(".scenex.ld.json"):
         return "scene_graph"
+    if name.endswith(".kdl.hpp"):
+        return "scene_kdl_header"
     return "generated_graph"
 
 
@@ -408,11 +410,15 @@ def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     return _canonicalize_jsonld(serialized, graph)
 
 
-def _gen_scenex(model, output_dir: Path) -> list[str]:
-    """Generate JSON-LD for directly imported executable scenes."""
+def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
+    """Generate JSON-LD and KDL headers for directly imported executable scenes."""
+    import scene_dsl
+    from jinja2 import Environment, FileSystemLoader
+    from scene_dsl.kdl_tree import build_kdl_trees
     from scene_dsl.rdf.scenex import create_scenex_model_graph
 
     jsonld_names: list[str] = []
+    kdl_names: list[str] = []
     for imp in getattr(model, "imports", []):
         if not imp.importURI.endswith(".scenex"):
             continue
@@ -428,7 +434,31 @@ def _gen_scenex(model, output_dir: Path) -> list[str]:
         jsonld_path.write_text(_canonicalize_jsonld(serialized, scene_graph))
         print(f"  wrote {jsonld_path}")
         jsonld_names.append(jsonld_name)
-    return jsonld_names
+
+        kdl_name = f"{Path(imp.importURI).stem}.kdl.hpp"
+        kdl_path = output_dir / kdl_name
+        env = Environment(
+            loader=FileSystemLoader(Path(scene_dsl.__file__).parent / "templates"),
+            keep_trailing_newline=True,
+        )
+        kdl_path.write_text(
+            env.get_template("kdl.hpp.jinja2").render(
+                {
+                    "data": {
+                        "name": Path(imp.importURI).stem,
+                        "source": Path(imp.importURI).name,
+                        "trees": build_kdl_trees(
+                            scene_graph,
+                            Path(loaded[0]._tx_filename).parent,
+                            strict_inertia=False,
+                        ),
+                    }
+                }
+            )
+        )
+        print(f"  wrote {kdl_path}")
+        kdl_names.append(kdl_name)
+    return jsonld_names, kdl_names
 
 
 def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
@@ -515,7 +545,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
-    scene_jsonld_names = _gen_scenex(model, output_dir)
+    scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir)
 
     # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
     # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
@@ -528,6 +558,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
         *fsm_tool_names,
         *(["fsm_ir.json"] if fsm_tool_names else []),
         *scene_jsonld_names,
+        *scene_kdl_names,
         *fsm_jsonld_names,
     ]
     manifest_imports = [
@@ -540,5 +571,10 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     print(f"  wrote {manifest_path}")
 
     _write_provenance_artifact(
-        model, artifact_names, output_dir, provenance_path, fsm_tool_names, scene_jsonld_names
+        model,
+        artifact_names,
+        output_dir,
+        provenance_path,
+        fsm_tool_names,
+        [*scene_jsonld_names, *scene_kdl_names],
     )

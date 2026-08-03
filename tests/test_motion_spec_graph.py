@@ -10,10 +10,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from motion_spec.rdf_parser.ir import _load_graph, generate_ir
 from rdflib import Graph, Namespace, URIRef
 from rdflib.namespace import RDF
 
-from motion_spec.rdf_parser.ir import _load_graph, generate_ir
+from motion_spec_dsl.classes.constraint_handler import ROSTopic
+from motion_spec_dsl.gens import _gen_graph
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.rdf.model import ROS
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR,
@@ -26,12 +31,6 @@ from motion_spec_dsl.rdf_parser.vocab import (
     SLV,
     SLV_EXT,
 )
-from motion_spec_dsl.classes.constraint_handler import ROSTopic
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
-from motion_spec_dsl.gens import _gen_graph
-from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.model import ROS
-
 
 MODELS = Path(__file__).parents[1] / "models"
 METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
@@ -113,6 +112,9 @@ def test_generation_keeps_scene_fsm_and_provenance_separate(generated_model: Pat
     output = generated_model.parent
     assert (output / "pick_place_single.ld.json").exists()
     assert (output / "pick_place_single.scenex.ld.json").exists()
+    header = output / "pick_place_single.kdl.hpp"
+    assert header.exists()
+    assert "make_tree_" in header.read_text()
     assert (output / "pick_place_single_fsm.ld.json").exists()
 
     provenance = Graph().parse(output / "provenance" / "dsl.ld.json", format="json-ld")

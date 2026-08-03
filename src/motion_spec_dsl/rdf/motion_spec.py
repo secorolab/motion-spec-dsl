@@ -1897,7 +1897,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((position_node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
         self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
         self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
-        self._emit_orientation_type(orientation_node, orientation)
+        if orientation.relative is None:
+            self._emit_orientation_type(orientation_node, orientation)
 
         authored_orientation_coords = (
             orientation.quat.xyzw
@@ -2032,16 +2033,15 @@ class MotionSpecDatasetBuilder:
             )
 
     def _emit_relative_orientation(self, orientation_node, relative, quantity) -> None:
-        """Emit an orientation composed from a base orientation and a delta rotation, using
-        comp-rob2b's `geom-op:in1`/`in2` composition slots -- this node is itself the composite.
+        """Emit an orientation composed from a base orientation and a delta rotation as a
+        `geom-op-ext:ComposeOrientation` operator writing into `orientation_node`.
 
         The base is never decomposed, so no rotation parameterisation is round-tripped. The
-        delta's `as-seen-by` is its coordinate basis, and it decides slot order: turning in the
-        base's own body frame composes post (base * delta, `in1`=base), turning in the basis the
-        base is expressed in composes pre (delta * base, `in1`=delta).
+        basis the delta turns in decides slot order: intrinsic Euler angles use the base's own
+        body frame and compose post (base * delta); extrinsic Euler angles use the basis the
+        base is expressed in and compose pre (delta * base). Quaternion and direction-cosine
+        deltas must name their basis explicitly.
         """
-        # No type of its own: filling geom-op:in1/in2 is what makes this a composition, and a
-        # reader recognises it by the slots rather than by a class naming the obvious.
         # Bind to the pose itself, not its orientation subobject: the backend reads the
         # composed rotation off the materialised frame.
         base_quantity = _context_quantity(relative.base)
@@ -2067,11 +2067,19 @@ class MotionSpecDatasetBuilder:
         base_as_seen_by_node = self._owned_uri(base_as_seen_by, base_quantity)
         self.graph.add((orientation_node, GEOM_REL.of, of_frame_node))
         self.graph.add((orientation_node, GEOM_COORD["as-seen-by"], base_as_seen_by_node))
-        delta_basis = (
-            self._owned_uri(str(getattr(relative.frame, "uri", relative.frame)), quantity)
-            if relative.frame is not None
-            else of_frame_node
-        )
+        if relative.frame is not None:
+            delta_basis = self._owned_uri(str(getattr(relative.frame, "uri", relative.frame)), quantity)
+        elif relative.euler is not None and relative.euler.extrinsic:
+            # Extrinsic Euler angles turn about the pose's fixed reference-frame axes.
+            delta_basis = base_as_seen_by_node
+        elif relative.euler is not None:
+            # Intrinsic Euler angles turn about the moving body-frame axes.
+            delta_basis = of_frame_node
+        else:
+            raise ValueError(
+                f"Relative orientation on '{quantity.uri}' needs an explicit basis frame for "
+                "a quaternion or direction-cosine delta."
+            )
 
         delta_node = URIRef(f"{quantity.uri}.orientation-delta")
         self.graph.add((delta_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -2088,8 +2096,11 @@ class MotionSpecDatasetBuilder:
                 f"basis '{base_as_seen_by_node}'. Composing it needs a change of basis, which is "
                 "not supported."
             )
-        self.graph.add((orientation_node, GEOM_OP.in1, in1))
-        self.graph.add((orientation_node, GEOM_OP.in2, in2))
+        composition_node = URIRef(f"{quantity.uri}.orientation-composition")
+        self.graph.add((composition_node, RDF.type, GEOM_OP_EXT.ComposeOrientation))
+        self.graph.add((composition_node, GEOM_OP.in1, in1))
+        self.graph.add((composition_node, GEOM_OP.in2, in2))
+        self.graph.add((composition_node, GEOM_OP.composite, orientation_node))
 
         if relative.quat is not None:
             coords = relative.quat.xyzw

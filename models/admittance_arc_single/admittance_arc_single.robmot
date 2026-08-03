@@ -144,7 +144,7 @@ guarded-motion (ns=app) arc-motion {
             linear-distance end-z      = <spec.initial-pose>.position.z + <spec.chord-z>,
             pose end-pose = {
                 position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
-                orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad }
+                orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, 45.0) deg }
             },
             path arc-path = arc {
                 start:        <spec.start-pose>,
