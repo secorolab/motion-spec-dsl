@@ -140,24 +140,22 @@ def validate_static_path_geometry(model: Model) -> None:
         _validate_path_geometry(quantity)
 
 
-def validate_euler_convention(model: Model) -> None:
-    """Reject any Euler orientation block but extrinsic-XYZ, the only convention the backend
-    supports, and require exactly 3 angle components."""
-    for orientation in get_children_of_type(EulerAngles, model):
-        if orientation.axes != "xyz" or not orientation.extrinsic:
-            raise semantic_error(
-                "Orientation must use 'axes: xyz extrinsic' -- the backend's "
-                "KDL::Rotation::RPY constructor only supports extrinsic-XYZ Euler angles.",
-                orientation,
-            )
-        _require_arity(orientation.angles, 3, "Euler 'angles'", orientation)
-
-
 def _require_arity(coords: Coordinates, expected: int, label: str, owner: object) -> None:
     if len(coords.values) != expected:
         raise semantic_error(
             f"{label} needs exactly {expected} component(s), got {len(coords.values)}.", owner
         )
+
+
+def validate_euler_components(model: Model) -> None:
+    """Require exactly 3 angle components per Euler orientation block.
+
+    The sequence itself is unconstrained: any of the six composes, intrinsic or extrinsic,
+    because the backend builds a rotation as a product of per-axis quaternions in the
+    authored order rather than through one fixed constructor.
+    """
+    for orientation in get_children_of_type(EulerAngles, model):
+        _require_arity(orientation.angles, 3, "Euler 'angles'", orientation)
 
 
 def validate_quaternion_components(model: Model) -> None:

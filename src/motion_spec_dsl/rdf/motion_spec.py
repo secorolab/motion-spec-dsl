@@ -45,6 +45,7 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_DIRECTION_COSINE_XYZ,
     URI_GEOM_TYPE_EULER_ANGLES,
     URI_GEOM_TYPE_EXTRINSIC,
+    URI_GEOM_TYPE_INTRINSIC,
     URI_GEOM_TYPE_FRAME,
     URI_GEOM_TYPE_QUATERNION,
     URI_GEOM_TYPE_ORIENT_REF,
@@ -1250,7 +1251,11 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, URI_GEOM_TYPE_EULER_ANGLES))
             if euler is not None and all(element.ref is None for element in euler.angles.values):
                 self.graph.add((node, RDF.type, URI_GEOM_TYPE_ANGLES_ABG))
-            self.graph.add((node, RDF.type, URI_GEOM_TYPE_EXTRINSIC))
+            # `extrinsic` is an optional keyword, so its absence means intrinsic.
+            extrinsic = euler.extrinsic if euler is not None else True
+            self.graph.add(
+                (node, RDF.type, URI_GEOM_TYPE_EXTRINSIC if extrinsic else URI_GEOM_TYPE_INTRINSIC)
+            )
             self.graph.add((node, URI_GEOM_PRED_AXES_SEQ, Literal(euler.axes if euler else "xyz")))
 
         if self._is_euler_orientation(orientation):

@@ -106,18 +106,18 @@ def test_unit_of_wrong_kind_for_its_quantity_is_rejected(
         parse_mutated(ORIENTATION_ANCHOR, f"{ORIENTATION_ANCHOR},\n        {declaration}")
 
 
-EULER_CONVENTION_REJECTIONS = [
-    pytest.param(
-        "euler { axes: zyx extrinsic, angles: (0.1, 0.2, 0.3) rad }", id="unsupported_sequence"
-    ),
-    pytest.param("euler { axes: xyz, angles: (0.1, 0.2, 0.3) rad }", id="not_extrinsic"),
+EULER_CONVENTIONS = [
+    pytest.param("euler { axes: zyx extrinsic, angles: (0.1, 0.2, 0.3) rad }", id="zyx_extrinsic"),
+    pytest.param("euler { axes: xyz, angles: (0.1, 0.2, 0.3) rad }", id="xyz_intrinsic"),
+    pytest.param("euler { axes: xyz extrinsic, angles: (0.1, 0.2, 0.3) rad }", id="xyz_extrinsic"),
 ]
 
 
-@pytest.mark.parametrize("orientation_block", EULER_CONVENTION_REJECTIONS)
-def test_euler_convention_is_validated(parse_mutated, orientation_block) -> None:
-    with pytest.raises(TextXSemanticError, match="xyz extrinsic"):
-        parse_mutated(ORIENTATION_ANCHOR, _pose_source(orientation_block))
+@pytest.mark.parametrize("orientation_block", EULER_CONVENTIONS)
+def test_any_euler_convention_is_accepted(parse_mutated, orientation_block) -> None:
+    """The backend composes per-axis quaternions in the authored order, so no sequence is
+    privileged the way KDL::Rotation::RPY once privileged extrinsic-XYZ."""
+    parse_mutated(ORIENTATION_ANCHOR, _pose_source(orientation_block))
 
 
 ORIENTATION_ANCHOR = "linear-velocity zero-linvel = 0.0 m/s"
@@ -619,11 +619,11 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
         {"pose"},
         {"delta"},
     ]
-    assert operands[1]["delta"] == [
-        {"value": -0.75},
-        {"value": 0.0},
-        {"value": 0.0},
-    ]
+    # The graph keeps the authored Euler triple; the reader hands codegen the quaternion.
+    assert operands[1]["representation"] == "quaternion"
+    assert [c["value"] for c in operands[1]["delta"]] == pytest.approx(
+        [-0.36627253, 0.0, 0.0, 0.93050762]
+    )
 
     for predicate in ("rotation-base", "rotation-delta", "rotation-in-frame"):
         assert not list(graph.objects(orientation, GEOM_OP_EXT[predicate]))

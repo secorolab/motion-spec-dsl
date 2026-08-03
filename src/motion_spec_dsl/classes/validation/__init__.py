@@ -12,7 +12,7 @@ from motion_spec_dsl.classes.validation.common import (
 )
 from motion_spec_dsl.classes.validation.constraints import (
     validate_direction_cosine_components,
-    validate_euler_convention,
+    validate_euler_components,
     validate_path_following,
     validate_quaternion_components,
     validate_static_path_geometry,
@@ -44,7 +44,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_unique_constraint_names(model)
     validate_static_path_geometry(model)
     validate_path_following(model)
-    validate_euler_convention(model)
+    validate_euler_components(model)
     validate_quaternion_components(model)
     validate_direction_cosine_components(model)
     validate_two_subspace_coordinates(model)
