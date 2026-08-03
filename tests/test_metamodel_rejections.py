@@ -20,6 +20,7 @@ GEOM_COORD = Namespace("https://comp-rob2b.github.io/metamodels/geometry/coordin
 GEOM_OP = Namespace("https://secorolab.github.io/metamodels/geometry/spatial-operators#")
 GEOM_PATH = Namespace("https://secorolab.github.io/metamodels/geometry/path#")
 TIME = Namespace("http://www.w3.org/2006/time#")
+UNIT = Namespace("http://qudt.org/vocab/unit/")
 FOCUS = URIRef("urn:test:focus")
 
 
@@ -50,10 +51,29 @@ def test_progress_constraint_requires_linear_velocity_operands() -> None:
     assert not _conforms("algorithm-extension.shacl.ttl", ALGO.ProgressConstraint, data)
 
 
-def test_owl_time_duration_requires_a_value() -> None:
+def _duration(**triples) -> Graph:
     data = Graph()
     data.add((FOCUS, RDF.type, TIME.Duration))
-    data.add((FOCUS, TIME.unitType, TIME.unitSecond))
+    data.add((FOCUS, QUDT.hasQuantityKind, QKIND.Time))
+    for predicate, value in triples.items():
+        data.add((FOCUS, QUDT[predicate], value))
+    return data
+
+
+def test_owl_time_duration_requires_a_value() -> None:
+    assert not _conforms("time.shacl.ttl", TIME.Duration, _duration(unit=UNIT.SEC))
+
+
+def test_owl_time_duration_accepts_milliseconds() -> None:
+    """The whole reason the magnitude is qudt: owl-time has no unit below the second."""
+    data = _duration(value=Literal(10.0, datatype=XSD.double), unit=UNIT.MilliSEC)
+    assert _conforms("time.shacl.ttl", TIME.Duration, data)
+
+
+def test_owl_time_duration_rejects_the_owl_time_magnitude() -> None:
+    """Emitting time:numericDuration means the value was rescaled to seconds."""
+    data = _duration(value=Literal(0.01, datatype=XSD.double), unit=UNIT.SEC)
+    data.add((FOCUS, TIME.numericDuration, Literal("0.01", datatype=XSD.decimal)))
     assert not _conforms("time.shacl.ttl", TIME.Duration, data)
 
 

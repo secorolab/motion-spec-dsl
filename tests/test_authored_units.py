@@ -51,11 +51,78 @@ def test_a_quantity_keeps_the_unit_it_was_written_in(
     assert graph.value(node, QUDT_SCHEMA.unit) == QUDT_UNIT[unit]
 
 
-def test_a_duration_is_normalised_because_owl_time_has_no_smaller_unit(parse_mutated):
+POSE_ANCHOR = "            pose home-pose = snapshot of <shared.world.pose-ee-base>"
+
+
+def _pose_spec(position: str) -> str:
+    return f"""{POSE_ANCHOR},
+            pose lit-pose {{
+                of:         <gripper.g_base.g_pinch>,
+                wrt:        <kinova.base_link.base_link_origin>,
+                as-seen-by: <kinova.base_link.base_link_origin>
+            }} = {{
+                position: {position} cm,
+                orientation: euler {{ axes: xyz extrinsic, angles: (90.0, 0.0, 0.0) deg }}
+            }}"""
+
+
+@pytest.mark.parametrize(
+    "position",
+    ["(10.0, 20.0, 30.0)", "(<spec.zero-linvel>, 20.0, 30.0)"],
+    ids=["all_literal", "mixed_ref"],
+)
+def test_a_pose_keeps_the_units_its_coordinates_were_written_in(parse_mutated, position):
+    """A vector is no different from a scalar: 10 cm must not be labelled 10 metres,
+    whether every axis is literal or one of them references another quantity."""
+    model = parse_mutated(POSE_ANCHOR, _pose_spec(position))
+    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    position_node = next(s for s in graph.subjects() if str(s).endswith("lit-pose.position"))
+    orientation_node = next(s for s in graph.subjects() if str(s).endswith("lit-pose.orientation"))
+    assert graph.value(position_node, QUDT_SCHEMA.unit) == QUDT_UNIT["CentiM"]
+    assert graph.value(orientation_node, QUDT_SCHEMA.unit) == QUDT_UNIT["DEG"]
+
+
+TWO_SUBSPACE = [
+    pytest.param(
+        "velocity-twist tw = { angular-velocity: (1.0, 0.0, 0.0) deg/s, "
+        "linear-velocity: (5.0, 0.0, 0.0) cm/s }",
+        "tw",
+        ("angular-velocity", "linear-velocity"),
+        ("DEG-PER-SEC", "CentiM-PER-SEC"),
+        id="velocity_twist",
+    ),
+    pytest.param(
+        "acceleration-twist acc = { angular-acceleration: (1.0, 0.0, 0.0) deg/s^2, "
+        "linear-acceleration: (1.0, 0.0, 0.0) m/s^2 }",
+        "acc",
+        ("angular-acceleration", "linear-acceleration"),
+        ("DEG-PER-SEC2", "M-PER-SEC2"),
+        id="acceleration_twist",
+    ),
+]
+
+
+@pytest.mark.parametrize(("declaration", "name", "labels", "units"), TWO_SUBSPACE)
+def test_a_twist_keeps_a_unit_per_subspace(parse_mutated, declaration, name, labels, units):
+    """Each subspace carries its own authored unit, and the container's pair reports both
+    -- a twist written in deg/s and cm/s is not a twist in rad/s and m/s."""
+    graph = _build(parse_mutated, declaration)
+    container = next(s for s in graph.subjects() if str(s).endswith(f"/{name}"))
+    assert set(graph.objects(container, QUDT_SCHEMA.unit)) == {QUDT_UNIT[u] for u in units}
+    for label, unit in zip(labels, units):
+        node = next(s for s in graph.subjects() if str(s).endswith(f"{name}.{label}"))
+        assert graph.value(node, QUDT_SCHEMA.unit) == QUDT_UNIT[unit]
+
+
+def test_a_duration_carries_qudt_magnitude_because_owl_time_has_no_smaller_unit(parse_mutated):
+    """`time:unitType` bottoms out at `time:unitSecond`, so owl-time's own magnitude
+    properties could only record 500 ms by rescaling it. The class stays; the magnitude
+    is a qudt Time-kind scalar that can say milliseconds."""
     graph = _build(parse_mutated, "duration du-ms = 500.0 ms")
     node = next(s for s in graph.subjects(RDF.type, TIME.Duration) if str(s).endswith("du-ms"))
-    assert float(graph.value(node, TIME.numericDuration)) == pytest.approx(0.5)
-    assert graph.value(node, TIME.unitType) == TIME.unitSecond
+    assert float(graph.value(node, QUDT_SCHEMA.value)) == pytest.approx(500.0)
+    assert graph.value(node, QUDT_SCHEMA.unit) == QUDT_UNIT["MilliSEC"]
+    assert graph.value(node, TIME.numericDuration) is None
 
 
 def test_a_debounce_carries_the_unit_of_its_value(parse_mutated):

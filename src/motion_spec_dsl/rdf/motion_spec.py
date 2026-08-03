@@ -185,8 +185,9 @@ from motion_spec_dsl.rdf.common import (
     _axis_vector,
     _scalar_type,
     _evaluator_id,
+    ANGLE_UNITS,
+    _angle_unit,
     _dsl_unit,
-    _si_seconds,
     _context_quantity,
     _resolved_constraint_items,
     _DistancePlan,
@@ -1229,9 +1230,9 @@ class MotionSpecDatasetBuilder:
         self, node: URIRef, orientation: OrientationCoordinate | None
     ) -> None:
         """Type an orientation coordinate node by the representation the author actually
-        wrote, and emit or withdraw its PlaneAngle-kind/RAD-unit pairing to match:
-        Euler angles are a radian scalar per axis, quaternion and direction-cosine
-        components are dimensionless.
+        wrote, and emit or withdraw its PlaneAngle-kind/angle-unit pairing to match:
+        Euler angles are an angular scalar per axis in the unit they were written in,
+        quaternion and direction-cosine components are dimensionless.
 
         `orientation=None` covers sites with no authored coordinate to inspect (a
         runtime-decomposed view, or a quantity typed 'orientation' directly); those
@@ -1239,6 +1240,7 @@ class MotionSpecDatasetBuilder:
         """
         quat = orientation.quat if orientation is not None else None
         direction_cosine = orientation.direction_cosine if orientation is not None else None
+        euler = None
         if quat is not None:
             self.graph.add((node, RDF.type, URI_GEOM_TYPE_QUATERNION))
         elif direction_cosine is not None:
@@ -1253,10 +1255,11 @@ class MotionSpecDatasetBuilder:
 
         if self._is_euler_orientation(orientation):
             self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+            self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(_angle_unit(euler))))
         else:
             self.graph.remove((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
-            self.graph.remove((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+            for angle_unit in ANGLE_UNITS:
+                self.graph.remove((node, QUDT_SCHEMA.unit, angle_unit))
 
     def _register_pose_orientation_view(
         self,
@@ -1744,15 +1747,22 @@ class MotionSpecDatasetBuilder:
         `superobject` to the quantity it *is* -- the referenced node, or a small
         value-carrying quantity for the literal axes beside it.
 
+        Either way the coordinate carries the unit it was written in, not a canonical
+        one: the value is never rescaled, so the unit is the only thing saying what the
+        number means.
+
         `unit=None` means dimensionless -- quaternion/direction-cosine components carry
         no unit at all.
         """
 
         def _literal(element):
-            return Literal(
-                float(element.value) if unit is not None else float(element.value),
-                datatype=XSD.double,
-            )
+            return Literal(float(element.value), datatype=XSD.double)
+
+        # A wrench passes itself as its own container for both subspaces, so its unit pair is
+        # stamped by the caller; anywhere else the container holds one subspace and one unit.
+        if unit is not None and container_node != superobject:
+            self.graph.remove((container_node, QUDT_SCHEMA.unit, None))
+            self.graph.add((container_node, QUDT_SCHEMA.unit, _dsl_unit(unit)))
 
         elements = list(zip(labels, coords.values))
         if all(element.ref is None for _, element in elements):
@@ -1803,7 +1813,9 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
-        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+        self.graph.add(
+            (node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.position.unit or "m"))
+        )
         pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
         if pose_relation is None:
             path_quantity = next(
@@ -2009,7 +2021,7 @@ class MotionSpecDatasetBuilder:
                 list(euler.axes) if has_symbolic_orientation else ["alpha", "beta", "gamma"],
                 QuantityType.Angle,
                 MAP_EXT.orientation,
-                euler.unit or "rad",
+                _angle_unit(euler),
                 quantity,
                 f"{quantity.uri}.orientation",
             )
@@ -2105,7 +2117,7 @@ class MotionSpecDatasetBuilder:
             euler = relative.euler
             coords = euler.angles
             predicates = (URI_GEOM_PRED_ALPHA, URI_GEOM_PRED_BETA, URI_GEOM_PRED_GAMMA)
-            unit = euler.unit or "rad"
+            unit = _angle_unit(euler)
         self._emit_delta_components(delta_node, coords, predicates, unit, quantity)
 
     def _emit_delta_components(self, node, coords, predicates, unit, quantity) -> None:
@@ -2114,9 +2126,11 @@ class MotionSpecDatasetBuilder:
             raise ConstraintViolation(
                 "geometry", f"Relative orientation '{quantity.uri}' has symbolic components"
             )
+        if unit is not None:
+            self.graph.remove((node, QUDT_SCHEMA.unit, None))
+            self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(unit)))
         for predicate, element in zip(predicates, coords.values):
-            value = float(element.value) if unit is not None else float(element.value)
-            self.graph.add((node, predicate, Literal(value, datatype=XSD.double)))
+            self.graph.add((node, predicate, Literal(float(element.value), datatype=XSD.double)))
 
     def _emit_two_subspace_coordinate(self, node: URIRef, quantity: ContextQuantity) -> None:
         """Emit a literal velocity-twist/acceleration-twist/wrench value: its two named
@@ -2159,7 +2173,7 @@ class MotionSpecDatasetBuilder:
             )
         else:
             assert isinstance(value, WrenchCoordinate)
-            for label, coords, unit, predicate, kind in (
+            subspaces = (
                 (
                     "torque",
                     value.torque,
@@ -2168,7 +2182,15 @@ class MotionSpecDatasetBuilder:
                     QuantityType.Torque,
                 ),
                 ("force", value.force, value.force_unit, RBDYN_COORD.force, QuantityType.Force),
-            ):
+            )
+
+        # The container's unit pair is what says which scale its subspace numbers are on.
+        self.graph.remove((node, QUDT_SCHEMA.unit, None))
+        for _, _, subspace_unit, _, _ in subspaces:
+            self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(subspace_unit)))
+
+        if isinstance(value, WrenchCoordinate):
+            for label, coords, unit, predicate, kind in subspaces:
                 if all(element.ref is None for element in coords.values):
                     add_literal_list_pred(
                         self.graph,
@@ -2851,7 +2873,7 @@ class MotionSpecDatasetBuilder:
             max_velocity_node,
             float(spec_val.max_velocity),
             QUDT_QKIND.LinearVelocity,
-            QUDT_UNIT["M-PER-SEC"],
+            _dsl_unit(spec_val.max_velocity_unit or "m/s"),
         )
         self.graph.add((op_node, CSTR_HDL["maximum-velocity"], max_velocity_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
@@ -3003,7 +3025,10 @@ class MotionSpecDatasetBuilder:
 
         qty_node = self._elapsed_quantity_node(spec, motion)
         self.graph.add((qty_node, RDF.type, CSTR_EXT.ElapsedDurationCoordinate))
-        self.graph.add((qty_node, TIME.unitType, TIME.unitSecond))
+        self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_quantity_kind(qty_node, NS_MM_QUDT_QTY["Time"])
+        # No authored value: the clock fills this one, and it ticks in seconds.
+        self.graph.add((qty_node, QUDT_SCHEMA.unit, _dsl_unit("s")))
         self.graph.add((node, CSTR.quantity, qty_node))
 
         entry_node, current_node = self._motion_time_endpoints(motion)
@@ -3060,17 +3085,19 @@ class MotionSpecDatasetBuilder:
         )
 
     def _emit_duration_measure(self, node: URIRef, value: Measure) -> None:
-        """Emit a Measure (`5.0 s`, `10.0 ms`) as a native OWL-Time Duration, normalized
-        to seconds so every emitted Duration uses the one temporal unit."""
+        """Emit a Measure (`5.0 s`, `10.0 ms`) as a time:Duration whose magnitude is carried
+        by qudt, in the unit it was written in.
+
+        owl-time's own magnitude properties cannot say `10 ms` -- `time:unitType` ranges over
+        `time:TemporalUnit`, whose smallest member is `time:unitSecond` -- so writing one
+        would mean rescaling the authored number. The class still describes what this is;
+        only the magnitude moves to the vocabulary that can express it, the same qudt
+        Time-kind scalar a monitor's debounce already uses.
+        """
         self.graph.add((node, RDF.type, TIME.Duration))
-        self.graph.add(
-            (
-                node,
-                TIME.numericDuration,
-                Literal(_si_seconds(value.value, value.unit), datatype=XSD.decimal),
-            )
+        self._emit_scalar_quantity(
+            node, value.value, NS_MM_QUDT_QTY["Time"], _dsl_unit(value.unit)
         )
-        self.graph.add((node, TIME.unitType, TIME.unitSecond))
 
     def _emit_motion_spec(self, motion: GuardedMotion) -> None:
         """Emit the guarded-motion node linking its when/while/until constraints (with disjunction

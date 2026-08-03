@@ -1,13 +1,18 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Elapsed (timing) constraints: grammar, validation, and native OWL-Time RDF emission."""
+"""Elapsed (timing) constraints: grammar, validation, and native OWL-Time RDF emission.
+
+A duration keeps the unit it was written in; owl-time cannot say `10 ms`, so the magnitude
+rides on qudt and only a reader turns it into seconds.
+"""
 
 from __future__ import annotations
 
 import pytest
 from rdflib.namespace import RDF
 
-from motion_spec_dsl.rdf_parser.vocab import CSTR, CSTR_EXT, TIME
+from motion_spec_dsl.rdf_parser.vocab import CSTR, CSTR_EXT, QUDT_SCHEMA, TIME
+from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.gens import _build_manifest
 
@@ -37,8 +42,8 @@ def test_elapsed_greater_than_emits_native_time_constraint(parse_mutated):
 
     measured = g.value(cstr, CSTR.quantity)
     assert (measured, RDF.type, CSTR_EXT.ElapsedDurationCoordinate) in g
-    assert g.value(measured, TIME.numericDuration) is None  # runtime state, unmeasured
-    assert g.value(measured, TIME.unitType) == TIME.unitSecond
+    assert g.value(measured, QUDT_SCHEMA.value) is None  # runtime state, unmeasured
+    assert g.value(measured, QUDT_SCHEMA.unit) == QUDT_UNIT["SEC"]
 
     interval = next(g.subjects(RDF.type, TIME.ProperInterval))
     assert (interval, RDF.type, TIME.ProperInterval) in g
@@ -49,15 +54,17 @@ def test_elapsed_greater_than_emits_native_time_constraint(parse_mutated):
     assert (end, RDF.type, TIME.Instant) in g
 
     threshold = g.value(cstr, CSTR.threshold)
-    assert float(g.value(threshold, TIME.numericDuration)) == pytest.approx(5.0)
-    assert g.value(threshold, TIME.unitType) == TIME.unitSecond
+    assert (threshold, RDF.type, TIME.Duration) in g
+    assert float(g.value(threshold, QUDT_SCHEMA.value)) == pytest.approx(5.0)
+    assert g.value(threshold, QUDT_SCHEMA.unit) == QUDT_UNIT["SEC"]
 
 
-def test_elapsed_threshold_normalizes_milliseconds_to_seconds(parse_mutated):
+def test_elapsed_threshold_keeps_the_milliseconds_it_was_written_in(parse_mutated):
     g = _build(parse_mutated, "wait5: elapsed less than 10.0 ms")
     cstr = next(g.subjects(RDF.type, CSTR_EXT.TimeConstraint))
     threshold = g.value(cstr, CSTR.threshold)
-    assert float(g.value(threshold, TIME.numericDuration)) == pytest.approx(0.01)
+    assert float(g.value(threshold, QUDT_SCHEMA.value)) == pytest.approx(10.0)
+    assert g.value(threshold, QUDT_SCHEMA.unit) == QUDT_UNIT["MilliSEC"]
 
 
 def test_elapsed_equality_emits_reference_and_tolerance(parse_mutated):
@@ -66,10 +73,12 @@ def test_elapsed_equality_emits_reference_and_tolerance(parse_mutated):
     assert (cstr, RDF.type, CSTR.EqualityConstraint) in g
 
     reference = g.value(cstr, CSTR["reference-value"])
-    assert float(g.value(reference, TIME.numericDuration)) == pytest.approx(5.0)
+    assert float(g.value(reference, QUDT_SCHEMA.value)) == pytest.approx(5.0)
+    assert g.value(reference, QUDT_SCHEMA.unit) == QUDT_UNIT["SEC"]
 
     tolerance = g.value(cstr, CSTR_EXT.tolerance)
-    assert float(g.value(tolerance, TIME.numericDuration)) == pytest.approx(0.01)
+    assert float(g.value(tolerance, QUDT_SCHEMA.value)) == pytest.approx(10.0)
+    assert g.value(tolerance, QUDT_SCHEMA.unit) == QUDT_UNIT["MilliSEC"]
 
 
 def test_manifest_includes_time_shacl_exactly_once():

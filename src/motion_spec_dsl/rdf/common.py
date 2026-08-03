@@ -30,8 +30,9 @@ from motion_spec_dsl.classes.motion_spec import GuardedMotion
 
 from motion_spec_dsl.rdf.model import WORLD_SPECS
 from motion_spec_dsl.classes.units import (
+    ANGLE_UNITS as ANGLE_UNITS,
+    _angle_unit as _angle_unit,
     _dsl_unit as _dsl_unit,
-    _si_seconds as _si_seconds,
 )
 
 

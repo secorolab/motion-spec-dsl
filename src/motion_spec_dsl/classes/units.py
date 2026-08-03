@@ -4,12 +4,14 @@
 """DSL unit tokens and the QUDT units they name.
 
 A token maps to the unit it says, so the graph records what the model was written in and
-a reader converts when it needs a number. `rdf-utils` does that for everything geometric
--- orientations come back in radians and positions in metres however they were authored
--- leaving a reader the handful of scalars that are not coordinates.
+a reader converts when it needs a number. Nothing here rescales a value. `rdf-utils` does
+that conversion for everything geometric -- orientations come back in radians and positions
+in metres however they were authored -- leaving a reader the handful of scalars that are
+not coordinates.
 
-A `time:Duration` is the exception: its vocabulary has no unit below the second, so a
-duration is written in seconds. See `_emit_duration_measure`.
+A duration is the one place the natural vocabulary cannot hold the authored unit:
+`time:unitType` bottoms out at `time:unitSecond`, so a `time:Duration` carries its
+magnitude as a qudt Time-kind scalar instead. See `_emit_duration_measure`.
 """
 
 from __future__ import annotations
@@ -39,7 +41,12 @@ DSL_UNIT: dict[str, Any] = {
     "1": QUDT_UNIT.UNITLESS,
 }
 
-SECONDS_IN: dict[str, float] = {"s": 1.0, "ms": 1e-3}
+ANGLE_UNITS: tuple[Any, ...] = (DSL_UNIT["rad"], DSL_UNIT["deg"])
+
+
+def _angle_unit(euler: Any) -> str:
+    """The unit an Euler triple was written in; `rad` when the author left it off."""
+    return getattr(euler, "unit", None) or "rad"
 
 
 def _dsl_unit(unit_name: str) -> Any:
@@ -48,11 +55,3 @@ def _dsl_unit(unit_name: str) -> Any:
         return DSL_UNIT[unit_name]
     except KeyError as exc:
         raise ValueError(f"Unsupported DSL unit '{unit_name}'.") from exc
-
-
-def _si_seconds(value: float, unit_name: str) -> float:
-    """A duration in seconds, for `time:Duration`, whose units stop at the second."""
-    try:
-        return float(value) * SECONDS_IN[unit_name]
-    except KeyError as exc:
-        raise ValueError(f"Unsupported duration unit '{unit_name}'.") from exc
