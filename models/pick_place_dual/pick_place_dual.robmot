@@ -406,7 +406,7 @@ guarded-motion (ns=app) open-grasp-hold {
     context {
         spec {
             linear-distance support-lift = 0.06 m,
-            linear-distance place-z = 0.03 m,
+            linear-distance release-z = 0.04 m,
             linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
             linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
@@ -415,8 +415,8 @@ guarded-motion (ns=app) open-grasp-hold {
     }
 
     when all {
-        at1-place: <shared.world.pose-ee1-base>.position.z equal to <open-grasp-hold.spec.place-z>,
-        at2-place: <shared.world.pose-ee2-base>.position.z equal to <open-grasp-hold.spec.place-z>
+        at1-place: <shared.world.pose-ee1-base>.position.z equal to <open-grasp-hold.spec.release-z>,
+        at2-place: <shared.world.pose-ee2-base>.position.z equal to <open-grasp-hold.spec.release-z>
     }
 
     while {
