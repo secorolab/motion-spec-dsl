@@ -2040,7 +2040,8 @@ class MotionSpecDatasetBuilder:
         base's own body frame composes post (base * delta, `in1`=base), turning in the basis the
         base is expressed in composes pre (delta * base, `in1`=delta).
         """
-        self.graph.add((orientation_node, RDF.type, GEOM_OP_EXT.RelativeOrientation))
+        # No type of its own: filling geom-op:in1/in2 is what makes this a composition, and a
+        # reader recognises it by the slots rather than by a class naming the obvious.
         # Bind to the pose itself, not its orientation subobject: the backend reads the
         # composed rotation off the materialised frame.
         base_quantity = _context_quantity(relative.base)

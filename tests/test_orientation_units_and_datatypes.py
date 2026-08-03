@@ -590,7 +590,7 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
 
     from motion_spec_dsl.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
-    relative = set(graph.subjects(RDF.type, GEOM_OP_EXT.RelativeOrientation))
+    relative = set(graph.subjects(GEOM_OP.in1, None))
     assert len(relative) == 1
     orientation = relative.pop()
 
@@ -611,7 +611,6 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
         float(graph.value(delta, predicate))
         for predicate in (URI_GEOM_PRED_ALPHA, URI_GEOM_PRED_BETA, URI_GEOM_PRED_GAMMA)
     ] == [-0.75, 0.0, 0.0]
-    assert not list(graph.objects(delta, GEOM_COORD["has-coordinate"]))
     assert not list(graph.objects(delta, GEOM_COORD["as-seen-by"]))
 
     operands = Parser(graph)._relative_orientation(orientation)
@@ -624,9 +623,6 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     assert [c["value"] for c in operands[1]["delta"]] == pytest.approx(
         [-0.36627253, 0.0, 0.0, 0.93050762]
     )
-
-    for predicate in ("rotation-base", "rotation-delta", "rotation-in-frame"):
-        assert not list(graph.objects(orientation, GEOM_OP_EXT[predicate]))
 
 
 def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:

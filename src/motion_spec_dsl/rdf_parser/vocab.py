@@ -26,6 +26,7 @@ URI_SECORO_MM = URL_SECORO_MM
 
 
 class SOSA(DefinedNamespace):
+    Observation: URIRef
     madeBySensor: URIRef
     hosts: URIRef
 
@@ -301,7 +302,6 @@ class GEOM_OP_EXT(DefinedNamespace):
     PoseDiffEvaluator: URIRef
     PoseToAngularDistance: URIRef
     PathProjection: URIRef
-    RelativeOrientation: URIRef
     path: URIRef
     tangent: URIRef
     linear: URIRef
