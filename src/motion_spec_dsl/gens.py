@@ -13,6 +13,7 @@ from typing import Any
 
 import pyshacl
 from pyld import jsonld
+from rdf_utils.naming import get_valid_var_name
 from rdf_utils.resolver import IriToFileResolver, install_resolver
 from rdflib import Dataset, Graph, Literal, URIRef
 from rdflib.namespace import Namespace
@@ -445,7 +446,7 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
             env.get_template("kdl.hpp.jinja2").render(
                 {
                     "data": {
-                        "name": Path(imp.importURI).stem,
+                        "name": get_valid_var_name(Path(imp.importURI).stem),
                         "source": Path(imp.importURI).name,
                         "trees": build_kdl_trees(
                             scene_graph, Path(loaded[0]._tx_filename).parent
