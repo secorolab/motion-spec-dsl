@@ -448,9 +448,7 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
                         "name": Path(imp.importURI).stem,
                         "source": Path(imp.importURI).name,
                         "trees": build_kdl_trees(
-                            scene_graph,
-                            Path(loaded[0]._tx_filename).parent,
-                            strict_inertia=False,
+                            scene_graph, Path(loaded[0]._tx_filename).parent
                         ),
                     }
                 }
