@@ -88,7 +88,9 @@ def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_mo
     projections = set(graph.subjects(RDF.type, GEOM_OP_EXT.PathProjection))
     assert len(projections) == 2
     assert len({graph.value(node, GEOM_OP_EXT.path) for node in projections}) == 2
-    assert len({graph.value(node, GEOM_OP_EXT.tangent) for node in projections}) == 2
+    frames = set(graph.subjects(RDF.type, GEOM_OP_EXT.PathTangentFrame))
+    assert len(frames) == 2
+    assert len({graph.value(node, GEOM_OP_EXT.tangent) for node in frames}) == 2
 
     ir = generate_ir(generated_dual_model)
     profiles = [value for value in ir["closures"].values() if value.get("type") == "VelocityProfile"]
@@ -181,12 +183,15 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
     graph = _load_graph(generated_model)[1]
     # The progress guard is a lower bound on the measured speed along the path, so it names
     # the same path as the projection and never produces the parameter itself.
-    (guard,) = list(graph.subjects(RDF.type, ALGO_EXT.ProgressConstraint))
+    (guard,) = [
+        subject
+        for subject in graph.subjects(GEOM_OP_EXT.path, None)
+        if CSTR.GreaterThanConstraint in graph[subject : RDF.type]
+    ]
     (projection,) = list(graph.subjects(RDF.type, GEOM_OP_EXT.PathProjection))
+    (along,) = list(graph.subjects(RDF.type, GEOM_OP_EXT.TwistToLinearVelocityAlong))
     assert graph.value(guard, GEOM_OP_EXT.path) == graph.value(projection, GEOM_OP_EXT.path)
-    assert graph.value(guard, CSTR.quantity) == graph.value(
-        projection, GEOM_OP_EXT["along-speed"]
-    )
+    assert graph.value(guard, CSTR.quantity) == graph.value(along, GEOM_OP_EXT["along-speed"])
     assert CSTR.GreaterThanConstraint in graph[guard : RDF.type]
     forwarding_solvers = set(graph.subjects(RDF.type, SLV_EXT.CommandForwardingSolver))
     assert forwarding_solvers
@@ -198,15 +203,24 @@ def test_ir_derives_forwarded_commands_and_monitors(generated_model: Path) -> No
 
     pick_above = next(motion for motion in ir["motions"] if motion.id == "motion_pick_above")
     scheduled = [ir["closures"][step] for step in pick_above.while_schedule]
+    # The parameter is measured by the projection; the pose the motion tracks is the
+    # evaluator sampling the curve there.
     projection_call = next(
         closure for closure in scheduled if closure["type"] == "PathProjection"
     )
+    evaluator_call = next(
+        closure for closure in scheduled if closure["type"] == "PathEvaluator"
+    )
     assert projection_call["shape"] == "LinearPath"
-    assert (projection_call["setpoint"], projection_call["path_parameter"]) == (
+    assert (evaluator_call["setpoint"], projection_call["path_parameter"]) == (
         "reference",
         "approach_path_s",
     )
+    assert evaluator_call["path_parameter"] == projection_call["path_parameter"]
+    # Only the projection writes the shared goal; it is scheduled before the others read it.
     assert projection_call["assign_goal"]
+    assert not evaluator_call.get("assign_goal")
+    assert scheduled.index(projection_call) < scheduled.index(evaluator_call)
     assert any(closure["type"] == "PoseDiffEvaluator" for closure in scheduled)
     assert any(component["id"] == "goal_pose" for component in pick_above.declared_pose_components)
     # The progress guard is a monitored condition, never a solver row: the schedule holds

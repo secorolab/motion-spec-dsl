@@ -410,14 +410,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, qkind))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
 
-    def _retag_as_position_kind(self, node: URIRef) -> None:
-        """Replace `node`'s hasQuantityKind with Position.
-
-        PoseCoordinateView position subobjects must report hasQuantityKind=Position for the
-        SHACL shape and ir_gen's single-valued lookup, overriding an earlier Distance tag.
-        """
-        self.graph.remove((node, QUDT_SCHEMA["hasQuantityKind"], None))
-        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.Position))
 
     def _emit_geom_relation(
         self,
@@ -1210,8 +1202,6 @@ class MotionSpecDatasetBuilder:
             return
         view_subspace_uri, _, _, scalar_t, view_type = props
         self._add_quantity(scalar_uri, scalar_t)
-        if view_type == MAP_EXT.PoseCoordinateView:
-            self._retag_as_position_kind(scalar_uri)
         self._emit_view(view_uri)
         self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
         self.graph.add((view_uri, MAP.subobject, scalar_uri))
@@ -2486,7 +2476,6 @@ class MotionSpecDatasetBuilder:
             return
         self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
         self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
-        self.graph.add((node, RDF.type, ALGO_EXT.ProgressConstraint))
         self.graph.add(
             (
                 node,
@@ -2561,25 +2550,43 @@ class MotionSpecDatasetBuilder:
         speed_node = self._path_along_speed_node(path)
         self._add_quantity(speed_node, QuantityType.LinearVelocity)
 
+        # Where the frame is on the path. Only this reads the robot; the three below are
+        # functions of the parameter it produces.
         self.graph.add((projection_node, RDF.type, GEOM_OP_EXT.PathProjection))
-        self.graph.add((projection_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         self.graph.add((projection_node, GEOM_OP_EXT.path, path_node))
-        self.graph.add((projection_node, GEOM_OP["in"], URIRef(moved.uri)))
-        self.graph.add(
-            (
-                projection_node,
-                CSTR_HDL["measured-velocity"],
-                URIRef(self._measured_twist_of(moved, world_qtys).uri),
-            )
-        )
+        self.graph.add((projection_node, GEOM_OP.pose, URIRef(moved.uri)))
         self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, "path-parameter"), parameter_node))
-        self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, "along-speed"), speed_node))
+
+        # The local frame there: one axis along the path, two across it.
+        directions = {}
         for term in ("tangent", "normal-a", "normal-b"):
             direction_node = self._owned_uri(f"{path.name}-{term}", path)
             self.graph.add((direction_node, RDF.type, QUDT_SCHEMA.Quantity))
             self._emit_direction_coordinate(direction_node, as_seen_by)
-            self.graph.add((projection_node, _ns_term(GEOM_OP_EXT, term), direction_node))
-        self.graph.add((projection_node, GEOM_OP.out, self._reference_output_node(path)))
+            directions[term] = direction_node
+        frame_node = self._owned_uri(f"frame-{path.name}", path)
+        self.graph.add((frame_node, RDF.type, GEOM_OP_EXT.PathTangentFrame))
+        self.graph.add((frame_node, GEOM_OP_EXT.path, path_node))
+        self.graph.add((frame_node, _ns_term(GEOM_OP_EXT, "path-parameter"), parameter_node))
+        for term, direction_node in directions.items():
+            self.graph.add((frame_node, _ns_term(GEOM_OP_EXT, term), direction_node))
+
+        # How fast the frame travels along the path: the measured twist onto that tangent.
+        along_node = self._owned_uri(f"along-{path.name}", path)
+        self.graph.add((along_node, RDF.type, GEOM_OP_EXT.TwistToLinearVelocityAlong))
+        self.graph.add(
+            (along_node, GEOM_OP["in"], URIRef(self._measured_twist_of(moved, world_qtys).uri))
+        )
+        self.graph.add((along_node, GEOM_OP.direction, directions["tangent"]))
+        self.graph.add((along_node, _ns_term(GEOM_OP_EXT, "along-speed"), speed_node))
+
+        # The pose the path carries there, which is what the setpoint follows.
+        evaluator_node = self._owned_uri(f"evaluator-{path.name}", path)
+        self.graph.add((evaluator_node, RDF.type, GEOM_OP_EXT.PathEvaluator))
+        self.graph.add((evaluator_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
+        self.graph.add((evaluator_node, GEOM_OP_EXT.path, path_node))
+        self.graph.add((evaluator_node, _ns_term(GEOM_OP_EXT, "path-parameter"), parameter_node))
+        self.graph.add((evaluator_node, GEOM_OP.out, self._reference_output_node(path)))
 
     def _emit_path_following(
         self,
@@ -3041,7 +3048,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, CSTR_EXT.TimeConstraint))
 
         qty_node = self._elapsed_quantity_node(spec, motion)
-        self.graph.add((qty_node, RDF.type, CSTR_EXT.ElapsedDurationCoordinate))
         self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
         self._emit_quantity_kind(qty_node, NS_MM_QUDT_QTY["Time"])
         # No authored value: the clock fills this one, and it ticks in seconds.
@@ -3262,8 +3268,6 @@ class MotionSpecDatasetBuilder:
             sid = _scalar_id(qty, subspace, axis)
             scalar_node = self._owned_uri(sid, motion)
             self._add_quantity(scalar_node, scalar_t)
-            if view_type == MAP_EXT.PoseCoordinateView:
-                self._retag_as_position_kind(scalar_node)
 
             view_node = self._owned_uri(f"view-{sid}", motion)
             self._emit_view(view_node)

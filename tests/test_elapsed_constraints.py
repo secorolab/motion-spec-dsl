@@ -12,7 +12,7 @@ import pytest
 from rdflib.namespace import RDF
 
 from motion_spec_dsl.rdf_parser.vocab import CSTR, CSTR_EXT, QUDT_SCHEMA, TIME
-from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdf_utils.namespace import NS_MM_QUDT_QTY as QKIND, NS_MM_QUDT_UNIT as QUDT_UNIT
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.gens import _build_manifest
 
@@ -41,7 +41,8 @@ def test_elapsed_greater_than_emits_native_time_constraint(parse_mutated):
     assert (cstr, RDF.type, CSTR.GreaterThanConstraint) in g
 
     measured = g.value(cstr, CSTR.quantity)
-    assert (measured, RDF.type, CSTR_EXT.ElapsedDurationCoordinate) in g
+    assert (measured, RDF.type, QUDT_SCHEMA.Quantity) in g
+    assert g.value(measured, QUDT_SCHEMA.hasQuantityKind) == QKIND["Time"]
     assert g.value(measured, QUDT_SCHEMA.value) is None  # runtime state, unmeasured
     assert g.value(measured, QUDT_SCHEMA.unit) == QUDT_UNIT["SEC"]
 

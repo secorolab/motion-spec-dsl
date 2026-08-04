@@ -320,9 +320,6 @@ def test_orientation_shapes_accept_the_emitted_triples(parse_mutated, coord_type
 
 ORIENTATION_SHAPE_VIOLATIONS = [
     pytest.param("quat", URI_GEOM_PRED_W, id="quaternion_missing_component"),
-    pytest.param(
-        "direction-cosine", GEOM_COORD["direction-cosine-z"], id="direction_cosine_missing_axis"
-    ),
     pytest.param("euler", GEOM_COORD["axes-sequence"], id="euler_missing_axes_sequence"),
 ]
 

@@ -276,6 +276,7 @@ class GEOM_OP(DefinedNamespace):
     in1: URIRef
     in2: URIRef
     composite: URIRef
+    direction: URIRef
     pose: URIRef
     to: URIRef
     distance: URIRef
@@ -303,6 +304,9 @@ class GEOM_OP_EXT(DefinedNamespace):
     PoseDiffEvaluator: URIRef
     PoseToAngularDistance: URIRef
     PathProjection: URIRef
+    PathEvaluator: URIRef
+    PathTangentFrame: URIRef
+    TwistToLinearVelocityAlong: URIRef
     path: URIRef
     tangent: URIRef
     linear: URIRef
@@ -399,7 +403,6 @@ class MAP_EXT(DefinedNamespace):
 
 
 class ALGO_EXT(DefinedNamespace):
-    ProgressConstraint: URIRef
     Saturation: URIRef
     Addition: URIRef
     VelocityProfile: URIRef
@@ -463,7 +466,6 @@ class CSTR_EXT(DefinedNamespace):
     AngleConstraint: URIRef
     AngularDistanceConstraint: URIRef
     TimeConstraint: URIRef
-    ElapsedDurationCoordinate: URIRef
 
     tolerance: URIRef
 

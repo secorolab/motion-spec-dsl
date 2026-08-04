@@ -37,19 +37,6 @@ def test_positive_distance_requires_an_authored_value() -> None:
     assert not _conforms("geometry/path.shacl.ttl", GEOM_PATH.PositiveDistanceShape, data)
 
 
-def test_progress_constraint_requires_linear_velocity_operands() -> None:
-    data = Graph()
-    path, measured, threshold = URIRef("urn:test:path"), BNode(), BNode()
-    data.add((FOCUS, RDF.type, ALGO.ProgressConstraint))
-    data.add((FOCUS, RDF.type, CSTR.GreaterThanConstraint))
-    data.add((FOCUS, GEOM_OP.path, path))
-    data.add((path, RDF.type, GEOM_PATH.Path))
-    data.add((FOCUS, CSTR.quantity, measured))
-    data.add((measured, RDF.type, QUDT.Quantity))
-    data.add((measured, QUDT.hasQuantityKind, QKIND.LinearVelocity))
-    data.add((FOCUS, CSTR.threshold, threshold))
-    assert not _conforms("algorithm-extension.shacl.ttl", ALGO.ProgressConstraint, data)
-
 
 def _duration(**triples) -> Graph:
     data = Graph()
