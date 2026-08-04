@@ -3575,6 +3575,9 @@ class MotionSpecDatasetBuilder:
 
         seen_error_ids: set[str] = set()
         seen_eval_ids: set[str] = set()
+        # A constraint has one error signal. A monitor on a constraint a controller already drives
+        # must read that signal: minting a second quantity leaves it with nothing writing it.
+        error_id_by_constraint: dict[str, str] = {}
 
         for controller_order, ctrl_item in enumerate(getattr(handler, "controllers", [])):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
@@ -3696,6 +3699,7 @@ class MotionSpecDatasetBuilder:
                         )
 
             if evaluator_error_id:
+                error_id_by_constraint[spec.uri] = evaluator_error_id
                 self._emit_error_evaluator(
                     handler_node,
                     spec,
@@ -3767,7 +3771,9 @@ class MotionSpecDatasetBuilder:
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
                     scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
-                    error_id = f"{_evaluator_id(spec)}-err"
+                    error_id = error_id_by_constraint.get(
+                        spec.uri, f"{_evaluator_id(spec)}-err"
+                    )
 
                     if error_id not in seen_error_ids:
                         seen_error_ids.add(error_id)
@@ -3873,7 +3879,7 @@ class MotionSpecDatasetBuilder:
                 axis_raw = spec.view.axis
                 axis = semantic_axis_label(axis_raw)
                 scalar_t = along_path[1] if along_path else _scalar_type(qty, subspace, axis)
-                error_id = f"{_evaluator_id(spec)}-err"
+                error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
                 error_node = self._owned_uri(error_id, spec.parent)
                 if error_id not in seen_error_ids:
                     seen_error_ids.add(error_id)
