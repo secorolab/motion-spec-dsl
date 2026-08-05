@@ -1,0 +1,169 @@
+import "real_demo.fsm"
+import "real_demo.scenex"
+ns app = "https://secorolab.github.io/models/admittance-arc-single/"
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+exec-context (ns=app) real-demo-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   real-world {
+                    name: KinovaGen3 maps to <agents.arm1>
+                }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-bracelet-base {
+            of:         <kinova.bracelet_link.bracelet_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist twist-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist twist-bracelet-base {
+            of:         <kinova.bracelet_link.bracelet_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>
+        }
+    },
+    spec {
+        linear-velocity zero-linvel          = 0.0 m/s,
+        linear-velocity descend-vel          = -0.05 m/s,
+        linear-distance forward-distance     = 0.05 m,
+        linear-distance contact-z            = 0.03 m,
+        linear-distance bracelet-contact-z   = 0.07 m,
+        force force-threshold                 = 10.0 N,
+        force neg-force-threshold             = -10.0 N,
+        force release-threshold               = 3.0 N,
+        force neg-release-threshold           = -3.0 N,
+        linear-distance comply-int-max         = 0.02 m,
+        linear-distance neg-comply-int-max     = -0.02 m
+    }
+}
+
+guarded-motion (ns=app) home {
+    description: "Hold the current end-effector pose"
+
+    context {
+        spec {
+            pose home-pose = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation
+    }
+
+    until all {
+        settled-x: <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linvel>,
+        settled-y: <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linvel>,
+        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>
+    }
+}
+
+guarded-motion (ns=app) touchdown {
+    description: "Lower the TCP until it contacts the table"
+
+    context {
+        spec {
+            pose start-pose       = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x,
+        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y,
+        lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel>,
+        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
+    }
+
+    until {
+        contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>
+    }
+}
+
+guarded-motion (ns=app) forward {
+    description: "Move the TCP forward five centimetres"
+
+    context {
+        spec {
+            pose start-pose          = snapshot of <shared.world.pose-ee-base>,
+            linear-distance target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
+        }
+    }
+
+    when {}
+
+    while {
+        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x>,
+        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
+    }
+
+    until {
+        reached-forward: <shared.world.pose-ee-base>.position.x greater than <spec.target-x>
+    }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    monitors {
+        mon-home-settled: monitor <home.until> on activation trigger event <aas.E_HOME_SETTLED> after active for 0.3 s
+    }
+    controllers {
+        pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent: <agents.arm1>,
+            algorithm: achd,
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-touchdown {
+    handles: <touchdown>
+    monitors {
+        mon-contact: monitor <touchdown.until> on activation trigger event <aas.E_CONTACT> after active for 0.3 s
+    }
+    controllers {
+        pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-y { constraint: <touchdown.hold-y>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-z { constraint: <touchdown.lower-z>, Kp: 200, Ki: 0, Kd: 0, decay: 0 },
+        pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers { <handler-home.arm-solver> }
+}
+
+constraint-handler (ns=app) handler-forward {
+    handles: <forward>
+    monitors {
+        mon-forward-done: monitor <forward.reached-forward> on activation trigger event <aas.E_FORWARD_DONE> also publish to topic "/motion/forward_done" as "bdd_ros2_interfaces/msg/Trinary"
+    }
+    controllers {
+        pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers { <handler-home.arm-solver> }
+}
+

@@ -26,6 +26,7 @@ ExecutionContext:
     "exec-context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         "runs-scene" ":" "<" scene=[scene.SceneInstance|FQN] ">"
         "platform"   ":" platform=Platform
+        ("config"    ":" config=STRING)?
         "timestep"   ":" timestep=FLOAT timestep_unit=TimeUnit
     "}"
 ;
@@ -36,8 +37,15 @@ Platform:
 
 RealWorldPlatform:
     kind="real-world"
-        ("{" "name" ":" name=STRING
-             ("," "version" ":" version=STRING)? "}")?
+        ("{" devices+=DeviceBinding[","] "}")?
+;
+
+DeviceBinding:
+    "name" ":" device=DeviceKind "maps" "to" "<" target=[OBJECT|FQN] ">"
+;
+
+DeviceKind:
+    "KinovaGen3-2F85" | "KinovaGen3" | "Robotiq2F85" | "RobotiqFT300s"
 ;
 
 SimulationPlatform:

@@ -51,6 +51,7 @@ class ExecutionContext(IHasNamespaceDeclare):
     platform: object
     timestep: float
     timestep_unit: str
+    config: str | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)

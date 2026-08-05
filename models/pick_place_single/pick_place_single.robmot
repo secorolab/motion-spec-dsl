@@ -371,7 +371,7 @@ constraint-handler (ns=app) handler-home {
 
     solvers {
         arm-solver: serial-chain {
-            agent:     <pickplace_agents.kinova_2f85>,
+            agent:     <pickplace_agents.arm1>,
             algorithm: achd,
             gravity:   (0.0, 0.0, 9.81) m/s^2
         }
@@ -435,7 +435,7 @@ constraint-handler (ns=app) handler-close-grip {
     solvers {
         <handler-home.arm-solver>,
         gripper-command-solver: command-forwarding {
-            agent: <pickplace_agents.kinova_2f85>
+            agent: <pickplace_agents.gripper1>
         }
     }
 }

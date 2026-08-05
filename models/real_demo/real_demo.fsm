@@ -1,0 +1,39 @@
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+evt loop (ns=aas) real_demo_fsm_events {
+    evt E_STEP,
+    evt E_HOME_SETTLED,
+    evt E_CONTACT,
+    evt E_FORWARD_DONE
+}
+
+fsm (ns=aas) real_demo_fsm {
+    description: "Home, descend to contact, and move forward."
+
+    states {
+        S_START,
+        S_HOME,
+        S_TOUCHDOWN,
+        S_FORWARD,
+        S_DONE
+    }
+
+    evt loop: <real_demo_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_HOME        { from: <S_START>,     to: <S_HOME> },
+        T_HOME_TOUCHDOWN    { from: <S_HOME>,      to: <S_TOUCHDOWN> },
+        T_TOUCHDOWN_FORWARD { from: <S_TOUCHDOWN>, to: <S_FORWARD> },
+        T_FORWARD_DONE      { from: <S_FORWARD>,   to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START   { when: <real_demo_fsm_events.E_STEP>,          do: <T_START_HOME> },
+        R_HOME_SETTLED { when: <real_demo_fsm_events.E_HOME_SETTLED>,  do: <T_HOME_TOUCHDOWN> },
+        R_CONTACT      { when: <real_demo_fsm_events.E_CONTACT>,       do: <T_TOUCHDOWN_FORWARD> },
+        R_FORWARD_DONE { when: <real_demo_fsm_events.E_FORWARD_DONE>,  do: <T_FORWARD_DONE> }
+    }
+}

@@ -237,6 +237,19 @@ def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
     return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
 
 
+_DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
+
+
+def _authored_fqn(target) -> str:
+    """The dotted name the model refers to this element by, e.g. `agents.arm1`."""
+    parts, node = [], target
+    while node is not None and getattr(node, "name", None):
+        parts.append(node.name)
+        node = getattr(node, "parent", None)
+    # A sensor's chain runs up through the scene instance; the agent that hosts it is enough.
+    return ".".join(reversed(parts[:2]))
+
+
 class MotionSpecDatasetBuilder:
     """Builds the motion-specification RDF dataset from a parsed DSL `Model`.
 
@@ -365,10 +378,61 @@ class MotionSpecDatasetBuilder:
             _dsl_unit(context.timestep_unit),
         )
         self.graph.add((node, EXEC.timestep, timestep))
-        if context.platform.name:
+        if getattr(context.platform, "name", None):
             self.graph.add((node, EXEC["platform-name"], Literal(context.platform.name)))
-        if context.platform.version:
+        if getattr(context.platform, "version", None):
             self.graph.add((node, EXEC["platform-version"], Literal(context.platform.version)))
+        self._emit_deployment(context, node)
+
+    def _emit_deployment(self, context: ExecutionContext, node: URIRef) -> None:
+        """Emit which device realizes each agent or sensor, and the path to their addresses."""
+        devices = getattr(context.platform, "devices", None) or ()
+        real_world = context.platform.kind == "real-world"
+        if context.config and not real_world:
+            raise ValueError(
+                f"Execution context '{context.name}' declares 'config' on a simulation platform. "
+                "A config file holds device addresses, which only a real-world platform has."
+            )
+        if devices and not real_world:
+            raise ValueError(
+                f"Execution context '{context.name}' binds devices on a simulation platform."
+            )
+        if devices and not context.config:
+            raise ValueError(
+                f"Execution context '{context.name}' binds devices but declares no 'config'. "
+                "Every bound device needs somewhere to read its address from."
+            )
+        seen: dict[str, str] = {}
+        for binding in devices:
+            target = binding.target
+            uri = getattr(target, "uri", None)
+            if uri is None:
+                raise ValueError(
+                    f"Execution context '{context.name}' binds '{binding.device}' to "
+                    f"'{getattr(target, 'name', target)}', which is not an addressable element."
+                )
+            if type(target).__name__ not in _DEVICE_TARGETS:
+                raise ValueError(
+                    f"Execution context '{context.name}' binds '{binding.device}' to a "
+                    f"{type(target).__name__}. A device realizes an agent or a sensor."
+                )
+            if uri in seen:
+                raise ValueError(
+                    f"Execution context '{context.name}' binds '{target.name}' twice: "
+                    f"'{seen[uri]}' and '{binding.device}'. One element, one device."
+                )
+            seen[uri] = binding.device
+
+        if context.config:
+            config = URIRef(f"{context.uri}.config")
+            self.graph.add((config, RDF.type, EXEC.ResourceWithPath))
+            self.graph.add((config, RDF.type, EXEC.SystemResource))
+            self.graph.add((config, EXEC.path, Literal(context.config)))
+            self.graph.add((node, EXEC["has-config"], config))
+        for binding in devices:
+            target = URIRef(binding.target.uri)
+            self.graph.add((target, EXEC["platform-name"], Literal(binding.device)))
+            self.graph.add((target, SDO.name, Literal(_authored_fqn(binding.target))))
 
     def _namespace_owner(self, obj: Any | None) -> Any:
         """Return the namespace declaration that should own a generated node."""

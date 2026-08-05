@@ -1,0 +1,22 @@
+# Where each device is reached. Keyed by the name the execution context binds.
+
+[agents.arm1]
+ip                    = "192.168.1.10"
+user                  = "admin"
+password              = "admin"
+port                  = 10000
+port_real_time        = 10001
+session_timeout_ms    = 60000
+connection_timeout_ms = 2000
+
+# Not bound yet: no backend support for the gripper or the FT sensor.
+# [agents.gripper1]
+# port          = "ttyUSB1"
+# baudrate      = 115200
+# slave_address = 0x09
+#
+# [agents.arm1.wrist_ft]
+# port          = "ttyUSB0"
+# baudrate      = 19200
+# slave_address = 0x09
+# bias_samples  = 100

@@ -29,6 +29,7 @@ class SOSA(DefinedNamespace):
     Observation: URIRef
     madeBySensor: URIRef
     hosts: URIRef
+    observes: URIRef
 
     _NS = Namespace("http://www.w3.org/ns/sosa/")
 
@@ -36,6 +37,8 @@ class SOSA(DefinedNamespace):
 class SENSORS(DefinedNamespace):
     ForceTorqueSensor: URIRef
     frame: URIRef
+
+    _extras = ["update-rate"]
 
     _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
 

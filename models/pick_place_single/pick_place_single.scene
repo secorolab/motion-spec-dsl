@@ -16,7 +16,8 @@ ws set (ns=pps_env) pickplace_workspaces {
 }
 
 agn set (ns=pps_agn) pickplace_agents {
-    agent kinova_2f85
+    agent arm1,
+    agent gripper1
 }
 
 comp (ns=pps_env) comp_table_pickplace of ws <pickplace_workspaces.table_ws> {

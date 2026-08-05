@@ -1,13 +1,13 @@
-import "pick_place_single.scene"
+import "real_demo.scene"
 import "../kinova_gen3_7dof.ktree"
 import "../robotiq_2f85.ktree"
 
-ns pps_mjc = "https://secorolab.github.io/models/scenes/pick-place-single-mjc/"
+ns aas_mjc = "https://secorolab.github.io/models/scenes/admittance-arc-single-mjc/"
 
-ktree inst (ns=pps_mjc) kinova of <kinova_tree>
-ktree inst (ns=pps_mjc) gripper of <gripper_tree>
+ktree inst (ns=aas_mjc) kinova of <kinova_tree>
+ktree inst (ns=aas_mjc) gripper of <gripper_tree>
 
-ktree (ns=pps_mjc) ft_tree {
+ktree (ns=aas_mjc) ft_tree {
     body wrist_ft_body {
         frame wrist_ft_body_origin { }
         // The sensor reads at the body it is: ft_sensor.xml puts the site at its origin.
@@ -33,7 +33,7 @@ ktree (ns=pps_mjc) ft_tree {
     joints { }
 }
 
-ktree (ns=pps_mjc) kinova_2f85 {
+ktree (ns=aas_mjc) kinova_ft_2f85 {
     tree <kinova>
     tree <ft_tree>
     tree <gripper>
@@ -43,7 +43,7 @@ ktree (ns=pps_mjc) kinova_2f85 {
             parent: <kinova.bracelet_link.pinch_site>
             child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
         }
-        fixed g_mount_on_ft {
+        fixed gripper_on_ft {
             parent: <ft_tree.wrist_ft_body.wrist_ft_site>
             child: <gripper.g_base_mount.g_mount_interface>
         }
@@ -54,8 +54,8 @@ ktree (ns=pps_mjc) kinova_2f85 {
     }
 }
 
-ktree (ns=pps_mjc) world_tree {
-    tree <kinova_2f85>
+ktree (ns=aas_mjc) world_tree {
+    tree <kinova_ft_2f85>
 
     body world_body {
         frame world { }
@@ -102,36 +102,14 @@ ktree (ns=pps_mjc) world_tree {
     }
 }
 
-scene inst (ns=pps_mjc) pick_place_scene_mjc {
-    scene: <pick_place_scene>
+scene inst (ns=aas_mjc) admittance_arc_scene_mjc {
+    scene: <admittance_arc_scene>
 
-    kgraph (ns=pps_mjc) pick_place_graph {
+    kgraph (ns=aas_mjc) admittance_arc_graph {
         tree <world_tree>
-
-        body cube {
-            frame cube_origin {
-                pose cube_in_world {
-                    wrt: <world_tree.world_body.world>
-                    xyz: (0.50, 0.0, 0.76) m
-                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
-                }
-            }
-        }
     }
 
-    obj <ws_objects.table> {
-        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
-            map body <world_tree.table> to "table"
-        }
-    }
-
-    obj <pickplace_objects.cube> {
-        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
-            map body <pick_place_graph.cube> to "cube"
-        }
-    }
-
-    agn <pickplace_agents.arm1> {
+    agn <agents.arm1> {
         model kinova-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
             map tree <kinova> to "base_link"
@@ -147,17 +125,9 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
             observes: force torque
             update-rate: 1000.0 Hz
         }
-
-        camera wrist {
-            frame: <kinova.bracelet_link.wrist_anchor>
-            type: rgb
-            resolution: (640, 480)
-            fov: 41.83792730009236 deg
-            update-rate: 30.0 Hz
-        }
     }
 
-    agn <pickplace_agents.gripper1> {
+    agn <agents.gripper1> {
         model gripper-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
             map tree <gripper> to "base_mount"
