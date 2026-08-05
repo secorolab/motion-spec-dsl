@@ -1,4 +1,7 @@
 # Where each device is reached. Keyed by the name the execution context binds.
+#
+# One device is bound -- KinovaGen3-2F85 -- so there is one connection: the gripper rides the
+# arm's interconnect and has no section of its own.
 
 [agents.arm1]
 ip                    = "192.168.1.10"

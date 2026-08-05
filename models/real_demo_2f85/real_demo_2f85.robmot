@@ -1,12 +1,12 @@
-import "real_demo.fsm"
-import "real_demo.scenex"
+import "real_demo_2f85.fsm"
+import "real_demo_2f85.scenex"
 ns app = "https://secorolab.github.io/models/admittance-arc-single/"
 ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 
 exec-context (ns=app) real-demo-exec {
     runs-scene: <admittance_arc_scene_mjc>
     platform:   real-world {
-                    name: KinovaGen3 maps to <agents.arm1>,
+                    name: KinovaGen3-2F85 maps to <agents.arm1>,
                     name: RobotiqFT300s maps to <wrist_ft>
                 }
     config:     "robot.toml"
@@ -35,6 +35,9 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
@@ -51,6 +54,7 @@ context (ns=app) shared {
         force neg-force-threshold             = -10.0 N,
         force release-threshold               = 3.0 N,
         force neg-release-threshold           = -3.0 N,
+        angle gripper-closed                   = 0.8 rad,
         linear-distance comply-int-max         = 0.02 m,
         linear-distance neg-comply-int-max     = -0.02 m
     }
@@ -115,8 +119,9 @@ guarded-motion (ns=app) forward {
     when {}
 
     while {
-        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x>,
-        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
+        move-forward:  keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x>,
+        hold-ori:      keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation,
+        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>
     }
 
     until {
@@ -163,8 +168,14 @@ constraint-handler (ns=app) handler-forward {
     }
     controllers {
         pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        feed-forward ctrl-close-gripper { constraint: <forward.close-gripper> }
     }
-    solvers { <handler-home.arm-solver> }
+    solvers {
+        <handler-home.arm-solver>,
+        gripper-command-solver: command-forwarding {
+            agent: <agents.gripper1>
+        }
+    }
 }
 

@@ -1,4 +1,7 @@
 # Where each device is reached. Keyed by the name the execution context binds.
+#
+# Three devices are bound separately, so each opens its own connection and needs its own
+# section: the arm over the network, the gripper and the force-torque sensor over serial.
 
 [agents.arm1]
 ip                    = "192.168.1.10"
@@ -8,6 +11,11 @@ port                  = 10000
 port_real_time        = 10001
 session_timeout_ms    = 60000
 connection_timeout_ms = 2000
+
+[agents.gripper1]
+port          = "ttyUSB1"
+baudrate      = 115200
+slave_address = 0x09
 
 [arm1.wrist_ft]
 port          = "ttyUSB0"
