@@ -2722,6 +2722,38 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, GEOM_COORD[label], value_obj))
         return node
 
+    def _emit_constraint_tolerance(
+        self,
+        node: URIRef,
+        spec: ConstraintSpecification,
+        motion: Any,
+        qty: WorldQuantity | None,
+        subspace: str,
+        axis: str | None,
+    ) -> None:
+        """Link an authored `within` band to its equality constraint.
+
+        A band carries the kind and unit of the value it bounds, so a whole pose -- a position
+        and an orientation in one error -- cannot state one: metres and radians would share a
+        number. Those are toleranced per subspace, one constraint each.
+        """
+        if spec.expr.tolerance is None:
+            raise ValueError(
+                f"Equality constraint '{spec.name}' states no band. An equality is only ever "
+                "satisfied within one, so it must say which: '... equal to <x> within <band>'."
+            )
+        whole_pose = qty is not None and qty.type == WorldQuantityType.Pose
+        if whole_pose and axis is None and subspace == "pose":
+            raise ValueError(
+                f"Constraint '{spec.name}' tolerances a whole pose, whose error mixes a "
+                "position and an orientation. State the band on '.position' and on "
+                "'.orientation' separately, each in its own unit."
+            )
+        tol_node = self._emit_context_ref_node(
+            spec.expr.tolerance, motion, f"{spec.name}-tolerance"
+        )
+        self.graph.add((node, CSTR_EXT.tolerance, tol_node))
+
     def _constraint_reference_node(
         self,
         ref: ContextRef,
@@ -2881,6 +2913,7 @@ class MotionSpecDatasetBuilder:
                     )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
                 self._reference_value_index[node] = ref_node
+                self._emit_constraint_tolerance(node, spec, motion, qty, subspace, axis)
             elif isinstance(expr, GreaterThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))

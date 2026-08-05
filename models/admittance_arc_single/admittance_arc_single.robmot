@@ -38,6 +38,9 @@ context (ns=app) shared {
         }
     },
     spec {
+        linear-distance satisfied-band     = 0.01 m,
+        angle satisfied-band-rot           = 0.01 rad,
+        linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel          = 0.0 m/s,
         linear-velocity descend-vel          = -0.05 m/s,
         linear-distance forward-distance     = 0.05 m,
@@ -64,14 +67,14 @@ guarded-motion (ns=app) home {
     when {}
 
     while {
-        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position,
-        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation
+        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until all {
-        settled-x: <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linvel>,
-        settled-y: <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linvel>,
-        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>
+        settled-x: <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-y: <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
     }
 }
 
@@ -87,14 +90,14 @@ guarded-motion (ns=app) touchdown {
     when {}
 
     while {
-        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x,
-        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y,
-        lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel>,
-        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
+        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x within <shared.spec.satisfied-band>,
+        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
+        lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel> within <shared.spec.satisfied-band-vel>,
+        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until {
-        contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>
+        contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
     }
 }
 
@@ -111,8 +114,8 @@ guarded-motion (ns=app) forward {
     when {}
 
     while {
-        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x>,
-        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
+        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
+        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until {
@@ -205,10 +208,10 @@ guarded-motion (ns=app) compliance {
     when {}
 
     while {
-        comply-x:   keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x>,
-        comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y>,
-        comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z>,
-        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation
+        comply-x:   keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x> within <shared.spec.satisfied-band-vel>,
+        comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y> within <shared.spec.satisfied-band-vel>,
+        comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z> within <shared.spec.satisfied-band-vel>,
+        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until {
@@ -219,7 +222,7 @@ guarded-motion (ns=app) compliance {
         },
         table-contact all {
             near-table:    <shared.world.pose-bracelet-base>.position.z less than <shared.spec.bracelet-contact-z>,
-            contact-table: <shared.world.twist-bracelet-base>.linvel.z equal to <shared.spec.zero-linvel>
+            contact-table: <shared.world.twist-bracelet-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
         }
     }
 }

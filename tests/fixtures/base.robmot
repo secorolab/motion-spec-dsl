@@ -23,6 +23,8 @@ context (ns=app) shared {
         }
     },
     spec {
+        linear-distance satisfied-band     = 0.01 m,
+        linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel = 0.0 m/s
     }
 }
@@ -39,11 +41,11 @@ guarded-motion (ns=app) home {
     when {}
 
     while {
-        hold-position: keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position
+        hold-position: keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>
     }
 
     until all {
-        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>
+        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
     }
 }
 

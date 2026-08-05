@@ -18,6 +18,8 @@ context (ns=app) shared {
         }
     },
     spec {
+        linear-distance satisfied-band     = 0.01 m,
+        angle satisfied-band-rot           = 0.01 rad,
         pose home-pose = snapshot of <shared.world.pose-ee-base>,
         velocity-twist platform-velocity {
             of: <kinova.base_link.base_link_origin>,
@@ -38,11 +40,11 @@ guarded-motion (ns=app) home {
     when {}
 
     while {
-        hold-position: keeping <shared.world.pose-ee-base>.position equal to <shared.spec.home-pose>.position
+        hold-position: keeping <shared.world.pose-ee-base>.position equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>
     }
 
     until all {
-        aligned: <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation
+        aligned: <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 }
 

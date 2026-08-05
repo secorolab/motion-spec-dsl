@@ -59,6 +59,8 @@ context (ns=app) shared {
         }
     },
     spec {
+        linear-distance satisfied-band     = 0.01 m,
+        angle satisfied-band-rot           = 0.01 rad,
         linear-velocity zero-linvel = 0.0 m/s,
         linear-distance zero-dist   = 0.0 m,
         angle grasp-rot-x            = 3.14159 rad,
@@ -83,10 +85,10 @@ guarded-motion (ns=app) home {
     when {}
 
     while {
-        hold1-position:    keeping <shared.world.pose-ee1-base>.position    equal to <spec.home1-pose>.position,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.home1-pose>.orientation,
-        hold2-position:    keeping <shared.world.pose-ee2-base>.position    equal to <spec.home2-pose>.position,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.home2-pose>.orientation
+        hold1-position:    keeping <shared.world.pose-ee1-base>.position    equal to <spec.home1-pose>.position within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.home1-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold2-position:    keeping <shared.world.pose-ee2-base>.position    equal to <spec.home2-pose>.position within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.home2-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until {}
@@ -121,8 +123,8 @@ guarded-motion (ns=app) pick-above {
     }
 
     when all {
-        gripper1-ready: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open>,
-        gripper2-ready: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open>
+        gripper1-ready: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        gripper2-ready: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
     while {
@@ -183,22 +185,22 @@ guarded-motion (ns=app) pick {
     }
 
     when all {
-        aligned1-above: <shared.world.pose-ee1-base>.position equal to <pick-above.spec.goal1-pose>.position,
-        aligned2-above: <shared.world.pose-ee2-base>.position equal to <pick-above.spec.goal2-pose>.position
+        aligned1-above: <shared.world.pose-ee1-base>.position equal to <pick-above.spec.goal1-pose>.position within <shared.spec.satisfied-band>,
+        aligned2-above: <shared.world.pose-ee2-base>.position equal to <pick-above.spec.goal2-pose>.position within <shared.spec.satisfied-band>
     }
 
     while {
-        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.grasp1-x>,
-        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.grasp1-y>,
-        lower1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.grasp-z>,
-        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.pick1-ori-pose>.orientation,
-        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
+        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.grasp1-x> within <shared.spec.satisfied-band>,
+        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.grasp1-y> within <shared.spec.satisfied-band>,
+        lower1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
+        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.pick1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
 
-        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.grasp2-x>,
-        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.grasp2-y>,
-        lower2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.grasp-z>,
-        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.pick2-ori-pose>.orientation,
-        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>
+        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.grasp2-x> within <shared.spec.satisfied-band>,
+        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.grasp2-y> within <shared.spec.satisfied-band>,
+        lower2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
+        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.pick2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>
     }
 
     until {}
@@ -224,19 +226,19 @@ guarded-motion (ns=app) grasp-hold {
     }
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
-        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        close1-gripper:    keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        close1-gripper:    keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
-        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        close2-gripper:    keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed>
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        close2-gripper:    keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
     until {}
@@ -275,19 +277,19 @@ guarded-motion (ns=app) lift {
     }
 
     while {
-        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.lift1-start-x>,
-        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.lift1-start-y>,
-        lift1-z:          keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.lift-z>,
-        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.lift1-ori-pose>.orientation,
-        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed>,
+        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.lift1-start-x> within <shared.spec.satisfied-band>,
+        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.lift1-start-y> within <shared.spec.satisfied-band>,
+        lift1-z:          keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
+        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.lift1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
 
-        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.lift2-start-x>,
-        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.lift2-start-y>,
-        lift2-z:          keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.lift-z>,
-        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.lift2-ori-pose>.orientation,
-        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed>
+        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.lift2-start-x> within <shared.spec.satisfied-band>,
+        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.lift2-start-y> within <shared.spec.satisfied-band>,
+        lift2-z:          keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
+        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.lift2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
     until any {
@@ -327,19 +329,19 @@ guarded-motion (ns=app) place-above {
     }
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-above>.orientation,
-        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed>,
+        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
+        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-above>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
 
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-above>.orientation,
-        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed>
+        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
+        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-above>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
     until any {
@@ -379,19 +381,19 @@ guarded-motion (ns=app) place {
     }
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-z>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-place>.orientation,
-        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed>,
+        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
+        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-place>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
 
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-z>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-place>.orientation,
-        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed>
+        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
+        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-place>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
     until any {
@@ -415,24 +417,24 @@ guarded-motion (ns=app) open-grasp-hold {
     }
 
     when all {
-        at1-place: <shared.world.pose-ee1-base>.position.z equal to <open-grasp-hold.spec.release-z>,
-        at2-place: <shared.world.pose-ee2-base>.position.z equal to <open-grasp-hold.spec.release-z>
+        at1-place: <shared.world.pose-ee1-base>.position.z equal to <open-grasp-hold.spec.release-z> within <shared.spec.satisfied-band>,
+        at2-place: <shared.world.pose-ee2-base>.position.z equal to <open-grasp-hold.spec.release-z> within <shared.spec.satisfied-band>
     }
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
-        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        open1-gripper:     keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        open1-gripper:     keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
-        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        open2-gripper:     keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open>
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        open2-gripper:     keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
     until {}
@@ -463,29 +465,31 @@ guarded-motion (ns=app) retreat {
     }
 
     when all {
-        released1: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open>,
-        released2: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open>
+        released1: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        released2: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-retreat>.orientation,
-        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
-        open1-gripper:    keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-open>,
+        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
+        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z: keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
+        open1-gripper:    keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
 
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-retreat>.orientation,
-        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>,
-        open2-gripper:    keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-open>
+        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
+        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z: keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>,
+        open2-gripper:    keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
     until all {
-        at-retreat1-settled: <shared.world.pose-ee1-base> equal to <spec.goal1-pose-retreat>,
-        at-retreat2-settled: <shared.world.pose-ee2-base> equal to <spec.goal2-pose-retreat>
+        at-retreat1-settled: <shared.world.pose-ee1-base>.position equal to <spec.goal1-pose-retreat>.position within <shared.spec.satisfied-band>,
+        at-retreat1-settled-rot: <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
+        at-retreat2-settled: <shared.world.pose-ee2-base>.position equal to <spec.goal2-pose-retreat>.position within <shared.spec.satisfied-band>,
+        at-retreat2-settled-rot: <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>
     }
 }
 
@@ -505,17 +509,17 @@ guarded-motion (ns=app) recover {
     when {}
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation,
-        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support1-elbow-z:  keeping <shared.world.pose-elbow1-base>.position.z equal to <spec.support1-z> within <shared.spec.satisfied-band>,
 
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation,
-        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z>
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        support2-elbow-z:  keeping <shared.world.pose-elbow2-base>.position.z equal to <spec.support2-z> within <shared.spec.satisfied-band>
     }
 
     until {}

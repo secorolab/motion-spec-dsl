@@ -20,7 +20,8 @@ from motion_spec_dsl.gens import _build_manifest
 # handler to have some controller/monitor overall (already true), not one per constraint,
 # so appending an elapsed constraint here needs no extra monitor/event wiring.
 WHILE_ANCHOR = (
-    "hold-position: keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position"
+    "hold-position: keeping <shared.world.pose-ee-base>.position equal to "
+    "<spec.home-pose>.position within <shared.spec.satisfied-band>"
 )
 
 
