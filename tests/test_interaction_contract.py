@@ -82,7 +82,7 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
     """
     sensors = [
         sensor
-        for solver in interaction_ir["serial_chain_solvers"]
+        for solver in interaction_ir["resources"]["by_kind"]["serial_chain"]
         for sensor in solver.sensors
         if sensor["type"] == "ForceTorque"
     ]
@@ -95,7 +95,7 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
             output.reference_point.id,
             output.as_seen_by.id,
         )
-        for solver in interaction_ir["serial_chain_solvers"]
+        for solver in interaction_ir["resources"]["by_kind"]["serial_chain"]
         for output in solver.output
         if output.type == "Wrench" and output.sensor_name
     }
@@ -116,7 +116,7 @@ def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -
     ir = generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
     outputs = [
         output
-        for solver in ir["serial_chain_solvers"]
+        for solver in ir["resources"]["by_kind"]["serial_chain"]
         for output in solver.output
         if output.type == "Wrench" and output.sensor_name
     ]

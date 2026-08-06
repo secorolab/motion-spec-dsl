@@ -124,7 +124,7 @@ def test_authored_output_limit_binds_to_derived_signal(
     ]
     acceleration_constraints = [
         constraint
-        for solver in ir["serial_chain_solvers"]
+        for solver in ir["resources"]["by_kind"]["serial_chain"]
         for driver in solver.motion_drivers
         for constraint in driver.acceleration_constraint
     ]
