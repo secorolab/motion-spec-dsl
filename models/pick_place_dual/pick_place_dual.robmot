@@ -6,6 +6,7 @@ ns pp = "https://secorolab.github.io/models/pick-place-dual/fsm/"
 exec-context (ns=app) pick-place-dual-exec {
     runs-scene: <pick_place_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
     timestep:   1.0 ms
 }
 
@@ -72,6 +73,14 @@ context (ns=app) shared {
     }
 }
 
+tolerances {
+    linear-distance:  0.01 m,
+    angular-distance: 0.01 rad,
+    linear-velocity:  0.01 m/s,
+    position:         0.01 m,
+    orientation:      0.01 rad
+}
+
 guarded-motion (ns=app) home {
     description: "Hold both TCPs at their startup home poses"
 
@@ -129,12 +138,12 @@ guarded-motion (ns=app) pick-above {
 
     while {
         follow1-tan: moving <shared.world.pose-ee1-base> along <spec.arm1-approach-path> at <spec.approach-speed>,
-        follow1-lat: keeping <shared.world.pose-ee1-base>.position    on <spec.arm1-approach-path>,
-        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation on <spec.arm1-approach-path>,
+        follow1-lat: keeping <shared.world.pose-ee1-base>.position    on <spec.arm1-approach-path> within <shared.spec.satisfied-band>,
+        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation on <spec.arm1-approach-path> within <shared.spec.satisfied-band-rot>,
         advance1:    progress of <shared.world.pose-ee1-base> along <spec.arm1-approach-path> more than <spec.min-approach-speed>,
         follow2-tan: moving <shared.world.pose-ee2-base> along <spec.arm2-approach-path> at <spec.approach-speed>,
-        follow2-lat: keeping <shared.world.pose-ee2-base>.position    on <spec.arm2-approach-path>,
-        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation on <spec.arm2-approach-path>,
+        follow2-lat: keeping <shared.world.pose-ee2-base>.position    on <spec.arm2-approach-path> within <shared.spec.satisfied-band>,
+        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation on <spec.arm2-approach-path> within <shared.spec.satisfied-band-rot>,
         advance2:    progress of <shared.world.pose-ee2-base> along <spec.arm2-approach-path> more than <spec.min-approach-speed>
     }
 
@@ -790,7 +799,7 @@ constraint-handler (ns=app) handler-retreat {
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
     monitors {
-        mon-recover-hold: monitor <recover.hold1-x> on activation trigger event <pp.E_RECOVER>
+        mon-recover-hold: monitor <recover.hold1-x> on activation trigger event <pp.E_RECOVER> after active for 0.1 s
     }
 
     controllers {

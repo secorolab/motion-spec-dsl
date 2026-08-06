@@ -6,8 +6,8 @@ ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 exec-context (ns=app) real-demo-exec {
     runs-scene: <admittance_arc_scene_mjc>
     platform:   real-world {
-                    name: KinovaGen3-2F85 maps to <agents.arm1>,
-                    name: RobotiqFT300s maps to <wrist_ft>
+                    <agents.arm1> realized by KinovaGen3-2F85,
+                    <wrist_ft> realized by RobotiqFT300s
                 }
     config:     "robot.toml"
     timestep:   1.0 ms

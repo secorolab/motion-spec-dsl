@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TypeVar
 
 from rdflib.namespace import Namespace
 
@@ -20,6 +21,8 @@ from motion_spec_dsl.classes.coordinates import (
 )
 from motion_spec_dsl.classes.path import AdmittanceSpec, PathValue, ProfileSpec
 
+_EnumT = TypeVar("_EnumT", bound=StrEnum)
+
 
 class WorldQuantityType(StrEnum):
     Pose = "Pose"
@@ -28,7 +31,7 @@ class WorldQuantityType(StrEnum):
     JointPosition = "JointPosition"
 
 
-def _authored_enum(enum_type: type[StrEnum], keyword: str) -> StrEnum:
+def _authored_enum(enum_type: type[_EnumT], keyword: str) -> _EnumT:
     """Translate a kebab-case DSL keyword to its established enum member."""
     normalized = keyword.replace("-", "").casefold()
     for member in enum_type:

@@ -73,6 +73,10 @@ ScalarQuantityType:
     "distance" | "angle" | "dimensionless" | "duration" | "path-parameter"
 ;
 
+ToleranceQuantityType:
+    QuantityAliasType | QuantityType
+;
+
 View:
     (
         "distance" "between"

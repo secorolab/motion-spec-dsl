@@ -18,7 +18,14 @@ from motion_spec_dsl.classes.constraints import (
     ConstraintAlias,
     ConstraintSpecification,
 )
-from motion_spec_dsl.classes.context import ContextQuantity, WorldQuantity
+from motion_spec_dsl.classes.context import (
+    QUANTITY_TYPE_ALIASES,
+    ContextQuantity,
+    ContextRef,
+    QuantityType,
+    WorldQuantity,
+    _authored_enum,
+)
 
 if TYPE_CHECKING:
     from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
@@ -31,7 +38,9 @@ class Model:
         self,
         imports: list[Import] | None = None,
         namespaces: list[NamespaceDeclare] | None = None,
-        specs: list[ExecutionContext | ContextSpec | GuardedMotion | ConstraintHandler]
+        specs: list[
+            ExecutionContext | ContextSpec | ToleranceDefaults | GuardedMotion | ConstraintHandler
+        ]
         | None = None,
         **_,
     ):
@@ -55,6 +64,31 @@ class ExecutionContext(IHasNamespaceDeclare):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+
+
+@dataclass
+class ToleranceDefaults:
+    """Model-wide satisfaction bands, keyed by the quantity kind a constraint's error carries.
+
+    Authoring sugar: the band is resolved onto each constraint as it is emitted, so the graph
+    still states one per constraint and nothing has to know a default existed.
+    """
+
+    parent: object
+    defaults: list[ToleranceDefault] = field(default_factory=list)
+
+
+@dataclass
+class ToleranceDefault:
+    """The band every constraint over `kind` is satisfied within, unless it authors its own."""
+
+    parent: object
+    kind: QuantityType
+    band: ContextRef
+
+    def __post_init__(self):
+        raw_kind = str(self.kind)
+        self.kind = QUANTITY_TYPE_ALIASES.get(raw_kind) or _authored_enum(QuantityType, raw_kind)
 
 
 @dataclass

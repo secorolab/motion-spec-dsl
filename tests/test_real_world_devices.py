@@ -9,6 +9,8 @@ at -- they change nothing the controller computes, so nothing puts them in the g
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import rdflib
 
@@ -65,7 +67,10 @@ def test_the_config_is_referenced_by_path_and_never_inlined(parse_mutated) -> No
     # A resource with a path, like any other model file -- not an inline blob. Addresses and
     # credentials are deployment facts and must not end up in an archived run graph.
     assert (config, rdflib.RDF.type, EXEC.ResourceWithPath) in g
-    assert str(next(g.objects(config, EXEC.path))) == "robot.toml"
+    # Authored as "robot.toml", relative to the model -- the only place that knows the
+    # directory -- so the path stated is the one a consumer can actually open.
+    path = Path(str(next(g.objects(config, EXEC.path))))
+    assert path == Path(__file__).parent / "fixtures" / "robot.toml"
 
 
 def test_a_simulation_context_deploys_no_hardware(parse_mutated) -> None:
@@ -91,9 +96,14 @@ def test_an_unknown_device_is_rejected_while_parsing(parse_mutated) -> None:
         )
 
 
-def test_config_on_a_simulation_platform_is_rejected(parse_mutated) -> None:
-    with pytest.raises(ValueError, match="config.*simulation"):
-        _graph(parse_mutated, f'{SIM}\n    config:     "robot.toml"')
+def test_a_simulation_platform_may_carry_a_config(parse_mutated) -> None:
+    """A config is a deployment fact, not a device-address file.
+
+    Device addresses are the real-world subset of it; a simulated deployment still has facts
+    of its own -- where the robot resets to, above all -- and they belong beside the model
+    rather than baked into a template no run artifact can report.
+    """
+    _graph(parse_mutated, f'{SIM}\n    config:     "robot.toml"')
 
 
 def test_binding_a_device_without_a_config_is_rejected(parse_mutated) -> None:

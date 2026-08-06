@@ -6,6 +6,7 @@ ns pp = "https://secorolab.github.io/models/pick-place-single/fsm/"
 exec-context (ns=app) pick-place-single-exec {
     runs-scene: <pick_place_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
     timestep:   1.0 ms
 }
 
@@ -48,6 +49,14 @@ context (ns=app) shared {
         linear-distance lost-dist   = 0.12 m
     }
     // nothing, the pose is the cube's start placement.
+}
+
+tolerances {
+    linear-distance:  0.01 m,
+    angular-distance: 0.01 rad,
+    linear-velocity:  0.01 m/s,
+    position:         0.01 m,
+    orientation:      0.01 rad
 }
 
 guarded-motion (ns=app) home {
@@ -97,8 +106,8 @@ guarded-motion (ns=app) pick-above {
 
     while {
         follow-tan: moving <shared.world.pose-ee-base> along <spec.approach-path> at <spec.approach-speed>,
-        follow-lat: keeping <shared.world.pose-ee-base>.position    on <spec.approach-path>,
-        follow-ori: keeping <shared.world.pose-ee-base>.orientation on <spec.approach-path>,
+        follow-lat: keeping <shared.world.pose-ee-base>.position    on <spec.approach-path> within <shared.spec.satisfied-band>,
+        follow-ori: keeping <shared.world.pose-ee-base>.orientation on <spec.approach-path> within <shared.spec.satisfied-band-rot>,
         advance:    progress of <shared.world.pose-ee-base> along <spec.approach-path> more than <spec.min-approach-speed>
     }
 
@@ -559,7 +568,7 @@ constraint-handler (ns=app) handler-retreat {
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
     monitors {
-        mon-recover-hold: monitor <recover.hold-x> on activation trigger event <pp.E_RECOVER>
+        mon-recover-hold: monitor <recover.hold-x> on activation trigger event <pp.E_RECOVER> after active for 0.1 s
     }
 
     controllers {

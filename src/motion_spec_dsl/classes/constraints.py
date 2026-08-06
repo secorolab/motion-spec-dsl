@@ -19,7 +19,14 @@ if TYPE_CHECKING:
 
 @dataclass(eq=False)
 class ConstraintSpecification(NamedNamespaceObject):
-    """A single constraint: a view (LHS) compared against a reference by an expression."""
+    """A single constraint: a view (LHS) compared against a reference by an expression,
+    satisfied within a band.
+
+    The band belongs to the constraint rather than to the comparison: an equality needs one
+    because its target is a single point, and a one-sided gate needs one to say how close to
+    its threshold counts as arrived. Unstated, it falls back to the model-wide default for
+    the kind the error carries.
+    """
 
     parent: object
     name: str
@@ -32,6 +39,7 @@ class ConstraintSpecification(NamedNamespaceObject):
         | OutsideConstraint
         | None
     ) = None
+    tolerance: ContextRef | None = None
     disabled: bool = False
 
     def __post_init__(self):
@@ -126,10 +134,9 @@ def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> Constrain
 
 @dataclass
 class EqualityConstraint:
-    """An equality constraint against a reference value, optionally within a tolerance."""
+    """An equality constraint against a reference value."""
 
     reference: ContextRef
-    tolerance: ContextRef | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):

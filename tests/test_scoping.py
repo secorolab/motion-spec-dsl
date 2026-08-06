@@ -9,6 +9,7 @@ import pytest
 from textx import metamodel_from_file
 from textx.exceptions import TextXSemanticError
 
+from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.classes.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
 
@@ -118,8 +119,16 @@ def test_solver_fqn_resolves_local_and_qualified_references():
     model = motion_spec_metamodel().model_from_file(
         MODELS / "pick_place_dual" / "pick_place_dual.robmot"
     )
-    home = next(spec for spec in model.specs if spec.name == "handler-home")
-    pick_above = next(spec for spec in model.specs if spec.name == "handler-pick-above")
+    home = next(
+        spec
+        for spec in model.specs
+        if isinstance(spec, ConstraintHandler) and spec.name == "handler-home"
+    )
+    pick_above = next(
+        spec
+        for spec in model.specs
+        if isinstance(spec, ConstraintHandler) and spec.name == "handler-pick-above"
+    )
 
     assert home.controllers[0].solver.solver is pick_above.controllers[0].solver.solver
 
@@ -128,7 +137,11 @@ def test_constraint_fqn_resolves_specs_and_groups():
     model = motion_spec_metamodel().model_from_file(
         MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
     )
-    handler = next(spec for spec in model.specs if spec.name == "handler-admittance")
+    handler = next(
+        spec
+        for spec in model.specs
+        if isinstance(spec, ConstraintHandler) and spec.name == "handler-admittance"
+    )
     constraint_ref = handler.controllers[0].params.constraint
     group_ref = handler.monitors[0].constraint
 
@@ -142,7 +155,11 @@ def test_event_scope_is_declared_by_the_grammar():
     model = motion_spec_metamodel().model_from_file(
         MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
     )
-    handler = next(spec for spec in model.specs if spec.name == "handler-home")
+    handler = next(
+        spec
+        for spec in model.specs
+        if isinstance(spec, ConstraintHandler) and spec.name == "handler-home"
+    )
 
     assert handler.monitors[0].event.event.name == "E_HOME_SETTLED"
 

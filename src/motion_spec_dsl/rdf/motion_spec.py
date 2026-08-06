@@ -15,6 +15,7 @@ registries rather than graph-membership checks.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -62,6 +63,7 @@ from rdf_utils.namespace import (
     NS_MM_QUDT_UNIT as QUDT_UNIT,
 )
 
+from textx import get_model
 from textx.scoping import get_included_models
 
 from motion_spec_dsl.rdf_parser.vocab import (
@@ -460,11 +462,6 @@ class MotionSpecDatasetBuilder:
         """
         devices = getattr(context.platform, "devices", None) or ()
         real_world = context.platform.kind == "real-world"
-        if context.config and not real_world:
-            raise ValueError(
-                f"Execution context '{context.name}' declares 'config' on a simulation platform. "
-                "A config file holds device addresses, which only a real-world platform has."
-            )
         if devices and not real_world:
             raise ValueError(
                 f"Execution context '{context.name}' binds devices on a simulation platform."
@@ -499,7 +496,11 @@ class MotionSpecDatasetBuilder:
             config = URIRef(f"{context.uri}.config")
             self.graph.add((config, RDF.type, EXEC.ResourceWithPath))
             self.graph.add((config, RDF.type, EXEC.SystemResource))
-            self.graph.add((config, EXEC.path, Literal(context.config)))
+            # Authored relative to the model that names it, and only the DSL knows that
+            # directory -- so the resource states where the file is, not where it was typed.
+            declared_in = Path(get_model(context)._tx_filename).resolve()
+            resolved = (declared_in.parent / context.config).resolve()
+            self.graph.add((config, EXEC.path, Literal(str(resolved))))
             self.graph.add((node, EXEC["has-resource"], config))
         # The device is a system this deployment owns, naming the hardware it is and the
         # modelled element it realizes. The element belongs to the scene, so it is only ever

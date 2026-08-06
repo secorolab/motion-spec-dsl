@@ -33,7 +33,7 @@ from motion_spec_dsl.classes.coordinates import (
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
-from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.motion_spec import Model, ToleranceDefault
 from motion_spec_dsl.classes.path import PathValue
 from motion_spec_dsl.classes.validation.common import (
     motion_constraint_items,
@@ -319,6 +319,30 @@ def validate_unit_kinds(model: Model) -> None:
             f"'{quantity.name}' is a {quantity.type} quantity: '{unit}' is not one of its "
             f"units ({', '.join(allowed)}).",
             quantity,
+        )
+
+
+def validate_tolerance_defaults(model: Model) -> None:
+    """A model-wide band applies to every constraint of its kind, so it has to be stated in
+    that kind's units and stated once. Neither is decidable in the grammar: the value rule is
+    shared across kinds, and the entries only collide once their keywords resolve (`distance`
+    and `linear-distance` name the same kind).
+    """
+    seen: dict[QuantityType, ToleranceDefault] = {}
+    for entry in get_children_of_type(ToleranceDefault, model):
+        if entry.kind in seen:
+            raise semantic_error(
+                f"'{entry.kind}' already has a default band; a kind takes one.", entry
+            )
+        seen[entry.kind] = entry
+        allowed = _UNITS_BY_QUANTITY_TYPE.get(entry.kind)
+        unit = getattr(entry.band.bare, "unit", None)
+        if allowed is None or unit is None or unit in allowed:
+            continue
+        raise semantic_error(
+            f"a default band for {entry.kind} is not measured in '{unit}' "
+            f"({', '.join(allowed)}).",
+            entry,
         )
 
 

@@ -6,6 +6,7 @@ ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 exec-context (ns=app) admittance-arc-exec {
     runs-scene: <admittance_arc_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
     timestep:   1.0 ms
 }
 
@@ -53,6 +54,14 @@ context (ns=app) shared {
         linear-distance comply-int-max         = 0.02 m,
         linear-distance neg-comply-int-max     = -0.02 m
     }
+}
+
+tolerances {
+    linear-distance:  0.01 m,
+    angular-distance: 0.01 rad,
+    linear-velocity:  0.01 m/s,
+    position:         0.01 m,
+    orientation:      0.01 rad
 }
 
 guarded-motion (ns=app) home {

@@ -56,6 +56,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     SLV,
     SLV_EXT,
     SOSA,
+    SSN,
     TIME,
 )
 from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
@@ -256,6 +257,7 @@ GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
     ("slv", SLV),
     ("slv-ext", SLV_EXT),
     ("sosa", SOSA),
+    ("ssn", SSN),
     ("geom-path", GEOM_PATH),
     ("ros", ROS),
     ("time", TIME),

@@ -16,6 +16,7 @@ from rdf_utils.naming import get_valid_var_name
 from rdf_utils.resolver import IriToFileResolver, install_resolver
 from rdflib import Dataset, URIRef
 from rdflib.namespace import Namespace
+from textx import get_model
 
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
@@ -275,6 +276,15 @@ def _source_paths(model: Model) -> list[Path]:
                 visit(loaded)
 
     visit(model)
+
+    # A declared deployment config is an authored input like any grammar file: it is stated
+    # relative to the model that names it, so record it here rather than leave every consumer
+    # to guess where it lives.
+    for spec in getattr(model, "specs", []) or []:
+        config = getattr(spec, "config", None)
+        if config:
+            declared_in = Path(get_model(spec)._tx_filename).resolve()
+            paths[(declared_in.parent / config).resolve()] = None
     return list(paths)
 
 
