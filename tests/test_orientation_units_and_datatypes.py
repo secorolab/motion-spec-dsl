@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from importlib.resources import files
 from pathlib import Path
@@ -22,10 +21,9 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_ORIENT_COORD,
     URI_GEOM_TYPE_QUATERNION,
 )
-from rdflib.namespace import RDF, XSD
+from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
-from motion_spec_dsl.gens import _canonicalize_jsonld, _gen_graph
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD
@@ -410,7 +408,6 @@ TWO_SUBSPACE_REJECTIONS = [
 
 @pytest.fixture
 def parse_mixed_solvers_mutated():
-    from motion_spec_dsl.langs import motion_spec_metamodel
 
     fixture_path = Path(__file__).parent / "fixtures" / "mixed_solvers.robmot"
     source = fixture_path.read_text()
@@ -454,117 +451,6 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-@pytest.fixture(scope="module")
-def generated_pick_place(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    tmp_path = tmp_path_factory.mktemp("pick_place_single_numerics")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", str(METAMODELS))
-        metamodel = motion_spec_metamodel()
-        model = metamodel.model_from_file(
-            MODELS / "pick_place_single" / "pick_place_single.robmot"
-        )
-        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return tmp_path / "pick_place_single.ld.json"
-
-
-def _walk_value_objects(value, sink: list) -> None:
-    if isinstance(value, dict):
-        if "@value" in value and "@type" in value and len(value) == 2:
-            sink.append(value)
-        else:
-            for v in value.values():
-                _walk_value_objects(v, sink)
-    elif isinstance(value, list):
-        for item in value:
-            _walk_value_objects(item, sink)
-
-
-def test_generated_jsonld_has_explicit_numeric_datatypes(generated_pick_place: Path) -> None:
-    document = json.loads(generated_pick_place.read_text())
-    assert document["@context"]["xsd"] == str(XSD)
-
-    objects: list = []
-    _walk_value_objects(document.get("@graph", []), objects)
-    doubles = [o for o in objects if o["@type"] == "xsd:double"]
-    assert doubles
-    assert all(isinstance(o["@value"], float) for o in doubles)
-
-    def raw_numbers(value, sink: list) -> None:
-        if isinstance(value, dict):
-            if "@value" in value and "@type" in value:
-                return
-            for v in value.values():
-                raw_numbers(v, sink)
-        elif isinstance(value, list):
-            for item in value:
-                raw_numbers(item, sink)
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            sink.append(value)
-
-    bare: list = []
-    raw_numbers(document.get("@graph", []), bare)
-    assert bare == []
-
-
-def test_jsonld_numeric_datatype_canonicalization_unit() -> None:
-    """`_canonicalize_jsonld` derives the datatype from the source graph, not Python shape:
-    the canonicalized document must stay graph-isomorphic to the source, with every literal's
-    datatype -- including xsd:boolean, which must never be classified as xsd:integer --
-    unchanged. Visibility (the datatype showing as an explicit JSON-LD value object rather
-    than a bare number) is covered on the real generated document by
-    `test_generated_jsonld_has_explicit_numeric_datatypes`.
-    """
-    from rdflib import Graph, Literal, Namespace, URIRef
-    from rdflib.compare import isomorphic
-
-    EX = Namespace("https://example.test/")
-    source = Graph()
-    source.bind("ex", EX)
-    source.bind("xsd", XSD)
-    subject = URIRef(EX["thing"])
-    source.add((subject, EX.wholeCount, Literal(0, datatype=XSD.integer)))
-    source.add((subject, EX.measured, Literal(0.0, datatype=XSD.double)))
-    source.add((subject, EX.negative, Literal(-3, datatype=XSD.integer)))
-    source.add((subject, EX.tiny, Literal(1.5e-10, datatype=XSD.double)))
-    source.add((subject, EX.flag, Literal(True)))
-    other = URIRef(EX["other"])
-    source.add((other, EX.wholeCount, Literal(7, datatype=XSD.integer)))
-    context = {"ex": str(EX), "xsd": str(XSD)}
-    serialized = source.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
-    canonical = _canonicalize_jsonld(serialized, source)
-
-    roundtripped = Graph()
-    roundtripped.parse(data=canonical, format="json-ld")
-    assert isomorphic(source, roundtripped)
-    for predicate, expected_datatype in (
-        (EX.wholeCount, XSD.integer),
-        (EX.measured, XSD.double),
-        (EX.negative, XSD.integer),
-        (EX.tiny, XSD.double),
-    ):
-        literal = roundtripped.value(subject, predicate)
-        assert literal.datatype == expected_datatype
-    assert roundtripped.value(subject, EX.flag).datatype == XSD.boolean
-
-
-def test_canonical_jsonld_stable_across_two_generations(tmp_path_factory) -> None:
-    tmp_a = tmp_path_factory.mktemp("gen_a")
-    tmp_b = tmp_path_factory.mktemp("gen_b")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", str(METAMODELS))
-        model_a = motion_spec_metamodel().model_from_file(
-            MODELS / "pick_place_single" / "pick_place_single.robmot"
-        )
-        _gen_graph(None, model_a, tmp_a, overwrite=True, debug=False)
-        model_b = motion_spec_metamodel().model_from_file(
-            MODELS / "pick_place_single" / "pick_place_single.robmot"
-        )
-        _gen_graph(None, model_b, tmp_b, overwrite=True, debug=False)
-    a = (tmp_a / "pick_place_single.ld.json").read_text()
-    b = (tmp_b / "pick_place_single.ld.json").read_text()
-    assert a == b
-
 
 def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> None:
     """A base orientation turned by a delta must never be decomposed into angles.

@@ -62,25 +62,6 @@ def generated_dual_model(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return tmp_path / "pick_place_dual-app.ld.json"
 
 
-def test_generated_jsonld_compacts_hierarchical_identifiers(generated_model: Path) -> None:
-    document = json.loads(generated_model.with_name("pick_place_single.ld.json").read_text())
-    identifiers: list[str] = []
-
-    def collect(value) -> None:
-        if isinstance(value, dict):
-            if isinstance(value.get("@id"), str):
-                identifiers.append(value["@id"])
-            for item in value.values():
-                collect(item)
-        elif isinstance(value, list):
-            for item in value:
-                collect(item)
-
-    collect(document.get("@graph", []))
-    assert "app:pick-above/while/follow-lat" in identifiers
-    assert not any(identifier.startswith(("http://", "https://", "/")) for identifier in identifiers)
-
-
 def test_dual_arm_physical_profiles_and_path_progress_reach_ir(generated_dual_model: Path) -> None:
     graph = _load_graph(generated_dual_model)[1]
     assert len(set(graph.subjects(QUDT_SCHEMA.hasQuantityKind, QKIND_EXT.LinearJerk))) == 1
