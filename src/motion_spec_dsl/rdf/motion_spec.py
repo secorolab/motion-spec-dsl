@@ -271,6 +271,45 @@ def _authored_fqn(target) -> str:
     return ".".join(reversed(parts[:2]))
 
 
+_COERCIBLE_DATATYPES = (XSD.double, XSD.integer)
+
+
+def _numeric_term_coercions(graph, prefixes: dict[str, str]) -> dict[str, dict[str, str]]:
+    """Declare xsd:double/xsd:integer on the JSON-LD terms that carry them.
+
+    rdflib forces JSON-LD native types whenever a context is active
+    (``Converter.use_native_types = context.active or use_native_types``), so numeric
+    literals always serialize as bare JSON numbers with no datatype of their own. Coercing
+    the term declares that datatype once, keeping it visible in the document and pinning it
+    on re-parse -- otherwise a whole-valued double reads back as xsd:integer.
+
+    A predicate carrying more than one numeric datatype has no single coercion and is left
+    alone; its values stay bare, as they were before any term was declared.
+    """
+    longest_first = sorted(prefixes.items(), key=lambda item: -len(item[1]))
+
+    def to_curie(iri: str) -> str | None:
+        for prefix, namespace in longest_first:
+            if iri.startswith(namespace):
+                return f"{prefix}:{iri[len(namespace) :]}"
+        return None
+
+    datatypes: dict[URIRef, set[URIRef]] = {}
+    for _, predicate, obj in graph:
+        if isinstance(obj, Literal) and obj.datatype in _COERCIBLE_DATATYPES:
+            datatypes.setdefault(predicate, set()).add(obj.datatype)
+
+    terms: dict[str, dict[str, str]] = {}
+    for predicate, found in datatypes.items():
+        if len(found) > 1:
+            continue
+        term = to_curie(str(predicate))
+        datatype = to_curie(str(next(iter(found))))
+        if term is not None and datatype is not None:
+            terms[term] = {"@id": str(predicate), "@type": datatype}
+    return terms
+
+
 class MotionSpecDatasetBuilder:
     """Builds the motion-specification RDF dataset from a parsed DSL `Model`.
 
@@ -320,7 +359,7 @@ class MotionSpecDatasetBuilder:
         self._path_projections: set[URIRef] = set()
         self._motion_time_endpoints_index: dict[str, tuple[URIRef, URIRef]] = {}
 
-    def build(self) -> tuple[Dataset, dict[str, str]]:
+    def build(self) -> tuple[Dataset, dict[str, Any]]:
         """Emit the full dataset and return it with its JSON-LD namespace context.
 
         Emits context specs once, then for each authored handler+motion runs
@@ -332,7 +371,7 @@ class MotionSpecDatasetBuilder:
 
         shared_spec_ids = self._compute_shared_specs(handlers)
 
-        context: dict[str, str] = {}
+        context: dict[str, Any] = {}
         for prefix, ns in GRAPH_BINDINGS:
             context[prefix] = str(ns if isinstance(ns, Namespace) else ns._NS)
 
@@ -379,6 +418,7 @@ class MotionSpecDatasetBuilder:
             )
             self._emit_solvers(handler, motion, world_qtys)
 
+        context.update(_numeric_term_coercions(self.graph, context))
         return self.dataset, context
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
@@ -2583,6 +2623,12 @@ class MotionSpecDatasetBuilder:
             ref_node = self._emit_context_ref_node(operand.speed, motion, f"{spec.name}-ref")
             self.graph.add((node, CSTR["reference-value"], ref_node))
             self._reference_value_index[node] = ref_node
+            # A commanded speed is an equality like any other: it is never met exactly, so it
+            # needs a band. Without this it reached codegen with none and was judged by exact
+            # float comparison.
+            self._emit_constraint_tolerance(
+                node, spec, motion, None, "", None, QuantityType.LinearVelocity
+            )
             return
         self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
         self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
@@ -2801,7 +2847,11 @@ class MotionSpecDatasetBuilder:
                 "'.orientation' separately, each in its own unit."
             )
         if band is None:
-            if isinstance(spec.expr, EqualityConstraint) or spec.view.on is not None:
+            if (
+                isinstance(spec.expr, EqualityConstraint)
+                or spec.view.on is not None
+                or spec.view.moving is not None
+            ):
                 raise ValueError(
                     f"Equality constraint '{spec.name}' states no band. An equality is only ever "
                     "satisfied within one, so it must say which: '... within <band>', or "
