@@ -92,6 +92,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     SLV,
     SLV_EXT,
     SOSA,
+    SSN,
     TIME,
 )
 from motion_spec_dsl.classes.controller_semantics import (
@@ -156,6 +157,7 @@ from motion_spec_dsl.classes.motion_spec import (
     PostContextDecl,
     PreContextDecl,
     SpecContextDecl,
+    ToleranceDefaults,
     WorldContextDecl,
 )
 from motion_spec_dsl.classes.path import (
@@ -237,6 +239,25 @@ def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
     return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
 
 
+def _qudt_kind(quantity_type: Any) -> URIRef:
+    """QUDT quantity kind for a DSL quantity type."""
+    return QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type) or QUDT_QKIND[quantity_type]
+
+
+def _tolerance_defaults(models) -> dict[Any, ContextRef]:
+    """Model-wide satisfaction bands by quantity kind, from every `tolerances` block.
+
+    Uniqueness and units are settled in validation, so this only indexes.
+    """
+    return {
+        entry.kind: entry.band
+        for model in models
+        for spec in getattr(model, "specs", [])
+        if isinstance(spec, ToleranceDefaults)
+        for entry in spec.defaults
+    }
+
+
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
 
 
@@ -273,6 +294,7 @@ class MotionSpecDatasetBuilder:
         ]
         self.graph = self.dataset.default_graph
         self._default_ns_owner: Any | None = next(iter(self.authored_handlers), None)
+        self._tolerance_defaults = _tolerance_defaults(self.models)
 
         # Resolution indexes, populated once and read during emission (see module docstring).
         self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
@@ -290,6 +312,7 @@ class MotionSpecDatasetBuilder:
                         self._profiled_controller_by_spec.setdefault(spec, ctrl)
 
         # Emitted-node registries for idempotency (keep emission write-only).
+        self._emitted_bands: set[URIRef] = set()
         self._emitted_distance_ops: set[str] = set()
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
@@ -362,6 +385,9 @@ class MotionSpecDatasetBuilder:
         """Emit the authored scene, platform, and control-period binding."""
         node = URIRef(context.uri)
         self.graph.add((node, RDF.type, EXEC.ExecutionContext))
+        # Arranging equipment for a purpose is what SSN calls a deployment, and that is what
+        # an execution context is: these systems, on this platform, for this specification.
+        self.graph.add((node, RDF.type, SSN.Deployment))
         self.graph.add(
             (
                 node,
@@ -378,14 +404,20 @@ class MotionSpecDatasetBuilder:
             _dsl_unit(context.timestep_unit),
         )
         self.graph.add((node, EXEC.timestep, timestep))
+        # A simulator is software: it has a name. Real-world hardware is named per device, on
+        # the system that realizes each element.
         if getattr(context.platform, "name", None):
-            self.graph.add((node, EXEC["platform-name"], Literal(context.platform.name)))
-        if getattr(context.platform, "version", None):
-            self.graph.add((node, EXEC["platform-version"], Literal(context.platform.version)))
+            self.graph.add((node, SDO.name, Literal(context.platform.name)))
         self._emit_deployment(context, node)
 
     def _emit_deployment(self, context: ExecutionContext, node: URIRef) -> None:
-        """Emit which device realizes each agent or sensor, and the path to their addresses."""
+        """Emit the systems this execution context deploys, and where their addresses live.
+
+        Real-world and simulation deploy different things, and the asymmetry is the fact
+        rather than an accident: on hardware each element has its own device, so each gets a
+        system this context owns; in simulation one simulator answers for all of them, so
+        there is nothing per-element to own and the scene's agents are named directly.
+        """
         devices = getattr(context.platform, "devices", None) or ()
         real_world = context.platform.kind == "real-world"
         if context.config and not real_world:
@@ -428,11 +460,25 @@ class MotionSpecDatasetBuilder:
             self.graph.add((config, RDF.type, EXEC.ResourceWithPath))
             self.graph.add((config, RDF.type, EXEC.SystemResource))
             self.graph.add((config, EXEC.path, Literal(context.config)))
-            self.graph.add((node, EXEC["has-config"], config))
+            self.graph.add((node, EXEC["has-resource"], config))
+        # The device is a system this deployment owns, naming the hardware it is and the
+        # modelled element it realizes. The element belongs to the scene, so it is only ever
+        # referred to -- nothing is asserted onto it.
         for binding in devices:
-            target = URIRef(binding.target.uri)
-            self.graph.add((target, EXEC["platform-name"], Literal(binding.device)))
-            self.graph.add((target, SDO.name, Literal(_authored_fqn(binding.target))))
+            fqn = _authored_fqn(binding.target)
+            device = URIRef(f"{context.uri}.{fqn.replace('.', '-')}")
+            self.graph.add((device, RDF.type, SSN.System))
+            self.graph.add((device, SDO.model, Literal(binding.device)))
+            self.graph.add((device, EXEC.realizes, URIRef(binding.target.uri)))
+            self.graph.add((node, SSN["deployedSystem"], device))
+
+        # A simulation has no hardware to stand in for anything: the simulator answers for
+        # every agent, so the deployment names the agents the scene already declares. They
+        # are systems in their own right, which is what lets this refer to them directly
+        # instead of owning a node per element the way the real-world branch must.
+        if not real_world:
+            for modelled_agent in context.scene.modelled_agns:
+                self.graph.add((node, SSN["deployedSystem"], URIRef(modelled_agent.agn.uri)))
 
     def _namespace_owner(self, obj: Any | None) -> Any:
         """Return the namespace declaration that should own a generated node."""
@@ -2690,14 +2736,10 @@ class MotionSpecDatasetBuilder:
             return URIRef(quantity.uri)
 
         node = URIRef(f"{quantity.uri}-{suffix}")
-        qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type)
-        if qkind is None:
-            qkind = QUDT_QKIND[quantity.type]
-
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         if quantity.type == QuantityType.Distance:
             self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
-        self._emit_quantity_kind(node, qkind)
+        self._emit_quantity_kind(node, _qudt_kind(quantity.type))
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
         if isinstance(ref.literal_value, Measure):
             self.graph.add(
@@ -2730,29 +2772,66 @@ class MotionSpecDatasetBuilder:
         qty: WorldQuantity | None,
         subspace: str,
         axis: str | None,
+        scalar_t: Any,
     ) -> None:
-        """Link an authored `within` band to its equality constraint.
+        """Link a constraint's satisfaction band: its own `within`, else the model-wide
+        default for the kind its error carries.
+
+        An equality has to end up with one -- `equal to <x>` names a single point and `on
+        <path>` a single curve, and neither is ever met exactly. A gate need not: its
+        admissible region has an interior, so the band only says how close to the boundary
+        counts as arrived, and a model that states none asks for the boundary itself.
 
         A band carries the kind and unit of the value it bounds, so a whole pose -- a position
         and an orientation in one error -- cannot state one: metres and radians would share a
         number. Those are toleranced per subspace, one constraint each.
         """
-        if spec.expr.tolerance is None:
-            raise ValueError(
-                f"Equality constraint '{spec.name}' states no band. An equality is only ever "
-                "satisfied within one, so it must say which: '... equal to <x> within <band>'."
-            )
+        band = spec.tolerance
+        owner, suffix = motion, f"{spec.name}-tolerance"
+        if band is None:
+            # One node per kind: the model states the default once, so the graph shows every
+            # constraint that takes it pointing at the same band.
+            band = self._tolerance_defaults.get(scalar_t)
+            owner, suffix = self._default_ns_owner, f"default-tolerance-{scalar_t}"
         whole_pose = qty is not None and qty.type == WorldQuantityType.Pose
-        if whole_pose and axis is None and subspace == "pose":
+        if band is not None and whole_pose and axis is None and subspace == "pose":
             raise ValueError(
                 f"Constraint '{spec.name}' tolerances a whole pose, whose error mixes a "
                 "position and an orientation. State the band on '.position' and on "
                 "'.orientation' separately, each in its own unit."
             )
-        tol_node = self._emit_context_ref_node(
-            spec.expr.tolerance, motion, f"{spec.name}-tolerance"
-        )
-        self.graph.add((node, CSTR_EXT.tolerance, tol_node))
+        if band is None:
+            if isinstance(spec.expr, EqualityConstraint) or spec.view.on is not None:
+                raise ValueError(
+                    f"Equality constraint '{spec.name}' states no band. An equality is only ever "
+                    "satisfied within one, so it must say which: '... within <band>', or "
+                    f"declare a model-wide default for '{scalar_t}' in a 'tolerances' block."
+                )
+            return
+        self.graph.add((node, CSTR_EXT.tolerance, self._band_node(band, owner, suffix, scalar_t)))
+
+    def _band_node(self, band: ContextRef, owner: Any, suffix: str, scalar_t: Any) -> URIRef:
+        """The quantity a satisfaction band resolves to.
+
+        An inline measure takes its kind from the value it bounds, so a band that is used
+        nowhere else -- most of them -- is written where it applies instead of being declared
+        as a context quantity first.
+        """
+        measure = getattr(band, "bare", None)
+        if measure is None:
+            return self._emit_context_ref_node(band, owner, suffix)
+        node = self._owned_uri(suffix, owner)
+        if node not in self._emitted_bands:
+            self._emitted_bands.add(node)
+            self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+            if scalar_t == QuantityType.Distance:
+                self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
+            self._emit_quantity_kind(node, _qudt_kind(scalar_t))
+            self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(measure.unit)))
+            self.graph.add(
+                (node, QUDT_SCHEMA.value, Literal(float(measure.value), datatype=XSD.double))
+            )
+        return node
 
     def _constraint_reference_node(
         self,
@@ -2877,6 +2956,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, CSTR["reference-value"], ref_node))
                 self._reference_value_index[node] = ref_node
                 self.graph.add((node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
+                self._emit_constraint_tolerance(node, spec, motion, qty, subspace, axis, scalar_t)
                 continue
 
             expr = spec.expr
@@ -2913,7 +2993,6 @@ class MotionSpecDatasetBuilder:
                     )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
                 self._reference_value_index[node] = ref_node
-                self._emit_constraint_tolerance(node, spec, motion, qty, subspace, axis)
             elif isinstance(expr, GreaterThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
@@ -2940,6 +3019,8 @@ class MotionSpecDatasetBuilder:
                 up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
+
+            self._emit_constraint_tolerance(node, spec, motion, qty, subspace, axis, scalar_t)
 
     def _profiled_controller_for_spec(
         self, spec: ConstraintSpecification
@@ -3177,10 +3258,14 @@ class MotionSpecDatasetBuilder:
                 expr.reference, motion, f"{spec.name}-reference"
             )
             self.graph.add((node, CSTR["reference-value"], ref_node))
-            # Semantic validation guarantees an elapsed equality always carries a tolerance.
-            tol_node = self._emit_duration_threshold_node(
-                expr.tolerance, motion, f"{spec.name}-tolerance"
-            )
+            band = spec.tolerance or self._tolerance_defaults.get(QuantityType.Duration)
+            if band is None:
+                raise ValueError(
+                    f"Elapsed equality '{spec.name}' states no band. A sampled clock never "
+                    "lands exactly on the reference, so it must say how close counts: "
+                    "'... equal to <t> within <band>'."
+                )
+            tol_node = self._emit_duration_threshold_node(band, motion, f"{spec.name}-tolerance")
             self.graph.add((node, CSTR_EXT.tolerance, tol_node))
         else:
             raise ValueError(

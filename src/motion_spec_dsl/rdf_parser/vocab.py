@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""RDF vocabulary shared by motion-spec emission and parsing."""
+"""RDF vocabulary shared by motion-spec emission and parsing.
+
+External vocabularies are re-exported from rdflib rather than redeclared: SOSA/SSN and
+schema.org ship with it, and a second declaration of a W3C IRI is a second thing to keep
+right.
+"""
 
 from rdflib import URIRef
-from rdflib.namespace import DefinedNamespace, Namespace
+from rdflib.namespace import SOSA, SSN, DefinedNamespace, Namespace
 from rdf_utils.namespace import (
     URL_COMP_ROB2B,
     URL_SECORO_MM,
@@ -23,15 +28,6 @@ from rdf_utils.namespace import (
 
 URI_CR2B_MM = f"{URL_COMP_ROB2B}/metamodels"
 URI_SECORO_MM = URL_SECORO_MM
-
-
-class SOSA(DefinedNamespace):
-    Observation: URIRef
-    madeBySensor: URIRef
-    hosts: URIRef
-    observes: URIRef
-
-    _NS = Namespace("http://www.w3.org/ns/sosa/")
 
 
 class SENSORS(DefinedNamespace):
@@ -78,8 +74,11 @@ class EXEC(DefinedNamespace):
 
     path: URIRef
 
+    realizes: URIRef
+
     _extras = [
         "has-config",
+        "has-resource",
         "has-mapping",
         "maps",
         "has-body",
@@ -87,8 +86,6 @@ class EXEC(DefinedNamespace):
         "model-entity",
         "runs-scene",
         "timestep",
-        "platform-name",
-        "platform-version",
     ]
 
     _NS = Namespace(f"{URI_SECORO_MM}/execution-context#")

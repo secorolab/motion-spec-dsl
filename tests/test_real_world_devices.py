@@ -13,13 +13,15 @@ import pytest
 import rdflib
 
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
-from motion_spec_dsl.rdf_parser.vocab import EXEC
+from rdflib.namespace import SDO
+
+from motion_spec_dsl.rdf_parser.vocab import EXEC, SSN
 
 SIM = 'platform:   simulation { name: "MuJoCo" }'
 
 REAL = """platform:   real-world {
-                    name: KinovaGen3-2F85 maps to <agents.kinova_ft_2f85>,
-                    name: RobotiqFT300s   maps to <wrist_ft>
+                    <agents.kinova_ft_2f85> realized by KinovaGen3-2F85,
+                    <wrist_ft> realized by RobotiqFT300s
                 }
     config:     "robot.toml\""""
 
@@ -29,32 +31,53 @@ def _graph(parse_mutated, platform: str):
     return MotionSpecDatasetBuilder(model).build()[0].default_graph
 
 
-def test_a_real_world_context_names_the_device_behind_each_element(parse_mutated) -> None:
+def test_a_real_world_context_deploys_one_system_per_element(parse_mutated) -> None:
+    """Arranging equipment for a purpose is a deployment; each device is a system it owns."""
     g = _graph(parse_mutated, REAL)
     context = next(g.subjects(rdflib.RDF.type, EXEC.RealWorld))
     assert (context, rdflib.RDF.type, EXEC.Simulation) not in g
+    assert (context, rdflib.RDF.type, SSN.Deployment) in g
 
-    devices = {
-        str(name): str(subject).rsplit("/", 1)[-1]
-        for subject, name in g.subject_objects(EXEC["platform-name"])
+    deployed = {
+        str(g.value(device, SDO.model)): str(
+            g.value(device, EXEC["realizes"])
+        ).rsplit("/", 1)[-1]
+        for device in g.objects(context, SSN.deployedSystem)
     }
-    assert devices == {"KinovaGen3-2F85": "kinova_ft_2f85", "RobotiqFT300s": "wrist_ft"}
+    assert deployed == {"KinovaGen3-2F85": "kinova_ft_2f85", "RobotiqFT300s": "wrist_ft"}
+
+
+def test_the_scene_element_carries_nothing_the_deployment_knows(parse_mutated) -> None:
+    """The agent belongs to the scene, so the deployment refers to it and never asserts onto
+    it -- otherwise two deployments of one scene would overwrite each other's hardware."""
+    g = _graph(parse_mutated, REAL)
+    element = next(g.objects(None, EXEC["realizes"]))
+
+    assert not list(g.objects(element, SDO.model))
+    assert not list(g.objects(element, SDO.name))
+    assert not list(g.objects(element, SDO.identifier))
 
 
 def test_the_config_is_referenced_by_path_and_never_inlined(parse_mutated) -> None:
     g = _graph(parse_mutated, REAL)
     context = next(g.subjects(rdflib.RDF.type, EXEC.RealWorld))
-    config = next(g.objects(context, EXEC["has-config"]))
+    config = next(g.objects(context, EXEC["has-resource"]))
     # A resource with a path, like any other model file -- not an inline blob. Addresses and
     # credentials are deployment facts and must not end up in an archived run graph.
     assert (config, rdflib.RDF.type, EXEC.ResourceWithPath) in g
     assert str(next(g.objects(config, EXEC.path))) == "robot.toml"
 
 
-def test_a_simulation_context_carries_no_deployment(parse_mutated) -> None:
+def test_a_simulation_context_deploys_no_hardware(parse_mutated) -> None:
+    """The simulator answers for every agent, so no device stands in for one."""
     g = _graph(parse_mutated, SIM)
-    assert not list(g.subject_objects(EXEC["has-config"]))
+    assert not list(g.subject_objects(EXEC["has-resource"]))
     assert not list(g.subjects(rdflib.RDF.type, EXEC.RealWorld))
+    assert not list(g.subject_objects(EXEC["realizes"]))
+    # Still a deployment, and it names what it runs: the scene's agents are the systems,
+    # which is why nothing per-element has to be owned here.
+    assert list(g.subjects(rdflib.RDF.type, SSN.Deployment))
+    assert list(g.subject_objects(SSN.deployedSystem))
 
 
 def test_an_unknown_device_is_rejected_while_parsing(parse_mutated) -> None:
@@ -63,7 +86,7 @@ def test_an_unknown_device_is_rejected_while_parsing(parse_mutated) -> None:
     with pytest.raises(Exception):
         _graph(
             parse_mutated,
-            'platform:   real-world { name: KinovaGen4 maps to <agents.kinova_ft_2f85> }\n'
+            'platform:   real-world { <agents.kinova_ft_2f85> realized by KinovaGen4 }\n'
             '    config:     "robot.toml"',
         )
 
@@ -77,7 +100,7 @@ def test_binding_a_device_without_a_config_is_rejected(parse_mutated) -> None:
     with pytest.raises(ValueError, match="no 'config'"):
         _graph(
             parse_mutated,
-            "platform:   real-world { name: KinovaGen3-2F85 maps to <agents.kinova_ft_2f85> }",
+            "platform:   real-world { <agents.kinova_ft_2f85> realized by KinovaGen3-2F85 }",
         )
 
 
@@ -86,8 +109,8 @@ def test_binding_one_element_twice_is_rejected(parse_mutated) -> None:
         _graph(
             parse_mutated,
             "platform:   real-world {\n"
-            "                    name: KinovaGen3-2F85 maps to <agents.kinova_ft_2f85>,\n"
-            "                    name: KinovaGen3      maps to <agents.kinova_ft_2f85>\n"
+            "                    <agents.kinova_ft_2f85> realized by KinovaGen3-2F85,\n"
+            "                    <agents.kinova_ft_2f85> realized by KinovaGen3\n"
             "                }\n"
             '    config:     "robot.toml"',
         )

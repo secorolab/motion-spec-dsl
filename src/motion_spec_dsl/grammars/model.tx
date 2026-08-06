@@ -16,7 +16,18 @@ Model:
 ;
 
 Specification:
-    ContextSpec | ExecutionContext | GuardedMotion | ConstraintHandler
+    ContextSpec | ExecutionContext | ToleranceDefaults | GuardedMotion | ConstraintHandler
+;
+
+// Model-wide satisfaction bands, one per quantity kind. A constraint that authors no
+// `within` takes the band declared for the kind its error carries, so the band a model is
+// tuned against is stated once instead of on every gate.
+ToleranceDefaults:
+    "tolerances" "{" defaults+=ToleranceDefault[","] "}"
+;
+
+ToleranceDefault:
+    kind=ToleranceQuantityType ":" band=ContextRef
 ;
 
 // Execution target: binds the imported scene to a platform (real-world | simulation)
@@ -40,8 +51,10 @@ RealWorldPlatform:
         ("{" devices+=DeviceBinding[","] "}")?
 ;
 
+// Names the hardware that stands in for a modelled agent or sensor on this deployment.
+// Nothing is mapped: the element is labelled with the device kind that realizes it.
 DeviceBinding:
-    "name" ":" device=DeviceKind "maps" "to" "<" target=[OBJECT|FQN] ">"
+    "<" target=[OBJECT|FQN] ">" "realized" "by" device=DeviceKind
 ;
 
 DeviceKind:
@@ -50,6 +63,5 @@ DeviceKind:
 
 SimulationPlatform:
     kind="simulation"
-        "{" "name" ":" name=STRING
-            ("," "version" ":" version=STRING)? "}"
+        "{" "name" ":" name=STRING "}"
 ;
