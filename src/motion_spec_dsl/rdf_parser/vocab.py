@@ -525,7 +525,6 @@ class GEOM_PATH(DefinedNamespace):
     anchor: URIRef
     center: URIRef
     axis: URIRef
-    direction: URIRef
     radius: URIRef
     amplitude: URIRef
     pitch: URIRef

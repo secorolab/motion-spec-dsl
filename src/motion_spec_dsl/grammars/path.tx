@@ -47,8 +47,7 @@ Figure8Spec:
     "figure8" "{"
         "anchor"       ":" anchor=ContextRef       ","
         "radius"       ":" radius=ContextRef       ","
-        "plane-normal" ":" plane_normal=ContextRef ","
-        "direction"    ":" direction=ContextRef
+        "plane-normal" ":" plane_normal=ContextRef
         ("," "form" ":" form=Figure8Form)?
     "}"
 ;

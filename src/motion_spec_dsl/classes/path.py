@@ -53,10 +53,9 @@ class HelixSpec:
 @dataclass
 class Figure8Spec:
     parent: object
-    anchor: object  # ContextRef (Pose: position -> center, rotation -> orientation)
+    anchor: object  # ContextRef (Pose: position -> center, rotation -> in-plane lobe axis)
     radius: object  # ContextRef
     plane_normal: object  # ContextRef
-    direction: object  # ContextRef (Direction: in-plane axis anchoring the curve's orientation)
     form: str = "gerono"
 
 

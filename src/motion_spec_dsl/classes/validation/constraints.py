@@ -126,11 +126,6 @@ def _validate_path_geometry(quantity: ContextQuantity) -> None:
             f"Figure8 '{quantity.name}' plane-normal",
             value.figure8,
         )
-        _require_direction(
-            value.figure8.direction,
-            f"Figure8 '{quantity.name}' direction",
-            value.figure8,
-        )
 
 
 def validate_static_path_geometry(model: Model) -> None:

@@ -2521,7 +2521,6 @@ class MotionSpecDatasetBuilder:
                     ("anchor", GEOM_PATH.anchor, value.figure8.anchor),
                     ("radius", GEOM_PATH.radius, value.figure8.radius),
                     ("plane-normal", GEOM_PATH["plane-normal"], value.figure8.plane_normal),
-                    ("direction", GEOM_PATH.direction, value.figure8.direction),
                 ],
                 constraints,
                 world_qtys,
