@@ -102,8 +102,8 @@ SolverEntry: SerialChainSolver | MobilePlatformSolver | CommandForwardingSolver 
 
 SerialChainSolver:
     name=IRI_TRUNK ":" "serial-chain" "{"
-        "agent"     ":" "<" agent=[scene.Agent|FQN] ">" ","
-        "algorithm" ":" algorithm=SerialChainAlgorithm
+        "agent"     ":" "<" agent=[scene.Agent|FQN] ">"
+        ("," "algorithm" ":" algorithm=SerialChainAlgorithm)?
         ("," limits=SolverLimits)?
         ("," "gravity" ":" gravity_value=GravityValue)?
     "}"

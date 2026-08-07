@@ -80,9 +80,9 @@ ToleranceQuantityType:
 View:
     (
         "distance" "between"
-        "<" distance_from=[WorldQuantity|FQN] ">"
+        "<" distance_from=[DistancePoseOperand|FQN] ">"
         "and"
-        "<" distance_to=[WorldQuantity|FQN] ">"
+        "<" distance_to=[DistancePoseOperand|FQN] ">"
     )
     |
     elapsed=ElapsedTime
@@ -98,6 +98,8 @@ View:
         selector=SelectorTail?
     )
 ;
+
+DistancePoseOperand: WorldQuantity | ContextQuantity ;
 
 ElapsedTime:
     marker?="elapsed"

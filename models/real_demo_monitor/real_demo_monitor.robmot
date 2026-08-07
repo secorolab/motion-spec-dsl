@@ -1,0 +1,126 @@
+import "real_demo_monitor.fsm"
+import "real_demo_monitor.scenex"
+ns app = "https://secorolab.github.io/models/real-demo-monitor/"
+ns rdm = "https://secorolab.github.io/models/real-demo-monitor/fsm/"
+
+exec-context (ns=app) real-demo-monitor-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   real-world {
+                    <agents.arm1> realized by KinovaGen3,
+                    <agents.gripper1> realized by Robotiq2F85,
+                    <wrist_ft> realized by RobotiqFT300s
+                }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+tolerances {
+    position:         0.05 m,
+    angular-distance: 0.01 rad
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>
+        }
+    },
+    spec {
+        angle gripper-closed       = 0.8 rad,
+        angle gripper-open         = 0.0 rad,
+        angle grasp-threshold      = 0.7 rad,
+        linear-distance pinch-moved-band = 0.05 m,
+        force force-threshold      = 10.0 N,
+        force neg-force-threshold  = -10.0 N
+    }
+}
+
+guarded-motion (ns=app) close-cycle {
+    description: "Close the gripper; monitor the pinch pose and the FT sensor"
+
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>,
+        pinch-moved: distance between <shared.world.pose-ee-base> and <spec.start-pose> greater than <shared.spec.pinch-moved-band>,
+        force-z: <shared.world.ext-force>.force.z outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+    }
+
+    until {
+        closed: <shared.world.gripper-pos> greater than <shared.spec.grasp-threshold>
+    }
+}
+
+guarded-motion (ns=app) open-cycle {
+    description: "Open the gripper; monitor the pinch pose and the FT sensor"
+
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        open-gripper:  keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open>,
+        pinch-moved: distance between <shared.world.pose-ee-base> and <spec.start-pose> greater than <shared.spec.pinch-moved-band>,
+        force-z: <shared.world.ext-force>.force.z outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+    }
+
+    until {
+        opened: <shared.world.gripper-pos> equal to <shared.spec.gripper-open>
+    }
+}
+
+constraint-handler (ns=app) handler-close {
+    handles: <close-cycle>
+    monitors {
+        mon-closed: monitor <close-cycle.until> on activation trigger event <rdm.E_GRIPPER_CLOSED> after active for 0.3 s,
+        mon-pinch: monitor <close-cycle.pinch-moved> on activation trigger event <rdm.E_PINCH_MOVED> after active for 0.3 s,
+        mon-force: monitor <close-cycle.force-z> on activation trigger event <rdm.E_FT_CONTACT> after active for 0.3 s
+    }
+    controllers {
+        feed-forward ctrl-close-gripper { constraint: <close-cycle.close-gripper> }
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent: <agents.arm1>
+        },
+        gripper-command-solver: command-forwarding {
+            agent: <agents.gripper1>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-open {
+    handles: <open-cycle>
+    monitors {
+        mon-opened: monitor <open-cycle.until> on activation trigger event <rdm.E_GRIPPER_OPENED> after active for 0.3 s,
+        mon-pinch: monitor <open-cycle.pinch-moved> on activation trigger event <rdm.E_PINCH_MOVED> after active for 0.3 s,
+        mon-force: monitor <open-cycle.force-z> on activation trigger event <rdm.E_FT_CONTACT> after active for 0.3 s
+    }
+    controllers {
+        feed-forward ctrl-open-gripper { constraint: <open-cycle.open-gripper> }
+    }
+    solvers {
+        <handler-close.arm-solver>,
+        <handler-close.gripper-command-solver>
+    }
+}

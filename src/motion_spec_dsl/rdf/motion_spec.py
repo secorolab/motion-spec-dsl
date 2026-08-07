@@ -793,6 +793,26 @@ class MotionSpecDatasetBuilder:
             raise ValueError(f"{context} needs explicit 'of' and 'wrt' frames.")
         return of_frame, wrt_frame
 
+    def _distance_operand(
+        self, ref: Any, world_qtys: dict[str, WorldQuantity]
+    ) -> WorldQuantity | ContextQuantity | None:
+        """A distance endpoint: a world pose, or a context pose (a snapshot) compared by value."""
+        qty = self._resolve_qty(ref, world_qtys)
+        if qty is not None:
+            return qty
+        return ref if isinstance(ref, ContextQuantity) else None
+
+    def _distance_endpoint_frame(self, qty: Any, context: str) -> str:
+        """The `of` frame of a distance endpoint; raises when it is not a framed pose."""
+        if isinstance(qty, WorldQuantity):
+            return self._pose_frames(qty, context)[0]
+        if qty.type != QuantityType.Pose:
+            raise ValueError(f"{context} must reference Pose quantities.")
+        frames = _pose_frame_names(qty)
+        if frames is None:
+            raise ValueError(f"{context} needs explicit 'of' and 'wrt' frames.")
+        return frames[0]
+
     def _distance_plan(
         self,
         spec: ConstraintSpecification,
@@ -803,15 +823,13 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
 
-        start = self._resolve_qty(spec.view.distance_from, world_qtys)
-        end = self._resolve_qty(spec.view.distance_to, world_qtys)
+        start = self._distance_operand(spec.view.distance_from, world_qtys)
+        end = self._distance_operand(spec.view.distance_to, world_qtys)
         if start is None or end is None:
             raise ValueError(f"Distance constraint '{spec.name}' references an unknown pose.")
-        if start.type != WorldQuantityType.Pose or end.type != WorldQuantityType.Pose:
-            raise ValueError(f"Distance constraint '{spec.name}' must reference Pose quantities.")
         context = f"Distance constraint '{spec.name}'"
-        start_frame, _ = self._pose_frames(start, context)
-        end_frame, _ = self._pose_frames(end, context)
+        start_frame = self._distance_endpoint_frame(start, context)
+        end_frame = self._distance_endpoint_frame(end, context)
         props = GeometricProps(
             [
                 GeoPropPair(GeometricPropKey.Of, end_frame),
@@ -4213,6 +4231,9 @@ class MotionSpecDatasetBuilder:
 
         for solver in solvers:
             solver_node = self._solver_node(handler, motion, solver)
+            # The declared solvers are the handler's runtimes; controller plans alone cannot
+            # recover one that no controller routes to (a monitor-only arm).
+            self.graph.add((URIRef(handler.uri), CSTR_HDL_EXT.solvers, solver_node))
             robot_uri = getattr(solver.agent, "uri", None)
             if robot_uri:
                 self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
@@ -4252,12 +4273,13 @@ class MotionSpecDatasetBuilder:
             self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
 
             alg = solver.algorithm
-            alg_node = (
-                SLV.AccelerationConstrainedHybridDynamicsAlgorithm
-                if alg == "ACHD"
-                else SLV["RecursiveNewtonEulerAlgorithm"]
-            )
-            self.graph.add((solver_node, SLV.solver, alg_node))
+            if alg is not None:
+                alg_node = (
+                    SLV.AccelerationConstrainedHybridDynamicsAlgorithm
+                    if alg == "ACHD"
+                    else SLV["RecursiveNewtonEulerAlgorithm"]
+                )
+                self.graph.add((solver_node, SLV.solver, alg_node))
 
             gravity_value = getattr(solver, "gravity_value", None)
             if gravity_value is not None:
@@ -4333,6 +4355,12 @@ class MotionSpecDatasetBuilder:
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
             if self._controller_solver(handler, ctrl) is not solver:
                 continue
+
+            if solver.algorithm is None:
+                raise ValueError(
+                    f"Serial-chain solver '{solver.name}' declares no algorithm, but "
+                    f"controller '{ctrl.name}' routes through it; a driven solver needs one."
+                )
 
             cref = ctrl.params.constraint
             spec = cref.constraint if hasattr(cref, "constraint") else None

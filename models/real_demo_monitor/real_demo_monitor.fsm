@@ -1,0 +1,37 @@
+ns rdm = "https://secorolab.github.io/models/real-demo-monitor/fsm/"
+
+evt loop (ns=rdm) real_demo_monitor_fsm_events {
+    evt E_STEP,
+    evt E_GRIPPER_CLOSED,
+    evt E_GRIPPER_OPENED,
+    evt E_PINCH_MOVED,
+    evt E_FT_CONTACT
+}
+
+fsm (ns=rdm) real_demo_monitor_fsm {
+    description: "Cycle the gripper closed and open while the arm is only monitored."
+
+    states {
+        S_START,
+        S_CLOSE,
+        S_OPEN,
+        S_DONE
+    }
+
+    evt loop: <real_demo_monitor_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_CLOSE { from: <S_START>, to: <S_CLOSE> },
+        T_CLOSE_OPEN  { from: <S_CLOSE>, to: <S_OPEN> },
+        T_OPEN_CLOSE  { from: <S_OPEN>,  to: <S_CLOSE> }
+    }
+
+    reactions {
+        R_STEP_START     { when: <real_demo_monitor_fsm_events.E_STEP>,           do: <T_START_CLOSE> },
+        R_GRIPPER_CLOSED { when: <real_demo_monitor_fsm_events.E_GRIPPER_CLOSED>, do: <T_CLOSE_OPEN> },
+        R_GRIPPER_OPENED { when: <real_demo_monitor_fsm_events.E_GRIPPER_OPENED>, do: <T_OPEN_CLOSE> }
+    }
+}

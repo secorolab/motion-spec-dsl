@@ -313,7 +313,8 @@ class SerialChainSolver(NamedNamespaceObject):
     parent: object
     name: str
     agent: object
-    algorithm: str
+    # None on a monitor-only solver: no controller drives it, so no dynamics algorithm runs.
+    algorithm: str | None = None
     limits: SolverLimits | None = None
     gravity_value: GravityValue | None = None
 

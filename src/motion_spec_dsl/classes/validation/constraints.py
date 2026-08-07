@@ -11,9 +11,12 @@ import math
 from textx import get_children_of_type
 
 from motion_spec_dsl.classes.constraints import (
+    BilateralConstraint,
     ConstraintSpecification,
     EqualityConstraint,
     GreaterThanConstraint,
+    LessThanConstraint,
+    OutsideConstraint,
 )
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
@@ -22,6 +25,7 @@ from motion_spec_dsl.classes.context import (
     QuantityType,
     ReferenceGeneratorType,
     VectorXYZ,
+    WorldQuantityType,
     _resolved_context_quantity,
 )
 from motion_spec_dsl.classes.coordinates import (
@@ -320,6 +324,51 @@ def validate_unit_kinds(model: Model) -> None:
             f"units ({', '.join(allowed)}).",
             quantity,
         )
+
+
+_ORDER_RELATIONS = (
+    GreaterThanConstraint,
+    LessThanConstraint,
+    BilateralConstraint,
+    OutsideConstraint,
+)
+_COMPOSITE_WORLD_TYPES = {
+    WorldQuantityType.Pose,
+    WorldQuantityType.VelocityTwist,
+    WorldQuantityType.Wrench,
+}
+
+
+def validate_scalar_order_relations(model: Model) -> None:
+    """Reject order relations (greater/less/between/outside) on multi-dimensional views.
+
+    Nothing physical orders 3-D quantities; such a comparison needs a scalar view — an
+    axis component or a `distance between` two poses.
+    """
+    for motion in motion_specs(model):
+        for spec in motion_constraints(motion):
+            if not isinstance(spec.expr, _ORDER_RELATIONS):
+                continue
+            view = spec.view
+            if (
+                getattr(view, "is_elapsed", False)
+                or getattr(view, "distance_from", None) is not None
+                or getattr(view, "progress", None) is not None
+                or getattr(view, "moving", None) is not None
+                or getattr(view, "on", None) is not None
+                or getattr(view, "axis", None) is not None
+            ):
+                continue
+            quantity = getattr(view, "quantity", None)
+            if (
+                getattr(view, "subspace", None) is not None
+                or getattr(quantity, "type", None) in _COMPOSITE_WORLD_TYPES
+            ):
+                raise semantic_error(
+                    f"Constraint '{spec.name}': an order relation needs a scalar view; "
+                    "select a single axis or author `distance between` two poses.",
+                    spec,
+                )
 
 
 def validate_tolerance_defaults(model: Model) -> None:
