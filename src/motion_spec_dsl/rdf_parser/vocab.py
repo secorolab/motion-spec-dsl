@@ -589,7 +589,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
         "force",
         "fallback-motion",
         "debounce-duration",
-        "solvers",
+        "runs-solver",
     ]
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/constraint-handler#")

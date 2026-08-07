@@ -4232,7 +4232,7 @@ class MotionSpecDatasetBuilder:
             solver_node = self._solver_node(handler, motion, solver)
             # The declared solvers are the handler's runtimes; controller plans alone cannot
             # recover one that no controller routes to (a monitor-only arm).
-            self.graph.add((URIRef(handler.uri), CSTR_HDL_EXT.solvers, solver_node))
+            self.graph.add((URIRef(handler.uri), CSTR_HDL_EXT["runs-solver"], solver_node))
             robot_uri = getattr(solver.agent, "uri", None)
             if robot_uri:
                 self.graph.add((solver_node, AGN["of-agent"], URIRef(robot_uri)))
