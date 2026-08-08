@@ -52,6 +52,7 @@ MonitorAction:
       "trigger" ":" "event" event=EventName
     | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
     | "flag"    ":" flag=IRI_TRUNK
+    | "publish" ":" value=ID "to" "<" topic=[RosTopicDecl|FQN] ">"
 ;
 
 RosTopicDecls:

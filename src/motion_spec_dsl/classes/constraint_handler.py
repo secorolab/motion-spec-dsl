@@ -185,6 +185,9 @@ class MonitorAction:
     event: EventName | None = None
     fallback: GuardedMotion | None = None
     flag: str = ""
+    # Per-state publish: the value the block's state contributes to the message's trinary contract.
+    value: str = ""
+    topic: RosTopicDecl | None = None
 
     @property
     def kind(self) -> str:
@@ -192,6 +195,8 @@ class MonitorAction:
             return "trigger"
         if self.fallback is not None:
             return "hold"
+        if self.topic is not None:
+            return "publish"
         return "flag"
 
 
@@ -256,10 +261,13 @@ class MonitorEntry(NamedNamespaceObject):
 
     @property
     def topic(self) -> RosTopicDecl | None:
-        """The one topic this monitor publishes on; `publish` is declared at most once."""
+        """The one topic this monitor publishes on, whichever of the two forms declared it."""
         if len(self.topics) > 1:
             raise ValueError(f"Monitor '{self.name}' declares more than one 'publish'.")
-        return self.topics[0] if self.topics else None
+        if self.topics:
+            return self.topics[0]
+        published = self.actions("publish")
+        return published[0][1].topic if published else None
 
     @property
     def debounce(self) -> Measure | None:
