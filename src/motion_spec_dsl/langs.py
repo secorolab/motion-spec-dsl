@@ -14,6 +14,7 @@ from motion_spec_dsl.classes.base import (
     NamespaceDeclare,
 )
 from motion_spec_dsl.classes.constraint_handler import (
+    BddBehaviour,
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
@@ -192,6 +193,7 @@ LANGUAGE_CLASSES = [
     DetectDecl,
     SceneObjRef,
     GoalStatusConstraint,
+    BddBehaviour,
     EventName,
     ControllerAlias,
     ControllerEntry,

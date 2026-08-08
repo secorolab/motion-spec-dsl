@@ -177,6 +177,28 @@ class RosTopicDecls:
         return Namespace(self.ns.uri)
 
 
+@dataclass
+class BddBehaviour(IHasNamespaceDeclare):
+    """The runtime serves BDD scenario goals: the action it answers on, the FSM event a goal
+    start produces, and the events it exports on a channel of its own."""
+
+    parent: object
+    ns: NamespaceDeclLike
+    name: str
+    action_name: str
+    goal_event: EventName
+    events_channel: str
+    exported: list[EventName] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+
+    @property
+    def events_uri(self) -> str:
+        """The topic node the exported events belong to."""
+        return f"{self.uri}.events"
+
+
 def authored_text(value: object) -> str:
     """What the author wrote for a field value: a constant's name, or a literal's spelling."""
     constant = getattr(value, "constant", "")
