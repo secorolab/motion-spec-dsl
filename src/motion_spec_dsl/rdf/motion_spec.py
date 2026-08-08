@@ -104,6 +104,7 @@ from motion_spec_dsl.classes.controller_semantics import (
     controller_solver,
 )
 from motion_spec_dsl.classes.constraint_handler import (
+    BddBehaviour,
     ConstraintHandler,
     ControllerEntry,
     ControllerType,
@@ -283,6 +284,12 @@ def _section_expression_type(logic, member_count: int):
 
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
 
+# The BDD contract a `bdd-behaviour` block realizes: the goal a robbdd scenario sends, and the
+# message its exported events leave on. The type is the node's own contract -- what a reader
+# dispatches on -- so it is stated, never minted as a class of its own.
+BEHAVIOUR_ACTION_TYPE = "bdd_ros2_interfaces/action/Behaviour"
+BEHAVIOUR_EVENT_TYPE = "bdd_ros2_interfaces/msg/Event"
+
 
 def _authored_fqn(target) -> str:
     """The dotted name the model refers to this element by, e.g. `agents.arm1`."""
@@ -414,6 +421,10 @@ class MotionSpecDatasetBuilder:
                 elif isinstance(spec, ContextSpec):
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
+                elif isinstance(spec, BddBehaviour):
+                    self._emit_bdd_behaviour(spec)
+                    self.dataset.bind(spec.ns_prefix, spec.ns.uri)
+                    context[spec.ns_prefix] = spec.ns.uri
 
         for handler_order, handler in enumerate(handlers):
             motion = handler.motion
@@ -443,6 +454,27 @@ class MotionSpecDatasetBuilder:
 
         context.update(_numeric_term_coercions(self.graph, context))
         return self.dataset, context
+
+    def _emit_bdd_behaviour(self, behaviour: BddBehaviour) -> None:
+        """The action the runtime answers scenario goals on, and the topic its exported events
+        leave by.
+
+        The server's one member is the event an accepted goal produces; the topic's members are
+        the events a scenario is allowed to observe. Everything else the FSM fires stays inside
+        the process.
+        """
+        node = URIRef(behaviour.uri)
+        self.graph.add((node, RDF.type, ROS.Action))
+        self.graph.add((node, ROS["channel-name"], Literal(behaviour.action_name)))
+        self.graph.add((node, ROS["type-name"], Literal(BEHAVIOUR_ACTION_TYPE)))
+        self.graph.add((node, RDFS.member, URIRef(behaviour.goal_event.uri)))
+
+        events = URIRef(behaviour.events_uri)
+        self.graph.add((events, RDF.type, ROS.Topic))
+        self.graph.add((events, ROS["channel-name"], Literal(behaviour.events_channel)))
+        self.graph.add((events, ROS["type-name"], Literal(BEHAVIOUR_EVENT_TYPE)))
+        for exported in behaviour.exported:
+            self.graph.add((events, RDFS.member, URIRef(exported.uri)))
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
         """Emit the authored scene, platform, and control-period binding."""

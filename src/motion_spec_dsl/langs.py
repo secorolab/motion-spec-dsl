@@ -14,6 +14,7 @@ from motion_spec_dsl.classes.base import (
     NamespaceDeclare,
 )
 from motion_spec_dsl.classes.constraint_handler import (
+    BddBehaviour,
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
@@ -182,6 +183,7 @@ LANGUAGE_CLASSES = [
     MonitorAction,
     RosTopicDecls,
     RosTopicDecl,
+    BddBehaviour,
     EventName,
     ControllerAlias,
     ControllerEntry,
