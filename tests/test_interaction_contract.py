@@ -46,7 +46,7 @@ def interaction_ir(admittance_arc_manifest: Path) -> dict:
 
 
 def _motion(ir: dict, motion_id: str):
-    return next(m for m in ir["motions"] if m.id == motion_id)
+    return next(m for m in ir["coordination"]["motions"] if m.id == motion_id)
 
 
 def _spatial_rows(motion) -> set[tuple[str, str]]:
@@ -136,7 +136,8 @@ def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: 
     fact a stiff zero-velocity regulator.
     """
     compliance = _motion(interaction_ir, "motion_compliance")
-    admit = [c for c in interaction_ir["closures"] if c.startswith("admit_")]
+    closures = interaction_ir["computation"]["closures"]
+    admit = [c for c in closures if c.startswith("admit_")]
     assert admit, "model declares admittance references"
     assert set(admit) <= set(compliance.while_pre_schedule), (
         f"admittance closures unscheduled: {sorted(set(admit) - set(compliance.while_pre_schedule))}"
@@ -150,7 +151,7 @@ def test_no_motion_captures_another_motions_snapshot(interaction_ir: dict) -> No
     instant, moving the arc's goal every time the arm was pushed.
     """
     owners: dict[str, set[str]] = {}
-    for motion in interaction_ir["motions"]:
+    for motion in interaction_ir["coordination"]["motions"]:
         for snapshot in motion.snapshots:
             owners.setdefault(snapshot.target_id, set()).add(motion.id)
     shared = {t: m for t, m in owners.items() if len(m) > 1}
@@ -164,7 +165,7 @@ def test_no_motion_schedules_another_motions_closure(interaction_ir: dict) -> No
     arc's path parameter and recomputed its setpoint while the arc was not running.
     """
     arc_only = {"arc_eval_arc_path"}
-    for motion in interaction_ir["motions"]:
+    for motion in interaction_ir["coordination"]["motions"]:
         if motion.id == "motion_arc_motion":
             continue
         scheduled = set(motion.while_schedule) | set(motion.while_pre_schedule)

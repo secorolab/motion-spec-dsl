@@ -469,7 +469,9 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     )
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
 
-    from motion_spec.rdf_parser.ir import Parser
+    from motion_spec.rdf_parser.model import Model
+    from motion_spec.rdf_parser.quantities import _relative_orientation
+    from motion_spec.rdf_parser.quantities import orientation as read_orientation
 
     from motion_spec_dsl.rdf_parser.vocab import GEOM_OP, GEOM_OP_EXT
 
@@ -506,9 +508,16 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
 
     # The composition result is representation-independent, so it has no Euler unit of its
     # own. The IR reader must retain the delta's radians without requiring a result unit.
-    assert Parser(graph).orientation(orientation).unit.id == "UNITLESS"
+    # The motion-spec readers take a Model, not a bare graph.
+    ir_model = Model(
+        graph=graph,
+        app_path=Path("model-app.ld.json"),
+        imported_models=[],
+        imported_provenance=[],
+    )
+    assert read_orientation(ir_model, orientation).unit.id == "UNITLESS"
 
-    operands = Parser(graph)._relative_orientation(orientation)
+    operands = _relative_orientation(ir_model, orientation)
     assert [set(operand) & {"pose", "delta"} for operand in operands] == [
         {"delta"},
         {"pose"},
