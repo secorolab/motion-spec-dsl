@@ -84,11 +84,11 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
         sensor
         for solver in interaction_ir["resources"]["by_kind"]["serial_chain"]
         for sensor in solver.sensors
-        if sensor["type"] == "ForceTorque"
+        if sensor.type == "ForceTorque"
     ]
     assert sensors, "scenex declares force-torque wrist_ft but no solver carries it"
-    assert {s["id"] for s in sensors} == {"wrist_ft"}
-    assert all(s["frame_site"] for s in sensors)
+    assert {s.id for s in sensors} == {"wrist_ft"}
+    assert all(s.frame_site for s in sensors)
     outputs = {
         (
             output.sensor_frame.id,
