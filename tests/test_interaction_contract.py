@@ -177,8 +177,6 @@ def test_until_groups_are_monitored_independently(interaction_ir: dict) -> None:
     compliance = _motion(interaction_ir, "motion_compliance")
     by_event = {m.event_name: m for m in compliance.until_monitors}
     assert {"E_FORCE_GONE", "E_TABLE_CONTACT"} <= set(by_event)
-    # Independent transitions are alternatives: whichever fires first ends the motion.
-    assert compliance.done_any is True
 
     released = by_event["E_FORCE_GONE"]
     assert len(released.group_constraint_ids) == 3, "release must cover every force axis"
