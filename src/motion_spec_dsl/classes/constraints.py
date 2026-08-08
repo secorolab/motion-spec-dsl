@@ -47,6 +47,32 @@ class ConstraintSpecification(NamedNamespaceObject):
 
 
 @dataclass(eq=False)
+class GoalStatusConstraint(NamedNamespaceObject):
+    """An until item met when a detect act's goal reaches the status it names.
+
+    It compares no world quantity, so it carries neither a view nor a band: the status is a
+    fact of the goal, not a measurement.
+    """
+
+    parent: object
+    name: str
+    act: object
+    status: str = ""
+    view: None = None
+    expr: None = None
+    tolerance: None = None
+    disabled: bool = False
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def status_constant(self) -> str:
+        """The action_msgs GoalStatus constant this compares against."""
+        return f"STATUS_{self.status.upper()}"
+
+
+@dataclass(eq=False)
 class ConstraintGroup(NamedNamespaceObject):
     """A named set of until constraints evaluated as one condition, so a motion can carry
     several independent transitions -- each group is monitored on its own.
@@ -77,9 +103,7 @@ class ConstraintRef:
     @property
     def constraint(self) -> ConstraintSpecification | ConstraintGroup:
         return (
-            self.target.ref.constraint
-            if isinstance(self.target, ConstraintAlias)
-            else self.target
+            self.target.ref.constraint if isinstance(self.target, ConstraintAlias) else self.target
         )
 
     @property

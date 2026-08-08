@@ -18,9 +18,26 @@ GuardedMotion:
     "guarded-motion" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("description" ":" description=STRING)?
         "context"  "{" context*=MotionContextItem[","] "}"
+        detects*=DetectDecl
         sections+=ConstraintSection
     "}"
 ;
+
+RosActionDecls:
+    "ros-actions" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
+        actions+=RosActionDecl[","] ","?
+    "}"
+;
+
+RosActionDecl: name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING ;
+
+DetectDecl:
+    name=IRI_TRUNK ":" "detect"
+    ("{" targets+=SceneObjRef[","] ","? "}" | targets+=SceneObjRef)
+    "using" "<" action=[RosActionDecl|FQN] ">"
+;
+
+SceneObjRef: "<" ref=[scene.Frame|FQN] ">" ;
 
 ConstraintSection:
     WhenSection | WhileSection | UntilSection
@@ -32,9 +49,17 @@ UntilSection: "until" (logic=UntilLogic)? "{" constraints*=UntilItem[","]? "}" ;
 WhenLogic:    "any" | "all" ;
 UntilLogic:   "any" | "all" ;
 
-UntilItem: ConstraintGroup | ConstraintItem ;
+UntilItem: ConstraintGroup | UntilAtom ;
+UntilAtom: GoalStatusConstraint | ConstraintItem ;
+
+GoalStatusConstraint:
+    name=IRI_TRUNK ":" "<" act=[DetectDecl|IRI_TRUNK] ">" ".status" "equal" "to" status=GoalStatusToken
+;
+
+GoalStatusToken: "succeeded" | "aborted" | "canceled" ;
+
 ConstraintGroup:
-    name=IRI_TRUNK logic=UntilLogic "{" constraints+=ConstraintItem[","] "}"
+    name=IRI_TRUNK logic=UntilLogic "{" constraints+=UntilAtom[","] "}"
 ;
 
 ConstraintItem: ConstraintSpecification | ConstraintAlias ;
@@ -124,4 +149,4 @@ OutsideConstraint:
 ConstraintRef: target=[ConstraintTarget|FQN] ;
 
 // A monitor or controller may name a single constraint, or an until group monitored as one.
-ConstraintTarget: ConstraintSpecification | ConstraintGroup | ConstraintAlias ;
+ConstraintTarget: ConstraintSpecification | ConstraintGroup | ConstraintAlias | GoalStatusConstraint ;

@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from rdflib.graph import Dataset
-from rdflib.namespace import Namespace, RDF, RDFS, SDO, XSD
+from rdflib.namespace import Namespace, PROV, RDF, RDFS, SDO, XSD
 from rdflib.term import Literal, URIRef
 from rdf_utils.collection import add_literal_list_pred
 from rdf_utils.constraints import ConstraintViolation
@@ -120,6 +120,7 @@ from motion_spec_dsl.classes.constraints import (
     ConstraintGroup,
     ConstraintSpecification,
     EqualityConstraint,
+    GoalStatusConstraint,
     GreaterThanConstraint,
     LessThanConstraint,
     _flatten_constraint_items,
@@ -433,6 +434,7 @@ class MotionSpecDatasetBuilder:
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
             self._emit_path_following(constraints, world_qtys)
             self._emit_constraints(motion, constraints, world_qtys)
+            self._emit_detect_acts(motion)
             self._emit_motion_spec(motion)
             self._emit_scalar_views(motion, constraints, world_qtys)
             self._emit_map_operations(motion, constraints, world_qtys)
@@ -3420,6 +3422,42 @@ class MotionSpecDatasetBuilder:
         for item in members:
             self.graph.add((node, CSTR_EXT["has-constraint"], URIRef(_resolved_spec(item).uri)))
 
+    def _emit_detect_acts(self, motion: GuardedMotion) -> None:
+        """A detect act is its own ros:Action node -- the channel the goal is sent on, the action
+        type it carries, and the scene objects it is asked to locate -- plus the status slot its
+        outcome lands in, and any until item comparing that status.
+        """
+        for act in getattr(motion, "detects", ()):
+            act_node = URIRef(act.uri)
+            self.graph.add((act_node, RDF.type, ROS.Action))
+            self.graph.add((act_node, ROS["channel-name"], Literal(act.action.channel_name)))
+            self.graph.add((act_node, ROS["type-name"], Literal(act.action.type_name)))
+            for target in act.targets:
+                self.graph.add(
+                    (
+                        act_node,
+                        SOSA.hasFeatureOfInterest,
+                        URIRef(str(getattr(target.ref, "uri", target.ref))),
+                    )
+                )
+            self.graph.add((URIRef(act.status_uri), PROV.wasDerivedFrom, act_node))
+
+        for item in _flatten_constraint_items(motion.until.constraints):
+            if isinstance(item, GoalStatusConstraint):
+                self._emit_goal_status_constraint(item)
+
+    def _emit_goal_status_constraint(self, spec: GoalStatusConstraint) -> None:
+        """A goal-status until item: an equality whose quantity is the act's status slot and
+        whose reference is the GoalStatus constant the model named.
+        """
+        node = URIRef(spec.uri)
+        self.graph.add((node, RDF.type, CSTR.Constraint))
+        self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
+        self.graph.add((node, CSTR.quantity, URIRef(spec.act.status_uri)))
+        ref_node = URIRef(f"{spec.uri}-reference")
+        self.graph.add((ref_node, RDF.value, Literal(spec.status_constant)))
+        self.graph.add((node, CSTR["reference-value"], ref_node))
+
     def _emit_motion_spec(self, motion: GuardedMotion) -> None:
         """Emit the guarded-motion node linking its when/while/until constraints (with expression
         nodes for explicit `any`/`all` logic) and any path.
@@ -4037,6 +4075,11 @@ class MotionSpecDatasetBuilder:
                     )
                 component_error_nodes: list[URIRef] = []
                 for spec in section_specs:
+                    if isinstance(spec, GoalStatusConstraint):
+                        error_node = URIRef(spec.act.status_uri)
+                        component_error_nodes.append(error_node)
+                        self._emit_error_evaluator(handler_node, spec, error_node, seen_eval_ids)
+                        continue
                     if getattr(spec.view, "is_elapsed", False):
                         error_node = self._elapsed_quantity_node(spec, cref.motion)
                         component_error_nodes.append(error_node)
@@ -4150,7 +4193,9 @@ class MotionSpecDatasetBuilder:
             if spec.disabled:
                 continue
 
-            if getattr(spec.view, "is_elapsed", False):
+            if isinstance(spec, GoalStatusConstraint):
+                error_node = URIRef(spec.act.status_uri)
+            elif getattr(spec.view, "is_elapsed", False):
                 error_node = self._elapsed_quantity_node(spec, cref.motion)
             else:
                 along_path = self._along_path_scalar(spec)

@@ -1,0 +1,8 @@
+# Poses the mock locate server answers with, keyed by the scene IRI the goal asks for.
+# The cube sits where the .scenex places it, restated in the frame the model's world pose is
+# with respect to: the arm base, which the scene fixes 0.72 m above the world origin.
+frame_id: base_link
+objects:
+  https://secorolab.github.io/models/scenes/detect-pick-single-mjc/pick_place_graph/cube/cube_origin:
+    position: [0.50, 0.0, 0.04]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]

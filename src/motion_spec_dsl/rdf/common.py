@@ -14,6 +14,7 @@ from rdflib.term import URIRef
 from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
 from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
+    GoalStatusConstraint,
     _flatten_constraint_items,
     _resolved_spec,
 )
@@ -148,6 +149,10 @@ def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecific
     for section in (motion.when, motion.while_, motion.until):
         for item in _flatten_constraint_items(section.constraints):
             spec = _resolved_spec(item)
+            # A goal-status item compares an action's outcome, not a world quantity: it has no
+            # view, no reference quantity and no scalar to project.
+            if isinstance(spec, GoalStatusConstraint):
+                continue
             if not spec.disabled:
                 out.append(spec)
     return out

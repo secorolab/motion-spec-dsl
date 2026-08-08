@@ -1,0 +1,166 @@
+import "detect_pick_single.scene"
+import "../kinova_gen3_7dof.ktree"
+import "../robotiq_2f85.ktree"
+
+ns dps_mjc = "https://secorolab.github.io/models/scenes/detect-pick-single-mjc/"
+
+ktree inst (ns=dps_mjc) kinova of <kinova_tree>
+ktree inst (ns=dps_mjc) gripper of <gripper_tree>
+
+ktree (ns=dps_mjc) ft_tree {
+    body wrist_ft_body {
+        frame wrist_ft_body_origin { }
+        // The sensor reads at the body it is: ft_sensor.xml puts the site at its origin.
+        frame wrist_ft_site {
+            pose wrist_ft_site_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.0) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
+        // What ft_sensor.xml states for the body, carried here so the inertia does not
+        // depend on where the generator is run from.
+        inertia {
+            frame: <wrist_ft_body_origin>
+            mass: 0.01 kg
+            inertia-matrix: (
+                (1e-5, 0.0, 0.0),
+                (0.0, 1e-5, 0.0),
+                (0.0, 0.0, 1e-5)
+            ) kg*m^2
+        }
+    }
+    joints { }
+}
+
+ktree (ns=dps_mjc) kinova_2f85 {
+    tree <kinova>
+    tree <ft_tree>
+    tree <gripper>
+
+    joints {
+        fixed ft_on_pinch_site {
+            parent: <kinova.bracelet_link.pinch_site>
+            child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
+        }
+        fixed g_mount_on_ft {
+            parent: <ft_tree.wrist_ft_body.wrist_ft_site>
+            child: <gripper.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova.base_link.base_link_origin>
+            tip: <gripper.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=dps_mjc) world_tree {
+    tree <kinova_2f85>
+
+    body world_body {
+        frame world { }
+    }
+
+    body table {
+        frame table_top {
+            pose table_top_in_world {
+                wrt: <world_body.world>
+                xyz: (0.0, 0.0, 0.72) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+            }
+        }
+        // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
+        frame table_com {
+            pose table_com_in_table_top {
+                wrt: <table.table_top>
+                xyz: (0.0, 0.0, -0.05100416904566816) m
+                orientation: quat {
+                    xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                }
+            }
+        }
+        inertia {
+            frame: <table_com>
+            mass: 84.26442414492935 kg
+            inertia-matrix: (
+                (32.454207471081375, 0.0, 0.0),
+                (0.0, 21.92592723136972, 0.0),
+                (0.0, 0.0, 12.75746156052865)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed table_on_world {
+            parent: <world_body.world>
+            child: <table.table_top>
+        }
+        fixed arm_on_table {
+            parent: <table.table_top>
+            child: <kinova.base_link.base_link_origin>
+        }
+    }
+}
+
+scene inst (ns=dps_mjc) pick_place_scene_mjc {
+    scene: <pick_place_scene>
+
+    kgraph (ns=dps_mjc) pick_place_graph {
+        tree <world_tree>
+
+        body cube {
+            frame cube_origin {
+                pose cube_in_world {
+                    wrt: <world_tree.world_body.world>
+                    xyz: (0.50, 0.0, 0.76) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+                }
+            }
+        }
+    }
+
+    obj <ws_objects.table> {
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <world_tree.table> to "table"
+        }
+    }
+
+    obj <pickplace_objects.cube> {
+        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            map body <pick_place_graph.cube> to "cube"
+        }
+    }
+
+    agn <pickplace_agents.arm1> {
+        model kinova-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            map tree <kinova> to "base_link"
+        }
+
+        model ft-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/ft_sensor.xml'
+            map tree <ft_tree> to "wrist_ft_body"
+        }
+
+        force-torque wrist_ft {
+            frame: <ft_tree.wrist_ft_body.wrist_ft_site>
+            observes: force torque
+            update-rate: 1000.0 Hz
+        }
+
+        camera wrist {
+            frame: <kinova.bracelet_link.wrist_anchor>
+            type: rgb
+            resolution: (640, 480)
+            fov: 41.83792730009236 deg
+            update-rate: 30.0 Hz
+        }
+    }
+
+    agn <pickplace_agents.gripper1> {
+        model gripper-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+            map tree <gripper> to "base_mount"
+        }
+    }
+}

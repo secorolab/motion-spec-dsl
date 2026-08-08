@@ -16,7 +16,7 @@ Model:
 ;
 
 Specification:
-    ContextSpec | ExecutionContext | ToleranceDefaults | RosTopicDecls | GuardedMotion | ConstraintHandler
+    ContextSpec | ExecutionContext | ToleranceDefaults | RosTopicDecls | RosActionDecls | GuardedMotion | ConstraintHandler
 ;
 
 // Model-wide satisfaction bands, one per quantity kind. A constraint that authors no

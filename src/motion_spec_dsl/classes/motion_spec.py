@@ -8,6 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from rdflib import Namespace
+
 from motion_spec_dsl.classes.base import Import, NamespaceDeclare
 from motion_spec_dsl.classes.common import (
     IHasNamespaceDeclare,
@@ -116,6 +118,7 @@ class GuardedMotion(IHasNamespaceDeclare):
         WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl | ContextDeclReference
     ]
     sections: list[WhenSection | WhileSection | UntilSection]
+    detects: list[DetectDecl] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
@@ -131,6 +134,63 @@ class GuardedMotion(IHasNamespaceDeclare):
             if section.name == name:
                 return section
         raise ValueError(f"GuardedMotion '{self.name}' is missing required {name.upper()} section")
+
+
+@dataclass
+class RosActionDecl(NamedNamespaceObject):
+    """A declared ROS action: the channel goals are sent on, and the action it carries."""
+
+    parent: object
+    name: str
+    channel_name: str
+    type_name: str
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class RosActionDecls:
+    """The model's ROS action declarations, all minted in one namespace."""
+
+    parent: object
+    ns: NamespaceDeclLike
+    actions: list[RosActionDecl] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        """The namespace prefix names this block, so `<ns.action>` resolves by dotted path."""
+        return self.ns.name
+
+    @property
+    def namespace(self) -> Namespace:
+        return Namespace(self.ns.uri)
+
+
+@dataclass
+class SceneObjRef:
+    """A reference to a scene object, as a detect target names it."""
+
+    parent: object
+    ref: object
+
+
+@dataclass(eq=False)
+class DetectDecl(NamedNamespaceObject):
+    """A detect act: the scene objects a motion locates on entry, and the action it asks."""
+
+    parent: object
+    name: str
+    action: object
+    targets: list[SceneObjRef] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def status_uri(self) -> str:
+        """The goal-status slot the act's outcome lands in."""
+        return f"{self.uri}.status"
 
 
 @dataclass
