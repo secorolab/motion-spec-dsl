@@ -280,12 +280,8 @@ constraint-handler (ns=app) handler-forward {
     handles: <forward>
     monitors {
         mon-forward-done: monitor <forward.reached-forward> {
-            satisfied {
-                trigger: event <aas.E_FORWARD_DONE>,
-                publish: TRUE to <aas.forward-done>
-            },
-            violated { publish: FALSE to <aas.forward-done> },
-            inactive { publish: UNKNOWN to <aas.forward-done> },
+            satisfied { trigger: event <aas.E_FORWARD_DONE> },
+            publish: to <aas.forward-done>,
         }
     }
     controllers {

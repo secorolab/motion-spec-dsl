@@ -35,7 +35,10 @@ HandlerContextItem: HandlerContextDecl | ContextDeclReference ;
 
 MonitorEntry:
     name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "{"
-        states+=MonitorStateBlock[","] ","?
+        (
+            states+=MonitorStateBlock |
+            "publish" ":" "to" "<" topics+=[RosTopicDecl|FQN] ">"
+        )*[","] ","?
     "}"
 ;
 
@@ -43,19 +46,13 @@ MonitorStateBlock:
     state=MonitorState ("for" sustain=Measure)? "{" actions+=MonitorAction[","] ","? "}"
 ;
 
-MonitorState: "satisfied" | "violated" | "inactive" ;
+MonitorState: "satisfied" | "violated" ;
 
 MonitorAction:
       "trigger" ":" "event" event=EventName
     | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
     | "flag"    ":" flag=IRI_TRUNK
-    | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
-    | "publish" ":" value=RosValueSource "to" "<" topic=[RosTopicDecl|FQN] ">"
 ;
-
-RosFieldAssign: path+=ID['.'] ":" value=RosValueSource ;
-
-RosValueSource: ref=ContextRef | literal=FLOAT | literal=STRING | constant=ID ;
 
 RosTopicDecls:
     "ros-topics" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"

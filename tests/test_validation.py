@@ -27,15 +27,9 @@ REJECTIONS = [
     ),
     pytest.param(
         "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "inactive { trigger: event <aas.E_HOME_SETTLED> },",
-        "belongs in satisfied or violated",
-        id="validate_monitor_trigger_placement",
-    ),
-    pytest.param(
-        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "inactive for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "sustains 'inactive'",
-        id="validate_monitor_sustained_inactive",
+        "violated { flag: settled },",
+        "belongs in satisfied",
+        id="validate_monitor_flag_placement",
     ),
     pytest.param(
         "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",

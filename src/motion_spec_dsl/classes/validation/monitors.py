@@ -14,13 +14,12 @@ _ALLOWED_STATES = {
     "trigger": ("satisfied", "violated"),
     "hold": ("violated",),
     "flag": ("satisfied",),
-    "publish": ("satisfied", "violated", "inactive"),
 }
 
 
 def validate_monitor_state_blocks(model: Model) -> None:
-    """Raise on a monitor whose state blocks repeat, sustain the inactive state, misplace an
-    action, author an action twice, or publish to more than one topic.
+    """Raise on a monitor whose state blocks repeat, misplace an action, author an action
+    twice, or declare `publish` more than once.
     """
     for handler in constraint_handlers(model):
         for monitor in handler.monitors:
@@ -36,12 +35,6 @@ def _validate_blocks(monitor) -> None:
                 f"Monitor '{monitor.name}' declares the '{block.state}' state twice.", monitor
             )
         seen.add(block.state)
-        if block.state == "inactive" and block.sustain is not None:
-            raise semantic_error(
-                f"Monitor '{monitor.name}' sustains 'inactive'; a monitor is inactive the "
-                "moment its motion is unscheduled.",
-                monitor,
-            )
 
 
 def _validate_actions(monitor) -> None:

@@ -178,29 +178,6 @@ class RosTopicDecls:
 
 
 @dataclass
-class RosValueSource:
-    """One authored message-field value: a context quantity, a literal, or a message constant."""
-
-    parent: object | None = field(default=None, repr=False, compare=False)
-    ref: ContextRef | None = None
-    literal: object = None
-    constant: str = ""
-
-
-@dataclass
-class RosFieldAssign:
-    """A dotted message-field path bound to a value source."""
-
-    parent: object
-    path: list[str]
-    value: RosValueSource
-
-    @property
-    def field_path(self) -> str:
-        return ".".join(self.path)
-
-
-@dataclass
 class MonitorAction:
     """One action a monitor performs while it is in a given state."""
 
@@ -208,9 +185,6 @@ class MonitorAction:
     event: EventName | None = None
     fallback: GuardedMotion | None = None
     flag: str = ""
-    value: RosValueSource | None = None
-    topic: RosTopicDecl | None = None
-    fields: list[RosFieldAssign] = field(default_factory=list)
 
     @property
     def kind(self) -> str:
@@ -218,14 +192,12 @@ class MonitorAction:
             return "trigger"
         if self.fallback is not None:
             return "hold"
-        if self.flag:
-            return "flag"
-        return "publish"
+        return "flag"
 
 
 @dataclass
 class MonitorStateBlock:
-    """The actions a monitor performs while in one of its three states."""
+    """The actions a monitor performs while in one of its two states."""
 
     parent: object
     state: str
@@ -241,6 +213,7 @@ class MonitorEntry(NamedNamespaceObject):
     name: str
     constraint: ConstraintRef | UntilMonitorRef
     states: list[MonitorStateBlock] = field(default_factory=list)
+    topics: list[RosTopicDecl] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -283,26 +256,10 @@ class MonitorEntry(NamedNamespaceObject):
 
     @property
     def topic(self) -> RosTopicDecl | None:
-        """The one topic every publish action of this monitor targets."""
-        topics = []
-        for _, action in self.actions("publish"):
-            if not any(action.topic is seen for seen in topics):
-                topics.append(action.topic)
-        if len(topics) > 1:
-            raise ValueError(f"Monitor '{self.name}' publishes to more than one topic.")
-        return topics[0] if topics else None
-
-    @property
-    def publish_fields(self) -> list[tuple[str, str, RosValueSource]]:
-        """`(state, field-path, value)` per published field; the sugar form carries an empty
-        path, which only the message shape can resolve.
-        """
-        rows = []
-        for block, action in self.actions("publish"):
-            if action.value is not None:
-                rows.append((block.state, "", action.value))
-            rows += [(block.state, assign.field_path, assign.value) for assign in action.fields]
-        return rows
+        """The one topic this monitor publishes on; `publish` is declared at most once."""
+        if len(self.topics) > 1:
+            raise ValueError(f"Monitor '{self.name}' declares more than one 'publish'.")
+        return self.topics[0] if self.topics else None
 
     @property
     def debounce(self) -> Measure | None:

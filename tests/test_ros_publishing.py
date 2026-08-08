@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Topic declarations resolve by namespace, and a monitor's publish actions become field nodes."""
+"""Topic declarations resolve by namespace, and a publishing monitor is typed `ros:Topic`."""
 
 from __future__ import annotations
 
 import pytest
 from motion_spec_dsl.rdf.model import ROS
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
-from rdflib import URIRef
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
@@ -27,46 +26,37 @@ def _graph(parse_source, base_source: str, monitor: str):
     return MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
 
 
-def test_publish_actions_become_field_nodes(parse_source, base_source):
-    """Each (state, field) pair is its own node, carrying the state it is published in and
-    either the authored value or the quantity it is read from."""
+def test_a_publishing_monitor_carries_only_the_channel_and_the_type(parse_source, base_source):
+    """The graph states where the monitor publishes and what it carries -- nothing else. What
+    goes into the message is the message type's contract, fixed in codegen.
+    """
     graph = _graph(
         parse_source,
         base_source,
-        """satisfied for 0.3 s {
-            trigger: event <aas.E_HOME_SETTLED>,
-            publish: to <app.settled> { data: 1.0 },
-        },
-        violated { publish: to <app.settled> { data: <shared.spec.zero-linvel> } },
-        inactive { publish: 0.0 to <app.settled> },""",
+        """satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },
+        publish: to <app.settled>,""",
     )
     monitor = next(graph.subjects(RDF.type, ROS.Topic))
     assert str(graph.value(monitor, ROS["channel-name"])) == "/base/settled"
     assert str(graph.value(monitor, ROS["type-name"])) == "std_msgs/msg/Float64"
-
-    fields = {
-        str(graph.value(node, ROS["publish-on"])): (
-            str(graph.value(node, ROS["field-path"])),
-            str(graph.value(node, ROS["value"]) or ""),
-            graph.value(node, ROS["value-from"]),
-        )
-        for node in graph.objects(monitor, ROS["field"])
-    }
-    assert fields["satisfied"] == ("data", "1.0", None)
-    # A context quantity is named, never restated as a literal.
-    assert fields["violated"][0] == "data" and not fields["violated"][1]
-    assert fields["violated"][2] == URIRef(
-        "https://secorolab.github.io/models/base/shared/spec/zero-linvel"
-    )
-    # The sugar form states no path: only the message shape can resolve which field it means.
-    assert fields["inactive"] == ("", "0.0", None)
+    ros_predicates = {p for _s, p, _o in graph if str(p).startswith(str(ROS))}
+    assert ros_predicates == {ROS["channel-name"], ROS["type-name"]}
 
 
-def test_a_monitor_publishes_to_one_topic(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="more than one topic"):
+def test_publish_only_monitor_stays_a_plain_monitor(parse_source, base_source):
+    """No trigger, no flag: the monitor is neither edge- nor level-typed, but still a topic."""
+    graph = _graph(parse_source, base_source, "publish: to <app.settled>,")
+    monitor = next(graph.subjects(RDF.type, ROS.Topic))
+    types = set(graph.objects(monitor, RDF.type))
+    assert ROS.Topic in types
+    assert not [t for t in types if "Triggered" in str(t)]
+
+
+def test_a_monitor_publishes_once(parse_source, base_source):
+    with pytest.raises(TextXSemanticError, match="more than one 'publish'"):
         _graph(
             parse_source,
             base_source,
-            """satisfied { publish: 1.0 to <app.settled> },
-        violated { publish: 0.0 to <app.other> },""",
+            """publish: to <app.settled>,
+        publish: to <app.other>,""",
         )

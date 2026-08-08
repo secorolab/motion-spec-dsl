@@ -3804,9 +3804,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
     def _emit_ros_publication(self, monitor: Any, monitor_node: URIRef) -> None:
-        """Describe what a monitor publishes: the declared topic, then one field node per
-        (state, field) it authored. A bare `publish: V to <t>` carries an empty field path;
-        only the message shape can say which field it means, so lowering resolves it.
+        """Name the channel a monitor publishes on and the message it carries. What is written
+        into that message is the message type's own contract, not model data.
         """
         topic = monitor.topic
         if topic is None:
@@ -3814,21 +3813,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((monitor_node, RDF.type, ROS.Topic))
         self.graph.add((monitor_node, ROS["channel-name"], Literal(topic.channel_name)))
         self.graph.add((monitor_node, ROS["type-name"], Literal(topic.type_name)))
-        for index, (state, path, source) in enumerate(monitor.publish_fields):
-            field_node = URIRef(f"{monitor.uri}.field{index}")
-            self.graph.add((monitor_node, ROS["field"], field_node))
-            self.graph.add((field_node, ROS["field-path"], Literal(path)))
-            self.graph.add((field_node, ROS["publish-on"], Literal(state)))
-            quantity = _context_quantity(source.ref) if source.ref is not None else None
-            if quantity is not None:
-                self.graph.add((field_node, ROS["value-from"], URIRef(quantity.uri)))
-                continue
-            authored = source.constant or source.literal
-            if authored is None or authored == "":
-                raise ValueError(
-                    f"Monitor '{monitor.name}' publishes '{path or topic.name}' with no value."
-                )
-            self.graph.add((field_node, ROS["value"], Literal(str(authored))))
 
     def _emit_constraint_handler(
         self,
