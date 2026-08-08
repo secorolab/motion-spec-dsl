@@ -39,8 +39,7 @@ REJECTIONS = [
     ),
     pytest.param(
         "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "satisfied { trigger: event <aas.E_HOME_SETTLED> },"
-        " violated { trigger: event <aas.E_HOME_SETTLED> },",
+        "satisfied { trigger: event <aas.E_HOME_SETTLED>, trigger: event <aas.E_HOME_SETTLED> },",
         "more than one 'trigger'",
         id="validate_monitor_duplicate_trigger",
     ),

@@ -11,7 +11,7 @@ from motion_spec_dsl.classes.validation.common import constraint_handlers, seman
 # Where each action is meaningful. `trigger` is an edge, so it needs a state to enter;
 # `hold` is the fallback taken while the constraint fails; `flag` reports satisfaction.
 _ALLOWED_STATES = {
-    "trigger": ("satisfied", "violated"),
+    "trigger": ("satisfied",),
     "hold": ("violated",),
     "flag": ("satisfied",),
     "publish": ("satisfied", "violated"),

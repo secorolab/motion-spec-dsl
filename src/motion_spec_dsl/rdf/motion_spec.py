@@ -3970,11 +3970,6 @@ class MotionSpecDatasetBuilder:
         for mon in getattr(handler, "monitors", []):
             cref = mon.constraint
             trigger = mon.trigger
-            if trigger is not None and trigger[0] != "satisfied":
-                raise ValueError(
-                    f"Monitor '{mon.name}' triggers on '{trigger[0]}'; the event lowering only "
-                    "expresses the satisfied edge."
-                )
             if mon.fallback is not None and trigger is None:
                 raise ValueError(
                     f"Monitor '{mon.name}' holds a fallback motion but triggers no event; "
