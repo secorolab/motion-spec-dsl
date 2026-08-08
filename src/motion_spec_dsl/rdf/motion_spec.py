@@ -206,14 +206,6 @@ _MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
     "ForceComposition": (SLV_EXT.ForceCompositionSolver, SLV.force),
 }
 
-# The order relation a constraint's complement states, over the same quantity and thresholds.
-_COMPLEMENT_RELATION: dict[URIRef, URIRef] = {
-    CSTR.GreaterThanConstraint: CSTR.LessThanConstraint,
-    CSTR.LessThanConstraint: CSTR.GreaterThanConstraint,
-    CSTR.BilateralConstraint: CSTR_EXT.OutsideConstraint,
-    CSTR_EXT.OutsideConstraint: CSTR.BilateralConstraint,
-}
-
 
 def _path_operand(view: Any) -> Any | None:
     """The driver, geometry or guard operand of a view that follows a path."""
@@ -3811,33 +3803,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((eval_node, CSTR_HDL.error, error_node))
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
-    def _complement_node(self, monitor: Any, watched: list[URIRef]) -> URIRef:
-        """The condition a violated state holds under: the watched constraint with its order
-        relation flipped, minted as this monitor's own instance data.
-        """
-        if len(watched) != 1:
-            raise ValueError(
-                f"Monitor '{monitor.name}' publishes when violated, but the complement of a "
-                "conjunction is not expressible; publish on satisfied, or monitor a single "
-                "constraint."
-            )
-        node = URIRef(f"{monitor.uri}.complement")
-        if (node, RDF.type, None) in self.graph:
-            return node
-        types = set(self.graph.objects(watched[0], RDF.type))
-        flipped = {_COMPLEMENT_RELATION[t] for t in types if t in _COMPLEMENT_RELATION}
-        if len(flipped) != 1:
-            raise ValueError(
-                f"Monitor '{monitor.name}' publishes when violated, but its constraint states "
-                "no order relation to complement; publish on satisfied instead."
-            )
-        for pred, obj in self.graph.predicate_objects(watched[0]):
-            if pred == RDF.type and obj in _COMPLEMENT_RELATION:
-                continue
-            self.graph.add((node, pred, obj))
-        self.graph.add((node, RDF.type, flipped.pop()))
-        return node
-
     def _emit_ros_publication(
         self, monitor: Any, monitor_node: URIRef, watched: list[URIRef]
     ) -> None:
@@ -3852,9 +3817,9 @@ class MotionSpecDatasetBuilder:
         self.graph.add((monitor_node, ROS["type-name"], Literal(topic.type_name)))
         row_index = 0
         for block, action in monitor.actions("publish"):
-            conditions = (
-                watched if block.state == "satisfied" else [self._complement_node(monitor, watched)]
-            )
+            # A satisfied row holds under the watched constraint; a violated row is the
+            # otherwise, and states no condition at all.
+            conditions = watched if block.state == "satisfied" else []
             for path, value in action.assignments:
                 row = URIRef(f"{monitor.uri}.f{row_index}")
                 row_index += 1

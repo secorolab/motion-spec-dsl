@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-from motion_spec_dsl.classes.constraint_handler import UntilMonitorRef, WhenMonitorRef
-from motion_spec_dsl.classes.constraints import ConstraintGroup
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
 
@@ -58,19 +56,9 @@ def _validate_actions(monitor) -> None:
             )
 
 
-def _watches_a_conjunction(monitor) -> bool:
-    """True when the monitor's target is a section or a named group: several constraints joined,
-    whose complement is a disjunction.
-    """
-    target = monitor.constraint
-    if isinstance(target, (UntilMonitorRef, WhenMonitorRef)):
-        return True
-    return isinstance(getattr(target, "constraint", None), ConstraintGroup)
-
-
 def _validate_publish(monitor) -> None:
     """Raise on a per-state `publish` that names a second topic, repeats within a state, or
-    asks for the complement of a conjunction.
+    states the otherwise without the case it is otherwise to.
     """
     published = monitor.actions("publish")
     if not published:
@@ -86,10 +74,10 @@ def _validate_publish(monitor) -> None:
         raise semantic_error(
             f"Monitor '{monitor.name}' authors more than one 'publish' in one state.", monitor
         )
-    if "violated" in states and _watches_a_conjunction(monitor):
+    if "violated" in states and "satisfied" not in states:
         raise semantic_error(
-            f"Monitor '{monitor.name}' publishes when violated, but the complement of a "
-            "conjunction is not expressible; publish on satisfied, or monitor a single "
-            "constraint.",
+            f"Monitor '{monitor.name}' publishes when violated only; the violated publish is "
+            "the otherwise of the satisfied one, so author the satisfied publish too. A "
+            "violated-only publish is not expressible.",
             monitor,
         )
