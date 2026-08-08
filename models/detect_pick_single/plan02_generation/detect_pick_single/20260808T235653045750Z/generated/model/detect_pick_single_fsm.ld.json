@@ -1,0 +1,789 @@
+{
+  "@context": {
+    "brick": "https://brickschema.org/schema/Brick#",
+    "csvw": "http://www.w3.org/ns/csvw#",
+    "dc": "http://purl.org/dc/elements/1.1/",
+    "dcam": "http://purl.org/dc/dcam/",
+    "dcat": "http://www.w3.org/ns/dcat#",
+    "dcmitype": "http://purl.org/dc/dcmitype/",
+    "dcterms": "http://purl.org/dc/terms/",
+    "doap": "http://usefulinc.com/ns/doap#",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "geo": "http://www.opengis.net/ont/geosparql#",
+    "odrl": "http://www.w3.org/ns/odrl/2/",
+    "org": "http://www.w3.org/ns/org#",
+    "owl": "http://www.w3.org/2002/07/owl#",
+    "prof": "http://www.w3.org/ns/dx/prof/",
+    "prov": "http://www.w3.org/ns/prov#",
+    "qb": "http://purl.org/linked-data/cube#",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "schema": "https://schema.org/",
+    "sh": "http://www.w3.org/ns/shacl#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "sosa": "http://www.w3.org/ns/sosa/",
+    "ssn": "http://www.w3.org/ns/ssn/",
+    "time": "http://www.w3.org/2006/time#",
+    "vann": "http://purl.org/vocab/vann/",
+    "void": "http://rdfs.org/ns/void#",
+    "wgs": "https://www.w3.org/2003/01/geo/wgs84_pos#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#"
+  },
+  "@graph": [
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_ABOVE_PICK",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_START_HOME",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_START"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_GRASP_LOST",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE_ABOVE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_START",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_PICK_ABOVE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_OPEN_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_SETTLED",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_SETTLED"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RETREAT_DONE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_CUBE_DETECTED",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_ABOVE_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/detect_pick_single_fsm_events",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/event-loop#EventLoop",
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#has-event": [
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_LIFT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_OPEN_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE_ABOVE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PICK_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_SETTLED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GOAL"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_DETECT_FAILED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_CUBE_DETECTED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_DETECT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_ABOVE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_STEP"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RECOVER"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_LIFT"
+        }
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#has-evt-reaction": [
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RECOVER_HOLD"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_DETECT_FAILED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_SETTLED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PICK_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_CUBE_DETECTED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_STEP_START"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GOAL"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_OPEN_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GRASP_READY"
+        }
+      ]
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/detect_pick_single_fsm",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#FiniteStateMachine",
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#event-loop": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/detect_pick_single_fsm_events"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#current-state": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_START"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#description": "Single-arm pick&place preceded by a perception detect: S_DETECT asks the locate action where the cube is, and retries itself until it is told. Grasp-loss during transport (lift/place_above/place) routes to S_RECOVER, which captures and holds the current pose.",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#end-state": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#name": "detect_pick_single_fsm",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#reactions": [
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RECOVER_HOLD"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PICK_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_STEP_START"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GRASP_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_CUBE_DETECTED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GOAL"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_OPEN_READY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_GRASP_LOST"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_DETECT_FAILED"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_SETTLED"
+        }
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/fsm#start-state": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_START"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#states": [
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_START"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE"
+        }
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transitions": [
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_RETRY"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_RECOVER"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_PLACE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_PLACE_ABOVE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RECOVER_HOLD"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RETREAT_DONE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_RECOVER"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_HOME_DETECT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_ABOVE_PICK"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_PICK_ABOVE"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_OPEN"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_GRASP_LIFT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_OPEN_RETREAT"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_START_HOME"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_GRASP"
+        },
+        {
+          "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_RECOVER"
+        }
+      ]
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction",
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_PLACE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PICK_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PICK_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_ABOVE_PICK"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RETREAT_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_OPEN_RETREAT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_RECOVER",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_GRASP_LOST",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_HOME_DETECT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_LIFT",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_RECOVER_HOLD",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction",
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RECOVER"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RECOVER_HOLD"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GRASP_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction",
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_GRASP"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_PLACE_ABOVE_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_ABOVE_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_PLACE_ABOVE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_GRASP_LOST",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_LIFT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GOAL",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_CUBE_DETECTED",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_CUBE_DETECTED"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_PICK_ABOVE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_STEP_START",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_STEP"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_START_HOME"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_OPEN_RETREAT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PICK_GRASP",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RECOVER_HOLD",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE_ABOVE",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_GRASP_LIFT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_PLACE_ABOVE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_RETREAT_DONE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_LIFT_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_LIFT_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_GRASP_LIFT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RETREAT_SETTLED",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GRASP_LOST_PLACE",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_RECOVER",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_STEP",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_DETECT_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_ABOVE_PLACE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_OPEN",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_DETECT_FAILED",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction",
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_DETECT_FAILED"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_RETRY"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_RECOVER",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PICK_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_LIFT_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_GOAL",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction",
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_GOAL"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_HOME_DETECT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#State"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_DETECT_FAILED",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_LIFT_RECOVER",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_PLACE_READY",
+      "@type": "time:Instant"
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_DETECT_RETRY",
+      "@type": "https://secorolab.github.io/metamodels/behaviour/fsm#Transition",
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-from": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#transition-to": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/R_OPEN_READY",
+      "@type": [
+        "https://secorolab.github.io/metamodels/behaviour/event-loop#EventReaction",
+        "https://secorolab.github.io/metamodels/behaviour/fsm#Reaction"
+      ],
+      "https://secorolab.github.io/metamodels/behaviour/event-loop#ref-event": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/E_OPEN_READY"
+      },
+      "https://secorolab.github.io/metamodels/behaviour/fsm#do-transition": {
+        "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/T_PLACE_OPEN"
+      }
+    }
+  ],
+  "@id": "https://secorolab.github.io/models/detect-pick-single/fsm/detect_pick_single_fsm"
+}

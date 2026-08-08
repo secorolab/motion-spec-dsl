@@ -1,0 +1,38 @@
+digraph "detect_pick_single_fsm" {
+  rankdir=LR;
+  compound=true;
+  graph [fontname="Helvetica", fontsize=11];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, color="#5f6368"];
+  "__entry__" [shape=point, width=0.12, fillcolor="#202124", color="#202124"];
+  "__entry__" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_START";
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT" [label="S_DETECT"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE" [label="S_DONE", peripheries=2, fillcolor="#e6f4ea"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP" [label="S_GRASP"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME" [label="S_HOME"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT" [label="S_LIFT"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN" [label="S_OPEN"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK" [label="S_PICK"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE" [label="S_PICK_ABOVE"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE" [label="S_PLACE"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE" [label="S_PLACE_ABOVE"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" [label="S_RECOVER"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT" [label="S_RETREAT"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_START" [label="S_START", fillcolor="#e8f0fe"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE" [label="E_CUBE_DETECTED"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT" [label="E_DETECT_FAILED"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_DETECT" [label="E_GOAL"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP" [label="E_GRASP_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" [label="E_GRASP_LOST_LIFT"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_GRASP" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT" [label="E_LIFT_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN" [label="E_OPEN_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK_ABOVE" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_PICK" [label="E_PICK_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" [label="E_GRASP_LOST_PLACE_ABOVE"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_LIFT" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE" [label="E_PLACE_ABOVE_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" [label="E_GRASP_LOST_PLACE"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE_ABOVE" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_PLACE" [label="E_PLACE_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_RECOVER" [label="E_RECOVER"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_OPEN" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT" [label="E_RETREAT_READY"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_RETREAT" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_DONE" [label="E_RETREAT_SETTLED"];
+  "https://secorolab.github.io/models/detect-pick-single/fsm/S_START" -> "https://secorolab.github.io/models/detect-pick-single/fsm/S_HOME" [label="E_STEP"];
+}
