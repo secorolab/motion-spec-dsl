@@ -88,7 +88,7 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
     ]
     assert sensors, "scenex declares force-torque wrist_ft but no solver carries it"
     assert {s.id for s in sensors} == {"wrist_ft"}
-    assert all(s.frame_site for s in sensors)
+    assert all(s.frame for s in sensors)
     outputs = {
         (
             output.sensor_frame.id,
