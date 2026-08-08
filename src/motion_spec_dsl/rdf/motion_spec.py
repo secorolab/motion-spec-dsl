@@ -260,6 +260,27 @@ def _tolerance_defaults(models) -> dict[Any, ContextRef]:
     }
 
 
+_EXPRESSION_SUFFIX = {
+    CSTR_EXT.ConstraintDisjunction: "disjunction",
+    CSTR_EXT.ConstraintConjunction: "conjunction",
+}
+
+
+def _section_expression_type(logic, member_count: int):
+    """The expression node type a when/until section's logic mints, or None when it stays flat.
+
+    No keyword means the implicit default, so nothing is minted and the authored graph shape is
+    kept. An `all` of one member states nothing beyond that member, so it stays flat too.
+    """
+    if not member_count:
+        return None
+    if logic == "any":
+        return CSTR_EXT.ConstraintDisjunction
+    if logic == "all" and member_count > 1:
+        return CSTR_EXT.ConstraintConjunction
+    return None
+
+
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
 
 
@@ -3372,9 +3393,43 @@ class MotionSpecDatasetBuilder:
             node, value.value, NS_MM_QUDT_QTY["Time"], _dsl_unit(value.unit)
         )
 
+    def _section_expression(self, motion: GuardedMotion, phase: str):
+        """A when/until section's expression node and the members it holds.
+
+        The node is None when the section's logic mints none and the members link flat. Both the
+        motion's own links and any whole-section monitor's guard resolve through here, so a
+        monitor can never point at a node the section did not mint.
+        """
+        section = motion.when if phase == "when" else motion.until
+        members = [
+            item
+            for item in section.constraints
+            if not isinstance(item, ConstraintGroup) and not _resolved_spec(item).disabled
+        ]
+        node_type = _section_expression_type(getattr(section, "logic", None), len(members))
+        if node_type is None:
+            return None, node_type, members
+        name = f"motion-{motion.name}-{phase}-{_EXPRESSION_SUFFIX[node_type]}"
+
+        return self._owned_uri(name, motion), node_type, members
+
+    def _emit_section_constraints(
+        self, motion: GuardedMotion, motion_node: URIRef, phase: str, predicate: URIRef
+    ) -> None:
+        """Link one section's constraints to the motion, under its expression node when it has one."""
+        node, node_type, members = self._section_expression(motion, phase)
+        if node is None:
+            for item in members:
+                self.graph.add((motion_node, predicate, URIRef(_resolved_spec(item).uri)))
+            return
+        self.graph.add((node, RDF.type, node_type))
+        self.graph.add((motion_node, predicate, node))
+        for item in members:
+            self.graph.add((node, CSTR_EXT["has-constraint"], URIRef(_resolved_spec(item).uri)))
+
     def _emit_motion_spec(self, motion: GuardedMotion) -> None:
-        """Emit the guarded-motion node linking its when/while/until constraints (with disjunction
-        nodes for `any` logic) and any path.
+        """Emit the guarded-motion node linking its when/while/until constraints (with expression
+        nodes for explicit `any`/`all` logic) and any path.
         """
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
@@ -3382,30 +3437,11 @@ class MotionSpecDatasetBuilder:
         # textX leaves an unmatched optional STRING as '', not None.
         if motion.description:
             self.graph.add((motion_node, SDO.description, Literal(motion.description)))
-        raw_when_logic = getattr(motion.when, "logic", None)
-        when_constraints = [i for i in motion.when.constraints if not _resolved_spec(i).disabled]
-        if raw_when_logic == "any" and when_constraints:
-            when_disjunction_node = self._owned_uri(
-                f"motion-{motion.name}-when-disjunction", motion
-            )
-            self.graph.add((when_disjunction_node, RDF.type, CSTR_EXT.ConstraintDisjunction))
-            self.graph.add((motion_node, MOT.when, when_disjunction_node))
-            for item in when_constraints:
-                self.graph.add(
-                    (
-                        when_disjunction_node,
-                        CSTR_EXT["has-constraint"],
-                        URIRef(_resolved_spec(item).uri),
-                    )
-                )
-        else:
-            for item in when_constraints:
-                self.graph.add((motion_node, MOT.when, URIRef(_resolved_spec(item).uri)))
+        self._emit_section_constraints(motion, motion_node, "when", MOT.when)
         for item in motion.while_.constraints:
             spec = _resolved_spec(item)
             if not spec.disabled:
                 self.graph.add((motion_node, MOT["while"], URIRef(spec.uri)))
-        raw_logic = getattr(motion.until, "logic", None)
         # A named group is one transition condition of its own, so it becomes a single
         # conjunction/disjunction node the motion points at and a monitor can target.
         groups = [i for i in motion.until.constraints if isinstance(i, ConstraintGroup)]
@@ -3425,22 +3461,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add(
                     (group_node, CSTR_EXT["has-constraint"], URIRef(_resolved_spec(item).uri))
                 )
-        until_constraints = [
-            i
-            for i in motion.until.constraints
-            if not isinstance(i, ConstraintGroup) and not _resolved_spec(i).disabled
-        ]
-        if raw_logic == "any" and until_constraints:
-            disjunction_node = self._owned_uri(f"motion-{motion.name}-until-disjunction", motion)
-            self.graph.add((disjunction_node, RDF.type, CSTR_EXT.ConstraintDisjunction))
-            self.graph.add((motion_node, MOT.until, disjunction_node))
-            for item in until_constraints:
-                self.graph.add(
-                    (disjunction_node, CSTR_EXT["has-constraint"], URIRef(_resolved_spec(item).uri))
-                )
-        else:
-            for item in until_constraints:
-                self.graph.add((motion_node, MOT.until, URIRef(_resolved_spec(item).uri)))
+        self._emit_section_constraints(motion, motion_node, "until", MOT.until)
 
     def _emit_scalar_views(
         self,
@@ -3990,16 +4011,14 @@ class MotionSpecDatasetBuilder:
                 if group_target is not None:
                     guard_nodes = [URIRef(group_target.uri)]
                 else:
-                    section = cref.motion.when if is_when_ref else cref.motion.until
-                    if section.logic == "any":
-                        guard_nodes = [
-                            self._owned_uri(
-                                f"motion-{cref.motion.name}-{'when' if is_when_ref else 'until'}-disjunction",
-                                cref.motion,
-                            )
-                        ]
-                    else:
-                        guard_nodes = [URIRef(spec.uri) for spec in section_specs]
+                    section_node, _, _ = self._section_expression(
+                        cref.motion, "when" if is_when_ref else "until"
+                    )
+                    guard_nodes = (
+                        [section_node]
+                        if section_node is not None
+                        else [URIRef(spec.uri) for spec in section_specs]
+                    )
                 component_error_nodes: list[URIRef] = []
                 for spec in section_specs:
                     if getattr(spec.view, "is_elapsed", False):
