@@ -28,6 +28,7 @@ from motion_spec_dsl.classes.validation.handlers import (
     validate_handler_requirements,
     validate_mobile_platform_solver_quantity,
 )
+from motion_spec_dsl.classes.validation.monitors import validate_monitor_state_blocks
 from motion_spec_dsl.classes.validation.names import validate_namespace_uris
 
 __all__ = [
@@ -53,6 +54,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_unit_kinds(model)
     validate_scalar_order_relations(model)
     validate_tolerance_defaults(model)
+    validate_monitor_state_blocks(model)
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)

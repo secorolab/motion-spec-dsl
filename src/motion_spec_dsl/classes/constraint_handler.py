@@ -147,32 +147,168 @@ class EventName:
 
 
 @dataclass
-class ROSTopic:
-    """A ROS topic described with the terms from the ROS JSON-LD context."""
+class RosTopicDecl(NamedNamespaceObject):
+    """A declared ROS topic: the channel it is published on and the message it carries."""
 
+    parent: object
+    name: str
     channel_name: str
-    type_name: str = ""
+    type_name: str
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
+class RosTopicDecls:
+    """The model's ROS topic declarations, all minted in one namespace."""
+
+    parent: object
+    ns: NamespaceDeclLike
+    topics: list[RosTopicDecl] = field(default_factory=list)
+
+    @property
+    def name(self) -> str:
+        """The namespace prefix names this block, so `<ns.topic>` resolves by dotted path."""
+        return self.ns.name
+
+    @property
+    def namespace(self) -> Namespace:
+        return Namespace(self.ns.uri)
+
+
+@dataclass
+class RosValueSource:
+    """One authored message-field value: a context quantity, a literal, or a message constant."""
+
     parent: object | None = field(default=None, repr=False, compare=False)
+    ref: ContextRef | None = None
+    literal: object = None
+    constant: str = ""
+
+
+@dataclass
+class RosFieldAssign:
+    """A dotted message-field path bound to a value source."""
+
+    parent: object
+    path: list[str]
+    value: RosValueSource
+
+    @property
+    def field_path(self) -> str:
+        return ".".join(self.path)
+
+
+@dataclass
+class MonitorAction:
+    """One action a monitor performs while it is in a given state."""
+
+    parent: object
+    event: EventName | None = None
+    fallback: GuardedMotion | None = None
+    flag: str = ""
+    value: RosValueSource | None = None
+    topic: RosTopicDecl | None = None
+    fields: list[RosFieldAssign] = field(default_factory=list)
+
+    @property
+    def kind(self) -> str:
+        if self.event is not None:
+            return "trigger"
+        if self.fallback is not None:
+            return "hold"
+        if self.flag:
+            return "flag"
+        return "publish"
+
+
+@dataclass
+class MonitorStateBlock:
+    """The actions a monitor performs while in one of its three states."""
+
+    parent: object
+    state: str
+    sustain: Measure | None = None
+    actions: list[MonitorAction] = field(default_factory=list)
 
 
 @dataclass
 class MonitorEntry(NamedNamespaceObject):
-    """A monitor watching a constraint and emitting an event when it triggers."""
+    """A monitor watching a constraint, acting per state it is in."""
 
     parent: object
     name: str
     constraint: ConstraintRef | UntilMonitorRef
-    event: EventName | None = None
-    fallback: GuardedMotion | None = None
-    flag: str = ""
-    ros_topic: ROSTopic | None = None
-    # Optional `for <FLOAT> <Unit>` debounce clause: the monitored condition must
-    # hold continuously for this long before the edge-triggered monitor fires.
-    # Absent (None) == current byte-identical rising-edge behaviour.
-    debounce: Measure | None = None
+    states: list[MonitorStateBlock] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+
+    def actions(self, kind: str) -> list[tuple[MonitorStateBlock, MonitorAction]]:
+        """Every `kind` action the monitor authored, paired with the state it belongs to."""
+        return [
+            (block, action)
+            for block in self.states
+            for action in block.actions
+            if action.kind == kind
+        ]
+
+    def _single(self, kind: str) -> tuple[MonitorStateBlock, MonitorAction] | None:
+        found = self.actions(kind)
+        if len(found) > 1:
+            raise ValueError(f"Monitor '{self.name}' authors more than one '{kind}' action.")
+        return found[0] if found else None
+
+    @property
+    def trigger(self) -> tuple[str, EventName] | None:
+        """The state whose entry fires an event, and the event it fires."""
+        found = self._single("trigger")
+        return None if found is None else (found[0].state, found[1].event)
+
+    @property
+    def event(self) -> EventName | None:
+        found = self.trigger
+        return None if found is None else found[1]
+
+    @property
+    def flag(self) -> str:
+        found = self._single("flag")
+        return "" if found is None else found[1].flag
+
+    @property
+    def fallback(self) -> GuardedMotion | None:
+        found = self._single("hold")
+        return None if found is None else found[1].fallback
+
+    @property
+    def topic(self) -> RosTopicDecl | None:
+        """The one topic every publish action of this monitor targets."""
+        topics = []
+        for _, action in self.actions("publish"):
+            if not any(action.topic is seen for seen in topics):
+                topics.append(action.topic)
+        if len(topics) > 1:
+            raise ValueError(f"Monitor '{self.name}' publishes to more than one topic.")
+        return topics[0] if topics else None
+
+    @property
+    def publish_fields(self) -> list[tuple[str, str, RosValueSource]]:
+        """`(state, field-path, value)` per published field; the sugar form carries an empty
+        path, which only the message shape can resolve.
+        """
+        rows = []
+        for block, action in self.actions("publish"):
+            if action.value is not None:
+                rows.append((block.state, "", action.value))
+            rows += [(block.state, assign.field_path, assign.value) for assign in action.fields]
+        return rows
+
+    @property
+    def debounce(self) -> Measure | None:
+        """The sustain the triggering state was entered under: the monitor's debounce."""
+        found = self._single("trigger")
+        return None if found is None else found[0].sustain
 
     @property
     def debounce_duration(self) -> float | None:
@@ -283,6 +419,7 @@ class ControllerParams:
                 self.damping = term.value
             elif name == ControllerParamName.Decay:
                 self.decay = term.value
+
 
 @dataclass
 class PIDControllerParams(ControllerParams):

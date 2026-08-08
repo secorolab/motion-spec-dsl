@@ -25,6 +25,37 @@ REJECTIONS = [
         "empty path segment",
         id="validate_namespace_uris_empty_segment",
     ),
+    pytest.param(
+        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "inactive { trigger: event <aas.E_HOME_SETTLED> },",
+        "belongs in satisfied or violated",
+        id="validate_monitor_trigger_placement",
+    ),
+    pytest.param(
+        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "inactive for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "sustains 'inactive'",
+        id="validate_monitor_sustained_inactive",
+    ),
+    pytest.param(
+        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "satisfied { flag: settled }, violated { hold: <home> }, violated { hold: <home> },",
+        "'violated' state twice",
+        id="validate_monitor_duplicate_state",
+    ),
+    pytest.param(
+        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "satisfied { trigger: event <aas.E_HOME_SETTLED> },"
+        " violated { trigger: event <aas.E_HOME_SETTLED> },",
+        "more than one 'trigger'",
+        id="validate_monitor_duplicate_trigger",
+    ),
+    pytest.param(
+        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
+        "satisfied { flag: settled, hold: <home> },",
+        "belongs in violated",
+        id="validate_monitor_hold_placement",
+    ),
 ]
 
 

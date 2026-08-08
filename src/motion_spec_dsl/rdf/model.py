@@ -64,7 +64,15 @@ from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 
 class ROS(DefinedNamespace):
     Topic: URIRef
-    _extras = ["channel-name", "type-name"]
+    _extras = [
+        "channel-name",
+        "type-name",
+        "field",
+        "field-path",
+        "publish-on",
+        "value",
+        "value-from",
+    ]
     _NS = Namespace("https://index.ros.org/p/")
 
 

@@ -135,7 +135,9 @@ guarded-motion (ns=app) forward {
 constraint-handler (ns=app) handler-home {
     handles: <home>
     monitors {
-        mon-home-settled: monitor <home.until> on activation trigger event <aas.E_HOME_SETTLED> after active for 0.3 s
+        mon-home-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },
+        }
     }
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
@@ -153,7 +155,9 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-touchdown {
     handles: <touchdown>
     monitors {
-        mon-contact: monitor <touchdown.until> on activation trigger event <aas.E_CONTACT> after active for 0.3 s
+        mon-contact: monitor <touchdown.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_CONTACT> },
+        }
     }
     controllers {
         pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
@@ -167,7 +171,9 @@ constraint-handler (ns=app) handler-touchdown {
 constraint-handler (ns=app) handler-forward {
     handles: <forward>
     monitors {
-        mon-forward-done: monitor <forward.reached-forward> on activation trigger event <aas.E_FORWARD_DONE> also publish to topic "/motion/forward_done" as "bdd_ros2_interfaces/msg/Trinary"
+        mon-forward-done: monitor <forward.reached-forward> {
+            satisfied { trigger: event <aas.E_FORWARD_DONE> },
+        }
     }
     controllers {
         pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },

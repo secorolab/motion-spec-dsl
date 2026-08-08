@@ -582,7 +582,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDF.type, qkind))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], qkind))
 
-
     def _emit_geom_relation(
         self,
         coord_node: URIRef,
@@ -1885,9 +1884,7 @@ class MotionSpecDatasetBuilder:
                     if element.ref is not None:
                         value_obj = self._emit_context_ref_node(element.ref, quantity, label)
                     else:
-                        value_obj = Literal(
-                            float(element.value), datatype=XSD.double
-                        )
+                        value_obj = Literal(float(element.value), datatype=XSD.double)
                     self.graph.add((node, GEOM_COORD[label], value_obj))
 
     def _emit_velocity_profile_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
@@ -1998,9 +1995,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
-        self.graph.add(
-            (node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.position.unit or "m"))
-        )
+        self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.position.unit or "m")))
         pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
         if pose_relation is None:
             path_quantity = next(
@@ -2248,7 +2243,9 @@ class MotionSpecDatasetBuilder:
         self.graph.add((orientation_node, GEOM_REL.of, of_frame_node))
         self.graph.add((orientation_node, GEOM_COORD["as-seen-by"], base_as_seen_by_node))
         if relative.frame is not None:
-            delta_basis = self._owned_uri(str(getattr(relative.frame, "uri", relative.frame)), quantity)
+            delta_basis = self._owned_uri(
+                str(getattr(relative.frame, "uri", relative.frame)), quantity
+            )
         elif relative.euler is not None and relative.euler.extrinsic:
             # Extrinsic Euler angles turn about the pose's fixed reference-frame axes.
             delta_basis = base_as_seen_by_node
@@ -2843,9 +2840,7 @@ class MotionSpecDatasetBuilder:
                 if element.ref is not None:
                     value_obj = self._emit_context_ref_node(element.ref, owner, f"{suffix}-{label}")
                 else:
-                    value_obj = Literal(
-                        float(element.value), datatype=XSD.double
-                    )
+                    value_obj = Literal(float(element.value), datatype=XSD.double)
                 self.graph.add((node, GEOM_COORD[label], value_obj))
         return node
 
@@ -3389,9 +3384,7 @@ class MotionSpecDatasetBuilder:
         Time-kind scalar a monitor's debounce already uses.
         """
         self.graph.add((node, RDF.type, TIME.Duration))
-        self._emit_scalar_quantity(
-            node, value.value, NS_MM_QUDT_QTY["Time"], _dsl_unit(value.unit)
-        )
+        self._emit_scalar_quantity(node, value.value, NS_MM_QUDT_QTY["Time"], _dsl_unit(value.unit))
 
     def _section_expression(self, motion: GuardedMotion, phase: str):
         """A when/until section's expression node and the members it holds.
@@ -3810,20 +3803,32 @@ class MotionSpecDatasetBuilder:
             self.graph.add((eval_node, CSTR_HDL.error, error_node))
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
-    def _emit_ros_topic(self, monitor: Any, monitor_node: URIRef) -> None:
-        """Describe a monitor backed by a ROS topic."""
-        topic = monitor.ros_topic
+    def _emit_ros_publication(self, monitor: Any, monitor_node: URIRef) -> None:
+        """Describe what a monitor publishes: the declared topic, then one field node per
+        (state, field) it authored. A bare `publish: V to <t>` carries an empty field path;
+        only the message shape can say which field it means, so lowering resolves it.
+        """
+        topic = monitor.topic
         if topic is None:
             return
         self.graph.add((monitor_node, RDF.type, ROS.Topic))
         self.graph.add((monitor_node, ROS["channel-name"], Literal(topic.channel_name)))
-        self.graph.add(
-            (
-                monitor_node,
-                ROS["type-name"],
-                Literal(topic.type_name or "std_msgs/msg/Empty"),
-            )
-        )
+        self.graph.add((monitor_node, ROS["type-name"], Literal(topic.type_name)))
+        for index, (state, path, source) in enumerate(monitor.publish_fields):
+            field_node = URIRef(f"{monitor.uri}.field{index}")
+            self.graph.add((monitor_node, ROS["field"], field_node))
+            self.graph.add((field_node, ROS["field-path"], Literal(path)))
+            self.graph.add((field_node, ROS["publish-on"], Literal(state)))
+            quantity = _context_quantity(source.ref) if source.ref is not None else None
+            if quantity is not None:
+                self.graph.add((field_node, ROS["value-from"], URIRef(quantity.uri)))
+                continue
+            authored = source.constant or source.literal
+            if authored is None or authored == "":
+                raise ValueError(
+                    f"Monitor '{monitor.name}' publishes '{path or topic.name}' with no value."
+                )
+            self.graph.add((field_node, ROS["value"], Literal(str(authored))))
 
     def _emit_constraint_handler(
         self,
@@ -3980,9 +3985,26 @@ class MotionSpecDatasetBuilder:
 
         for mon in getattr(handler, "monitors", []):
             cref = mon.constraint
-            is_event = mon.event is not None
-            signal_kind = "event" if is_event else "flag"
-            signal_node = URIRef(mon.event.uri) if is_event else URIRef(f"{mon.uri}.{mon.flag}")
+            trigger = mon.trigger
+            if trigger is not None and trigger[0] != "satisfied":
+                raise ValueError(
+                    f"Monitor '{mon.name}' triggers on '{trigger[0]}'; the event lowering only "
+                    "expresses the satisfied edge."
+                )
+            if mon.fallback is not None and trigger is None:
+                raise ValueError(
+                    f"Monitor '{mon.name}' holds a fallback motion but triggers no event; "
+                    "the fallback is only taken on the edge that fires."
+                )
+            is_event = trigger is not None
+            signal_kind = "event" if is_event else "flag" if mon.flag else "publish-only"
+            signal_node = (
+                URIRef(mon.event.uri)
+                if is_event
+                else URIRef(f"{mon.uri}.{mon.flag}")
+                if mon.flag
+                else None
+            )
             mon_node = URIRef(mon.uri)
 
             # A group monitor aggregates exactly like a whole-section one, over the group's
@@ -4040,9 +4062,7 @@ class MotionSpecDatasetBuilder:
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
                     scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
-                    error_id = error_id_by_constraint.get(
-                        spec.uri, f"{_evaluator_id(spec)}-err"
-                    )
+                    error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
 
                     if error_id not in seen_error_ids:
                         seen_error_ids.add(error_id)
@@ -4086,26 +4106,27 @@ class MotionSpecDatasetBuilder:
                     aggregate_error_node = URIRef(f"{mon.uri}.error")
                     self._add_quantity(aggregate_error_node, QuantityType.FreeVector)
 
-                self.graph.add(
-                    (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
-                )
-                self.graph.add(
-                    (
-                        event_loop_node,
-                        EL["has-event"] if signal_kind == "event" else EL["has-flag"],
-                        signal_node,
+                if signal_node is not None:
+                    self.graph.add(
+                        (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
                     )
-                )
+                    self.graph.add(
+                        (
+                            event_loop_node,
+                            EL["has-event"] if signal_kind == "event" else EL["has-flag"],
+                            signal_node,
+                        )
+                    )
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
                 self.graph.add((mon_node, CSTR_HDL.error, aggregate_error_node))
                 for guard_node in guard_nodes:
                     self.graph.add((mon_node, CSTR_HDL.constraint, guard_node))
+                self._emit_ros_publication(mon, mon_node)
                 if signal_kind == "event":
                     self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                     self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
-                    self._emit_ros_topic(mon, mon_node)
                     if mon.fallback is not None:
                         self.graph.add(
                             (
@@ -4123,7 +4144,7 @@ class MotionSpecDatasetBuilder:
                             _dsl_unit(mon.debounce_unit),
                         )
                         self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
-                else:
+                elif signal_kind == "flag":
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                     self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
                 self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
@@ -4180,23 +4201,26 @@ class MotionSpecDatasetBuilder:
                 seen_eval_ids,
             )
 
-            self.graph.add((signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag))
-            self.graph.add(
-                (
-                    event_loop_node,
-                    EL["has-event"] if signal_kind == "event" else EL["has-flag"],
-                    signal_node,
+            if signal_node is not None:
+                self.graph.add(
+                    (signal_node, RDF.type, EL.Event if signal_kind == "event" else EL.Flag)
                 )
-            )
+                self.graph.add(
+                    (
+                        event_loop_node,
+                        EL["has-event"] if signal_kind == "event" else EL["has-flag"],
+                        signal_node,
+                    )
+                )
             self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
             self.graph.add((mon_node, CSTR_HDL.error, error_node))
+            self._emit_ros_publication(mon, mon_node)
             if signal_kind == "event":
                 self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.event, signal_node))
                 self.graph.add((mon_node, CSTR_HDL["event-queue"], event_loop_node))
-                self._emit_ros_topic(mon, mon_node)
                 if mon.fallback is not None:
                     self.graph.add(
                         (
@@ -4214,7 +4238,7 @@ class MotionSpecDatasetBuilder:
                         _dsl_unit(mon.debounce_unit),
                     )
                     self.graph.add((mon_node, CSTR_HDL_EXT["debounce-duration"], debounce_node))
-            else:
+            elif signal_kind == "flag":
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
             self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
@@ -4314,9 +4338,7 @@ class MotionSpecDatasetBuilder:
                                 element.ref, handler, f"gravity-{label}"
                             )
                         else:
-                            value_obj = Literal(
-                                float(element.value), datatype=XSD.double
-                            )
+                            value_obj = Literal(float(element.value), datatype=XSD.double)
                         self.graph.add((gravity_value_node, GEOM_COORD[label], value_obj))
                     self.graph.remove((gravity_value_node, QUDT_SCHEMA.unit, None))
                     self.graph.add(

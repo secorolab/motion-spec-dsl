@@ -392,8 +392,13 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
     monitors {
-        mon-pick-above-ready: monitor <pick-above.gripper-ready> on activation trigger event <pp.E_PICK_ABOVE_READY> otherwise hold <home>,
-        mon-pa-advancing:     monitor <pick-above.advance> while active set flag pa-advancing
+        mon-pick-above-ready: monitor <pick-above.gripper-ready> {
+            satisfied { trigger: event <pp.E_PICK_ABOVE_READY> },
+            violated { hold: <home> },
+        },
+        mon-pa-advancing: monitor <pick-above.advance> {
+            satisfied { flag: pa-advancing },
+        }
     }
 
     controllers {
@@ -410,7 +415,10 @@ constraint-handler (ns=app) handler-pick-above {
 constraint-handler (ns=app) handler-pick {
     handles: <pick>
     monitors {
-        mon-pick-ready: monitor <pick.aligned-above> on activation trigger event <pp.E_PICK_READY> otherwise hold <pick-above>
+        mon-pick-ready: monitor <pick.aligned-above> {
+            satisfied { trigger: event <pp.E_PICK_READY> },
+            violated { hold: <pick-above> },
+        }
     }
 
     controllers {
@@ -430,7 +438,10 @@ constraint-handler (ns=app) handler-pick {
 constraint-handler (ns=app) handler-close-grip {
     handles: <grasp-hold>
     monitors {
-        mon-grasp-ready: monitor <grasp-hold.near-cube> on activation trigger event <pp.E_GRASP_READY> otherwise hold <pick>
+        mon-grasp-ready: monitor <grasp-hold.near-cube> {
+            satisfied { trigger: event <pp.E_GRASP_READY> },
+            violated { hold: <pick> },
+        }
     }
 
     controllers {
@@ -454,8 +465,13 @@ constraint-handler (ns=app) handler-close-grip {
 constraint-handler (ns=app) handler-lift {
     handles: <lift>
     monitors {
-        mon-lift-ready: monitor <lift.grasped> on activation trigger event <pp.E_LIFT_READY> otherwise hold <grasp-hold>,
-        mon-lift-grasp-lost: monitor <lift.until> on activation trigger event <pp.E_GRASP_LOST_LIFT>
+        mon-lift-ready: monitor <lift.grasped> {
+            satisfied { trigger: event <pp.E_LIFT_READY> },
+            violated { hold: <grasp-hold> },
+        },
+        mon-lift-grasp-lost: monitor <lift.until> {
+            satisfied { trigger: event <pp.E_GRASP_LOST_LIFT> },
+        }
     }
 
     controllers {
@@ -477,8 +493,13 @@ constraint-handler (ns=app) handler-lift {
 constraint-handler (ns=app) handler-place-above {
     handles: <place-above>
     monitors {
-        mon-place-above-ready: monitor <place-above.lifted> on activation trigger event <pp.E_PLACE_ABOVE_READY> otherwise hold <lift>,
-        mon-place-above-grasp-lost: monitor <place-above.until> on activation trigger event <pp.E_GRASP_LOST_PLACE_ABOVE>
+        mon-place-above-ready: monitor <place-above.lifted> {
+            satisfied { trigger: event <pp.E_PLACE_ABOVE_READY> },
+            violated { hold: <lift> },
+        },
+        mon-place-above-grasp-lost: monitor <place-above.until> {
+            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE_ABOVE> },
+        }
     }
 
     controllers {
@@ -500,8 +521,13 @@ constraint-handler (ns=app) handler-place-above {
 constraint-handler (ns=app) handler-place {
     handles: <place>
     monitors {
-        mon-place-ready: monitor <place.at-pre-place> on activation trigger event <pp.E_PLACE_READY> otherwise hold <place-above>,
-        mon-place-grasp-lost: monitor <place.until> on activation trigger event <pp.E_GRASP_LOST_PLACE>
+        mon-place-ready: monitor <place.at-pre-place> {
+            satisfied { trigger: event <pp.E_PLACE_READY> },
+            violated { hold: <place-above> },
+        },
+        mon-place-grasp-lost: monitor <place.until> {
+            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE> },
+        }
     }
 
     controllers {
@@ -523,7 +549,10 @@ constraint-handler (ns=app) handler-place {
 constraint-handler (ns=app) handler-open-grip {
     handles: <open-grasp-hold>
     monitors {
-        mon-open-ready: monitor <open-grasp-hold.at-place> on activation trigger event <pp.E_OPEN_READY> otherwise hold <place>
+        mon-open-ready: monitor <open-grasp-hold.at-place> {
+            satisfied { trigger: event <pp.E_OPEN_READY> },
+            violated { hold: <place> },
+        }
     }
 
     controllers {
@@ -545,8 +574,13 @@ constraint-handler (ns=app) handler-open-grip {
 constraint-handler (ns=app) handler-retreat {
     handles: <retreat>
     monitors {
-        mon-retreat-ready:   monitor <retreat.released> on activation trigger event <pp.E_RETREAT_READY> otherwise hold <open-grasp-hold>,
-        mon-retreat-settled: monitor <retreat.until>    on activation trigger event <pp.E_RETREAT_SETTLED>
+        mon-retreat-ready: monitor <retreat.released> {
+            satisfied { trigger: event <pp.E_RETREAT_READY> },
+            violated { hold: <open-grasp-hold> },
+        },
+        mon-retreat-settled: monitor <retreat.until> {
+            satisfied { trigger: event <pp.E_RETREAT_SETTLED> },
+        }
     }
 
     controllers {
@@ -568,7 +602,9 @@ constraint-handler (ns=app) handler-retreat {
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
     monitors {
-        mon-recover-hold: monitor <recover.hold-x> on activation trigger event <pp.E_RECOVER> after active for 0.1 s
+        mon-recover-hold: monitor <recover.hold-x> {
+            satisfied for 0.1 s { trigger: event <pp.E_RECOVER> },
+        }
     }
 
     controllers {

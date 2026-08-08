@@ -92,9 +92,15 @@ guarded-motion (ns=app) open-cycle {
 constraint-handler (ns=app) handler-close {
     handles: <close-cycle>
     monitors {
-        mon-closed: monitor <close-cycle.until> on activation trigger event <rdm.E_GRIPPER_CLOSED> after active for 0.3 s,
-        mon-pinch: monitor <close-cycle.pinch-moved> on activation trigger event <rdm.E_PINCH_MOVED> after active for 0.3 s,
-        mon-force: monitor <close-cycle.force-z> on activation trigger event <rdm.E_FT_CONTACT> after active for 0.3 s
+        mon-closed: monitor <close-cycle.until> {
+            satisfied for 0.3 s { trigger: event <rdm.E_GRIPPER_CLOSED> },
+        },
+        mon-pinch: monitor <close-cycle.pinch-moved> {
+            satisfied for 0.3 s { trigger: event <rdm.E_PINCH_MOVED> },
+        },
+        mon-force: monitor <close-cycle.force-z> {
+            satisfied for 0.3 s { trigger: event <rdm.E_FT_CONTACT> },
+        }
     }
     controllers {
         feed-forward ctrl-close-gripper { constraint: <close-cycle.close-gripper> }
@@ -112,9 +118,15 @@ constraint-handler (ns=app) handler-close {
 constraint-handler (ns=app) handler-open {
     handles: <open-cycle>
     monitors {
-        mon-opened: monitor <open-cycle.until> on activation trigger event <rdm.E_GRIPPER_OPENED> after active for 0.3 s,
-        mon-pinch: monitor <open-cycle.pinch-moved> on activation trigger event <rdm.E_PINCH_MOVED> after active for 0.3 s,
-        mon-force: monitor <open-cycle.force-z> on activation trigger event <rdm.E_FT_CONTACT> after active for 0.3 s
+        mon-opened: monitor <open-cycle.until> {
+            satisfied for 0.3 s { trigger: event <rdm.E_GRIPPER_OPENED> },
+        },
+        mon-pinch: monitor <open-cycle.pinch-moved> {
+            satisfied for 0.3 s { trigger: event <rdm.E_PINCH_MOVED> },
+        },
+        mon-force: monitor <open-cycle.force-z> {
+            satisfied for 0.3 s { trigger: event <rdm.E_FT_CONTACT> },
+        }
     }
     controllers {
         feed-forward ctrl-open-gripper { constraint: <open-cycle.open-gripper> }

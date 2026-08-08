@@ -3,6 +3,10 @@ import "admittance_arc_single.scenex"
 ns app = "https://secorolab.github.io/models/admittance-arc-single/"
 ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 
+ros-topics (ns=aas) {
+    forward-done: topic "/motion/forward_done" message "bdd_ros2_interfaces/msg/TrinaryStamped",
+}
+
 exec-context (ns=app) admittance-arc-exec {
     runs-scene: <admittance_arc_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
@@ -239,7 +243,9 @@ guarded-motion (ns=app) compliance {
 constraint-handler (ns=app) handler-home {
     handles: <home>
     monitors {
-        mon-home-settled: monitor <home.until> on activation trigger event <aas.E_HOME_SETTLED> after active for 0.3 s
+        mon-home-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },
+        }
     }
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
@@ -257,7 +263,9 @@ constraint-handler (ns=app) handler-home {
 constraint-handler (ns=app) handler-touchdown {
     handles: <touchdown>
     monitors {
-        mon-contact: monitor <touchdown.until> on activation trigger event <aas.E_CONTACT> after active for 0.3 s
+        mon-contact: monitor <touchdown.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_CONTACT> },
+        }
     }
     controllers {
         pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
@@ -271,7 +279,14 @@ constraint-handler (ns=app) handler-touchdown {
 constraint-handler (ns=app) handler-forward {
     handles: <forward>
     monitors {
-        mon-forward-done: monitor <forward.reached-forward> on activation trigger event <aas.E_FORWARD_DONE> also publish to topic "/motion/forward_done" as "bdd_ros2_interfaces/msg/Trinary"
+        mon-forward-done: monitor <forward.reached-forward> {
+            satisfied {
+                trigger: event <aas.E_FORWARD_DONE>,
+                publish: TRUE to <aas.forward-done>
+            },
+            violated { publish: FALSE to <aas.forward-done> },
+            inactive { publish: UNKNOWN to <aas.forward-done> },
+        }
     }
     controllers {
         pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
@@ -283,10 +298,18 @@ constraint-handler (ns=app) handler-forward {
 constraint-handler (ns=app) handler-arc {
     handles: <arc-motion>
     monitors {
-        mon-arc-advancing: monitor <arc-motion.advance> while active set flag arc-advancing,
-        mon-force-x: monitor <arc-motion.force-x> on activation trigger event <aas.E_FORCE_DETECTED> after active for 0.3 s,
-        mon-force-y: monitor <arc-motion.force-y> on activation trigger event <aas.E_FORCE_DETECTED> after active for 0.3 s,
-        mon-arc-complete: monitor <arc-motion.until> on activation trigger event <aas.E_ARC_CONTACT> after active for 0.3 s
+        mon-arc-advancing: monitor <arc-motion.advance> {
+            satisfied { flag: arc-advancing },
+        },
+        mon-force-x: monitor <arc-motion.force-x> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_DETECTED> },
+        },
+        mon-force-y: monitor <arc-motion.force-y> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_DETECTED> },
+        },
+        mon-arc-complete: monitor <arc-motion.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_ARC_CONTACT> },
+        }
     }
     controllers {
         pid ctrl-follow-tangent {
@@ -325,8 +348,12 @@ constraint-handler (ns=app) handler-arc {
 constraint-handler (ns=app) handler-admittance {
     handles: <compliance>
     monitors {
-        mon-released: monitor <compliance.released> on activation trigger event <aas.E_FORCE_GONE> after active for 0.3 s,
-        mon-table-contact: monitor <compliance.table-contact> on activation trigger event <aas.E_TABLE_CONTACT> after active for 0.3 s
+        mon-released: monitor <compliance.released> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_GONE> },
+        },
+        mon-table-contact: monitor <compliance.table-contact> {
+            satisfied for 0.3 s { trigger: event <aas.E_TABLE_CONTACT> },
+        }
     }
     controllers {
         pid ctrl-comply-x {

@@ -128,9 +128,7 @@ def test_a_duration_carries_qudt_magnitude_because_owl_time_has_no_smaller_unit(
 def test_a_debounce_carries_the_unit_of_its_value(parse_mutated):
     """A value and its unit travel together, or 300 ms silently becomes 300 s."""
     graph = (
-        MotionSpecDatasetBuilder(
-            parse_mutated("after active for 0.3 s", "after active for 300.0 ms")
-        )
+        MotionSpecDatasetBuilder(parse_mutated("satisfied for 0.3 s", "satisfied for 300.0 ms"))
         .build()[0]
         .default_graph
     )

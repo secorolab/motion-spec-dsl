@@ -34,17 +34,36 @@ HandlerContextDecl: WorldContextDecl | SpecContextDecl ;
 HandlerContextItem: HandlerContextDecl | ContextDeclReference ;
 
 MonitorEntry:
-    name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">"
-    (
-        ("on" "activation" "trigger" "event" event=EventName
-            ("after" "active" "for" debounce=Measure)?
-            ("otherwise" "hold" "<" fallback=[GuardedMotion|IRI_TRUNK] ">")?
-            ("also" "publish" "to" ros_topic=ROSTopic)?) |
-        ("while" "active" "set" "flag" flag=IRI_TRUNK)
-    )
+    name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "{"
+        states+=MonitorStateBlock[","] ","?
+    "}"
 ;
 
-ROSTopic: "topic" channel_name=STRING ("as" type_name=STRING)? ;
+MonitorStateBlock:
+    state=MonitorState ("for" sustain=Measure)? "{" actions+=MonitorAction[","] ","? "}"
+;
+
+MonitorState: "satisfied" | "violated" | "inactive" ;
+
+MonitorAction:
+      "trigger" ":" "event" event=EventName
+    | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
+    | "flag"    ":" flag=IRI_TRUNK
+    | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
+    | "publish" ":" value=RosValueSource "to" "<" topic=[RosTopicDecl|FQN] ">"
+;
+
+RosFieldAssign: path+=ID['.'] ":" value=RosValueSource ;
+
+RosValueSource: ref=ContextRef | literal=FLOAT | literal=STRING | constant=ID ;
+
+RosTopicDecls:
+    "ros-topics" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
+        topics+=RosTopicDecl[","] ","?
+    "}"
+;
+
+RosTopicDecl: name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING ;
 
 ControllerEntry:
     (
