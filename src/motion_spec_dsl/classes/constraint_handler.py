@@ -177,6 +177,12 @@ class RosTopicDecls:
         return Namespace(self.ns.uri)
 
 
+def authored_text(value: object) -> str:
+    """What the author wrote for a field value: a constant's name, or a literal's spelling."""
+    constant = getattr(value, "constant", "")
+    return constant if constant else str(getattr(value, "literal", ""))
+
+
 @dataclass
 class MonitorAction:
     """One action a monitor performs while it is in a given state."""
@@ -185,8 +191,10 @@ class MonitorAction:
     event: EventName | None = None
     fallback: GuardedMotion | None = None
     flag: str = ""
-    # Per-state publish: the value the block's state contributes to the message's trinary contract.
-    value: str = ""
+    # Sugar form: the one value, whose field the message type resolves at generation.
+    value: object | None = None
+    # Block form: the authored field assignments.
+    fields: list = field(default_factory=list)
     topic: RosTopicDecl | None = None
 
     @property
@@ -198,6 +206,15 @@ class MonitorAction:
         if self.topic is not None:
             return "publish"
         return "flag"
+
+    @property
+    def assignments(self) -> list[tuple[str, str]]:
+        """The `(dot-path, value)` rows this publish states; the sugar form leaves the path
+        empty for the message type to resolve.
+        """
+        if self.value is not None:
+            return [("", authored_text(self.value))]
+        return [(".".join(item.path), authored_text(item.value)) for item in self.fields]
 
 
 @dataclass
@@ -218,7 +235,6 @@ class MonitorEntry(NamedNamespaceObject):
     name: str
     constraint: ConstraintRef | UntilMonitorRef
     states: list[MonitorStateBlock] = field(default_factory=list)
-    topics: list[RosTopicDecl] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -261,11 +277,7 @@ class MonitorEntry(NamedNamespaceObject):
 
     @property
     def topic(self) -> RosTopicDecl | None:
-        """The one topic this monitor publishes on, whichever of the two forms declared it."""
-        if len(self.topics) > 1:
-            raise ValueError(f"Monitor '{self.name}' declares more than one 'publish'.")
-        if self.topics:
-            return self.topics[0]
+        """The one topic every state of this monitor publishes on."""
         published = self.actions("publish")
         return published[0][1].topic if published else None
 

@@ -20,7 +20,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from rdflib.graph import Dataset
-from rdflib.namespace import Namespace, RDF, SDO, XSD
+from rdflib.namespace import Namespace, RDF, RDFS, SDO, XSD
 from rdflib.term import Literal, URIRef
 from rdf_utils.collection import add_literal_list_pred
 from rdf_utils.constraints import ConstraintViolation
@@ -204,6 +204,14 @@ _MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
     "VelocityDistribution": (SLV_EXT.VelocityDistributionSolver, SLV.velocity),
     "ForceDistribution": (SLV.ForceDistributionSolver, SLV.force),
     "ForceComposition": (SLV_EXT.ForceCompositionSolver, SLV.force),
+}
+
+# The order relation a constraint's complement states, over the same quantity and thresholds.
+_COMPLEMENT_RELATION: dict[URIRef, URIRef] = {
+    CSTR.GreaterThanConstraint: CSTR.LessThanConstraint,
+    CSTR.LessThanConstraint: CSTR.GreaterThanConstraint,
+    CSTR.BilateralConstraint: CSTR_EXT.OutsideConstraint,
+    CSTR_EXT.OutsideConstraint: CSTR.BilateralConstraint,
 }
 
 
@@ -3803,9 +3811,38 @@ class MotionSpecDatasetBuilder:
             self.graph.add((eval_node, CSTR_HDL.error, error_node))
         self.graph.add((handler_node, CSTR_HDL.evaluators, eval_node))
 
-    def _emit_ros_publication(self, monitor: Any, monitor_node: URIRef) -> None:
-        """Name the channel a monitor publishes on and the message it carries. What is written
-        into that message is the message type's own contract, not model data.
+    def _complement_node(self, monitor: Any, watched: list[URIRef]) -> URIRef:
+        """The condition a violated state holds under: the watched constraint with its order
+        relation flipped, minted as this monitor's own instance data.
+        """
+        if len(watched) != 1:
+            raise ValueError(
+                f"Monitor '{monitor.name}' publishes when violated, but the complement of a "
+                "conjunction is not expressible; publish on satisfied, or monitor a single "
+                "constraint."
+            )
+        node = URIRef(f"{monitor.uri}.complement")
+        if (node, RDF.type, None) in self.graph:
+            return node
+        types = set(self.graph.objects(watched[0], RDF.type))
+        flipped = {_COMPLEMENT_RELATION[t] for t in types if t in _COMPLEMENT_RELATION}
+        if len(flipped) != 1:
+            raise ValueError(
+                f"Monitor '{monitor.name}' publishes when violated, but its constraint states "
+                "no order relation to complement; publish on satisfied instead."
+            )
+        for pred, obj in self.graph.predicate_objects(watched[0]):
+            if pred == RDF.type and obj in _COMPLEMENT_RELATION:
+                continue
+            self.graph.add((node, pred, obj))
+        self.graph.add((node, RDF.type, flipped.pop()))
+        return node
+
+    def _emit_ros_publication(
+        self, monitor: Any, monitor_node: URIRef, watched: list[URIRef]
+    ) -> None:
+        """Name the channel a monitor publishes on, the message it carries, and every field
+        assignment it authored, each under the condition its state block holds.
         """
         topic = monitor.topic
         if topic is None:
@@ -3813,6 +3850,19 @@ class MotionSpecDatasetBuilder:
         self.graph.add((monitor_node, RDF.type, ROS.Topic))
         self.graph.add((monitor_node, ROS["channel-name"], Literal(topic.channel_name)))
         self.graph.add((monitor_node, ROS["type-name"], Literal(topic.type_name)))
+        row_index = 0
+        for block, action in monitor.actions("publish"):
+            conditions = (
+                watched if block.state == "satisfied" else [self._complement_node(monitor, watched)]
+            )
+            for path, value in action.assignments:
+                row = URIRef(f"{monitor.uri}.f{row_index}")
+                row_index += 1
+                self.graph.add((monitor_node, RDFS.member, row))
+                self.graph.add((row, ROS["field-path"], Literal(path)))
+                self.graph.add((row, RDF.value, Literal(value)))
+                for condition in conditions:
+                    self.graph.add((row, CSTR_EXT["has-constraint"], condition))
 
     def _emit_constraint_handler(
         self,
@@ -4100,7 +4150,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, CSTR_HDL.error, aggregate_error_node))
                 for guard_node in guard_nodes:
                     self.graph.add((mon_node, CSTR_HDL.constraint, guard_node))
-                self._emit_ros_publication(mon, mon_node)
+                self._emit_ros_publication(mon, mon_node, guard_nodes)
                 if signal_kind == "event":
                     self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                     self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
@@ -4194,7 +4244,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((mon_node, RDF.type, CSTR_HDL.Monitor))
             self.graph.add((mon_node, CSTR_HDL.constraint, URIRef(spec.uri)))
             self.graph.add((mon_node, CSTR_HDL.error, error_node))
-            self._emit_ros_publication(mon, mon_node)
+            self._emit_ros_publication(mon, mon_node, [URIRef(spec.uri)])
             if signal_kind == "event":
                 self.graph.add((event_loop_node, RDF.type, EL.EventLoop))
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.EdgeTriggeredMonitor))
