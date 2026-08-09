@@ -58,12 +58,6 @@ RosFieldAssign: path+=ID['.'] ":" value=RosFieldValue ;
 
 RosFieldValue: literal=FLOAT | literal=STRING | constant=ID ;
 
-RosTopicDecls:
-    "ros-topics" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
-        topics+=RosTopicDecl[","] ","?
-    "}"
-;
-
 RosTopicDecl: name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING ;
 
 ControllerEntry:

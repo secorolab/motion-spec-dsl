@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 from motion_spec_dsl.classes.motion_spec import Model
-from motion_spec_dsl.classes.validation.behaviour import validate_bdd_behaviour
 from motion_spec_dsl.classes.validation.common import (
     motion_constraint_items,
     motion_constraints,
@@ -35,6 +34,7 @@ from motion_spec_dsl.classes.validation.handlers import (
 )
 from motion_spec_dsl.classes.validation.monitors import validate_monitor_state_blocks
 from motion_spec_dsl.classes.validation.names import validate_namespace_uris
+from motion_spec_dsl.classes.validation.ros import validate_ros
 
 __all__ = [
     "motion_constraint_items",
@@ -66,4 +66,4 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
     validate_mobile_platform_solver_quantity(model)
-    validate_bdd_behaviour(model)
+    validate_ros(model)

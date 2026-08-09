@@ -11,8 +11,10 @@ from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdflib.namespace import PROV, RDF, SOSA
 from textx.exceptions import TextXSemanticError
 
-ACTIONS = """ros-actions (ns=app) {
-    locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
+ACTIONS = """ros (ns=app) {
+    action-clients {
+        locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
+    },
 }
 
 exec-context (ns=app) base-exec {"""

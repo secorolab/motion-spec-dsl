@@ -104,7 +104,6 @@ from motion_spec_dsl.classes.controller_semantics import (
     controller_solver,
 )
 from motion_spec_dsl.classes.constraint_handler import (
-    BddBehaviour,
     ConstraintHandler,
     ControllerEntry,
     ControllerType,
@@ -168,6 +167,10 @@ from motion_spec_dsl.classes.path import (
     ProfileSpec,
     AdmittanceSpec,
     PathValue,
+)
+from motion_spec_dsl.classes.ros import (
+    Ros,
+    RosActionServerDecl,
 )
 
 from motion_spec_dsl.rdf.model import (
@@ -284,12 +287,6 @@ def _section_expression_type(logic, member_count: int):
 
 
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
-
-# The BDD contract a `bdd-behaviour` block realizes: the goal a robbdd scenario sends, and the
-# message its exported events leave on. The type is the node's own contract -- what a reader
-# dispatches on -- so it is stated, never minted as a class of its own.
-BEHAVIOUR_ACTION_TYPE = "bdd_ros2_interfaces/action/Behaviour"
-BEHAVIOUR_EVENT_TYPE = "bdd_ros2_interfaces/msg/Event"
 
 
 def _authored_fqn(target) -> str:
@@ -422,10 +419,12 @@ class MotionSpecDatasetBuilder:
                 elif isinstance(spec, ContextSpec):
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
-                elif isinstance(spec, BddBehaviour):
-                    self._emit_bdd_behaviour(spec)
-                    self.dataset.bind(spec.ns_prefix, spec.ns.uri)
-                    context[spec.ns_prefix] = spec.ns.uri
+                elif isinstance(spec, Ros):
+                    for server in spec.action_servers:
+                        self._emit_ros_action_server(server)
+                    if spec.action_servers:
+                        self.dataset.bind(spec.ns.name, spec.ns.uri)
+                        context[spec.ns.name] = spec.ns.uri
 
         for handler_order, handler in enumerate(handlers):
             motion = handler.motion
@@ -457,16 +456,22 @@ class MotionSpecDatasetBuilder:
         context.update(_numeric_term_coercions(self.graph, context))
         return self.dataset, context
 
-    def _emit_bdd_behaviour(self, behaviour: BddBehaviour) -> None:
-        """The action the runtime answers scenario goals on; its one member is the event an
-        accepted goal produces. What a scenario observes is authored on the monitors
+    def _emit_ros_action_server(self, server: RosActionServerDecl) -> None:
+        """The action the runtime answers goals on: its one valueless member is the event an
+        accepted goal produces, and its field rows are what a completed run answers with. What a
+        scenario observes while the run plays out is authored on the monitors
         (`publish: event to`), not here.
         """
-        node = URIRef(behaviour.uri)
+        node = URIRef(server.uri)
         self.graph.add((node, RDF.type, ROS.Action))
-        self.graph.add((node, ROS["channel-name"], Literal(behaviour.action_name)))
-        self.graph.add((node, ROS["type-name"], Literal(BEHAVIOUR_ACTION_TYPE)))
-        self.graph.add((node, RDFS.member, URIRef(behaviour.goal_event.uri)))
+        self.graph.add((node, ROS["channel-name"], Literal(server.channel_name)))
+        self.graph.add((node, ROS["type-name"], Literal(server.type_name)))
+        self.graph.add((node, RDFS.member, URIRef(server.goal_event.uri)))
+        for row_index, (path, value) in enumerate(server.result):
+            row = URIRef(f"{server.uri}.r{row_index}")
+            self.graph.add((node, RDFS.member, row))
+            self.graph.add((row, ROS["field-path"], Literal(path)))
+            self.graph.add((row, RDF.value, Literal(value)))
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
         """Emit the authored scene, platform, and control-period binding."""

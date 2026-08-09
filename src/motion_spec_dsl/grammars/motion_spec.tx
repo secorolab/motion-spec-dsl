@@ -23,12 +23,6 @@ GuardedMotion:
     "}"
 ;
 
-RosActionDecls:
-    "ros-actions" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
-        actions+=RosActionDecl[","] ","?
-    "}"
-;
-
 RosActionDecl: name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING ;
 
 DetectDecl:

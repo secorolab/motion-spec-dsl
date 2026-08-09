@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: MPL-2.0
-"""A model that serves BDD scenario goals states the action a scenario sends its goal to, whose
-one member is the event that goal produces. What a scenario observes is authored on the
-monitors: a monitor that publishes an occurrence carries the event it triggers as its member.
+"""One `ros` block states what a model publishes, calls and serves. A served action carries the
+event an accepted goal produces as its valueless member, and what a completed run answers with as
+its field rows. What a scenario observes while the run plays out is authored on the monitors: a
+monitor that publishes an occurrence carries the event it triggers as its member.
 """
 
 from __future__ import annotations
@@ -16,16 +17,22 @@ from textx.exceptions import TextXSemanticError
 AAS = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 ANCHOR = "guarded-motion (ns=app) home {"
 
-BLOCK = """bdd-behaviour (ns=app) arc-behaviour {
-    action:  "run_arc"
-    on-goal: event <aas.E_HOME_SETTLED>
+SERVER = """ros (ns=app) {
+    action-servers {
+        arc-behaviour: action "run_arc" type "bdd_ros2_interfaces/action/Behaviour" {
+            on-goal: produce event <aas.E_HOME_SETTLED>,
+            on-end: { result.trinary.value: TRUE },
+        },
+    },
 }
 
 """
 
 
-TOPICS = """ros-topics (ns=app) {
-    bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+TOPICS = """ros (ns=app) {
+    publishers {
+        bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+    },
 }
 
 exec-context (ns=app) base-exec {"""
@@ -48,7 +55,7 @@ def _with_occurrence(base_source: str) -> str:
     )
 
 
-def _graph(parse_source, base_source: str, block: str = BLOCK):
+def _graph(parse_source, base_source: str, block: str = SERVER):
     return (
         MotionSpecDatasetBuilder(parse_source(_with(base_source, block))).build()[0].default_graph
     )
@@ -60,7 +67,27 @@ def test_the_server_names_its_action_and_the_event_a_goal_produces(parse_source,
     assert str(server).endswith("arc-behaviour")
     assert str(graph.value(server, ROS["channel-name"])) == "run_arc"
     assert str(graph.value(server, ROS["type-name"])) == "bdd_ros2_interfaces/action/Behaviour"
-    assert [str(uri) for uri in graph.objects(server, RDFS.member)] == [f"{AAS}E_HOME_SETTLED"]
+    members = list(graph.objects(server, RDFS.member))
+    goal_event = [m for m in members if graph.value(m, RDF.value) is None]
+    assert [str(uri) for uri in goal_event] == [f"{AAS}E_HOME_SETTLED"]
+
+
+def test_the_server_states_what_a_completed_run_answers_with(parse_source, base_source):
+    """A row is a field the result carries; a run that never finishes states none of them."""
+    graph = _graph(parse_source, base_source)
+    server = next(graph.subjects(RDF.type, ROS.Action))
+    rows = [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
+    assert [
+        (str(graph.value(row, ROS["field-path"])), str(graph.value(row, RDF.value)))
+        for row in rows
+    ] == [("result.trinary.value", "TRUE")]
+
+
+def test_a_server_that_authors_no_result_states_no_rows(parse_source, base_source):
+    block = SERVER.replace("\n            on-end: { result.trinary.value: TRUE },", "", 1)
+    graph = _graph(parse_source, base_source, block)
+    server = next(graph.subjects(RDF.type, ROS.Action))
+    assert not [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
 
 
 def test_a_monitor_publishes_its_event_as_its_topics_member(parse_source, base_source):
@@ -101,7 +128,7 @@ def test_a_model_without_the_block_states_no_server(parse_source, base_source):
 
 def test_an_event_the_fsm_does_not_declare_is_rejected(parse_source, base_source):
     """A standalone event is monitor-owned: it never reaches the FSM, so no goal can start it."""
-    block = BLOCK.replace("<aas.E_HOME_SETTLED>", "<E_INVENTED>", 1)
+    block = SERVER.replace("<aas.E_HOME_SETTLED>", "<E_INVENTED>", 1)
     with pytest.raises(TextXSemanticError, match="E_INVENTED"):
         parse_source(_with(base_source, block))
 
@@ -109,12 +136,27 @@ def test_an_event_the_fsm_does_not_declare_is_rejected(parse_source, base_source
 def test_a_goal_event_the_fsm_never_reacts_to_is_rejected(parse_source, base_source):
     """E_ARC_ENTERED is fired by a reaction but reacted to by none, so an accepted goal would
     start nothing."""
-    block = BLOCK.replace("<aas.E_HOME_SETTLED>", "<aas.E_ARC_ENTERED>", 1)
+    block = SERVER.replace("<aas.E_HOME_SETTLED>", "<aas.E_ARC_ENTERED>", 1)
     with pytest.raises(TextXSemanticError, match="declares no reaction to it"):
         parse_source(_with(base_source, block))
 
 
-def test_a_second_block_is_rejected(parse_source, base_source):
-    second = BLOCK.replace("arc-behaviour", "other-behaviour", 1)
-    with pytest.raises(TextXSemanticError, match="2 'bdd-behaviour' blocks"):
-        parse_source(_with(base_source, BLOCK + second))
+def test_a_second_ros_block_is_rejected(parse_source, base_source):
+    second = SERVER.replace("arc-behaviour", "other-behaviour", 1)
+    with pytest.raises(TextXSemanticError, match="2 'ros' blocks"):
+        parse_source(_with(base_source, SERVER + second))
+
+
+def test_a_second_served_action_is_rejected(parse_source, base_source):
+    """One runtime answers one action: a second server has no second FSM to start."""
+    block = SERVER.replace(
+        "        },\n    },",
+        """        },
+        other-behaviour: action "run_other" type "bdd_ros2_interfaces/action/Behaviour" {
+            on-goal: produce event <aas.E_HOME_SETTLED>,
+        },
+    },""",
+        1,
+    )
+    with pytest.raises(TextXSemanticError, match="serves 2 actions"):
+        parse_source(_with(base_source, block))

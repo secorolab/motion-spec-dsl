@@ -3,8 +3,10 @@ import "admittance_arc_single.scenex"
 ns app = "https://secorolab.github.io/models/admittance-arc-single/"
 ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 
-ros-topics (ns=aas) {
-    forward-done: topic "/motion/forward_done" message "bdd_ros2_interfaces/msg/TrinaryStamped",
+ros (ns=aas) {
+    publishers {
+        forward-done: topic "/motion/forward_done" message "bdd_ros2_interfaces/msg/TrinaryStamped",
+    },
 }
 
 exec-context (ns=app) admittance-arc-exec {
@@ -282,9 +284,9 @@ constraint-handler (ns=app) handler-forward {
         mon-forward-done: monitor <forward.reached-forward> {
             satisfied {
                 trigger: event <aas.E_FORWARD_DONE>,
-                publish: TRUE to <aas.forward-done>,
+                publish: to <aas.forward-done> { trinary.value: TRUE },
             },
-            violated { publish: FALSE to <aas.forward-done> },
+            violated { publish: to <aas.forward-done> { trinary.value: FALSE } },
         }
     }
     controllers {

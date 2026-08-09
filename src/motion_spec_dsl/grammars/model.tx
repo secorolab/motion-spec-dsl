@@ -16,15 +16,25 @@ Model:
 ;
 
 Specification:
-    ContextSpec | ExecutionContext | ToleranceDefaults | RosTopicDecls | RosActionDecls | BddBehaviour | GuardedMotion | ConstraintHandler
+    ContextSpec | ExecutionContext | ToleranceDefaults | Ros | GuardedMotion | ConstraintHandler
 ;
 
-BddBehaviour:
-    "bdd-behaviour" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        "action"  ":" action_name=STRING
-        "on-goal" ":" "event" goal_event=EventName
+Ros:
+    "ros" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
+        ("publishers"     "{" topics+=RosTopicDecl[","] ","? "}" ","?)?
+        ("action-clients" "{" action_clients+=RosActionDecl[","] ","? "}" ","?)?
+        ("action-servers" "{" action_servers+=RosActionServerDecl[","] ","? "}" ","?)?
     "}"
 ;
+
+RosActionServerDecl:
+    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING "{"
+        "on-goal" ":" "produce" "event" goal_event=EventName ","
+        ("on-end" ":" on_end=RosResult ","?)?
+    "}"
+;
+
+RosResult: value=RosFieldValue | "{" fields+=RosFieldAssign[","] ","? "}" ;
 
 // Model-wide satisfaction bands, one per quantity kind. A constraint that authors no
 // `within` takes the band declared for the kind its error carries, so the band a model is

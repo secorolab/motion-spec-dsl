@@ -11,9 +11,11 @@ from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdflib.namespace import RDF, RDFS
 from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
-TOPICS = """ros-topics (ns=app) {
-    settled: topic "/base/settled" message "std_msgs/msg/Float64",
-    other: topic "/base/other" message "std_msgs/msg/Float64",
+TOPICS = """ros (ns=app) {
+    publishers {
+        settled: topic "/base/settled" message "std_msgs/msg/Float64",
+        other: topic "/base/other" message "std_msgs/msg/Float64",
+    },
 }
 
 exec-context (ns=app) base-exec {"""

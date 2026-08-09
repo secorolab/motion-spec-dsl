@@ -2,19 +2,20 @@ import "detect_pick_single.fsm"
 import "detect_pick_single.scenex"
 ns app = "https://secorolab.github.io/models/detect-pick-single/"
 ns dp = "https://secorolab.github.io/models/detect-pick-single/fsm/"
-ns perception = "https://secorolab.github.io/models/detect-pick-single/perception/"
 
-ros-actions (ns=perception) {
-    locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
-}
-
-ros-topics (ns=app) {
-    bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
-}
-
-bdd-behaviour (ns=app) detect-pick-behaviour {
-    action:  "pick_place"
-    on-goal: event <dp.E_GOAL>
+ros (ns=app) {
+    publishers {
+        bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+    },
+    action-clients {
+        locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
+    },
+    action-servers {
+        pick-place: action "pick_place" type "bdd_ros2_interfaces/action/Behaviour" {
+            on-goal: produce event <dp.E_GOAL>,
+            on-end: { result.trinary.value: TRUE },
+        },
+    },
 }
 
 exec-context (ns=app) detect-pick-single-exec {
@@ -101,7 +102,7 @@ guarded-motion (ns=app) detect-cube {
         }
     }
 
-    locate-cube: detect <pick_place_graph.cube> using <perception.locate>
+    locate-cube: detect <pick_place_graph.cube> using <app.locate>
 
     when {
         gripper-ready: <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>

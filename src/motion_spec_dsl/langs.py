@@ -14,7 +14,6 @@ from motion_spec_dsl.classes.base import (
     NamespaceDeclare,
 )
 from motion_spec_dsl.classes.constraint_handler import (
-    BddBehaviour,
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
@@ -28,7 +27,6 @@ from motion_spec_dsl.classes.constraint_handler import (
     MonitorEntry,
     MonitorStateBlock,
     RosTopicDecl,
-    RosTopicDecls,
     SaturationSpec,
     SerialChainSolver,
     MobilePlatformSolver,
@@ -92,7 +90,6 @@ from motion_spec_dsl.classes.motion_spec import (
     DetectDecl,
     ExecutionContext,
     RosActionDecl,
-    RosActionDecls,
     Model,
     GuardedMotion,
     PostContextDecl,
@@ -112,6 +109,11 @@ from motion_spec_dsl.classes.path import (
     ProfileSpec,
     AdmittanceSpec,
     PathValue,
+)
+from motion_spec_dsl.classes.ros import (
+    Ros,
+    RosActionServerDecl,
+    RosResult,
 )
 from motion_spec_dsl.classes.scoping import SceneRefProvider, finalize_imported_scenes
 from motion_spec_dsl.classes.validation import validate_model
@@ -186,14 +188,14 @@ LANGUAGE_CLASSES = [
     MonitorEntry,
     MonitorStateBlock,
     MonitorAction,
-    RosTopicDecls,
+    Ros,
     RosTopicDecl,
-    RosActionDecls,
     RosActionDecl,
+    RosActionServerDecl,
+    RosResult,
     DetectDecl,
     SceneObjRef,
     GoalStatusConstraint,
-    BddBehaviour,
     EventName,
     ControllerAlias,
     ControllerEntry,

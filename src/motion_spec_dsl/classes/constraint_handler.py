@@ -159,39 +159,6 @@ class RosTopicDecl(NamedNamespaceObject):
         super().__init__(parent=self.parent, name=self.name)
 
 
-@dataclass
-class RosTopicDecls:
-    """The model's ROS topic declarations, all minted in one namespace."""
-
-    parent: object
-    ns: NamespaceDeclLike
-    topics: list[RosTopicDecl] = field(default_factory=list)
-
-    @property
-    def name(self) -> str:
-        """The namespace prefix names this block, so `<ns.topic>` resolves by dotted path."""
-        return self.ns.name
-
-    @property
-    def namespace(self) -> Namespace:
-        return Namespace(self.ns.uri)
-
-
-@dataclass
-class BddBehaviour(IHasNamespaceDeclare):
-    """The runtime serves BDD scenario goals: the action it answers on, and the FSM event a
-    goal start produces."""
-
-    parent: object
-    ns: NamespaceDeclLike
-    name: str
-    action_name: str
-    goal_event: EventName
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-
-
 def authored_text(value: object) -> str:
     """What the author wrote for a field value: a constant's name, or a literal's spelling."""
     constant = getattr(value, "constant", "")

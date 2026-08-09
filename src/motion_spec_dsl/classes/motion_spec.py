@@ -8,8 +8,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from rdflib import Namespace
-
 from motion_spec_dsl.classes.base import Import, NamespaceDeclare
 from motion_spec_dsl.classes.common import (
     IHasNamespaceDeclare,
@@ -147,24 +145,6 @@ class RosActionDecl(NamedNamespaceObject):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-
-
-@dataclass
-class RosActionDecls:
-    """The model's ROS action declarations, all minted in one namespace."""
-
-    parent: object
-    ns: NamespaceDeclLike
-    actions: list[RosActionDecl] = field(default_factory=list)
-
-    @property
-    def name(self) -> str:
-        """The namespace prefix names this block, so `<ns.action>` resolves by dotted path."""
-        return self.ns.name
-
-    @property
-    def namespace(self) -> Namespace:
-        return Namespace(self.ns.uri)
 
 
 @dataclass
