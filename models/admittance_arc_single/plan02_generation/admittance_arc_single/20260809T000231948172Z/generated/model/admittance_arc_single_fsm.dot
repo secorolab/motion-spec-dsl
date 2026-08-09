@@ -1,0 +1,24 @@
+digraph "admittance_arc_single_fsm" {
+  rankdir=LR;
+  compound=true;
+  graph [fontname="Helvetica", fontsize=11];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, color="#5f6368"];
+  "__entry__" [shape=point, width=0.12, fillcolor="#202124", color="#202124"];
+  "__entry__" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_START";
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ADMITTANCE" [label="S_ADMITTANCE"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC" [label="S_ARC"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_DONE" [label="S_DONE", peripheries=2, fillcolor="#e6f4ea"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_FORWARD" [label="S_FORWARD"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_HOME" [label="S_HOME"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_START" [label="S_START", fillcolor="#e8f0fe"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_TOUCHDOWN" [label="S_TOUCHDOWN"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_DONE" [label="E_ARC_CONTACT"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_TOUCHDOWN" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_FORWARD" [label="E_CONTACT"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ADMITTANCE" [label="E_FORCE_DETECTED\nfires E_ADMITTANCE_ENTERED"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ADMITTANCE" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC" [label="E_FORCE_GONE\nfires E_ARC_ENTERED"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_FORWARD" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC" [label="E_FORWARD_DONE\nfires E_ARC_ENTERED"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_HOME" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_TOUCHDOWN" [label="E_HOME_SETTLED"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_START" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_HOME" [label="E_STEP"];
+  "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ADMITTANCE" -> "https://secorolab.github.io/models/admittance-arc-single/fsm/S_DONE" [label="E_TABLE_CONTACT"];
+}

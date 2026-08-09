@@ -1,0 +1,765 @@
+{
+  "@context": [
+    "https://secorolab.github.io/metamodels/rec/rec.json",
+    {
+      "dcat": "http://www.w3.org/ns/dcat#",
+      "prov": "http://www.w3.org/ns/prov#",
+      "qudt": "http://qudt.org/schema/qudt/"
+    }
+  ],
+  "@graph": [
+    {
+      "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb",
+      "@type": "prov:Generation",
+      "prov:activity": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution"
+      },
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:15.388076+00:00"
+      }
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-derived.ld.json",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:14.974912+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_model_pick_place_dual-derived.ld.json"
+      }
+    },
+    {
+      "@id": "rec:metric/frame_log_attempted_frames/0",
+      "@type": [
+        "Metric",
+        "qudt:Quantity"
+      ],
+      "label": "frame_log_attempted_frames",
+      "prov:generatedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.576946+00:00"
+      },
+      "qudt:hasQuantityKind": {
+        "@id": "http://qudt.org/vocab/quantitykind/Dimensionless"
+      },
+      "qudt:unit": {
+        "@id": "http://qudt.org/vocab/unit/UNITLESS"
+      },
+      "qudt:value": 28848,
+      "step": "0"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_provenance_motion-spec.ld.json",
+      "@type": "prov:Entity",
+      "label": "provenance",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_motion-spec.ld.json"
+      },
+      "sha256": "ca782c196fabb7ece85c1057c35efcf3a826d528ea23eff4fcacdc9569b05e4d",
+      "size_bytes": "28348"
+    },
+    {
+      "@id": "rec:metric/frame_log_complete/0",
+      "@type": [
+        "Metric",
+        "qudt:Quantity"
+      ],
+      "label": "frame_log_complete",
+      "prov:generatedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:17.299790+00:00"
+      },
+      "qudt:hasQuantityKind": {
+        "@id": "http://qudt.org/vocab/quantitykind/Dimensionless"
+      },
+      "qudt:unit": {
+        "@id": "http://qudt.org/vocab/unit/UNITLESS"
+      },
+      "qudt:value": 1,
+      "step": "0"
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/agent/replay_process",
+      "@type": [
+        "prov:Agent",
+        "prov:SoftwareAgent",
+        "https://secorolab.github.io/metamodels/observation#ObservationProvider"
+      ]
+    },
+    {
+      "@id": "rec:repository/motion-spec",
+      "@type": "Repository",
+      "label": "motion-spec",
+      "rec:revision": "86878c67fd2bc5b8a4d488998f3b544f715ae20a",
+      "rec:url": "git@github.com:secorolab/motion-spec.git"
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/activity/runtime_ttl_recovery",
+      "@type": "prov:Activity",
+      "prov:wasAssociatedWith": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/agent/replay_process"
+      }
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-derived.ld.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/model/pick_place_dual-derived.ld.json"
+    },
+    {
+      "@id": "rec:dependency/pyshacl",
+      "@type": "Dependency",
+      "label": "pyshacl",
+      "version": "0.31.0"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_model_ir.json",
+      "@type": "prov:Entity",
+      "label": "ir",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_ir.json"
+      },
+      "sha256": "e2d020eb8754725544cadcff734b5866f1a9c1afd53daa1f56c7ff8a19b115c7",
+      "size_bytes": "10068267"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb.health.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "logs/frame_log.pb.health.json"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_motion-spec.ld.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/provenance/motion-spec.ld.json"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_controller",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:14.784700+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_controller"
+      }
+    },
+    {
+      "@id": "rec:repository/rec",
+      "@type": "Repository",
+      "label": "rec",
+      "rec:revision": "0c46131421b43119cdf3cce448414899903349fc",
+      "rec:url": "git@github.com:secorolab/rec.git"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-app.ld.json",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.222532+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_model_pick_place_dual-app.ld.json"
+      }
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-app.ld.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/model/pick_place_dual-app.ld.json"
+    },
+    {
+      "@id": "rec:entity/run-20260809T000138537062Z/host",
+      "@type": "Host",
+      "cpu": "x86_64",
+      "hostname": "deathstar",
+      "os": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+      "runtime": "3.12.3 (main, Jun 19 2026, 12:46:00) [GCC 13.3.0]"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_provenance_dsl.ld.json",
+      "@type": "prov:Entity",
+      "label": "dsl_provenance",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_dsl.ld.json"
+      },
+      "sha256": "95dd1d6b5372958f778d0a3d39940e3eedda3a403a96cbc4ebadcda9e51ccfe7",
+      "size_bytes": "13447"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_controller",
+      "@type": "prov:Entity",
+      "label": "controller",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_controller"
+      },
+      "sha256": "0eeb79f41ec5a67ddae8eb9c1a964a60f3b51caee5222e6b5b8cd59c084ed69e",
+      "size_bytes": "9085823"
+    },
+    {
+      "@id": "rec:repository/motion-spec-dsl",
+      "@type": "Repository",
+      "label": "motion-spec-dsl",
+      "rec:revision": "361e0ee9157b8068348e4fe8c797b9486b9521ed",
+      "rec:url": "git@github.com:secorolab/motion-spec-dsl.git"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_motion-spec.ld.json",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.389008+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_provenance_motion-spec.ld.json"
+      }
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_contract_frame_log.proto",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/contract/frame_log.proto"
+    },
+    {
+      "@id": "rec:entity/logs_frame_log.pb",
+      "@type": "prov:Entity",
+      "label": "frame_log",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb"
+      },
+      "prov:qualifiedGeneration": {
+        "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb"
+      },
+      "prov:wasGeneratedBy": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution"
+      },
+      "sha256": "7892a6398d6f05298034b8f94f759fd6aafbe6d2e982e10dbbeb269784e77e76",
+      "size_bytes": "94255958"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_model_pick_place_dual-derived.ld.json",
+      "@type": "prov:Entity",
+      "label": "derived",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-derived.ld.json"
+      },
+      "sha256": "9f3e8bc07ec2ab601144890ffc75e2cc1f101f7517ebf31a83840f76dc7e95a4",
+      "size_bytes": "986590"
+    },
+    {
+      "@id": "rec:dependency/motion_spec",
+      "@type": "Dependency",
+      "label": "motion_spec",
+      "version": "0.1.0"
+    },
+    {
+      "@id": "rec:metric/frame_log_dropped_frames/0",
+      "@type": [
+        "Metric",
+        "qudt:Quantity"
+      ],
+      "label": "frame_log_dropped_frames",
+      "prov:generatedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:17.125045+00:00"
+      },
+      "qudt:hasQuantityKind": {
+        "@id": "http://qudt.org/vocab/quantitykind/Dimensionless"
+      },
+      "qudt:unit": {
+        "@id": "http://qudt.org/vocab/unit/UNITLESS"
+      },
+      "qudt:value": 0,
+      "step": "0"
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/agent/controller_process",
+      "@type": [
+        "prov:Agent",
+        "prov:SoftwareAgent",
+        "https://secorolab.github.io/metamodels/observation#ObservationProvider"
+      ]
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/activity/archive_creation",
+      "@type": "prov:Activity",
+      "prov:wasAssociatedWith": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_archive"
+      }
+    },
+    {
+      "@id": "rec:metric/frame_log_accepted_frames/0",
+      "@type": [
+        "Metric",
+        "qudt:Quantity"
+      ],
+      "label": "frame_log_accepted_frames",
+      "prov:generatedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.741611+00:00"
+      },
+      "qudt:hasQuantityKind": {
+        "@id": "http://qudt.org/vocab/quantitykind/Dimensionless"
+      },
+      "qudt:unit": {
+        "@id": "http://qudt.org/vocab/unit/UNITLESS"
+      },
+      "qudt:value": 28848,
+      "step": "0"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_controller",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/controller"
+    },
+    {
+      "@id": "rec:metric/frame_log_written_frames/0",
+      "@type": [
+        "Metric",
+        "qudt:Quantity"
+      ],
+      "label": "frame_log_written_frames",
+      "prov:generatedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.938402+00:00"
+      },
+      "qudt:hasQuantityKind": {
+        "@id": "http://qudt.org/vocab/quantitykind/Dimensionless"
+      },
+      "qudt:unit": {
+        "@id": "http://qudt.org/vocab/unit/UNITLESS"
+      },
+      "qudt:value": 28848,
+      "step": "0"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "logs/frame_log.pb"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_contract_frame_log.proto",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:15.700972+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_contract_frame_log.proto"
+      }
+    },
+    {
+      "@id": "rec:location/run-20260809T000138537062Z",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "file:///home/batsy/work/ms/src/motion-spec-dsl/models/pick_place_dual/plan02_generation/pick_place_dual/20260809T000106027717Z/runs/run-20260809T000138537062Z/rec.ld.json"
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/activity/run_cataloging",
+      "@type": "prov:Activity",
+      "prov:wasAssociatedWith": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_runner"
+      }
+    },
+    {
+      "@id": "rec:dependency/rec",
+      "@type": "Dependency",
+      "label": "rec",
+      "version": "0.0.0"
+    },
+    {
+      "@id": "rec:dependency/rdflib",
+      "@type": "Dependency",
+      "label": "rdflib",
+      "version": "7.6.0"
+    },
+    {
+      "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb.health.json",
+      "@type": "prov:Generation",
+      "prov:activity": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution"
+      },
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:15.554277+00:00"
+      }
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_ir.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/model/ir.json"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._build_main",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../build/main"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_dsl.ld.json",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "../../generated/provenance/dsl.ld.json"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_model_pick_place_dual-app.ld.json",
+      "@type": "prov:Entity",
+      "label": "model",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-app.ld.json"
+      },
+      "sha256": "6c97e322de102edb99d61152cb2a901799cfaddeccb344ea1fcf24e27569d8de",
+      "size_bytes": "2836"
+    },
+    {
+      "@id": "rec:entity/.._.._generated_contract_frame_log.proto",
+      "@type": "prov:Entity",
+      "label": "frame_log_proto",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_contract_frame_log.proto"
+      },
+      "sha256": "be6e5ac9f4eb46a5404377fee3eda52b63238847be3a18a06b56f1cc6dfa581b",
+      "size_bytes": "70329"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._build_main",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:16.063557+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._build_main"
+      }
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_dsl.ld.json",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:15.149399+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_provenance_dsl.ld.json"
+      }
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution",
+      "@type": [
+        "prov:Activity",
+        "https://secorolab.github.io/metamodels/acceptance-criteria/bdd#SimulatedExecution"
+      ],
+      "prov:qualifiedUsage": [
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_motion-spec.ld.json"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_ir.json"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._build_main"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_controller"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-derived.ld.json"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_provenance_dsl.ld.json"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_contract_frame_log.proto"
+        },
+        {
+          "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_pick_place_dual-app.ld.json"
+        }
+      ],
+      "prov:used": [
+        {
+          "@id": "rec:entity/.._.._generated_provenance_motion-spec.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_ir.json"
+        },
+        {
+          "@id": "rec:entity/.._.._build_main"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_controller"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_pick_place_dual-derived.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_provenance_dsl.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_contract_frame_log.proto"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_pick_place_dual-app.ld.json"
+        }
+      ],
+      "prov:wasAssociatedWith": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/agent/controller_process"
+      }
+    },
+    {
+      "@id": "rec:activity/run-20260809T000138537062Z",
+      "@type": [
+        "prov:Activity",
+        "CompletedRun"
+      ],
+      "activities": [
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/activity/archive_creation"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/activity/run_cataloging"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/activity/runtime_ttl_recovery"
+        }
+      ],
+      "agents": [
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/agent/runtime_mujoco"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/agent/controller_process"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_archive"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_runner"
+        },
+        {
+          "@id": "https://secorolab.github.io/motion-spec/provenance/agent/replay_process"
+        }
+      ],
+      "artefacts": [
+        {
+          "@id": "rec:entity/logs_frame_log.pb"
+        },
+        {
+          "@id": "rec:entity/logs_frame_log.pb.health.json"
+        },
+        {
+          "@id": "rec:entity/runtime_runtime.ttl"
+        }
+      ],
+      "dependencies": [
+        {
+          "@id": "rec:dependency/motion_spec"
+        },
+        {
+          "@id": "rec:dependency/rec"
+        },
+        {
+          "@id": "rec:dependency/rdflib"
+        },
+        {
+          "@id": "rec:dependency/pyshacl"
+        }
+      ],
+      "host_info": {
+        "@id": "rec:entity/run-20260809T000138537062Z/host"
+      },
+      "metrics": [
+        {
+          "@id": "rec:metric/frame_log_attempted_frames/0"
+        },
+        {
+          "@id": "rec:metric/frame_log_accepted_frames/0"
+        },
+        {
+          "@id": "rec:metric/frame_log_written_frames/0"
+        },
+        {
+          "@id": "rec:metric/frame_log_dropped_frames/0"
+        },
+        {
+          "@id": "rec:metric/frame_log_complete/0"
+        }
+      ],
+      "prov:atLocation": {
+        "@id": "rec:location/run-20260809T000138537062Z"
+      },
+      "prov:endedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:25.102155+00:00"
+      },
+      "prov:startedAtTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:01:38.596517+00:00"
+      },
+      "repositories": [
+        {
+          "@id": "rec:repository/motion-spec-dsl"
+        },
+        {
+          "@id": "rec:repository/motion-spec"
+        },
+        {
+          "@id": "rec:repository/rec"
+        }
+      ],
+      "resources": [
+        {
+          "@id": "rec:entity/.._.._generated_provenance_motion-spec.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_ir.json"
+        },
+        {
+          "@id": "rec:entity/.._.._build_main"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_controller"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_pick_place_dual-derived.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_provenance_dsl.ld.json"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_contract_frame_log.proto"
+        },
+        {
+          "@id": "rec:entity/.._.._generated_model_pick_place_dual-app.ld.json"
+        }
+      ],
+      "run_id": "run-20260809T000138537062Z"
+    },
+    {
+      "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_runtime_runtime.ttl",
+      "@type": "prov:Generation",
+      "prov:activity": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/runtime_ttl_recovery"
+      },
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:25.094532+00:00"
+      }
+    },
+    {
+      "@id": "rec:entity/.._.._build_main",
+      "@type": "prov:Entity",
+      "label": "log_producer_executable",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_.._.._build_main"
+      },
+      "sha256": "425fbc69c024d44d252aa0c836dd46d5dddacf115054532440ff537048a29843",
+      "size_bytes": "3226696"
+    },
+    {
+      "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_runtime_runtime.ttl",
+      "@type": [
+        "prov:Location",
+        "PathLocation"
+      ],
+      "path": "runtime/runtime.ttl"
+    },
+    {
+      "@id": "rec:usage/run-20260809T000138537062Z/https___secorolab.github.io_motion-spec_provenance_activity_controller_execution/https___secorolab.github.io_metamodels_rec_entity_.._.._generated_model_ir.json",
+      "@type": "prov:Usage",
+      "prov:atTime": {
+        "@type": "xsd:dateTime",
+        "@value": "2026-08-09T00:02:15.892397+00:00"
+      },
+      "prov:entity": {
+        "@id": "rec:entity/.._.._generated_model_ir.json"
+      }
+    },
+    {
+      "@id": "rec:entity/runtime_runtime.ttl",
+      "@type": "prov:Entity",
+      "label": "runtime_ttl",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_runtime_runtime.ttl"
+      },
+      "prov:qualifiedGeneration": {
+        "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_runtime_runtime.ttl"
+      },
+      "prov:wasGeneratedBy": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/runtime_ttl_recovery"
+      },
+      "sha256": "b910ecdb139dfb73a8bb686be7f369562bdffb837e6864e046c6fbd926984e64",
+      "size_bytes": "17720"
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_archive",
+      "@type": [
+        "prov:Agent",
+        "prov:SoftwareAgent",
+        "https://secorolab.github.io/metamodels/observation#ObservationProvider"
+      ]
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/agent/runtime_mujoco",
+      "@type": [
+        "prov:Agent",
+        "prov:SoftwareAgent",
+        "https://secorolab.github.io/metamodels/execution-context#Simulation"
+      ]
+    },
+    {
+      "@id": "https://secorolab.github.io/motion-spec/provenance/agent/motion_spec_runner",
+      "@type": [
+        "prov:Agent",
+        "prov:SoftwareAgent",
+        "https://secorolab.github.io/metamodels/observation#ObservationProvider"
+      ]
+    },
+    {
+      "@id": "rec:entity/logs_frame_log.pb.health.json",
+      "@type": "prov:Entity",
+      "label": "frame_log_health",
+      "prov:atLocation": {
+        "@id": "rec:location/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb.health.json"
+      },
+      "prov:qualifiedGeneration": {
+        "@id": "rec:generation/https___secorolab.github.io_metamodels_rec_entity_logs_frame_log.pb.health.json"
+      },
+      "prov:wasGeneratedBy": {
+        "@id": "https://secorolab.github.io/motion-spec/provenance/activity/controller_execution"
+      },
+      "sha256": "842d7153849b46533d26e81d4db5f7b28bdd2ec9dc9b2946274b347b9275cb23",
+      "size_bytes": "151"
+    }
+  ]
+}

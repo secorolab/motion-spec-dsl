@@ -47,6 +47,7 @@ fsm (ns=dp) detect_pick_single_fsm {
     transitions {
         T_START_HOME          { from: <S_START>,       to: <S_HOME> },
         T_HOME_DETECT         { from: <S_HOME>,        to: <S_DETECT> },
+        T_HOME_HOLD           { from: <S_HOME>,        to: <S_HOME> },
         T_DETECT_PICK_ABOVE   { from: <S_DETECT>,      to: <S_PICK_ABOVE> },
         T_DETECT_RETRY        { from: <S_DETECT>,      to: <S_DETECT> },
         T_PICK_ABOVE_PICK     { from: <S_PICK_ABOVE>,  to: <S_PICK> },
@@ -66,6 +67,7 @@ fsm (ns=dp) detect_pick_single_fsm {
     reactions {
         R_STEP_START { when: <detect_pick_single_fsm_events.E_STEP>, do: <T_START_HOME> },
         R_GOAL { when: <detect_pick_single_fsm_events.E_GOAL>, do: <T_HOME_DETECT> },
+        R_DETECT_READY { when: <detect_pick_single_fsm_events.E_DETECT_READY>, do: <T_HOME_HOLD> },
         R_CUBE_DETECTED { when: <detect_pick_single_fsm_events.E_CUBE_DETECTED>, do: <T_DETECT_PICK_ABOVE> },
         R_DETECT_FAILED { when: <detect_pick_single_fsm_events.E_DETECT_FAILED>, do: <T_DETECT_RETRY> },
         R_PICK_READY { when: <detect_pick_single_fsm_events.E_PICK_READY>, do: <T_PICK_ABOVE_PICK> },

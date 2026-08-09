@@ -58,7 +58,7 @@ context (ns=app) shared {
         angle grasp-rot-z             = 1.5708 rad,
         angle gripper-closed        = 0.8 rad,
         angle gripper-open          = 0.0 rad,
-        linear-distance lost-dist   = 0.12 m
+        angle lost-width            = 0.6 rad
     }
     // nothing, the pose is the cube's start placement.
 }
@@ -245,7 +245,7 @@ guarded-motion (ns=app) lift {
     }
 
     until {
-        grasp-lost: distance between <shared.world.pose-ee-base> and <shared.world.pose-cube-base> greater than <shared.spec.lost-dist>
+        grasp-lost: <shared.world.gripper-pos> greater than <shared.spec.lost-width>
     }
 }
 
@@ -281,7 +281,7 @@ guarded-motion (ns=app) place-above {
     }
 
     until {
-        grasp-lost: distance between <shared.world.pose-ee-base> and <shared.world.pose-cube-base> greater than <shared.spec.lost-dist>
+        grasp-lost: <shared.world.gripper-pos> greater than <shared.spec.lost-width>
     }
 }
 
@@ -317,7 +317,7 @@ guarded-motion (ns=app) place {
     }
 
     until {
-        grasp-lost: distance between <shared.world.pose-ee-base> and <shared.world.pose-cube-base> greater than <shared.spec.lost-dist>
+        grasp-lost: <shared.world.gripper-pos> greater than <shared.spec.lost-width>
     }
 }
 

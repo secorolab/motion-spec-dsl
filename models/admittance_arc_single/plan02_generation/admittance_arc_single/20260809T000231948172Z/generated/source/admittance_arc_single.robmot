@@ -1,0 +1,383 @@
+import "admittance_arc_single.fsm"
+import "admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/admittance-arc-single/"
+ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+
+ros-topics (ns=aas) {
+    forward-done: topic "/motion/forward_done" message "bdd_ros2_interfaces/msg/TrinaryStamped",
+}
+
+exec-context (ns=app) admittance-arc-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-bracelet-base {
+            of:         <kinova.bracelet_link.bracelet_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist twist-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist twist-bracelet-base {
+            of:         <kinova.bracelet_link.bracelet_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>
+        }
+    },
+    spec {
+        linear-distance satisfied-band     = 0.01 m,
+        angle satisfied-band-rot           = 0.01 rad,
+        linear-velocity satisfied-band-vel = 0.01 m/s,
+        linear-velocity zero-linvel          = 0.0 m/s,
+        linear-velocity descend-vel          = -0.05 m/s,
+        linear-distance forward-distance     = 0.05 m,
+        linear-distance contact-z            = 0.03 m,
+        linear-distance bracelet-contact-z   = 0.07 m,
+        force force-threshold                 = 10.0 N,
+        force neg-force-threshold             = -10.0 N,
+        force release-threshold               = 3.0 N,
+        force neg-release-threshold           = -3.0 N,
+        linear-distance comply-int-max         = 0.02 m,
+        linear-distance neg-comply-int-max     = -0.02 m
+    }
+}
+
+tolerances {
+    linear-distance:  0.01 m,
+    angular-distance: 0.01 rad,
+    linear-velocity:  0.01 m/s,
+    position:         0.01 m,
+    orientation:      0.01 rad
+}
+
+guarded-motion (ns=app) home {
+    description: "Hold the current end-effector pose"
+
+    context {
+        spec {
+            pose home-pose = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
+    }
+
+    until all {
+        settled-x: <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-y: <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+    }
+}
+
+guarded-motion (ns=app) touchdown {
+    description: "Lower the TCP until it contacts the table"
+
+    context {
+        spec {
+            pose start-pose       = snapshot of <shared.world.pose-ee-base>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x within <shared.spec.satisfied-band>,
+        hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
+        lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel> within <shared.spec.satisfied-band-vel>,
+        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
+    }
+
+    until {
+        contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+    }
+}
+
+guarded-motion (ns=app) forward {
+    description: "Move the TCP forward five centimetres"
+
+    context {
+        spec {
+            pose start-pose          = snapshot of <shared.world.pose-ee-base>,
+            linear-distance target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
+        }
+    }
+
+    when {}
+
+    while {
+        move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
+        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
+    }
+
+    until {
+        reached-forward: <shared.world.pose-ee-base>.position.x greater than <spec.target-x>
+    }
+}
+
+guarded-motion (ns=app) arc-motion {
+    description: "Trace an arc toward the table and yield to an external X force"
+
+    context {
+        spec {
+            linear-velocity arc-speed     = 0.05 m/s,
+            linear-velocity min-arc-speed = 0.005 m/s,
+            direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
+                = (0.9863939238, 0.1643989873, 0.0),
+            linear-distance chord-x    = -0.05 m,
+            linear-distance chord-y    = 0.30 m,
+            linear-distance chord-y-lo = 0.27 m,
+            linear-distance chord-y-hi = 0.33 m,
+            linear-distance chord-z    = 0.0 m,
+            linear-distance arc-height = 0.18 m,
+            pose initial-pose          = snapshot of <shared.world.pose-ee-base>,
+            pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
+            linear-distance end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
+            linear-distance end-y      = <spec.initial-pose>.position.y + <spec.chord-y>,
+            linear-distance end-y-lo   = <spec.initial-pose>.position.y + <spec.chord-y-lo>,
+            linear-distance end-y-hi   = <spec.initial-pose>.position.y + <spec.chord-y-hi>,
+            linear-distance end-z      = <spec.initial-pose>.position.z + <spec.chord-z>,
+            pose end-pose = {
+                position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
+                orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, 45.0) deg }
+            },
+            path arc-path = arc {
+                start:        <spec.start-pose>,
+                end:          <spec.end-pose>,
+                amplitude:    <spec.arc-height>,
+                plane-normal: <spec.path-normal>
+            }
+        }
+    }
+
+    when {}
+
+    while {
+        follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> at <spec.arc-speed>,
+        follow-position: keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
+        follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
+        advance: progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
+        force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
+        force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+    }
+
+    until all {
+        near-table:  <shared.world.pose-ee-base>.position.z less than <shared.spec.contact-z>,
+        at-target-y: <shared.world.pose-ee-base>.position.y between <spec.end-y-lo> and <spec.end-y-hi>
+    }
+}
+
+guarded-motion (ns=app) compliance {
+    description: "Yield along the measured external force"
+
+    context {
+        spec {
+            pose hold-orientation = snapshot of <shared.world.pose-ee-base> on event <aas.E_ADMITTANCE_ENTERED>,
+            admittance velocity-x = {
+                force: <shared.world.ext-force>.force.x,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s
+            },
+            admittance velocity-y = {
+                force: <shared.world.ext-force>.force.y,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s
+            },
+            admittance velocity-z = {
+                force: <shared.world.ext-force>.force.z,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s
+            }
+        }
+    }
+
+    when {}
+
+    while {
+        comply-x:   keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x> within <shared.spec.satisfied-band-vel>,
+        comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y> within <shared.spec.satisfied-band-vel>,
+        comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z> within <shared.spec.satisfied-band-vel>,
+        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>
+    }
+
+    until {
+        released all {
+            released-x: <shared.world.ext-force>.force.x between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
+            released-y: <shared.world.ext-force>.force.y between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
+            released-z: <shared.world.ext-force>.force.z between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>
+        },
+        table-contact all {
+            near-table:    <shared.world.pose-bracelet-base>.position.z less than <shared.spec.bracelet-contact-z>,
+            contact-table: <shared.world.twist-bracelet-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    monitors {
+        mon-home-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },
+        }
+    }
+    controllers {
+        pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-touchdown {
+    handles: <touchdown>
+    monitors {
+        mon-contact: monitor <touchdown.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_CONTACT> },
+        }
+    }
+    controllers {
+        pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-y { constraint: <touchdown.hold-y>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-z { constraint: <touchdown.lower-z>, Kp: 200, Ki: 0, Kd: 0, decay: 0 },
+        pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers { <handler-home.arm-solver> }
+}
+
+constraint-handler (ns=app) handler-forward {
+    handles: <forward>
+    monitors {
+        mon-forward-done: monitor <forward.reached-forward> {
+            satisfied {
+                trigger: event <aas.E_FORWARD_DONE>,
+                publish: TRUE to <aas.forward-done>,
+            },
+            violated { publish: FALSE to <aas.forward-done> },
+        }
+    }
+    controllers {
+        pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+    }
+    solvers { <handler-home.arm-solver> }
+}
+
+constraint-handler (ns=app) handler-arc {
+    handles: <arc-motion>
+    monitors {
+        mon-arc-advancing: monitor <arc-motion.advance> {
+            satisfied { flag: arc-advancing },
+        },
+        mon-force-x: monitor <arc-motion.force-x> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_DETECTED> },
+        },
+        mon-force-y: monitor <arc-motion.force-y> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_DETECTED> },
+        },
+        mon-arc-complete: monitor <arc-motion.until> {
+            satisfied for 0.3 s { trigger: event <aas.E_ARC_CONTACT> },
+        }
+    }
+    controllers {
+        pid ctrl-follow-tangent {
+            constraint: <arc-motion.follow-tangent>,
+            Kp: 20,
+            Ki: 4,
+            Kd: 0,
+            decay: 0
+        },
+        pid ctrl-follow-position {
+            constraint: <arc-motion.follow-position>,
+            measured-derivative: <shared.world.twist-ee-base>.linvel,
+            Kp: 200,
+            Ki: 0,
+            Kd: 40,
+            decay: 0
+        },
+        pid ctrl-arc-orientation {
+            constraint: <arc-motion.follow-orientation>,
+            measured-derivative: <shared.world.twist-ee-base>.angvel,
+            Kp: 240,
+            Ki: 0,
+            Kd: 160,
+            decay: 0
+        }
+    }
+    solvers {
+        rne-arm-solver: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: rne,
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-admittance {
+    handles: <compliance>
+    monitors {
+        mon-released: monitor <compliance.released> {
+            satisfied for 0.3 s { trigger: event <aas.E_FORCE_GONE> },
+        },
+        mon-table-contact: monitor <compliance.table-contact> {
+            satisfied for 0.3 s { trigger: event <aas.E_TABLE_CONTACT> },
+        }
+    }
+    controllers {
+        pid ctrl-comply-x {
+            constraint: <compliance.comply-x>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
+        pid ctrl-comply-y {
+            constraint: <compliance.comply-y>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
+        pid ctrl-comply-z {
+            constraint: <compliance.comply-z>,
+            integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> },
+            Kp: 150, Ki: 800, Kd: 0, decay: 0
+        },
+        pid ctrl-comply-ori {
+            constraint: <compliance.comply-ori>,
+            measured-derivative: <shared.world.twist-ee-base>.angvel,
+            Kp: 240,
+            Ki: 0,
+            Kd: 160,
+            decay: 0
+        }
+    }
+    solvers { <handler-arc.rne-arm-solver> }
+}

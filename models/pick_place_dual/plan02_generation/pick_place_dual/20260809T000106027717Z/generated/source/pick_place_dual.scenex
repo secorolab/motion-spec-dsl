@@ -1,0 +1,177 @@
+import "pick_place_dual.scene"
+import "../kinova_gen3_7dof.ktree"
+import "../robotiq_2f85.ktree"
+
+ns ppd_mjc = "https://secorolab.github.io/models/scenes/pick-place-dual-mjc/"
+
+ktree inst (ns=ppd_mjc) kinova1 of <kinova_tree>
+ktree inst (ns=ppd_mjc) gripper1 of <gripper_tree>
+ktree inst (ns=ppd_mjc) kinova2 of <kinova_tree>
+ktree inst (ns=ppd_mjc) gripper2 of <gripper_tree>
+
+ktree (ns=ppd_mjc) arm1_tree {
+    tree <kinova1>
+    tree <gripper1>
+    joints {
+        fixed gripper1_on_arm1 {
+            parent: <kinova1.bracelet_link.pinch_site>
+            child: <gripper1.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova1.base_link.base_link_origin>
+            tip: <gripper1.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=ppd_mjc) arm2_tree {
+    tree <kinova2>
+    tree <gripper2>
+    joints {
+        fixed gripper2_on_arm2 {
+            parent: <kinova2.bracelet_link.pinch_site>
+            child: <gripper2.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova2.base_link.base_link_origin>
+            tip: <gripper2.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=ppd_mjc) world_tree {
+    tree <arm1_tree>
+    tree <arm2_tree>
+
+    body world_body {
+        frame world { }
+    }
+
+    body table {
+        frame table_top {
+            pose table_top_in_world {
+                wrt: <world_body.world>
+                xyz: (0.0, 0.0, 0.72) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+            }
+        }
+        frame kinova1_mount {
+            pose arm1_on_table {
+                wrt: <table.table_top>
+                xyz: (-0.7, 0.0, 0.0) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+            }
+        }
+        frame kinova2_mount {
+            pose arm2_on_table {
+                wrt: <table.table_top>
+                xyz: (0.7, 0.0, 0.0) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 180) unit: deg }
+            }
+        }
+        // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
+        frame table_com {
+            pose table_com_in_table_top {
+                wrt: <table.table_top>
+                xyz: (0.0, 0.0, -0.05100416904566816) m
+                orientation: quat {
+                    xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                }
+            }
+        }
+        inertia {
+            frame: <table_com>
+            mass: 84.26442414492935 kg
+            inertia-matrix: (
+                (32.454207471081375, 0.0, 0.0),
+                (0.0, 21.92592723136972, 0.0),
+                (0.0, 0.0, 12.75746156052865)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed table_on_world {
+            parent: <world_body.world>
+            child: <table.table_top>
+        }
+        fixed arm1_on_table {
+            parent: <table.kinova1_mount>
+            child: <kinova1.base_link.base_link_origin>
+        }
+        fixed arm2_on_table {
+            parent: <table.kinova2_mount>
+            child: <kinova2.base_link.base_link_origin>
+        }
+    }
+}
+
+scene inst (ns=ppd_mjc) pick_place_scene_mjc {
+    scene: <pick_place_scene>
+
+    kgraph (ns=ppd_mjc) pick_place_graph {
+        tree <world_tree>
+
+        body cube {
+            frame cube_origin {
+                pose cube_in_world {
+                    wrt: <world_tree.world_body.world>
+                    xyz: (-0.20, 0.0, 0.76) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+                }
+            }
+        }
+
+        body cube2 {
+            frame cube2_origin {
+                pose cube2_in_world {
+                    wrt: <world_tree.world_body.world>
+                    xyz: (0.20, 0.0, 0.76) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+                }
+            }
+        }
+    }
+
+    obj <ws_objects.table> {
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <world_tree.table> to "table"
+        }
+    }
+
+    obj <pickplace_objects.cube> {
+        model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            map body <pick_place_graph.cube> to "cube"
+        }
+    }
+
+    obj <pickplace_objects.cube2> {
+        model cube2-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            map body <pick_place_graph.cube2> to "cube"
+        }
+    }
+
+    agn <pickplace_agents.arm1> {
+        model arm1-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            map tree <kinova1> to "base_link"
+        }
+
+        model gripper1-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+            map tree <gripper1> to "base_mount"
+        }
+    }
+
+    agn <pickplace_agents.arm2> {
+        model arm2-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            map tree <kinova2> to "base_link"
+        }
+
+        model gripper2-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+            map tree <gripper2> to "base_mount"
+        }
+    }
+}

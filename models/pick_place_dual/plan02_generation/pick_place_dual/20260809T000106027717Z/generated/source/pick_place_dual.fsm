@@ -1,0 +1,76 @@
+ns pp = "https://secorolab.github.io/models/pick-place-dual/fsm/"
+
+evt loop (ns=pp) pick_place_dual_fsm_events {
+    evt E_STEP,
+    evt E_PICK_ABOVE_READY,
+    evt E_PICK_READY,
+    evt E_GRASP_READY,
+    evt E_LIFT_READY,
+    evt E_PLACE_ABOVE_READY,
+    evt E_PLACE_READY,
+    evt E_OPEN_READY,
+    evt E_RETREAT_READY,
+    evt E_RETREAT_SETTLED,
+    evt E_GRASP_LOST_LIFT,
+    evt E_GRASP_LOST_PLACE_ABOVE,
+    evt E_GRASP_LOST_PLACE,
+    evt E_RECOVER
+}
+
+fsm (ns=pp) pick_place_dual_fsm {
+    description: "Two arms facing each other, each pick&placing its own cube in lockstep; paths only home->pick_above, geometric setpoints elsewhere. Grasp-loss on either arm during transport (lift/place_above/place) routes to S_RECOVER, which captures and holds both current poses."
+
+    states {
+        S_START,
+        S_HOME,
+        S_PICK_ABOVE,
+        S_PICK,
+        S_GRASP,
+        S_LIFT,
+        S_PLACE_ABOVE,
+        S_PLACE,
+        S_OPEN,
+        S_RETREAT,
+        S_DONE,
+        S_RECOVER
+    }
+
+    evt loop: <pick_place_dual_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_HOME          { from: <S_START>,       to: <S_HOME> },
+        T_HOME_PICK_ABOVE     { from: <S_HOME>,        to: <S_PICK_ABOVE> },
+        T_PICK_ABOVE_PICK     { from: <S_PICK_ABOVE>,  to: <S_PICK> },
+        T_PICK_GRASP          { from: <S_PICK>,        to: <S_GRASP> },
+        T_GRASP_LIFT          { from: <S_GRASP>,       to: <S_LIFT> },
+        T_LIFT_PLACE_ABOVE    { from: <S_LIFT>,        to: <S_PLACE_ABOVE> },
+        T_PLACE_ABOVE_PLACE   { from: <S_PLACE_ABOVE>, to: <S_PLACE> },
+        T_PLACE_OPEN          { from: <S_PLACE>,       to: <S_OPEN> },
+        T_OPEN_RETREAT        { from: <S_OPEN>,        to: <S_RETREAT> },
+        T_RETREAT_DONE        { from: <S_RETREAT>,     to: <S_DONE> },
+        T_LIFT_RECOVER        { from: <S_LIFT>,        to: <S_RECOVER> },
+        T_PLACE_ABOVE_RECOVER { from: <S_PLACE_ABOVE>, to: <S_RECOVER> },
+        T_PLACE_RECOVER       { from: <S_PLACE>,       to: <S_RECOVER> },
+        T_RECOVER_HOLD        { from: <S_RECOVER>,     to: <S_RECOVER> }
+    }
+
+    reactions {
+        R_STEP_START { when: <pick_place_dual_fsm_events.E_STEP>, do: <T_START_HOME> },
+        R_PICK_ABOVE_READY { when: <pick_place_dual_fsm_events.E_PICK_ABOVE_READY>, do: <T_HOME_PICK_ABOVE> },
+        R_PICK_READY { when: <pick_place_dual_fsm_events.E_PICK_READY>, do: <T_PICK_ABOVE_PICK> },
+        R_GRASP_READY { when: <pick_place_dual_fsm_events.E_GRASP_READY>, do: <T_PICK_GRASP> },
+        R_LIFT_READY { when: <pick_place_dual_fsm_events.E_LIFT_READY>, do: <T_GRASP_LIFT> },
+        R_PLACE_ABOVE_READY { when: <pick_place_dual_fsm_events.E_PLACE_ABOVE_READY>, do: <T_LIFT_PLACE_ABOVE> },
+        R_PLACE_READY { when: <pick_place_dual_fsm_events.E_PLACE_READY>, do: <T_PLACE_ABOVE_PLACE> },
+        R_OPEN_READY { when: <pick_place_dual_fsm_events.E_OPEN_READY>, do: <T_PLACE_OPEN> },
+        R_RETREAT_READY { when: <pick_place_dual_fsm_events.E_RETREAT_READY>, do: <T_OPEN_RETREAT> },
+        R_RETREAT_SETTLED { when: <pick_place_dual_fsm_events.E_RETREAT_SETTLED>, do: <T_RETREAT_DONE> },
+        R_LIFT_GRASP_LOST { when: <pick_place_dual_fsm_events.E_GRASP_LOST_LIFT>, do: <T_LIFT_RECOVER> },
+        R_PLACE_ABOVE_GRASP_LOST { when: <pick_place_dual_fsm_events.E_GRASP_LOST_PLACE_ABOVE>, do: <T_PLACE_ABOVE_RECOVER> },
+        R_PLACE_GRASP_LOST { when: <pick_place_dual_fsm_events.E_GRASP_LOST_PLACE>, do: <T_PLACE_RECOVER> },
+        R_RECOVER_HOLD { when: <pick_place_dual_fsm_events.E_RECOVER>, do: <T_RECOVER_HOLD> }
+    }
+}

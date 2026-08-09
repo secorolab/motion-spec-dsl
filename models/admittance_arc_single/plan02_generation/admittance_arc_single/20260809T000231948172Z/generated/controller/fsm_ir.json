@@ -1,0 +1,172 @@
+{
+  "name": "admittance_arc_single_fsm",
+  "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/admittance_arc_single_fsm",
+  "description": "Home, descend to contact, move forward, trace an arc, and yield to external force through admittance control.",
+  "start_state": "S_START",
+  "end_state": "S_DONE",
+  "states": [
+    "S_START",
+    "S_HOME",
+    "S_TOUCHDOWN",
+    "S_FORWARD",
+    "S_ARC",
+    "S_ADMITTANCE",
+    "S_DONE"
+  ],
+  "state_uris": {
+    "S_START": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_START",
+    "S_HOME": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_HOME",
+    "S_TOUCHDOWN": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_TOUCHDOWN",
+    "S_FORWARD": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_FORWARD",
+    "S_ARC": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ARC",
+    "S_ADMITTANCE": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_ADMITTANCE",
+    "S_DONE": "https://secorolab.github.io/models/admittance-arc-single/fsm/S_DONE"
+  },
+  "events": [
+    "E_STEP",
+    "E_HOME_SETTLED",
+    "E_CONTACT",
+    "E_FORWARD_DONE",
+    "E_FORCE_DETECTED",
+    "E_FORCE_GONE",
+    "E_ARC_CONTACT",
+    "E_TABLE_CONTACT",
+    "E_ARC_ENTERED",
+    "E_ADMITTANCE_ENTERED"
+  ],
+  "event_uris": {
+    "E_STEP": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_STEP",
+    "E_HOME_SETTLED": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_HOME_SETTLED",
+    "E_CONTACT": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_CONTACT",
+    "E_FORWARD_DONE": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_FORWARD_DONE",
+    "E_FORCE_DETECTED": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_FORCE_DETECTED",
+    "E_FORCE_GONE": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_FORCE_GONE",
+    "E_ARC_CONTACT": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_ARC_CONTACT",
+    "E_TABLE_CONTACT": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_TABLE_CONTACT",
+    "E_ARC_ENTERED": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_ARC_ENTERED",
+    "E_ADMITTANCE_ENTERED": "https://secorolab.github.io/models/admittance-arc-single/fsm/E_ADMITTANCE_ENTERED"
+  },
+  "transitions_table": [
+    {
+      "id": "T_START_HOME",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_START_HOME",
+      "from_state": "S_START",
+      "to_state": "S_HOME"
+    },
+    {
+      "id": "T_HOME_TOUCHDOWN",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_HOME_TOUCHDOWN",
+      "from_state": "S_HOME",
+      "to_state": "S_TOUCHDOWN"
+    },
+    {
+      "id": "T_TOUCHDOWN_FORWARD",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_TOUCHDOWN_FORWARD",
+      "from_state": "S_TOUCHDOWN",
+      "to_state": "S_FORWARD"
+    },
+    {
+      "id": "T_FORWARD_ARC",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_FORWARD_ARC",
+      "from_state": "S_FORWARD",
+      "to_state": "S_ARC"
+    },
+    {
+      "id": "T_ARC_ADMITTANCE",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_ARC_ADMITTANCE",
+      "from_state": "S_ARC",
+      "to_state": "S_ADMITTANCE"
+    },
+    {
+      "id": "T_ARC_DONE",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_ARC_DONE",
+      "from_state": "S_ARC",
+      "to_state": "S_DONE"
+    },
+    {
+      "id": "T_ADMITTANCE_DONE",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_ADMITTANCE_DONE",
+      "from_state": "S_ADMITTANCE",
+      "to_state": "S_DONE"
+    },
+    {
+      "id": "T_ADMITTANCE_ARC",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/T_ADMITTANCE_ARC",
+      "from_state": "S_ADMITTANCE",
+      "to_state": "S_ARC"
+    }
+  ],
+  "reactions_table": [
+    {
+      "id": "R_STEP_START",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_STEP_START",
+      "when_event": "E_STEP",
+      "do_transition": "T_START_HOME",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_HOME_SETTLED",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_HOME_SETTLED",
+      "when_event": "E_HOME_SETTLED",
+      "do_transition": "T_HOME_TOUCHDOWN",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_CONTACT",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_CONTACT",
+      "when_event": "E_CONTACT",
+      "do_transition": "T_TOUCHDOWN_FORWARD",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_FORWARD_DONE",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_FORWARD_DONE",
+      "when_event": "E_FORWARD_DONE",
+      "do_transition": "T_FORWARD_ARC",
+      "fires_events": [
+        "E_ARC_ENTERED"
+      ],
+      "num_fires": 1
+    },
+    {
+      "id": "R_FORCE_DETECTED",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_FORCE_DETECTED",
+      "when_event": "E_FORCE_DETECTED",
+      "do_transition": "T_ARC_ADMITTANCE",
+      "fires_events": [
+        "E_ADMITTANCE_ENTERED"
+      ],
+      "num_fires": 1
+    },
+    {
+      "id": "R_ARC_CONTACT",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_ARC_CONTACT",
+      "when_event": "E_ARC_CONTACT",
+      "do_transition": "T_ARC_DONE",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_TABLE_CONTACT",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_TABLE_CONTACT",
+      "when_event": "E_TABLE_CONTACT",
+      "do_transition": "T_ADMITTANCE_DONE",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_FORCE_GONE",
+      "uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/R_FORCE_GONE",
+      "when_event": "E_FORCE_GONE",
+      "do_transition": "T_ADMITTANCE_ARC",
+      "fires_events": [
+        "E_ARC_ENTERED"
+      ],
+      "num_fires": 1
+    }
+  ],
+  "namespace_uri": "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+}

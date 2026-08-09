@@ -1,0 +1,442 @@
+@prefix bdd: <https://secorolab.github.io/metamodels/acceptance-criteria/bdd#> .
+@prefix ent: <https://secorolab.github.io/motion-spec/runtime/entity/> .
+@prefix exec: <https://secorolab.github.io/metamodels/execution-context#> .
+@prefix frm: <https://secorolab.github.io/motion-spec/runtime/frame/run-20260809T000350937880Z/> .
+@prefix mfsm: <https://secorolab.github.io/models/pick-place-single/fsm/> .
+@prefix mspact: <https://secorolab.github.io/motion-spec/provenance/activity/> .
+@prefix mspagent: <https://secorolab.github.io/motion-spec/provenance/agent/> .
+@prefix msrun: <https://secorolab.github.io/motion-spec/runtime/> .
+@prefix obs: <https://secorolab.github.io/metamodels/observation#> .
+@prefix occ: <https://secorolab.github.io/motion-spec/runtime/occurrence/run-20260809T000350937880Z/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix run: <https://secorolab.github.io/motion-spec/runtime/run/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+ent:runtime_ttl a prov:Entity ;
+    prov:atLocation <runtime.ttl> ;
+    prov:generatedAtTime "2026-08-09T00:04:11.772398+00:00"^^xsd:dateTime ;
+    prov:wasDerivedFrom ent:frame_log ;
+    prov:wasGeneratedBy mspact:runtime_ttl_recovery .
+
+occ:EventOccurrence-1786233834770802343-13 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.770802+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:1 ;
+    msrun:event mfsm:E_STEP ;
+    msrun:fsmState mfsm:S_HOME ;
+    msrun:slotIndex 13 .
+
+occ:EventOccurrence-1786233834772022693-6 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.772022+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:2 ;
+    msrun:event mfsm:E_PICK_ABOVE_READY ;
+    msrun:fsmState mfsm:S_HOME ;
+    msrun:slotIndex 6 .
+
+occ:EventOccurrence-1786233837428428538-7 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:57.428428+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:2437 ;
+    msrun:event mfsm:E_PICK_READY ;
+    msrun:fsmState mfsm:S_PICK_ABOVE ;
+    msrun:slotIndex 7 .
+
+occ:EventOccurrence-1786233839085621494-3 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.085621+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3962 ;
+    msrun:event mfsm:E_GRASP_READY ;
+    msrun:fsmState mfsm:S_PICK ;
+    msrun:slotIndex 3 .
+
+occ:EventOccurrence-1786233839118120925-4 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.118120+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3992 ;
+    msrun:event mfsm:E_LIFT_READY ;
+    msrun:fsmState mfsm:S_GRASP ;
+    msrun:slotIndex 4 .
+
+occ:EventOccurrence-1786233841049769919-8 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.049769+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:5757 ;
+    msrun:event mfsm:E_PLACE_ABOVE_READY ;
+    msrun:fsmState mfsm:S_LIFT ;
+    msrun:slotIndex 8 .
+
+occ:EventOccurrence-1786233841537418011-9 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.537418+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:6204 ;
+    msrun:event mfsm:E_PLACE_READY ;
+    msrun:fsmState mfsm:S_PLACE_ABOVE ;
+    msrun:slotIndex 9 .
+
+occ:EventOccurrence-1786233843795623313-5 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:03.795623+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8274 ;
+    msrun:event mfsm:E_OPEN_READY ;
+    msrun:fsmState mfsm:S_PLACE ;
+    msrun:slotIndex 5 .
+
+occ:EventOccurrence-1786233844260740490-11 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:04.260740+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8700 ;
+    msrun:event mfsm:E_RETREAT_READY ;
+    msrun:fsmState mfsm:S_OPEN ;
+    msrun:slotIndex 11 .
+
+occ:EventOccurrence-1786233845648641401-12 a msrun:EventOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:05.648641+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:9965 ;
+    msrun:event mfsm:E_RETREAT_SETTLED ;
+    msrun:fsmState mfsm:S_RETREAT ;
+    msrun:slotIndex 12 .
+
+occ:MonitorOccurrence-1786233837428427873-1 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:57.428427+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:2437 ;
+    msrun:event mfsm:E_PICK_READY ;
+    msrun:fsmState mfsm:S_PICK_ABOVE ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-pick/mon-pick-ready> ;
+    msrun:slotIndex 1 ;
+    msrun:value 0.009935828600437919 .
+
+occ:MonitorOccurrence-1786233839085620947-0 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.085620+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3962 ;
+    msrun:event mfsm:E_GRASP_READY ;
+    msrun:fsmState mfsm:S_PICK ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-close-grip/mon-grasp-ready> ;
+    msrun:slotIndex 0 ;
+    msrun:value -0.00993427989566532 .
+
+occ:MonitorOccurrence-1786233839118120463-0 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.118120+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3992 ;
+    msrun:event mfsm:E_LIFT_READY ;
+    msrun:fsmState mfsm:S_GRASP ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-lift/mon-lift-ready> ;
+    msrun:slotIndex 0 ;
+    msrun:value -0.007637703059193063 .
+
+occ:MonitorOccurrence-1786233841049769396-1 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.049769+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:5757 ;
+    msrun:event mfsm:E_PLACE_ABOVE_READY ;
+    msrun:fsmState mfsm:S_LIFT ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-place-above/mon-place-above-ready> ;
+    msrun:slotIndex 1 ;
+    msrun:value -0.009969742847170726 .
+
+occ:MonitorOccurrence-1786233841537417286-1 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.537417+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:6204 ;
+    msrun:event mfsm:E_PLACE_READY ;
+    msrun:fsmState mfsm:S_PLACE_ABOVE ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-place/mon-place-ready> ;
+    msrun:slotIndex 1 ;
+    msrun:value -0.009843070987239327 .
+
+occ:MonitorOccurrence-1786233843795622699-1 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:03.795622+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8274 ;
+    msrun:event mfsm:E_OPEN_READY ;
+    msrun:fsmState mfsm:S_PLACE ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-open-grip/mon-open-ready> ;
+    msrun:slotIndex 1 ;
+    msrun:value -0.009994905827293017 .
+
+occ:MonitorOccurrence-1786233844260739961-0 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:04.260739+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8700 ;
+    msrun:event mfsm:E_RETREAT_READY ;
+    msrun:fsmState mfsm:S_OPEN ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-retreat/mon-retreat-ready> ;
+    msrun:slotIndex 0 ;
+    msrun:value -0.00996538506573095 .
+
+occ:MonitorOccurrence-1786233845648640899-0 a msrun:MonitorOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:05.648640+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:9965 ;
+    msrun:event mfsm:E_RETREAT_SETTLED ;
+    msrun:fsmState mfsm:S_RETREAT ;
+    msrun:monitor <https://secorolab.github.io/models/pick-place-single/handler-retreat/mon-retreat-settled> ;
+    msrun:slotIndex 0 ;
+    msrun:value 0.009955343303500452 .
+
+occ:StateOccurrence-1786233834769790547-0 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.769790+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:0 ;
+    msrun:state mfsm:S_START .
+
+occ:StateOccurrence-1786233834770801908-1 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.770801+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:1 ;
+    msrun:state mfsm:S_HOME .
+
+occ:StateOccurrence-1786233834773077609-2 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.773077+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3 ;
+    msrun:state mfsm:S_PICK_ABOVE .
+
+occ:StateOccurrence-1786233837429519262-3 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:57.429519+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:2438 ;
+    msrun:state mfsm:S_PICK .
+
+occ:StateOccurrence-1786233839086688485-4 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.086688+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3963 ;
+    msrun:state mfsm:S_GRASP .
+
+occ:StateOccurrence-1786233839119279496-5 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.119279+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3993 ;
+    msrun:state mfsm:S_LIFT .
+
+occ:StateOccurrence-1786233841050828553-6 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.050828+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:5758 ;
+    msrun:state mfsm:S_PLACE_ABOVE .
+
+occ:StateOccurrence-1786233841538562839-7 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.538562+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:6205 ;
+    msrun:state mfsm:S_PLACE .
+
+occ:StateOccurrence-1786233843796695527-8 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:03.796695+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8275 ;
+    msrun:state mfsm:S_OPEN .
+
+occ:StateOccurrence-1786233844261880541-9 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:04.261880+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8701 ;
+    msrun:state mfsm:S_RETREAT .
+
+occ:StateOccurrence-1786233845649787297-10 a msrun:StateOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:05.649787+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:9966 ;
+    msrun:state mfsm:S_DONE .
+
+occ:TransitionOccurrence-1786233834770801908-T_START_HOME a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.770801+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:1 ;
+    msrun:event mfsm:E_STEP ;
+    msrun:fromState mfsm:S_START ;
+    msrun:toState mfsm:S_HOME ;
+    msrun:transition mfsm:T_START_HOME .
+
+occ:TransitionOccurrence-1786233834773077609-T_HOME_PICK_ABOVE a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:54.773077+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3 ;
+    msrun:event mfsm:E_PICK_ABOVE_READY ;
+    msrun:fromState mfsm:S_HOME ;
+    msrun:toState mfsm:S_PICK_ABOVE ;
+    msrun:transition mfsm:T_HOME_PICK_ABOVE .
+
+occ:TransitionOccurrence-1786233837429519262-T_PICK_ABOVE_PICK a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:57.429519+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:2438 ;
+    msrun:event mfsm:E_PICK_READY ;
+    msrun:fromState mfsm:S_PICK_ABOVE ;
+    msrun:toState mfsm:S_PICK ;
+    msrun:transition mfsm:T_PICK_ABOVE_PICK .
+
+occ:TransitionOccurrence-1786233839086688485-T_PICK_GRASP a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.086688+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3963 ;
+    msrun:event mfsm:E_GRASP_READY ;
+    msrun:fromState mfsm:S_PICK ;
+    msrun:toState mfsm:S_GRASP ;
+    msrun:transition mfsm:T_PICK_GRASP .
+
+occ:TransitionOccurrence-1786233839119279496-T_GRASP_LIFT a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:03:59.119279+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:3993 ;
+    msrun:event mfsm:E_LIFT_READY ;
+    msrun:fromState mfsm:S_GRASP ;
+    msrun:toState mfsm:S_LIFT ;
+    msrun:transition mfsm:T_GRASP_LIFT .
+
+occ:TransitionOccurrence-1786233841050828553-T_LIFT_PLACE_ABOVE a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.050828+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:5758 ;
+    msrun:event mfsm:E_PLACE_ABOVE_READY ;
+    msrun:fromState mfsm:S_LIFT ;
+    msrun:toState mfsm:S_PLACE_ABOVE ;
+    msrun:transition mfsm:T_LIFT_PLACE_ABOVE .
+
+occ:TransitionOccurrence-1786233841538562839-T_PLACE_ABOVE_PLACE a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:01.538562+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:6205 ;
+    msrun:event mfsm:E_PLACE_READY ;
+    msrun:fromState mfsm:S_PLACE_ABOVE ;
+    msrun:toState mfsm:S_PLACE ;
+    msrun:transition mfsm:T_PLACE_ABOVE_PLACE .
+
+occ:TransitionOccurrence-1786233843796695527-T_PLACE_OPEN a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:03.796695+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8275 ;
+    msrun:event mfsm:E_OPEN_READY ;
+    msrun:fromState mfsm:S_PLACE ;
+    msrun:toState mfsm:S_OPEN ;
+    msrun:transition mfsm:T_PLACE_OPEN .
+
+occ:TransitionOccurrence-1786233844261880541-T_OPEN_RETREAT a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:04.261880+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:8701 ;
+    msrun:event mfsm:E_RETREAT_READY ;
+    msrun:fromState mfsm:S_OPEN ;
+    msrun:toState mfsm:S_RETREAT ;
+    msrun:transition mfsm:T_OPEN_RETREAT .
+
+occ:TransitionOccurrence-1786233845649787297-T_RETREAT_DONE a msrun:TransitionOccurrence ;
+    prov:generatedAtTime "2026-08-09T00:04:05.649787+00:00"^^xsd:dateTime ;
+    msrun:atFrame frm:9966 ;
+    msrun:event mfsm:E_RETREAT_SETTLED ;
+    msrun:fromState mfsm:S_RETREAT ;
+    msrun:toState mfsm:S_DONE ;
+    msrun:transition mfsm:T_RETREAT_DONE .
+
+run:run-20260809T000350937880Z a prov:Entity,
+        exec:ExecutionContext ;
+    prov:wasGeneratedBy mspact:controller_execution ;
+    msrun:contractVersion 1 ;
+    msrun:frameCount 9967 ;
+    msrun:runId "run-20260809T000350937880Z" .
+
+mspact:runtime_ttl_recovery a prov:Activity ;
+    prov:endedAtTime "2026-08-09T00:04:11.772398+00:00"^^xsd:dateTime ;
+    prov:used ent:frame_log ;
+    prov:wasAssociatedWith mspagent:replay_process .
+
+mspagent:controller_process a prov:SoftwareAgent,
+        obs:ObservationProvider ;
+    prov:actedOnBehalfOf mspagent:runtime_mujoco .
+
+mspagent:replay_process a prov:SoftwareAgent,
+        obs:ObservationProvider ;
+    rdfs:label "motion_spec runtime.ttl recovery" .
+
+mspagent:runtime_mujoco a prov:SoftwareAgent,
+        exec:Simulation .
+
+ent:frame_log_proto a prov:Entity ;
+    prov:atLocation <../../../generated/contract/frame_log.proto> .
+
+ent:model_jsonld a prov:Entity ;
+    prov:atLocation <../../../generated/model/pick_place_single-app.ld.json> .
+
+ent:provenance_jsonld a prov:Entity ;
+    prov:atLocation <../../../generated/provenance/motion-spec.ld.json> .
+
+frm:0 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:54.769790+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_START ;
+    msrun:step 0 .
+
+frm:2 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:54.772022+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_HOME ;
+    msrun:step 2 .
+
+mspact:controller_execution a prov:Activity,
+        bdd:SimulatedExecution ;
+    prov:startedAtTime "2026-08-09T00:03:50.968197+00:00"^^xsd:dateTime ;
+    prov:used ent:frame_log_proto,
+        ent:model_jsonld,
+        ent:provenance_jsonld ;
+    prov:wasAssociatedWith mspagent:controller_process .
+
+ent:frame_log a prov:Entity ;
+    prov:atLocation <../logs/frame_log.pb> ;
+    prov:wasGeneratedBy mspact:controller_execution .
+
+frm:2437 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:57.428427+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PICK_ABOVE ;
+    msrun:step 2437 .
+
+frm:2438 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:57.429519+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PICK ;
+    msrun:step 2438 .
+
+frm:3 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:54.773077+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PICK_ABOVE ;
+    msrun:step 3 .
+
+frm:3962 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:59.085620+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PICK ;
+    msrun:step 3962 .
+
+frm:3963 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:59.086688+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_GRASP ;
+    msrun:step 3963 .
+
+frm:3992 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:59.118120+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_GRASP ;
+    msrun:step 3992 .
+
+frm:3993 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:59.119279+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_LIFT ;
+    msrun:step 3993 .
+
+frm:5757 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:01.049769+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_LIFT ;
+    msrun:step 5757 .
+
+frm:5758 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:01.050828+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PLACE_ABOVE ;
+    msrun:step 5758 .
+
+frm:6204 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:01.537417+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PLACE_ABOVE ;
+    msrun:step 6204 .
+
+frm:6205 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:01.538562+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PLACE ;
+    msrun:step 6205 .
+
+frm:8274 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:03.795622+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_PLACE ;
+    msrun:step 8274 .
+
+frm:8275 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:03.796695+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_OPEN ;
+    msrun:step 8275 .
+
+frm:8700 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:04.260739+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_OPEN ;
+    msrun:step 8700 .
+
+frm:8701 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:04.261880+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_RETREAT ;
+    msrun:step 8701 .
+
+frm:9965 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:05.648640+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_RETREAT ;
+    msrun:step 9965 .
+
+frm:9966 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:04:05.649787+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_DONE ;
+    msrun:step 9966 .
+
+frm:1 a msrun:Frame ;
+    prov:generatedAtTime "2026-08-09T00:03:54.770801+00:00"^^xsd:dateTime ;
+    msrun:activeState mfsm:S_HOME ;
+    msrun:step 1 .
+
