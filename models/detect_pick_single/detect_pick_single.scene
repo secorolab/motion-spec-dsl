@@ -4,7 +4,8 @@ ns dps_scene = "https://secorolab.github.io/models/scenes/detect-pick-single/"
 ns dps_mjc = "https://secorolab.github.io/models/scenes/detect-pick-single-mjc/"
 
 obj set (ns=dps_env) pickplace_objects {
-    object cube
+    object cube,
+    object cube2
 }
 
 obj set (ns=dps_env) ws_objects {

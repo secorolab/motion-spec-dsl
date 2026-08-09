@@ -44,6 +44,11 @@ context (ns=app) shared {
             wrt:        <kinova.base_link>,
             as-seen-by: <kinova.base_link>
         },
+        pose pose-cube2-base {
+            of:         <pick_place_graph.cube2>,
+            wrt:        <kinova.base_link>,
+            as-seen-by: <kinova.base_link>
+        },
         pose pose-elbow-base {
             of:         <kinova.half_arm_2_link>,
             wrt:        <kinova.base_link>,
@@ -104,7 +109,7 @@ guarded-motion (ns=app) detect-cube {
         }
     }
 
-    locate-cube: detect <pick_place_graph.cube> using <app.locate>
+    locate-cube: detect { <pick_place_graph.cube>, <pick_place_graph.cube2> } using <app.locate>
 
     when {
         gripper-ready: <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>

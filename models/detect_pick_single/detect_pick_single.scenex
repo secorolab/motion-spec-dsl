@@ -117,6 +117,16 @@ scene inst (ns=dps_mjc) pick_place_scene_mjc {
                 }
             }
         }
+
+        body cube2 {
+            frame cube2_origin {
+                pose cube2_in_world {
+                    wrt: <world_tree.world_body.world>
+                    xyz: (0.50, -0.20, 0.76) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+                }
+            }
+        }
     }
 
     obj <ws_objects.table> {
@@ -128,6 +138,12 @@ scene inst (ns=dps_mjc) pick_place_scene_mjc {
     obj <pickplace_objects.cube> {
         model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
             map body <pick_place_graph.cube> to "cube"
+        }
+    }
+
+    obj <pickplace_objects.cube2> {
+        model cube2-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            map body <pick_place_graph.cube2> to "cube"
         }
     }
 

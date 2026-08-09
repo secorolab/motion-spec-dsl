@@ -6,3 +6,6 @@ objects:
   https://secorolab.github.io/models/scenes/detect-pick-single-mjc/pick_place_graph/cube/cube_origin:
     position: [0.50, 0.0, 0.02]
     orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
+  https://secorolab.github.io/models/scenes/detect-pick-single-mjc/pick_place_graph/cube2/cube2_origin:
+    position: [0.50, -0.20, 0.02]
+    orientation_xyzw: [0.0, 0.0, 0.0, 1.0]
