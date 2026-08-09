@@ -179,24 +179,17 @@ class RosTopicDecls:
 
 @dataclass
 class BddBehaviour(IHasNamespaceDeclare):
-    """The runtime serves BDD scenario goals: the action it answers on, the FSM event a goal
-    start produces, and the events it exports on a channel of its own."""
+    """The runtime serves BDD scenario goals: the action it answers on, and the FSM event a
+    goal start produces."""
 
     parent: object
     ns: NamespaceDeclLike
     name: str
     action_name: str
     goal_event: EventName
-    events_channel: str
-    exported: list[EventName] = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-
-    @property
-    def events_uri(self) -> str:
-        """The topic node the exported events belong to."""
-        return f"{self.uri}.events"
 
 
 def authored_text(value: object) -> str:
@@ -217,6 +210,9 @@ class MonitorAction:
     value: object | None = None
     # Block form: the authored field assignments.
     fields: list = field(default_factory=list)
+    # Occurrence form (`publish: event to`): the payload is the triggered event's IRI, so the
+    # model authors no fields at all.
+    occurrence: str = ""
     topic: RosTopicDecl | None = None
 
     @property
@@ -302,6 +298,13 @@ class MonitorEntry(NamedNamespaceObject):
         """The one topic every state of this monitor publishes on."""
         published = self.actions("publish")
         return published[0][1].topic if published else None
+
+    @property
+    def occurrence_topic(self) -> RosTopicDecl | None:
+        """The topic this monitor's triggered event leaves on, when it publishes occurrences."""
+        return next(
+            (action.topic for _block, action in self.actions("publish") if action.occurrence), None
+        )
 
     @property
     def debounce(self) -> Measure | None:

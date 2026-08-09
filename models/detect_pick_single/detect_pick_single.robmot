@@ -8,11 +8,13 @@ ros-actions (ns=perception) {
     locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
 }
 
+ros-topics (ns=app) {
+    bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+}
+
 bdd-behaviour (ns=app) detect-pick-behaviour {
     action:  "pick_place"
     on-goal: event <dp.E_GOAL>
-    events   { <dp.E_CUBE_DETECTED>, <dp.E_GRASP_READY>, <dp.E_RETREAT_SETTLED> }
-    events-channel: "/bdd/events"
 }
 
 exec-context (ns=app) detect-pick-single-exec {
@@ -436,7 +438,7 @@ constraint-handler (ns=app) handler-detect {
             violated { hold: <home> },
         },
         mon-cube-detected: monitor <detect-cube.located> {
-            satisfied { trigger: event <dp.E_CUBE_DETECTED> },
+            satisfied { trigger: event <dp.E_CUBE_DETECTED>, publish: event to <app.bdd-events> },
         },
         mon-detect-failed: monitor <detect-cube.detect-failed> {
             satisfied { trigger: event <dp.E_DETECT_FAILED> },
@@ -499,7 +501,7 @@ constraint-handler (ns=app) handler-close-grip {
     handles: <grasp-hold>
     monitors {
         mon-grasp-ready: monitor <grasp-hold.near-cube> {
-            satisfied { trigger: event <dp.E_GRASP_READY> },
+            satisfied { trigger: event <dp.E_GRASP_READY>, publish: event to <app.bdd-events> },
             violated { hold: <pick> },
         }
     }
@@ -639,7 +641,7 @@ constraint-handler (ns=app) handler-retreat {
             violated { hold: <open-grasp-hold> },
         },
         mon-retreat-settled: monitor <retreat.until> {
-            satisfied { trigger: event <dp.E_RETREAT_SETTLED> },
+            satisfied { trigger: event <dp.E_RETREAT_SETTLED>, publish: event to <app.bdd-events> },
         }
     }
 

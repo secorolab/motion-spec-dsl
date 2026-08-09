@@ -57,12 +57,14 @@ def _validate_actions(monitor) -> None:
 
 
 def _validate_publish(monitor) -> None:
-    """Raise on a per-state `publish` that names a second topic, repeats within a state, or
-    states the otherwise without the case it is otherwise to.
+    """Raise on a per-state `publish` that names a second topic, repeats within a state, mixes
+    an occurrence with authored fields, publishes an occurrence no event produces, or states the
+    otherwise without the case it is otherwise to.
     """
     published = monitor.actions("publish")
     if not published:
         return
+    _validate_occurrence(monitor, published)
     if len({action.topic.uri for _block, action in published}) > 1:
         raise semantic_error(
             f"Monitor '{monitor.name}' publishes to more than one topic; every state of a "
@@ -81,3 +83,33 @@ def _validate_publish(monitor) -> None:
             "violated-only publish is not expressible.",
             monitor,
         )
+
+
+def _validate_occurrence(monitor, published) -> None:
+    """An occurrence carries the event that fired, so it stands where the trigger stands and
+    leaves the whole payload to the message type.
+    """
+    occurrences = [block for block, action in published if action.occurrence]
+    if not occurrences:
+        return
+    if any(action.assignments for _block, action in published):
+        raise semantic_error(
+            f"Monitor '{monitor.name}' publishes both an occurrence and authored fields; the "
+            "occurrence is the whole payload, so one monitor states one or the other.",
+            monitor,
+        )
+    trigger = monitor.trigger
+    if trigger is None:
+        raise semantic_error(
+            f"Monitor '{monitor.name}' publishes an occurrence but triggers no event, so there "
+            "is no occurrence to report.",
+            monitor,
+        )
+    for block in occurrences:
+        if block.state != trigger[0]:
+            raise semantic_error(
+                f"Monitor '{monitor.name}' publishes an occurrence in '{block.state}' but "
+                f"triggers its event in '{trigger[0]}'; the occurrence is the event firing, so "
+                "both stand in the same state.",
+                monitor,
+            )

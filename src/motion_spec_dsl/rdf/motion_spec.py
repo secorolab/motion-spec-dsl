@@ -458,25 +458,15 @@ class MotionSpecDatasetBuilder:
         return self.dataset, context
 
     def _emit_bdd_behaviour(self, behaviour: BddBehaviour) -> None:
-        """The action the runtime answers scenario goals on, and the topic its exported events
-        leave by.
-
-        The server's one member is the event an accepted goal produces; the topic's members are
-        the events a scenario is allowed to observe. Everything else the FSM fires stays inside
-        the process.
+        """The action the runtime answers scenario goals on; its one member is the event an
+        accepted goal produces. What a scenario observes is authored on the monitors
+        (`publish: event to`), not here.
         """
         node = URIRef(behaviour.uri)
         self.graph.add((node, RDF.type, ROS.Action))
         self.graph.add((node, ROS["channel-name"], Literal(behaviour.action_name)))
         self.graph.add((node, ROS["type-name"], Literal(BEHAVIOUR_ACTION_TYPE)))
         self.graph.add((node, RDFS.member, URIRef(behaviour.goal_event.uri)))
-
-        events = URIRef(behaviour.events_uri)
-        self.graph.add((events, RDF.type, ROS.Topic))
-        self.graph.add((events, ROS["channel-name"], Literal(behaviour.events_channel)))
-        self.graph.add((events, ROS["type-name"], Literal(BEHAVIOUR_EVENT_TYPE)))
-        for exported in behaviour.exported:
-            self.graph.add((events, RDFS.member, URIRef(exported.uri)))
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
         """Emit the authored scene, platform, and control-period binding."""
@@ -3879,6 +3869,15 @@ class MotionSpecDatasetBuilder:
         """Name the channel a monitor publishes on, the message it carries, and every field
         assignment it authored, each under the condition its state block holds.
         """
+        occurrence = monitor.occurrence_topic
+        if occurrence is not None:
+            # The occurrence is the whole payload: the one member is the event this monitor
+            # triggers, and it carries no value of its own to distinguish it from a field row.
+            self.graph.add((monitor_node, RDF.type, ROS.Topic))
+            self.graph.add((monitor_node, ROS["channel-name"], Literal(occurrence.channel_name)))
+            self.graph.add((monitor_node, ROS["type-name"], Literal(occurrence.type_name)))
+            self.graph.add((monitor_node, RDFS.member, URIRef(monitor.event.uri)))
+            return
         topic = monitor.topic
         if topic is None:
             return

@@ -49,6 +49,7 @@ MonitorAction:
       "trigger" ":" "event" event=EventName
     | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
     | "flag"    ":" flag=IRI_TRUNK
+    | "publish" ":" occurrence="event" "to" "<" topic=[RosTopicDecl|FQN] ">"
     | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
     | "publish" ":" value=RosFieldValue "to" "<" topic=[RosTopicDecl|FQN] ">"
 ;

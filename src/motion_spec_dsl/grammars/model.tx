@@ -21,10 +21,8 @@ Specification:
 
 BddBehaviour:
     "bdd-behaviour" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        "action"         ":" action_name=STRING
-        "on-goal"        ":" "event" goal_event=EventName
-        "events"         "{" exported+=EventName[","] "}"
-        "events-channel" ":" events_channel=STRING
+        "action"  ":" action_name=STRING
+        "on-goal" ":" "event" goal_event=EventName
     "}"
 ;
 

@@ -25,26 +25,23 @@ def validate_bdd_behaviour(model: Model) -> None:
         return
 
     block = blocks[0]
-    references = [block.goal_event, *block.exported]
-    for reference in references:
-        # A standalone event is monitor-owned: it never reaches the FSM, so it cannot start a
-        # goal and there is nothing to export.
-        if reference.event is None:
-            raise semantic_error(
-                f"'bdd-behaviour {block.name}' names event '{reference.name}', which no imported "
-                "FSM event loop declares.",
-                block,
-            )
+    reference = block.goal_event
+    # A standalone event is monitor-owned: it never reaches the FSM, so it cannot start a goal.
+    if reference.event is None:
+        raise semantic_error(
+            f"'bdd-behaviour {block.name}' names event '{reference.name}', which no imported "
+            "FSM event loop declares.",
+            block,
+        )
 
     fsm = get_model(block.goal_event.event).fsm
     declared = {id(event) for event in fsm.event_loop.events}
-    for reference in references:
-        if id(reference.event) not in declared:
-            raise semantic_error(
-                f"'bdd-behaviour {block.name}' names event '{reference.name}', which is not in "
-                f"the event loop FSM '{fsm.name}' runs on.",
-                block,
-            )
+    if id(reference.event) not in declared:
+        raise semantic_error(
+            f"'bdd-behaviour {block.name}' names event '{reference.name}', which is not in "
+            f"the event loop FSM '{fsm.name}' runs on.",
+            block,
+        )
 
     if not any(reaction.when is block.goal_event.event for reaction in fsm.reactions):
         raise semantic_error(
