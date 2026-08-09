@@ -3,7 +3,8 @@
 # Usage: ./run_e2e.sh [--no-mock]   (--no-mock = exercise the perception retry path yourself)
 set -u
 cd "$(dirname "$0")"
-source /home/batsy/work/ms/setup-grc.zsh >/dev/null 2>&1
+WS=$(cd ../../../.. && pwd)
+source "$WS/setup-grc.zsh" >/dev/null 2>&1
 
 # Kill every leftover piece of a previous attempt, by exact process identity.
 for pid in $(pgrep -x main); do
@@ -18,7 +19,7 @@ if [ "${1:-}" != "--no-mock" ]; then
     MOCK=$!
 fi
 
-GEN=$(ls -d plan02_generation/detect_pick_single/*/ | tail -1)
+GEN=$(ls -d "$WS"/src/motion-spec/generations/detect_pick_single/*/ | tail -1)
 motion-spec run "$GEN" --cwd "$GRC_WS" &
 RUN=$!
 
