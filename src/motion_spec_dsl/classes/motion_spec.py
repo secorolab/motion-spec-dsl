@@ -136,15 +136,29 @@ class GuardedMotion(IHasNamespaceDeclare):
 
 @dataclass
 class RosActionDecl(NamedNamespaceObject):
-    """A declared ROS action: the channel goals are sent on, and the action it carries."""
+    """A declared ROS action: the channel goals are sent on, the action it carries, and where in
+    a result the pose a detection reports is found."""
 
     parent: object
     name: str
     channel_name: str
     type_name: str
+    # `<field> from <container>`: the repeated field each detection carries its hypotheses in,
+    # and the field of one hypothesis that holds the pose. What the result offers besides these
+    # -- which detections it holds, which target each is, which frame it arrived in -- the
+    # message type answers on its own.
+    pose_field: str = ""
+    pose_container: str = ""
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def pose_path(self) -> str:
+        """The dotted path from one detection to the pose it reports, empty when unstated."""
+        if not self.pose_field:
+            return ""
+        return f"{self.pose_container}.{self.pose_field}"
 
 
 @dataclass

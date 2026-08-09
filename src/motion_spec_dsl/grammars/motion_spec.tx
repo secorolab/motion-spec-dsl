@@ -23,7 +23,10 @@ GuardedMotion:
     "}"
 ;
 
-RosActionDecl: name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING ;
+RosActionDecl:
+    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING
+    ("{" pose_field=ID "from" pose_container=ID ","? "}")?
+;
 
 DetectDecl:
     name=IRI_TRUNK ":" "detect"

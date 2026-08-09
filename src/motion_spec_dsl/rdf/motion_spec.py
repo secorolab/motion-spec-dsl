@@ -3459,6 +3459,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add((act_node, RDF.type, ROS.Action))
             self.graph.add((act_node, ROS["channel-name"], Literal(act.action.channel_name)))
             self.graph.add((act_node, ROS["type-name"], Literal(act.action.type_name)))
+            if act.action.pose_path:
+                self.graph.add((act_node, ROS["field-path"], Literal(act.action.pose_path)))
             for target in act.targets:
                 self.graph.add(
                     (

@@ -8,7 +8,9 @@ ros (ns=app) {
         bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
     },
     action-clients {
-        locate: action "/perception/locate" type "aruco_perception/action/LocateObjects",
+        locate: action "/perception/locate" type "aruco_perception/action/LocateObjects" {
+            pose from results
+        },
     },
     action-servers {
         pick-place: action "pick_place" type "bdd_ros2_interfaces/action/Behaviour" {
