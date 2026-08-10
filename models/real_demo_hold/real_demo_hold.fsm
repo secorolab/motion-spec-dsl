@@ -1,12 +1,11 @@
 ns rdh = "https://secorolab.github.io/models/real-demo-hold/fsm/"
 
 evt loop (ns=rdh) real_demo_hold_fsm_events {
-    evt E_STEP,
-    evt E_HOLD_ELAPSED
+    evt E_STEP
 }
 
 fsm (ns=rdh) real_demo_hold_fsm {
-    description: "Hold the pose the arm started in, for a bounded time."
+    description: "Hold the pose the arm started in, until the run is stopped."
 
     states {
         S_START,
@@ -20,12 +19,10 @@ fsm (ns=rdh) real_demo_hold_fsm {
     end:   <S_DONE>
 
     transitions {
-        T_START_HOLD { from: <S_START>, to: <S_HOLD> },
-        T_HOLD_DONE  { from: <S_HOLD>,  to: <S_DONE> }
+        T_START_HOLD { from: <S_START>, to: <S_HOLD> }
     }
 
     reactions {
-        R_STEP_START { when: <real_demo_hold_fsm_events.E_STEP>,         do: <T_START_HOLD> },
-        R_HOLD_DONE  { when: <real_demo_hold_fsm_events.E_HOLD_ELAPSED>, do: <T_HOLD_DONE> }
+        R_STEP_START { when: <real_demo_hold_fsm_events.E_STEP>, do: <T_START_HOLD> }
     }
 }

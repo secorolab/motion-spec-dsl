@@ -56,19 +56,12 @@ guarded-motion (ns=app) hold-pose {
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
-    // Bounded on purpose: the run ends by itself rather than holding until someone stops it.
-    until {
-        held: elapsed greater than 20.0 s
-    }
+    // No exit: the hold runs until it is stopped.
+    until {}
 }
 
 constraint-handler (ns=app) handler-hold {
     handles: <hold-pose>
-    monitors {
-        mon-held: monitor <hold-pose.until> {
-            satisfied { trigger: event <rdh.E_HOLD_ELAPSED> },
-        }
-    }
     controllers {
         pid ctrl-hold-position    { constraint: <hold-pose.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
         pid ctrl-hold-orientation { constraint: <hold-pose.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 }
