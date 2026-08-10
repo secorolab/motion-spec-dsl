@@ -217,6 +217,7 @@ class GEOM_REL(DefinedNamespace):
 
 class GEOM_COORD(DefinedNamespace):
     DirectionCoordinate: URIRef
+    DistanceReference: URIRef
     LinearDistanceCoordinate: URIRef
     OrientationCoordinate: URIRef
     PositionCoordinate: URIRef
@@ -228,6 +229,8 @@ class GEOM_COORD(DefinedNamespace):
     EulerAngles: URIRef
     Quaternion: URIRef
     VectorXYZ: URIRef
+
+    of: URIRef
 
     x: URIRef
     y: URIRef

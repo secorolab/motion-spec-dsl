@@ -381,6 +381,7 @@ class MotionSpecDatasetBuilder:
         # Emitted-node registries for idempotency (keep emission write-only).
         self._emitted_bands: set[URIRef] = set()
         self._emitted_distance_ops: set[str] = set()
+        self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
         self._emitted_orientation_coords: set[URIRef] = set()
@@ -886,15 +887,51 @@ class MotionSpecDatasetBuilder:
                 GeoPropPair(GeometricPropKey.AsSeenBy, start_frame),
             ]
         )
+        # The motion qualifies the carrier because an endpoint may be motion-local: two motions
+        # can name the same constraint over their own snapshots, and one carrier for both would
+        # measure the first motion's snapshot from inside the second.
+        motion = getattr(getattr(spec, "parent", None), "parent", None)
         target = WorldQuantity(
-            parent=getattr(getattr(spec, "parent", None), "parent", None),
-            name=f"distance-{spec.name}",
+            parent=motion,
+            name=f"distance-{getattr(motion, 'name', '')}-{spec.name}",
             type=WorldQuantityType.Pose,
             props=props,
         )
         plan = _DistancePlan(start, end, target)
         self._distance_plans[spec] = plan
         return plan
+
+    def _linear_distance_relation(self, start_uri: str, end_uri: str) -> URIRef:
+        """The LinearDistance two pose endpoints stand in, minted once per endpoint pair.
+
+        The relation is the geometric fact; a constraint's coordinate is one motion's sampling
+        of it. Motions measuring the same two poses share the relation and differ only in the
+        coordinate, so the endpoint pair -- not the constraint's name -- is its identity.
+        """
+        key = (str(start_uri), str(end_uri))
+        node = self._linear_distance_relations.get(key)
+        if node is not None:
+            return node
+        name = "-".join(
+            ["linear-distance", self._model_local_path(start_uri), self._model_local_path(end_uri)]
+        )
+        node = self._owned_uri(name, None)
+        self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
+        self.graph.add((node, GEOM_REL["between-entities"], URIRef(start_uri)))
+        self.graph.add((node, GEOM_REL["between-entities"], URIRef(end_uri)))
+        self._linear_distance_relations[key] = node
+        return node
+
+    def _model_local_path(self, uri: str) -> str:
+        """A URI's path below the model namespace, flattened into one name segment.
+
+        The whole path, not the last segment: two motions declare the same `start-pose`, and
+        only the path above it tells them apart.
+        """
+        namespace = str(self._namespace_owner(None).ns.uri)
+        if not str(uri).startswith(namespace):
+            raise ValueError(f"'{uri}' is not owned by the model namespace '{namespace}'.")
+        return str(uri).removeprefix(namespace).replace("/", "-")
 
     def _frame_coords(self, node: URIRef) -> tuple[URIRef, URIRef, URIRef] | None:
         """Resolved (of, wrt, as-seen-by) frame nodes recorded when `node`'s pose
@@ -3711,9 +3748,14 @@ class MotionSpecDatasetBuilder:
             plan = self._distance_plan(spec, world_qtys)
             distance_node = self._owned_uri(distance_id, motion)
             self._add_quantity(distance_node, QuantityType.Distance)
-            self.graph.add((distance_node, RDF.type, GEOM_REL.LinearDistance))
-            self.graph.add((distance_node, GEOM_REL["between-entities"], URIRef(plan.start.uri)))
-            self.graph.add((distance_node, GEOM_REL["between-entities"], URIRef(plan.end.uri)))
+            self.graph.add((distance_node, RDF.type, GEOM_COORD.DistanceReference))
+            self.graph.add(
+                (
+                    distance_node,
+                    GEOM_COORD.of,
+                    self._linear_distance_relation(plan.start.uri, plan.end.uri),
+                )
+            )
 
     def _emit_controller_base(self, ctrl_node: URIRef, ctrl: ControllerEntry) -> None:
         """Emit a controller's type and gains: PID (kp/ki/kd, optional decay), Impedance
