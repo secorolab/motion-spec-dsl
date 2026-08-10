@@ -12,8 +12,10 @@ port_real_time        = 10001
 session_timeout_ms    = 60000
 connection_timeout_ms = 2000
 
+# A full path, unlike the FT sensor below: this driver opens the port it is given, where the
+# sensor's resolves the name under /dev/ itself.
 [agents.gripper1]
-port          = "ttyUSB1"
+port          = "/dev/ttyUSB1"
 baudrate      = 115200
 slave_address = 0x09
 
