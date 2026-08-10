@@ -110,7 +110,7 @@ constraint-handler (ns=app) handler-close {
         pid ctrl-hold-position    { <hold-close.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
         pid ctrl-hold-orientation { <hold-close.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 },
         feed-forward ctrl-close-gripper { <hold-close.close-gripper> },
-        impedance ctrl-support-z { <hold-close.support-elbow-z>, stiffness: 800, damping: 80 }
+        impedance ctrl-support-z { <hold-close.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
             apply at <kinova.forearm_link>
     }
     solvers {
@@ -137,7 +137,7 @@ constraint-handler (ns=app) handler-open {
         pid ctrl-open-hold-position    { <hold-open.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
         pid ctrl-open-hold-orientation { <hold-open.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 },
         feed-forward ctrl-open-gripper { <hold-open.open-gripper> },
-        impedance ctrl-open-support-z { <hold-open.support-elbow-z>, stiffness: 800, damping: 80 }
+        impedance ctrl-open-support-z { <hold-open.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
             apply at <kinova.forearm_link>
     }
     solvers {
