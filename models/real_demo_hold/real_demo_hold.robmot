@@ -22,11 +22,6 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
-        velocity-twist twist-ee-base {
-            of:         <gripper.g_base.g_pinch>,
-            wrt:        <kinova.base_link.base_link_origin>,
-            as-seen-by: <kinova.base_link.base_link_origin>
-        },
         // Not controlled: recorded, so the run says what the arm was pushed with while holding.
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
