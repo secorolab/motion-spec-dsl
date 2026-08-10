@@ -23,3 +23,9 @@ baudrate      = 19200
 timeout_ms    = 1.0
 slave_address = 0x09
 bias_samples  = 100
+
+# Publishing the driven joints is the deployment's call, not the model's: the section's presence
+# turns it on, and retuning the topic or the rate needs no regeneration.
+[ros.joint_states]
+topic = "/joint_states"
+rate  = 100.0
