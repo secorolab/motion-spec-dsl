@@ -21,6 +21,11 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        pose pose-elbow-base {
+            of:         <kinova.half_arm_2_link.half_arm_2_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
         joint-position gripper-pos {
             joint: <gripper.g_left_driver_joint>
         },
@@ -35,6 +40,9 @@ context (ns=app) shared {
         // Shared, not per motion: the two states alternate, and a target re-captured on each
         // entry would follow the standing error and walk the hold away from where it began.
         pose start-pose       = snapshot of <shared.world.pose-ee-base>,
+        // Six constraints leave the 7th joint free, so the elbow can drift under gravity with
+        // the end-effector still on target. Held where it started, like the pose above.
+        linear-distance support-z = snapshot of <shared.world.pose-elbow-base>.position.z,
         angle gripper-closed  = 0.8 rad,
         angle gripper-open    = 0.0 rad,
         angle grasp-threshold = 0.65 rad
@@ -45,6 +53,7 @@ context (ns=app) shared {
 // than on each constraint that takes them.
 tolerances {
     position:         0.05 m,
+    linear-distance:  0.05 m,
     orientation:      0.10 rad,
     angular-distance: 0.01 rad
 }
@@ -60,7 +69,8 @@ guarded-motion (ns=app) hold-close {
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
-        close-gripper:    keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>
+        close-gripper:    keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
     }
 
     until {
@@ -78,7 +88,8 @@ guarded-motion (ns=app) hold-open {
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
-        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open>
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
     }
 
     until {
@@ -97,7 +108,9 @@ constraint-handler (ns=app) handler-close {
     controllers {
         pid ctrl-hold-position    { <hold-close.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
         pid ctrl-hold-orientation { <hold-close.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 },
-        feed-forward ctrl-close-gripper { <hold-close.close-gripper> }
+        feed-forward ctrl-close-gripper { <hold-close.close-gripper> },
+        impedance ctrl-support-z { <hold-close.support-elbow-z>, stiffness: 800, damping: 80 }
+            apply at <kinova.half_arm_2_link>
     }
     solvers {
         arm-solver: serial-chain {
@@ -122,7 +135,9 @@ constraint-handler (ns=app) handler-open {
     controllers {
         pid ctrl-open-hold-position    { <hold-open.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
         pid ctrl-open-hold-orientation { <hold-open.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 },
-        feed-forward ctrl-open-gripper { <hold-open.open-gripper> }
+        feed-forward ctrl-open-gripper { <hold-open.open-gripper> },
+        impedance ctrl-open-support-z { <hold-open.support-elbow-z>, stiffness: 800, damping: 80 }
+            apply at <kinova.half_arm_2_link>
     }
     solvers {
         <handler-close.arm-solver>,
