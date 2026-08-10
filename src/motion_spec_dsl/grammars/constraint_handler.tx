@@ -20,6 +20,7 @@ ConstraintHandler:
     "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
         ("context"    "{" context*=HandlerContextItem[","] "}")?
         "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
+        ("runs-in"     ":" runs_in=StateName)?
         ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
         "controllers"  "{" controllers*=ControllerItem[","]? "}"
         "solvers"      "{" solvers+=SolverItem[","] "}"

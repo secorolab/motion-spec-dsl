@@ -1,0 +1,13 @@
+digraph "real_demo_hold_fsm" {
+  rankdir=LR;
+  compound=true;
+  graph [fontname="Helvetica", fontsize=11];
+  node [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#ffffff"];
+  edge [fontname="Helvetica", fontsize=9, color="#5f6368"];
+  "__entry__" [shape=point, width=0.12, fillcolor="#202124", color="#202124"];
+  "__entry__" -> "https://secorolab.github.io/models/real-demo-hold/fsm/S_START";
+  "https://secorolab.github.io/models/real-demo-hold/fsm/S_DONE" [label="S_DONE", peripheries=2, fillcolor="#e6f4ea"];
+  "https://secorolab.github.io/models/real-demo-hold/fsm/S_HOLD" [label="S_HOLD"];
+  "https://secorolab.github.io/models/real-demo-hold/fsm/S_START" [label="S_START", fillcolor="#e8f0fe"];
+  "https://secorolab.github.io/models/real-demo-hold/fsm/S_START" -> "https://secorolab.github.io/models/real-demo-hold/fsm/S_HOLD" [label="E_STEP"];
+}

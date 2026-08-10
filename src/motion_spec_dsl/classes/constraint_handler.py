@@ -116,9 +116,31 @@ class ConstraintHandler(IHasNamespaceDeclare):
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
+    runs_in: "StateName | None" = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+
+
+@dataclass
+class StateName:
+    """The FSM state a handler is active in.
+
+    A motion is otherwise bound to a state by the event that leaves it, which says nothing
+    about a motion that is meant to keep running.
+    """
+
+    parent: object
+    ns: NamespaceDeclLike
+    state: object = None
+
+    @property
+    def name(self) -> str:
+        return self.state.name
+
+    @property
+    def uri(self) -> str:
+        return str(Namespace(self.ns.uri)[self.state.name])
 
 
 @dataclass

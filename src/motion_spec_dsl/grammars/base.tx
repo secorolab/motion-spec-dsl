@@ -16,3 +16,8 @@ IRI_TRUNK: /[^\d\W][\w-]*(?<![- ])/;
 EventName:
     "<" ((ns=[NamespaceDeclare|IRI_TRUNK] "." event=[fsm.Event|IRI_TRUNK|+m:~event_loops.events]) | standalone=IRI_TRUNK) ">"
 ;
+
+// The FSM state a handler is active in, written the way its events are.
+StateName:
+    "<" ns=[NamespaceDeclare|IRI_TRUNK] "." state=[fsm.State|IRI_TRUNK|+m:~fsm.states] ">"
+;

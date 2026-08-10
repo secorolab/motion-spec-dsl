@@ -1,0 +1,42 @@
+{
+  "name": "real_demo_hold_fsm",
+  "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/real_demo_hold_fsm",
+  "description": "Hold the pose the arm started in, until the run is stopped.",
+  "start_state": "S_START",
+  "end_state": "S_DONE",
+  "states": [
+    "S_START",
+    "S_HOLD",
+    "S_DONE"
+  ],
+  "state_uris": {
+    "S_START": "https://secorolab.github.io/models/real-demo-hold/fsm/S_START",
+    "S_HOLD": "https://secorolab.github.io/models/real-demo-hold/fsm/S_HOLD",
+    "S_DONE": "https://secorolab.github.io/models/real-demo-hold/fsm/S_DONE"
+  },
+  "events": [
+    "E_STEP"
+  ],
+  "event_uris": {
+    "E_STEP": "https://secorolab.github.io/models/real-demo-hold/fsm/E_STEP"
+  },
+  "transitions_table": [
+    {
+      "id": "T_START_HOLD",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/T_START_HOLD",
+      "from_state": "S_START",
+      "to_state": "S_HOLD"
+    }
+  ],
+  "reactions_table": [
+    {
+      "id": "R_STEP_START",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/R_STEP_START",
+      "when_event": "E_STEP",
+      "do_transition": "T_START_HOLD",
+      "fires_events": [],
+      "num_fires": 0
+    }
+  ],
+  "namespace_uri": "https://secorolab.github.io/models/real-demo-hold/fsm/"
+}

@@ -3964,6 +3964,12 @@ class MotionSpecDatasetBuilder:
         self.graph.add(
             (handler_node, CSTR_HDL.motion, self._owned_uri(f"motion-{motion.name}", motion))
         )
+        # A motion is otherwise bound to a state by the event that leaves it, which a motion
+        # meant to keep running never fires.
+        if handler.runs_in is not None:
+            self.graph.add(
+                (handler_node, CSTR_HDL_EXT["runs-in-state"], URIRef(handler.runs_in.uri))
+            )
         event_loop_node = URIRef(f"{handler.uri}.event-loop")
 
         seen_error_ids: set[str] = set()

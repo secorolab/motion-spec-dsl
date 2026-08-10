@@ -1,0 +1,422 @@
+#pragma once
+
+#include <cassert>
+#include <algorithm>
+#include <cerrno>
+#include <chrono>
+#include <cmath>
+#include <csignal>
+#include <cstdlib>
+#include <ctime>
+#include <Eigen/Dense>
+#include <iostream>
+#include <kdl/chain.hpp>
+#include <kdl/frames.hpp>
+#include <kdl/jacobian.hpp>
+#include <kdl/jntarray.hpp>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+namespace motion_spec::runtime {
+
+// An interrupted run is still a run: the frame log is closed by a destructor, so letting a
+// signal terminate the process outright truncates it and loses the ticks already recorded. The
+// handler does the one thing that is async-signal-safe -- set a flag -- and the control loop
+// leaves on its own, so shutdown unwinds exactly as a completed run does.
+inline volatile std::sig_atomic_t g_stop_requested = 0;
+
+inline void request_stop(int) { g_stop_requested = 1; }
+
+inline bool stop_requested() { return g_stop_requested != 0; }
+
+inline void install_stop_handlers() {
+    std::signal(SIGINT, request_stop);
+    std::signal(SIGTERM, request_stop);
+}
+
+// A driver that reports a failed cycle has not refreshed anything it owns: its measurements keep
+// the values they last had, so the next solve would price a pose the robot may have left. Stop
+// the loop rather than command against a reading nothing stands behind.
+inline void require_driver(bool ok, std::string_view device) {
+    if (ok || stop_requested()) return;
+    std::cerr << "[run] device '" << device << "' reported a failed cycle; stopping" << std::endl;
+    request_stop(0);
+}
+
+// A non-finite command means the controller diverged, and no value is the right one to send: zero
+// drops a simulated arm, the last good value hides the divergence, and throwing from the loop
+// leaves the log truncated. So ask the loop to leave -- shutdown then closes the frame log the
+// same way an interrupt does, and the record ends at the tick that broke. The substitute below
+// reaches a simulator, which is where it has to be a number at all; on hardware the cycle that
+// asked to stop transmits nothing.
+inline double finite_or_stop(double value, int joint) {
+    if (std::isfinite(value)) return value;
+    if (!stop_requested()) {
+        std::cerr << "[run] non-finite command on joint " << joint << "; stopping" << std::endl;
+        request_stop(0);
+    }
+    return 0.0;
+}
+
+inline constexpr double kControlPeriodS = 1000000 * 1e-9;
+
+// A fixed band, not an authored one: make it a model property if real-robot jitter demands it.
+// Floor on a measured tick: a near-zero dt must not blow up (error - err_last) / dt.
+inline constexpr double kDtClampMin = 0.5 * kControlPeriodS;
+// Ceiling on a measured tick: a scheduler stall must not become one giant integral step.
+inline constexpr double kDtClampMax = 2.0 * kControlPeriodS;
+
+inline double clamp_range(double v, double lower, double upper) {
+    if (v < lower) return lower;
+    if (v > upper) return upper;
+    return v;
+}
+
+inline double clamp01(double v) {
+    if (v < 0.0) return 0.0;
+    if (v > 1.0) return 1.0;
+    return v;
+}
+
+// A rotation authored as literals is resolved to a quaternion before it reaches here. One
+// whose angles arrive at runtime is composed from these, so the control loop still turns a
+// quaternion rather than rebuilding a matrix from angles.
+struct Quat {
+    double x, y, z, w;
+};
+
+// Rotation of `angle` about the axis named by 'x', 'y' or 'z'.
+inline Quat quat_axis(char axis, double angle) {
+    const double half = 0.5 * angle;
+    const double s = std::sin(half);
+    const double c = std::cos(half);
+    switch (axis) {
+        case 'x': return Quat{s, 0.0, 0.0, c};
+        case 'y': return Quat{0.0, s, 0.0, c};
+        default:  return Quat{0.0, 0.0, s, c};
+    }
+}
+
+// Hamilton product: the rotation `b` followed by the rotation `a`.
+inline Quat quat_mul(const Quat &a, const Quat &b) {
+    return Quat{
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z};
+}
+
+inline KDL::Rotation quat_rotation(const Quat &q) {
+    return KDL::Rotation::Quaternion(q.x, q.y, q.z, q.w);
+}
+
+inline KDL::Wrench transform_wrench(
+    const KDL::Wrench &source_wrench,
+    const KDL::Frame &world_source,
+    const KDL::Frame &world_reference_point,
+    const KDL::Frame &world_observation_frame) {
+    const KDL::Wrench world_wrench = world_source.M * source_wrench;
+    const KDL::Wrench at_reference =
+        world_wrench.RefPoint(world_reference_point.p - world_source.p);
+    return world_observation_frame.M.Inverse(at_reference);
+}
+
+// Central-difference step for the tangent, in path parameter. Also the resolution the
+// projection converges to: refining the parameter finer than the step the curve is
+// differentiated at buys nothing.
+inline constexpr double kPathTangentStep = 1e-4;
+
+// Closest point on a path, refined locally around the previous parameter.
+// The window is derived, not tuned: how far the frame drifted off the last projection is how
+// far it can have travelled in the control period that passed. The closest point is no farther
+// away than P(previous) already is, so P(s*) is within 2d of P(previous) in arc length, and
+// dividing by the local |dP/ds| turns that into the parameter bound searched here. A tuned window
+// would either lag a fast motion or, when generous, reach across a fold of a self-intersecting
+// path; one control period of measured motion can do neither.
+template <typename Eval>
+inline double path_project(const Eval &eval, const KDL::Vector &point, double previous) {
+    const auto distance2 = [&](double s) {
+        const KDL::Vector delta = eval(s).p - point;
+        return KDL::dot(delta, delta);
+    };
+    const double lo_s = std::max(0.0, previous - kPathTangentStep);
+    const double hi_s = std::min(1.0, previous + kPathTangentStep);
+    const double ds = hi_s - lo_s;
+    if (ds < 1e-12) return clamp01(previous);
+    const double speed = (eval(hi_s).p - eval(lo_s).p).Norm() / ds;
+    if (speed < 1e-9) return clamp01(previous);  // stationary curve: nothing to search along
+    const double window = 2.0 * std::sqrt(distance2(previous)) / speed;
+    double a = std::max(0.0, previous - window);
+    double b = std::min(1.0, previous + window);
+    // Golden section: the distance is unimodal over a window this size, so no coarse scan is
+    // needed to bracket. The shrink factor bounds the loop -- worst case is a full-length
+    // window, ~19 iterations to the tangent step -- so the tick cost stays deterministic.
+    constexpr double kInvPhi = 0.6180339887498949;
+    double c = b - kInvPhi * (b - a);
+    double d = a + kInvPhi * (b - a);
+    double fc = distance2(c);
+    double fd = distance2(d);
+    while (b - a > kPathTangentStep) {
+        if (fc < fd) {
+            b = d; d = c; fd = fc;
+            c = b - kInvPhi * (b - a);
+            fc = distance2(c);
+        } else {
+            a = c; c = d; fc = fd;
+            d = a + kInvPhi * (b - a);
+            fd = distance2(d);
+        }
+    }
+    return clamp01(0.5 * (a + b));
+}
+
+// Frenet-style frame at a point on the path: the tangent by central difference, then two
+// normals carried forward from the previous tick (parallel transport). Rebuilding the normals
+// from a world axis every tick would flip them as the tangent turns, and the lateral rows
+// would jump with them; transport keeps the frame continuous.
+template <typename Eval>
+inline void path_frame(const Eval &eval, double s, KDL::Vector &tangent,
+                       KDL::Vector &normal_a, KDL::Vector &normal_b) {
+    const double lo = std::max(0.0, s - kPathTangentStep);
+    const double hi = std::min(1.0, s + kPathTangentStep);
+    tangent = eval(hi).p - eval(lo).p;
+    if (tangent.Norm() < 1e-12) {
+        tangent = KDL::Vector(1.0, 0.0, 0.0);
+    } else {
+        tangent.Normalize();
+    }
+    KDL::Vector candidate = normal_a - KDL::dot(normal_a, tangent) * tangent;
+    if (candidate.Norm() < 1e-6) {
+        // No usable previous normal (first tick, or the tangent turned onto it): start from the
+        // world axis least aligned with the tangent, which keeps the cross product conditioned.
+        const double ax = std::fabs(tangent.x());
+        const double ay = std::fabs(tangent.y());
+        const double az = std::fabs(tangent.z());
+        const KDL::Vector helper = (ax <= ay && ax <= az) ? KDL::Vector(1.0, 0.0, 0.0)
+                                 : (ay <= az)             ? KDL::Vector(0.0, 1.0, 0.0)
+                                                          : KDL::Vector(0.0, 0.0, 1.0);
+        candidate = tangent * helper;
+    }
+    candidate.Normalize();
+    normal_a = candidate;
+    normal_b = tangent * normal_a;
+    normal_b.Normalize();
+}
+
+inline void resolve_cartesian_acceleration(
+        const KDL::Jacobian &jac,
+        const KDL::Jacobian &directions,
+        const KDL::JntArray &cartesian_acceleration,
+        const Eigen::VectorXd *bias,
+        KDL::JntArray &qdd_out) {
+    KDL::SetToZero(qdd_out);
+    const int m = cartesian_acceleration.rows();
+    if (m == 0) return;
+    const Eigen::MatrixXd task_jac = directions.data.transpose() * jac.data;
+    Eigen::VectorXd rhs(m);
+    for (int i = 0; i < m; ++i) {
+        rhs(i) = cartesian_acceleration(i);
+    }
+    if (bias != nullptr && bias->size() == m) {
+        rhs -= *bias;
+    }
+    const Eigen::MatrixXd gram = task_jac * task_jac.transpose();
+    const Eigen::VectorXd qdd = task_jac.transpose() * gram.ldlt().solve(rhs);
+    for (int i = 0; i < static_cast<int>(qdd_out.rows()); ++i) {
+        qdd_out(i) = qdd(i);
+    }
+}
+
+inline double monotonic_time_s() {
+    using clock = std::chrono::steady_clock;
+    static const auto start = clock::now();
+    return std::chrono::duration(clock::now() - start).count();
+}
+
+inline bool timespec_less(const timespec &a, const timespec &b) {
+    return a.tv_sec < b.tv_sec || (a.tv_sec == b.tv_sec && a.tv_nsec < b.tv_nsec);
+}
+
+inline void sleep_until_next(timespec &next, long period_ns) {
+    next.tv_nsec += period_ns;
+    while (next.tv_nsec >= 1000000000L) {
+        next.tv_nsec -= 1000000000L;
+        ++next.tv_sec;
+    }
+    timespec now{};
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    if (!timespec_less(now, next)) {
+        next = now;
+        return;
+    }
+    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next, nullptr) == EINTR) {}
+}
+
+enum class VelocityProfileShape { Trapezoidal, SCurve };
+
+// SCurve is a cascaded jerk limiter, not a time-optimal phase planner.
+// Feed-forward online generator: the setpoint must LEAD the plant to drive a
+// position controller, so v is the profile's own integrated velocity, not the
+// measured one. (Resetting v to the measured velocity each step glues the
+// setpoint to the plant -> zero tracking error -> no drive -> deadlock from
+// rest.) The measured state seeds vp_velocity once at init in the caller.
+inline double velocity_profile_step(double x, double &v, double &a, double goal,
+                                    double vmax, double amax, double jmax, double dt,
+                                    VelocityProfileShape shape) {
+    vmax = std::max(vmax, 1e-9);
+    amax = std::max(amax, 1e-9);
+    const double dir = (goal >= x) ? 1.0 : -1.0;
+    const double dist = std::abs(goal - x);
+    const double v_brake = std::sqrt(2.0 * amax * dist);
+    const double v_target = dir * std::min(vmax, v_brake);
+    if (shape == VelocityProfileShape::Trapezoidal) {
+        const double dv = std::clamp(v_target - v, -amax * dt, amax * dt);
+        v += dv;
+        a = dv / dt;
+    } else {
+        jmax = std::max(jmax, 1e-9);
+        const double a_target = std::clamp((v_target - v) / dt, -amax, amax);
+        a += std::clamp(a_target - a, -jmax * dt, jmax * dt);
+        v += a * dt;
+    }
+    v = std::clamp(v, -vmax, vmax);
+    double nx = x + v * dt;
+    if ((goal - nx) * dir < 0.0) {
+        nx = goal;
+        v = 0.0;
+        a = 0.0;
+    }
+    return nx;
+}
+
+inline double evaluate_equality_constraint(double quantity, double reference) {
+    return quantity - reference;
+}
+
+// Shortest signed angular distance, in (-pi, pi]: a continuous joint's error lives on the circle.
+inline double wrap_angle(double angle) {
+    return std::remainder(angle, 2.0 * M_PI);
+}
+
+inline double evaluate_equality_constraint(const KDL::Vector &target, const KDL::Vector &current) {
+    return (target - current).Norm();
+}
+
+// The geodesic angle between two orientations: the one rotation that carries current onto
+// target, measured the way a satisfaction band on an orientation is authored -- in radians.
+inline double evaluate_equality_constraint(const KDL::Rotation &target, const KDL::Rotation &current) {
+    KDL::Vector axis;
+    return (current.Inverse() * target).GetRotAngle(axis);
+}
+
+inline KDL::Frame evaluate_equality_constraint(const KDL::Frame &target, const KDL::Frame &current) {
+    return current.Inverse() * target;
+}
+
+inline double evaluate_less_than_constraint(double quantity, double threshold) {
+    return (quantity < threshold) ? 0.0 : threshold - quantity;
+}
+
+inline double evaluate_greater_than_constraint(double quantity, double threshold) {
+    return (quantity > threshold) ? 0.0 : quantity - threshold;
+}
+
+inline double evaluate_bilateral_constraint(double quantity, double lower, double upper) {
+    if (quantity < lower) return lower - quantity;
+    if (quantity > upper) return quantity - upper;
+    return 0.0;
+}
+
+inline double evaluate_outside_constraint(double quantity, double lower, double upper) {
+    // Complement of bilateral: satisfied (0) when outside [lower, upper]; otherwise
+    // the remaining distance to the nearer band edge (still inside -> not yet satisfied).
+    if (quantity <= lower || quantity >= upper) return 0.0;
+    return std::min(quantity - lower, upper - quantity);
+}
+
+// The band comes from the model, per constraint kind: an equality's says how close to its
+// target counts as reached, a gate's how close to its threshold counts as arrived. A gate
+// that states none is tested against the boundary itself, which its evaluator returns 0.0 on.
+inline bool constraint_satisfied(double error, double tolerance) {
+    return std::fabs(error) <= tolerance;
+}
+
+inline double constraint_error_value(const KDL::Twist &error) {
+    return std::max(error.vel.Norm(), error.rot.Norm());
+}
+
+inline double constraint_error_value(const KDL::Frame &error) {
+    KDL::Vector axis;
+    const double angle = error.M.GetRotAngle(axis);
+    return std::max(error.p.Norm(), std::fabs(angle));
+}
+
+inline bool constraint_satisfied(const KDL::Twist &error, double tolerance) {
+    return constraint_error_value(error) <= tolerance;
+}
+
+inline bool constraint_satisfied(const KDL::Frame &error, double tolerance) {
+    return constraint_error_value(error) <= tolerance;
+}
+
+enum class Axis {
+    X = 0,
+    Y = 1,
+    Z = 2,
+};
+
+enum class Subspace {
+    Linear = 0,
+    Angular = 1,
+};
+
+inline int constraint_row(Subspace subspace, Axis axis) {
+    return static_cast<int>(subspace) * 3 + static_cast<int>(axis);
+}
+
+inline bool rising_edge(bool &previous, bool active) {
+    const bool detected = active && !previous;
+    previous = active;
+    return detected;
+}
+
+// Fire once after `active` has held true for `hold_s` of measured time; re-arms when `active`
+// drops. The model authors a duration, so the debounce accumulates the time the cycles actually
+// took: counting cycles is that duration only on a loop that never misses its deadline. The dt
+// handed in is already clamped at kDtClampMax, so a stall longer than that still under-counts.
+inline bool sustained_edge(double &held_s, bool active, double dt_s, double hold_s) {
+    if (!active) { held_s = 0.0; return false; }
+    const double before = held_s;
+    held_s += dt_s;
+    return before < hold_s && held_s >= hold_s;
+}
+
+inline void set_flag(bool &flag, bool active) {
+    flag = active;
+}
+
+inline void warn_produce_event_not_implemented(std::string_view event_id) {
+    std::cerr << "produce_event(" << event_id << ") not implemented yet\n";
+}
+
+inline bool runtime_name_matches(std::string_view actual, std::string_view target) {
+    return actual == target ||
+           (actual.size() > target.size() && actual.substr(actual.size() - target.size()) == target);
+}
+
+inline unsigned int find_joint_index(const KDL::Chain &chain, std::string_view joint_name) {
+    unsigned int idx = 0;
+    for (unsigned int i = 0; i < chain.getNrOfSegments(); ++i) {
+        const auto &joint = chain.getSegment(i).getJoint();
+        if (joint.getType() == KDL::Joint::None) {
+            continue;
+        }
+        if (runtime_name_matches(joint.getName(), joint_name)) {
+            return idx;
+        }
+        ++idx;
+    }
+    throw std::runtime_error("KDL joint not found: " + std::string(joint_name));
+}
+
+}  // namespace motion_spec::runtime

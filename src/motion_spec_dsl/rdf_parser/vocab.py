@@ -585,6 +585,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
     solver: URIRef
 
     _extras = [
+        "runs-in-state",
         "reference-signal",
         "mass",
         "damping",
