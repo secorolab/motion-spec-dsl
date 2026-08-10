@@ -18,6 +18,17 @@ ktree (ns=aas_mjc) ft_tree {
                 orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
             }
         }
+        // The far face, where the gripper bolts on. The sensor's own height along the tool
+        // axis -- +z of this body, which is -z of the bracelet -- which ft_sensor.xml gives as
+        // zero because its site sits at the body origin. Set so the measured TCP lands 0.25 m
+        // from the bracelet; within a millimetre of the FT300-S's stated height.
+        frame wrist_ft_mount {
+            pose wrist_ft_mount_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.0365) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
         // The measured tool weighs 1.195 kg -- gripper, sensor and couplers together -- and the
         // gripper bodies carry 1.061604 of it from their MJCF, so the sensor carries the rest.
         // ft_sensor.xml states 0.01 kg, which is a simulation placeholder, not this sensor.
@@ -45,7 +56,7 @@ ktree (ns=aas_mjc) kinova_ft_2f85 {
             child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
         }
         fixed gripper_on_ft {
-            parent: <ft_tree.wrist_ft_body.wrist_ft_site>
+            parent: <ft_tree.wrist_ft_body.wrist_ft_mount>
             child: <gripper.g_base_mount.g_mount_interface>
         }
         serial {
