@@ -18,6 +18,10 @@ connection_timeout_ms = 2000
 port          = "/dev/ttyUSB1"
 baudrate      = 115200
 slave_address = 0x09
+# Stated, not defaulted: at the built-in 50 % the gripper latched contact and stopped at 219 of
+# 255 counts with the command at 255, drawing 40 mA.
+gripper_force_pct = 100
+gripper_speed_pct = 50
 
 [arm1.wrist_ft]
 port          = "ttyUSB0"
