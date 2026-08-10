@@ -1,0 +1,76 @@
+{
+  "name": "real_demo_hold_fsm",
+  "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/real_demo_hold_fsm",
+  "description": "Hold the pose the arm started in while the gripper cycles.",
+  "start_state": "S_START",
+  "end_state": "S_DONE",
+  "states": [
+    "S_START",
+    "S_CLOSE",
+    "S_OPEN",
+    "S_DONE"
+  ],
+  "state_uris": {
+    "S_START": "https://secorolab.github.io/models/real-demo-hold/fsm/S_START",
+    "S_CLOSE": "https://secorolab.github.io/models/real-demo-hold/fsm/S_CLOSE",
+    "S_OPEN": "https://secorolab.github.io/models/real-demo-hold/fsm/S_OPEN",
+    "S_DONE": "https://secorolab.github.io/models/real-demo-hold/fsm/S_DONE"
+  },
+  "events": [
+    "E_STEP",
+    "E_GRIPPER_CLOSED",
+    "E_GRIPPER_OPENED"
+  ],
+  "event_uris": {
+    "E_STEP": "https://secorolab.github.io/models/real-demo-hold/fsm/E_STEP",
+    "E_GRIPPER_CLOSED": "https://secorolab.github.io/models/real-demo-hold/fsm/E_GRIPPER_CLOSED",
+    "E_GRIPPER_OPENED": "https://secorolab.github.io/models/real-demo-hold/fsm/E_GRIPPER_OPENED"
+  },
+  "transitions_table": [
+    {
+      "id": "T_START_CLOSE",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/T_START_CLOSE",
+      "from_state": "S_START",
+      "to_state": "S_CLOSE"
+    },
+    {
+      "id": "T_CLOSE_OPEN",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/T_CLOSE_OPEN",
+      "from_state": "S_CLOSE",
+      "to_state": "S_OPEN"
+    },
+    {
+      "id": "T_OPEN_CLOSE",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/T_OPEN_CLOSE",
+      "from_state": "S_OPEN",
+      "to_state": "S_CLOSE"
+    }
+  ],
+  "reactions_table": [
+    {
+      "id": "R_STEP_START",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/R_STEP_START",
+      "when_event": "E_STEP",
+      "do_transition": "T_START_CLOSE",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_GRIPPER_CLOSED",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/R_GRIPPER_CLOSED",
+      "when_event": "E_GRIPPER_CLOSED",
+      "do_transition": "T_CLOSE_OPEN",
+      "fires_events": [],
+      "num_fires": 0
+    },
+    {
+      "id": "R_GRIPPER_OPENED",
+      "uri": "https://secorolab.github.io/models/real-demo-hold/fsm/R_GRIPPER_OPENED",
+      "when_event": "E_GRIPPER_OPENED",
+      "do_transition": "T_OPEN_CLOSE",
+      "fires_events": [],
+      "num_fires": 0
+    }
+  ],
+  "namespace_uri": "https://secorolab.github.io/models/real-demo-hold/fsm/"
+}
