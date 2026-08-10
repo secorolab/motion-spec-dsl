@@ -25,6 +25,7 @@ from motion_spec_dsl.classes.validation.constraints import (
 from motion_spec_dsl.classes.validation.detects import (
     validate_detect_targets,
     validate_goal_status_acts,
+    validate_subscription_targets,
 )
 from motion_spec_dsl.classes.validation.handlers import (
     validate_controller_solver_assembly,
@@ -60,6 +61,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_scalar_order_relations(model)
     validate_tolerance_defaults(model)
     validate_detect_targets(model)
+    validate_subscription_targets(model)
     validate_goal_status_acts(model)
     validate_monitor_state_blocks(model)
     validate_handler_constraint_assembly(model)

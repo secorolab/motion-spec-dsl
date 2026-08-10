@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Validate detect acts: where a result can land, and whose status an until item may read."""
+"""Validate perceived poses: where a result can land, whose status an until item may read, and
+that each observed object has exactly one source writing its pose."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from motion_spec_dsl.classes.context import (
     WorldQuantityType,
 )
 from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.ros import RosSubscriptionDecl
 from motion_spec_dsl.classes.validation.common import motion_specs, semantic_error
 
 
@@ -42,6 +44,37 @@ def validate_detect_targets(model: Model) -> None:
                     "result has nowhere to land.",
                     act,
                 )
+
+
+def validate_subscription_targets(model: Model) -> None:
+    """A subscription writes a pose: every observed object needs a world pose declared `of:` it
+    to land in, and no object may be observed by two sources -- a world pose has one producer.
+    """
+    subjects = _pose_subjects(model)
+    # Detects seed the set: a subscription and a detect claiming the same object is the same
+    # two-producer error as two subscriptions doing so.
+    observed = {
+        id(target.ref)
+        for motion in motion_specs(model)
+        for act in motion.detects
+        for target in act.targets
+    }
+
+    for sub in get_children_of_type(RosSubscriptionDecl, model):
+        for target in sub.targets:
+            if id(target.ref) not in subjects:
+                raise semantic_error(
+                    f"Subscription '{sub.name}' observes '{target.ref.name}', but no world pose "
+                    "is declared 'of:' it, so a detection has nowhere to land.",
+                    sub,
+                )
+            if id(target.ref) in observed:
+                raise semantic_error(
+                    f"'{target.ref.name}' is observed by more than one source; a world pose has "
+                    "one producer.",
+                    sub,
+                )
+            observed.add(id(target.ref))
 
 
 def validate_goal_status_acts(model: Model) -> None:

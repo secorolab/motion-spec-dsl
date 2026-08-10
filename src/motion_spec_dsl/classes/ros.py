@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 
-"""The model's ROS interface: what it publishes, what it calls, and what it serves."""
+"""The model's ROS interface: what it publishes, subscribes to, calls, and serves."""
 
 from __future__ import annotations
 
@@ -60,14 +60,38 @@ class RosActionServerDecl(NamedNamespaceObject):
         return [] if self.on_end is None else self.on_end.assignments
 
 
+@dataclass(eq=False)
+class RosSubscriptionDecl(NamedNamespaceObject):
+    """A standing subscription: the channel object poses arrive on, the scene objects the model
+    reads off it, and where in one detection the pose is found.
+    """
+
+    parent: object
+    name: str
+    channel_name: str
+    type_name: str
+    pose_field: str
+    pose_container: str
+    targets: list = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def pose_path(self) -> str:
+        """The dotted path from one detection to the pose it reports."""
+        return f"{self.pose_container}.{self.pose_field}"
+
+
 @dataclass
 class Ros:
-    """The model's ROS interface: what it publishes, what it calls, and what it serves, all
-    minted in one namespace."""
+    """The model's ROS interface: what it publishes, what it subscribes to, what it calls, and
+    what it serves, all minted in one namespace."""
 
     parent: object
     ns: NamespaceDeclLike
     topics: list[RosTopicDecl] = field(default_factory=list)
+    subscriptions: list[RosSubscriptionDecl] = field(default_factory=list)
     action_clients: list[RosActionDecl] = field(default_factory=list)
     action_servers: list[RosActionServerDecl] = field(default_factory=list)
 

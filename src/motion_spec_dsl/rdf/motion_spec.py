@@ -171,6 +171,7 @@ from motion_spec_dsl.classes.path import (
 from motion_spec_dsl.classes.ros import (
     Ros,
     RosActionServerDecl,
+    RosSubscriptionDecl,
 )
 
 from motion_spec_dsl.rdf.model import (
@@ -423,7 +424,9 @@ class MotionSpecDatasetBuilder:
                 elif isinstance(spec, Ros):
                     for server in spec.action_servers:
                         self._emit_ros_action_server(server)
-                    if spec.action_servers:
+                    for subscription in spec.subscriptions:
+                        self._emit_ros_subscription(subscription)
+                    if spec.action_servers or spec.subscriptions:
                         self.dataset.bind(spec.ns.name, spec.ns.uri)
                         context[spec.ns.name] = spec.ns.uri
 
@@ -473,6 +476,25 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, RDFS.member, row))
             self.graph.add((row, ROS["field-path"], Literal(path)))
             self.graph.add((row, RDF.value, Literal(value)))
+
+    def _emit_ros_subscription(self, subscription: RosSubscriptionDecl) -> None:
+        """A subscribed topic: the channel object poses arrive on, the message it carries, and
+        the scene objects it informs the model about. The features of interest are what make it
+        a channel the model reads rather than one it writes.
+        """
+        node = URIRef(subscription.uri)
+        self.graph.add((node, RDF.type, ROS.Topic))
+        self.graph.add((node, ROS["channel-name"], Literal(subscription.channel_name)))
+        self.graph.add((node, ROS["type-name"], Literal(subscription.type_name)))
+        self.graph.add((node, ROS["field-path"], Literal(subscription.pose_path)))
+        for target in subscription.targets:
+            self.graph.add(
+                (
+                    node,
+                    SOSA.hasFeatureOfInterest,
+                    URIRef(str(getattr(target.ref, "uri", target.ref))),
+                )
+            )
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
         """Emit the authored scene, platform, and control-period binding."""

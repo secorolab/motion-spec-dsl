@@ -22,8 +22,16 @@ Specification:
 Ros:
     "ros" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
         ("publishers"     "{" topics+=RosTopicDecl[","] ","? "}" ","?)?
+        ("subscribers"    "{" subscriptions+=RosSubscriptionDecl[","] ","? "}" ","?)?
         ("action-clients" "{" action_clients+=RosActionDecl[","] ","? "}" ","?)?
         ("action-servers" "{" action_servers+=RosActionServerDecl[","] ","? "}" ","?)?
+    "}"
+;
+
+RosSubscriptionDecl:
+    name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING "{"
+        "observes" "{" targets+=SceneObjRef[","] ","? "}"
+        pose_field=ID "from" pose_container=ID ","?
     "}"
 ;
 
