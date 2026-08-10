@@ -33,11 +33,14 @@ context (ns=app) shared {
             as-seen-by: <kinova.base_link.base_link_origin>,
             ft-sensor:  <wrist_ft>
         }
-    },
-    spec {
-        linear-distance satisfied-band = 0.01 m,
-        angle satisfied-band-rot       = 0.01 rad
     }
+}
+
+// The bands this model is tuned against, stated once by the kind of error they bound rather
+// than on each constraint that takes them.
+tolerances {
+    position:    0.05 m,
+    orientation: 0.10 rad
 }
 
 guarded-motion (ns=app) hold-pose {
@@ -52,8 +55,8 @@ guarded-motion (ns=app) hold-pose {
     when {}
 
     while {
-        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.start-pose>.position within <shared.spec.satisfied-band>,
-        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation
     }
 
     // No exit: the hold runs until it is stopped.
@@ -63,8 +66,8 @@ guarded-motion (ns=app) hold-pose {
 constraint-handler (ns=app) handler-hold {
     handles: <hold-pose>
     controllers {
-        pid ctrl-hold-position    { constraint: <hold-pose.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
-        pid ctrl-hold-orientation { constraint: <hold-pose.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 }
+        pid ctrl-hold-position    { <hold-pose.hold-position>,    Kp: 550, Ki: 50, Kd: 2, decay: 0.1 },
+        pid ctrl-hold-orientation { <hold-pose.hold-orientation>, Kp: 250, Ki: 50, Kd: 2, decay: 0.1 }
     }
     solvers {
         arm-solver: serial-chain {
