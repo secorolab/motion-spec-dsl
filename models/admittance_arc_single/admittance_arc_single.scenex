@@ -18,15 +18,16 @@ ktree (ns=aas_mjc) ft_tree {
                 orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
             }
         }
-        // What ft_sensor.xml states for the body, carried here so the inertia does not
-        // depend on where the generator is run from.
+        // The measured tool weighs 1.195 kg -- gripper, sensor and couplers together -- and the
+        // gripper bodies carry 1.061604 of it from their MJCF, so the sensor carries the rest.
+        // ft_sensor.xml states 0.01 kg, which is a simulation placeholder, not this sensor.
         inertia {
             frame: <wrist_ft_body_origin>
-            mass: 0.01 kg
+            mass: 0.133396 kg
             inertia-matrix: (
-                (1e-5, 0.0, 0.0),
-                (0.0, 1e-5, 0.0),
-                (0.0, 0.0, 1e-5)
+                (3.224e-5, 0.0, 0.0),
+                (0.0, 3.224e-5, 0.0),
+                (0.0, 0.0, 5.558e-5)
             ) kg*m^2
         }
     }
