@@ -72,7 +72,7 @@ ControllerEntry:
 ;
 
 PIDControllerParams:
-    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
     ("," "profile" ":" profile=ContextRef)?
     ("," "measured-derivative" ":" measured_derivative=View)?
     ("," "output-saturation" ":" output_saturation=SaturationSpec)?
@@ -82,7 +82,7 @@ PIDControllerParams:
 ;
 
 ImpedanceControllerParams:
-    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
     ("," "output-saturation" ":" output_saturation=SaturationSpec)?
     ("," terms+=KiParam)?
     "," (
@@ -92,7 +92,7 @@ ImpedanceControllerParams:
 ;
 
 FeedForwardControllerParams:
-    "constraint" ":" "<" constraint=ConstraintRef ">"
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
     ("," "output-saturation" ":" output_saturation=SaturationSpec)?
 ;
 
