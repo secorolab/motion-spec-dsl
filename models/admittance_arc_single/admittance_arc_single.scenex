@@ -9,25 +9,36 @@ ktree inst (ns=aas_mjc) gripper of <gripper_tree>
 
 ktree (ns=aas_mjc) ft_tree {
     body wrist_ft_body {
+        // The coupler between bracelet and gripper: a 65 mm cylinder whose origin is the
+        // bracelet mating face, +z along the tool axis -- which is -z of the bracelet.
         frame wrist_ft_body_origin { }
-        // The sensor reads at the body it is: ft_sensor.xml puts the site at its origin.
+        // The sensing element sits mid-cylinder, as it does on the real tool; ft_mount.xml
+        // puts the site there.
         frame wrist_ft_site {
             pose wrist_ft_site_in_wrist_ft_body {
                 wrt: <wrist_ft_body.wrist_ft_body_origin>
-                xyz: (0.0, 0.0, 0.0) m
+                xyz: (0.0, 0.0, 0.0325) m
                 orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
             }
         }
-        // The measured tool weighs 1.195 kg -- gripper, sensor and couplers together -- and the
-        // gripper bodies carry 1.061604 of it from their MJCF, so the sensor carries the rest.
-        // ft_sensor.xml states 0.01 kg, which is a simulation placeholder, not this sensor.
+        // The far face, where the gripper bolts on.
+        frame wrist_ft_mount {
+            pose wrist_ft_mount_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.065) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
+        // The measured tool weighs 1.195 kg -- coupler, sensor and gripper together -- and the
+        // gripper bodies carry 1.061604 of it from their MJCF, so the coupler carries the rest,
+        // as a solid cylinder 75 mm across.
         inertia {
-            frame: <wrist_ft_body_origin>
+            frame: <wrist_ft_site>
             mass: 0.133396 kg
             inertia-matrix: (
-                (3.224e-5, 0.0, 0.0),
-                (0.0, 3.224e-5, 0.0),
-                (0.0, 0.0, 5.558e-5)
+                (9.386e-5, 0.0, 0.0),
+                (0.0, 9.386e-5, 0.0),
+                (0.0, 0.0, 9.379e-5)
             ) kg*m^2
         }
     }
@@ -45,7 +56,7 @@ ktree (ns=aas_mjc) kinova_ft_2f85 {
             child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
         }
         fixed gripper_on_ft {
-            parent: <ft_tree.wrist_ft_body.wrist_ft_site>
+            parent: <ft_tree.wrist_ft_body.wrist_ft_mount>
             child: <gripper.g_base_mount.g_mount_interface>
         }
         serial {
@@ -124,7 +135,7 @@ scene inst (ns=aas_mjc) admittance_arc_scene_mjc {
         }
 
         model ft-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/assets/ft_sensor.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/ft_mount.xml'
             map tree <ft_tree> to "wrist_ft_body"
         }
 
