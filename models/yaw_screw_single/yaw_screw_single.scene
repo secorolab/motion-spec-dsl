@@ -1,0 +1,24 @@
+ns yss_env = "https://secorolab.github.io/models/environments/yaw-screw-single/"
+ns yss_agn = "https://secorolab.github.io/models/agents/yaw-screw-single/"
+ns yss_scene = "https://secorolab.github.io/models/scenes/yaw-screw-single/"
+
+obj set (ns=yss_env) workspace_objects {
+    object table
+}
+
+ws set (ns=yss_env) workspaces {
+    workspace table_ws
+}
+
+agn set (ns=yss_agn) agents {
+    agent kinova_ft_2f85
+}
+
+comp (ns=yss_env) table_workspace of ws <workspaces.table_ws> {
+    obj <workspace_objects.table>
+}
+
+scene (ns=yss_scene) yaw_screw_scene {
+    ws comp <table_workspace>
+    agn set <agents>
+}
