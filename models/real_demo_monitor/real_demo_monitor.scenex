@@ -128,7 +128,7 @@ scene inst (ns=aas_mjc) admittance_arc_scene_mjc {
         }
 
         model ft-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/assets/ft_mount.xml'
+            sys path = 'src/motion-spec-dsl/models/ft_mount.xml'
             map tree <ft_tree> to "wrist_ft_body"
         }
 
