@@ -55,7 +55,7 @@ ktree (ns=pps_mjc) kinova_2f85 {
             parent: <kinova.bracelet_link.pinch_site>
             child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
         }
-        fixed g_mount_on_ft {
+        fixed gripper_on_ft {
             parent: <ft_tree.wrist_ft_body.wrist_ft_mount>
             child: <gripper.g_base_mount.g_mount_interface>
         }
