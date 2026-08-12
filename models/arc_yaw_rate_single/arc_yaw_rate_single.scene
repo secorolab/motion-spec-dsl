@@ -1,0 +1,24 @@
+ns ayr_env = "https://secorolab.github.io/models/environments/arc-yaw-rate-single/"
+ns ayr_agn = "https://secorolab.github.io/models/agents/arc-yaw-rate-single/"
+ns ayr_scene = "https://secorolab.github.io/models/scenes/arc-yaw-rate-single/"
+
+obj set (ns=ayr_env) workspace_objects {
+    object table
+}
+
+ws set (ns=ayr_env) workspaces {
+    workspace table_ws
+}
+
+agn set (ns=ayr_agn) agents {
+    agent kinova_ft_2f85
+}
+
+comp (ns=ayr_env) table_workspace of ws <workspaces.table_ws> {
+    obj <workspace_objects.table>
+}
+
+scene (ns=ayr_scene) arc_yaw_rate_scene {
+    ws comp <table_workspace>
+    agn set <agents>
+}
