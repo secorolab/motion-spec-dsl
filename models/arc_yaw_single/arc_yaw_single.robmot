@@ -40,7 +40,12 @@ context (ns=app) shared {
         // Half-width of the box the sweep has to end in. A band, not an equality: the last
         // millimetres of a metre-long arc bleed off slowly and a tight gate stalls there.
         linear-distance reach-band         = 0.03 m,
-        linear-distance neg-reach-band     = -0.03 m
+        linear-distance neg-reach-band     = -0.03 m,
+        // Captured once, on the first tick: where the arm rests after the reset. The hold
+        // targets it and the sweep starts from it, so the millimetre the tool sags while
+        // holding cannot walk the arc's start away from the pose the hold was aiming at.
+        pose start-pose         = snapshot of <shared.world.pose-ee-base>,
+        linear-distance elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z
     }
 }
 
@@ -55,17 +60,13 @@ tolerances {
 guarded-motion (ns=app) home {
     description: "Hold the pose the arm resets to until it stops moving"
 
-    context {
-        spec {
-            pose home-pose = snapshot of <shared.world.pose-ee-base>
-        }
-    }
+    context { }
 
     when {}
 
     while {
-        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
-        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <shared.spec.start-pose>.position within <shared.spec.satisfied-band>,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until all {
@@ -94,18 +95,16 @@ guarded-motion (ns=app) arc-yaw {
             linear-distance target-x = 0.001346 m,
             linear-distance target-y = -0.677473 m,
             linear-distance target-z = 0.433728 m,
-            pose start-pose = snapshot of <shared.world.pose-ee-base> on event <ays.E_ARC_ENTERED>,
-            linear-distance elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z,
             pose target-pose = {
                 position: (<spec.target-x>, <spec.target-y>, <spec.target-z>) m,
-                orientation: <spec.start-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, -90.0) deg }
+                orientation: <shared.spec.start-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, -90.0) deg }
             },
             linear-distance target-x-lo = <spec.target-x> + <shared.spec.neg-reach-band>,
             linear-distance target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
             linear-distance target-y-lo = <spec.target-y> + <shared.spec.neg-reach-band>,
             linear-distance target-y-hi = <spec.target-y> + <shared.spec.reach-band>,
             path sweep-path = arc {
-                start:        <spec.start-pose>,
+                start:        <shared.spec.start-pose>,
                 end:          <spec.target-pose>,
                 amplitude:    <spec.sweep-sagitta>,
                 plane-normal: <spec.sweep-normal>
@@ -119,7 +118,7 @@ guarded-motion (ns=app) arc-yaw {
         follow-tangent:     moving <shared.world.pose-ee-base> along <spec.sweep-path> at <spec.arc-speed>,
         follow-position:    keeping <shared.world.pose-ee-base>.position on <spec.sweep-path>,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.sweep-path>,
-        hold-elbow-z:       keeping <shared.world.pose-elbow-base>.position.z equal to <spec.elbow-z> within <shared.spec.satisfied-band>
+        hold-elbow-z:       keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.elbow-z> within <shared.spec.satisfied-band>
     }
 
     until all {
