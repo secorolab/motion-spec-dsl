@@ -102,8 +102,8 @@ def test_ambiguous_suffix_names_all_candidates():
     mm.register_scope_providers({"*.*": SceneRefProvider()})
     src = """
 ns app = "https://example.org/app/"
-context (ns=app) c1 { spec { linear-distance support-z = 0.1 m } }
-context (ns=app) c2 { spec { linear-distance support-z = 0.2 m } }
+context (ns=app) c1 { spec { length support-z = 0.1 m } }
+context (ns=app) c2 { spec { length support-z = 0.2 m } }
 guarded-motion (ns=app) m1 {
     context { spec { duration d = 5.0 s } }
     when {}

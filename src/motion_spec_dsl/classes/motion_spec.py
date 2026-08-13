@@ -19,7 +19,6 @@ from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
 )
 from motion_spec_dsl.classes.context import (
-    QUANTITY_TYPE_ALIASES,
     ContextQuantity,
     ContextRef,
     QuantityType,
@@ -88,7 +87,7 @@ class ToleranceDefault:
 
     def __post_init__(self):
         raw_kind = str(self.kind)
-        self.kind = QUANTITY_TYPE_ALIASES.get(raw_kind) or _authored_enum(QuantityType, raw_kind)
+        self.kind = _authored_enum(QuantityType, raw_kind)
 
 
 @dataclass

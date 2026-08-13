@@ -40,7 +40,7 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel        = 0.0 m/s,
@@ -48,11 +48,11 @@ context (ns=app) shared {
         angular-velocity zero-angvel       = 0.0 rad/s,
         // Half-width of the box the sweep has to end in. A band, not an equality: the last
         // millimetres bleed off slowly and a tight gate stalls there.
-        linear-distance reach-band         = 0.03 m,
-        linear-distance neg-reach-band     = -0.03 m,
+        length reach-band         = 0.03 m,
+        length neg-reach-band     = -0.03 m,
         // Captured once, on the first tick: where the arm rests after the reset.
         pose start-pose         = snapshot of <shared.world.pose-ee-base>,
-        linear-distance elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z
+        length elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z
     }
 }
 
@@ -97,12 +97,12 @@ guarded-motion (ns=app) yaw-screw {
             linear-velocity travel-rate = -0.05 m/s,
             // The tool at home with joint 1 at +90 deg -- the same pose the arc models end on,
             // stated here only to say when to stop.
-            linear-distance target-x    = 0.001346 m,
-            linear-distance target-y    = -0.677473 m,
-            linear-distance target-x-lo = <spec.target-x> + <shared.spec.neg-reach-band>,
-            linear-distance target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
-            linear-distance target-y-lo = <spec.target-y> + <shared.spec.neg-reach-band>,
-            linear-distance target-y-hi = <spec.target-y> + <shared.spec.reach-band>
+            length target-x    = 0.001346 m,
+            length target-y    = -0.677473 m,
+            length target-x-lo = <spec.target-x> + <shared.spec.neg-reach-band>,
+            length target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
+            length target-y-lo = <spec.target-y> + <shared.spec.neg-reach-band>,
+            length target-y-hi = <spec.target-y> + <shared.spec.reach-band>
         }
     }
 

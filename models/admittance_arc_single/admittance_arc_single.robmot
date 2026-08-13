@@ -45,20 +45,20 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel          = 0.0 m/s,
         linear-velocity descend-vel          = -0.05 m/s,
-        linear-distance forward-distance     = 0.05 m,
-        linear-distance contact-z            = 0.03 m,
-        linear-distance bracelet-contact-z   = 0.07 m,
+        length forward-distance     = 0.05 m,
+        length contact-z            = 0.03 m,
+        length bracelet-contact-z   = 0.07 m,
         force force-threshold                 = 10.0 N,
         force neg-force-threshold             = -10.0 N,
         force release-threshold               = 3.0 N,
         force neg-release-threshold           = -3.0 N,
-        linear-distance comply-int-max         = 0.02 m,
-        linear-distance neg-comply-int-max     = -0.02 m
+        length comply-int-max         = 0.02 m,
+        length neg-comply-int-max     = -0.02 m
     }
 }
 
@@ -120,7 +120,7 @@ guarded-motion (ns=app) forward {
     context {
         spec {
             pose start-pose          = snapshot of <shared.world.pose-ee-base>,
-            linear-distance target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
+            length target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
         }
     }
 
@@ -145,19 +145,19 @@ guarded-motion (ns=app) arc-motion {
             linear-velocity min-arc-speed = 0.005 m/s,
             direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
                 = (0.9863939238, 0.1643989873, 0.0),
-            linear-distance chord-x    = -0.05 m,
-            linear-distance chord-y    = 0.30 m,
-            linear-distance chord-y-lo = 0.27 m,
-            linear-distance chord-y-hi = 0.33 m,
-            linear-distance chord-z    = 0.0 m,
-            linear-distance arc-height = 0.18 m,
+            length chord-x    = -0.05 m,
+            length chord-y    = 0.30 m,
+            length chord-y-lo = 0.27 m,
+            length chord-y-hi = 0.33 m,
+            length chord-z    = 0.0 m,
+            length arc-height = 0.18 m,
             pose initial-pose          = snapshot of <shared.world.pose-ee-base>,
             pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
-            linear-distance end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
-            linear-distance end-y      = <spec.initial-pose>.position.y + <spec.chord-y>,
-            linear-distance end-y-lo   = <spec.initial-pose>.position.y + <spec.chord-y-lo>,
-            linear-distance end-y-hi   = <spec.initial-pose>.position.y + <spec.chord-y-hi>,
-            linear-distance end-z      = <spec.initial-pose>.position.z + <spec.chord-z>,
+            length end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
+            length end-y      = <spec.initial-pose>.position.y + <spec.chord-y>,
+            length end-y-lo   = <spec.initial-pose>.position.y + <spec.chord-y-lo>,
+            length end-y-hi   = <spec.initial-pose>.position.y + <spec.chord-y-hi>,
+            length end-z      = <spec.initial-pose>.position.z + <spec.chord-z>,
             pose end-pose = {
                 position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
                 orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, 45.0) deg }

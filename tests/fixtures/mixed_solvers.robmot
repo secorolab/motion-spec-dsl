@@ -18,7 +18,7 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
         pose home-pose = snapshot of <shared.world.pose-ee-base>,
         velocity-twist platform-velocity {

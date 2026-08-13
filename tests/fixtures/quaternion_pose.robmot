@@ -23,7 +23,7 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel = 0.0 m/s
     }

@@ -33,19 +33,19 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel        = 0.0 m/s,
         // Half-width of the box the sweep has to end in. A band, not an equality: the last
         // millimetres of a metre-long arc bleed off slowly and a tight gate stalls there.
-        linear-distance reach-band         = 0.03 m,
-        linear-distance neg-reach-band     = -0.03 m,
+        length reach-band         = 0.03 m,
+        length neg-reach-band     = -0.03 m,
         // Captured once, on the first tick: where the arm rests after the reset. The hold
         // targets it and the sweep starts from it, so the millimetre the tool sags while
         // holding cannot walk the arc's start away from the pose the hold was aiming at.
         pose start-pose         = snapshot of <shared.world.pose-ee-base>,
-        linear-distance elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z
+        length elbow-z = snapshot of <shared.world.pose-elbow-base>.position.z
     }
 }
 
@@ -86,21 +86,21 @@ guarded-motion (ns=app) arc-yaw {
                 = (0.0, 0.0, 1.0),
             // Sagitta of that quarter circle: r * (1 - cos 45deg) with r = 0.677474 m, the
             // radius the home configuration puts the tool at.
-            linear-distance sweep-sagitta = 0.198428 m,
+            length sweep-sagitta = 0.198428 m,
             // The tool at home with joint 1 at +90 deg. Joint 1 turns about the shoulder's
             // z, which the 180 deg mounting flips against the base z, so the arm yaws -90 deg
             // and the tool lands a quarter turn clockwise from where it starts.
-            linear-distance target-x = 0.001346 m,
-            linear-distance target-y = -0.677473 m,
-            linear-distance target-z = 0.433728 m,
+            length target-x = 0.001346 m,
+            length target-y = -0.677473 m,
+            length target-z = 0.433728 m,
             pose target-pose = {
                 position: (<spec.target-x>, <spec.target-y>, <spec.target-z>) m,
                 orientation: <shared.spec.start-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, -90.0) deg }
             },
-            linear-distance target-x-lo = <spec.target-x> + <shared.spec.neg-reach-band>,
-            linear-distance target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
-            linear-distance target-y-lo = <spec.target-y> + <shared.spec.neg-reach-band>,
-            linear-distance target-y-hi = <spec.target-y> + <shared.spec.reach-band>,
+            length target-x-lo = <spec.target-x> + <shared.spec.neg-reach-band>,
+            length target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
+            length target-y-lo = <spec.target-y> + <shared.spec.neg-reach-band>,
+            length target-y-hi = <spec.target-y> + <shared.spec.reach-band>,
             path sweep-path = arc {
                 start:        <shared.spec.start-pose>,
                 end:          <spec.target-pose>,

@@ -114,6 +114,7 @@ class QuantityType(StrEnum):
     AccelerationTwist = "AccelerationTwist"
     Wrench = "Wrench"
     Direction = "Direction"
+    Length = "Length"
     Distance = "Distance"
     Angle = "Angle"
     PlaneAngle = "PlaneAngle"
@@ -137,12 +138,6 @@ class ReferenceGeneratorType(StrEnum):
 
 
 ContextDeclarationType = QuantityType | ReferenceGeneratorType
-
-
-QUANTITY_TYPE_ALIASES = {
-    "linear-distance": QuantityType.Distance,
-    "angular-distance": QuantityType.Angle,
-}
 
 
 @dataclass(eq=False)
@@ -171,13 +166,10 @@ class ContextQuantity(NamedNamespaceObject):
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
         raw_type = str(self.type)
-        if raw_type in QUANTITY_TYPE_ALIASES:
-            self.type = QUANTITY_TYPE_ALIASES[raw_type]
-        else:
-            try:
-                self.type = _authored_enum(ReferenceGeneratorType, raw_type)
-            except ValueError:
-                self.type = _authored_enum(QuantityType, raw_type)
+        try:
+            self.type = _authored_enum(ReferenceGeneratorType, raw_type)
+        except ValueError:
+            self.type = _authored_enum(QuantityType, raw_type)
 
 
 @dataclass(eq=False, kw_only=True)

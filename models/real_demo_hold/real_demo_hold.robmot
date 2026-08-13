@@ -43,7 +43,7 @@ context (ns=app) shared {
         // Six constraints leave the 7th joint free, so the elbow can sink under gravity with
         // the end-effector still on target. This is the actuator-4 bend the arm folds over --
         // everything beyond it hangs off this point. Held where it started, like the pose above.
-        linear-distance support-z = snapshot of <shared.world.pose-elbow-base>.position.z,
+        length support-z = snapshot of <shared.world.pose-elbow-base>.position.z,
         angle gripper-closed  = 0.8 rad,
         angle gripper-open    = 0.0 rad,
         angle grasp-threshold = 0.65 rad

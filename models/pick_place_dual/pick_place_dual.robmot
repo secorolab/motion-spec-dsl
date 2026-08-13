@@ -60,16 +60,16 @@ context (ns=app) shared {
         }
     },
     spec {
-        linear-distance satisfied-band     = 0.01 m,
+        length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity zero-linvel = 0.0 m/s,
-        linear-distance zero-dist   = 0.0 m,
+        length zero-dist   = 0.0 m,
         angle grasp-rot-x            = 3.14159 rad,
         angle grasp-rot-y           = 0.0 rad,
         angle grasp-rot-z             = 1.5708 rad,
         angle gripper-closed        = 0.8 rad,
         angle gripper-open          = 0.0 rad,
-        linear-distance lost-dist   = 0.12 m
+        length lost-dist   = 0.12 m
     }
 }
 
@@ -106,12 +106,12 @@ guarded-motion (ns=app) pick-above {
 
     context {
         spec {
-            linear-distance above-z = 0.26 m,
+            length above-z = 0.26 m,
             linear-velocity approach-speed     = 0.08 m/s,
             linear-velocity min-approach-speed = 0.005 m/s,
             pose start1-pose = snapshot of <shared.world.pose-ee1-base>,
-            linear-distance start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x,
-            linear-distance start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y,
+            length start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x,
+            length start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y,
             pose goal1-pose = {
                 position: (<spec.start1-cube-x>, <spec.start1-cube-y>, <spec.above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -119,8 +119,8 @@ guarded-motion (ns=app) pick-above {
             path arm1-approach-path = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose> },
 
             pose start2-pose = snapshot of <shared.world.pose-ee2-base>,
-            linear-distance start2-cube-x = snapshot of <shared.world.pose-cube2-base>.position.x,
-            linear-distance start2-cube-y = snapshot of <shared.world.pose-cube2-base>.position.y,
+            length start2-cube-x = snapshot of <shared.world.pose-cube2-base>.position.x,
+            length start2-cube-y = snapshot of <shared.world.pose-cube2-base>.position.y,
             pose goal2-pose = {
                 position: (<spec.start2-cube-x>, <spec.start2-cube-y>, <spec.above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -153,8 +153,8 @@ guarded-motion (ns=app) pick {
 
     context {
         spec {
-            linear-distance grasp-z = 0.015 m,
-            linear-distance support-lift = 0.06 m,
+            length grasp-z = 0.015 m,
+            length support-lift = 0.06 m,
             linear-velocity max-lower-velocity = 0.10 m/s,
             linear-acceleration max-lower-acceleration = 0.30 m/s^2,
             linear-jerk max-lower-jerk = 2.0 m/s^3,
@@ -173,17 +173,17 @@ guarded-motion (ns=app) pick {
                 shape: s-curve
             },
 
-            linear-distance grasp1-x = snapshot of <shared.world.pose-cube1-base>.position.x,
-            linear-distance grasp1-y = snapshot of <shared.world.pose-cube1-base>.position.y,
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length grasp1-x = snapshot of <shared.world.pose-cube1-base>.position.x,
+            length grasp1-y = snapshot of <shared.world.pose-cube1-base>.position.y,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose pick1-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
 
-            linear-distance grasp2-x = snapshot of <shared.world.pose-cube2-base>.position.x,
-            linear-distance grasp2-y = snapshot of <shared.world.pose-cube2-base>.position.y,
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length grasp2-x = snapshot of <shared.world.pose-cube2-base>.position.x,
+            length grasp2-y = snapshot of <shared.world.pose-cube2-base>.position.y,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose pick2-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -218,11 +218,11 @@ guarded-motion (ns=app) grasp-hold {
 
     context {
         spec {
-            linear-distance support-lift = 0.06 m,
-            linear-distance grasp-reach = 0.015 m,
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support-lift = 0.06 m,
+            length grasp-reach = 0.015 m,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
     }
@@ -256,21 +256,21 @@ guarded-motion (ns=app) lift {
 
     context {
         spec {
-            linear-distance lift-z = 0.32 m,
+            length lift-z = 0.32 m,
             angle grasp-threshold = 0.15 rad,
-            linear-distance support-lift = 0.06 m,
+            length support-lift = 0.06 m,
 
-            linear-distance lift1-start-x = snapshot of <shared.world.pose-ee1-base>.position.x,
-            linear-distance lift1-start-y = snapshot of <shared.world.pose-ee1-base>.position.y,
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length lift1-start-x = snapshot of <shared.world.pose-ee1-base>.position.x,
+            length lift1-start-y = snapshot of <shared.world.pose-ee1-base>.position.y,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose lift1-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
 
-            linear-distance lift2-start-x = snapshot of <shared.world.pose-ee2-base>.position.x,
-            linear-distance lift2-start-y = snapshot of <shared.world.pose-ee2-base>.position.y,
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length lift2-start-x = snapshot of <shared.world.pose-ee2-base>.position.x,
+            length lift2-start-y = snapshot of <shared.world.pose-ee2-base>.position.y,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose lift2-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -310,19 +310,19 @@ guarded-motion (ns=app) place-above {
 
     context {
         spec {
-            linear-distance place-x = 0.40 m,
-            linear-distance place-y = 0.24 m,
-            linear-distance place-above-z = 0.22 m,
-            linear-distance lifted-z = 0.30 m,
-            linear-distance support-lift = 0.06 m,
+            length place-x = 0.40 m,
+            length place-y = 0.24 m,
+            length place-above-z = 0.22 m,
+            length lifted-z = 0.30 m,
+            length support-lift = 0.06 m,
 
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-above = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
 
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-above = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -362,19 +362,19 @@ guarded-motion (ns=app) place {
 
     context {
         spec {
-            linear-distance place-x = 0.40 m,
-            linear-distance place-y = 0.24 m,
-            linear-distance place-z = 0.03 m,
-            linear-distance place-y-gate = 0.20 m,
-            linear-distance support-lift = 0.06 m,
+            length place-x = 0.40 m,
+            length place-y = 0.24 m,
+            length place-z = 0.03 m,
+            length place-y-gate = 0.20 m,
+            length support-lift = 0.06 m,
 
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-place = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
 
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-place = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -414,11 +414,11 @@ guarded-motion (ns=app) open-grasp-hold {
 
     context {
         spec {
-            linear-distance support-lift = 0.06 m,
-            linear-distance release-z = 0.04 m,
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support-lift = 0.06 m,
+            length release-z = 0.04 m,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
     }
@@ -452,18 +452,18 @@ guarded-motion (ns=app) retreat {
 
     context {
         spec {
-            linear-distance place-x = 0.40 m,
-            linear-distance place-y = 0.24 m,
-            linear-distance place-above-z = 0.22 m,
-            linear-distance support-lift = 0.06 m,
+            length place-x = 0.40 m,
+            length place-y = 0.24 m,
+            length place-above-z = 0.22 m,
+            length support-lift = 0.06 m,
 
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose goal1-pose-retreat = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
 
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose goal2-pose-retreat = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -505,10 +505,10 @@ guarded-motion (ns=app) recover {
 
     context {
         spec {
-            linear-distance support-lift = 0.06 m,
-            linear-distance support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
+            length support-lift = 0.06 m,
+            length support1-z = snapshot of <shared.world.pose-elbow1-base>.position.z + <spec.support-lift>,
             pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base>,
-            linear-distance support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
+            length support2-z = snapshot of <shared.world.pose-elbow2-base>.position.z + <spec.support-lift>,
             pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base>
         }
     }

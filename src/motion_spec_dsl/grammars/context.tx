@@ -70,7 +70,7 @@ ContextQuantityWithGeometryType:
 ;
 
 ScalarQuantityType:
-    "distance" | "angle" | "dimensionless" | "duration" | "path-parameter"
+    "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter"
 ;
 
 ToleranceQuantityType:
@@ -200,11 +200,7 @@ ContextQuantity:
 ;
 
 ScalarContextQuantityType:
-    ScalarQuantityType | QuantityAliasType
-;
-
-QuantityAliasType:
-    "linear-distance" | "angular-distance"
+    ScalarQuantityType
 ;
 
 PlainContextQuantityValue:

@@ -39,7 +39,7 @@ context (ns=app) shared {
         angle gripper-closed       = 0.8 rad,
         angle gripper-open         = 0.0 rad,
         angle grasp-threshold      = 0.65 rad,
-        linear-distance pinch-moved-band = 0.05 m,
+        length pinch-moved-band = 0.05 m,
         force force-threshold      = 10.0 N,
         force neg-force-threshold  = -10.0 N
     }

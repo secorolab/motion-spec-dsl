@@ -175,6 +175,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.Pose: QUDT_UNIT.UNITLESS,
     QuantityType.Position: QUDT_UNIT.M,
     QuantityType.Orientation: QUDT_UNIT["RAD"],
+    QuantityType.Length: QUDT_UNIT.M,
     QuantityType.Distance: QUDT_UNIT.M,
     QuantityType.Angle: QUDT_UNIT["RAD"],
     QuantityType.PlaneAngle: QUDT_UNIT["RAD"],
@@ -198,12 +199,16 @@ CSTR_TYPE_NAME: dict[Any, str] = {
 # a distance is the comp-rob2b LinearDistanceConstraint; an angle has no
 # comp-rob2b equivalent and lives in the secorolab extension. (namespace, local-name)
 CONSTRAINT_TYPE_OVERRIDE: dict[Any, tuple[Any, str]] = {
+    # A length constrained against a bound is comp-rob2b's linear-distance constraint, whether
+    # the model calls the value a length or a distance.
+    QuantityType.Length: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Distance: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Angle: (CSTR_EXT, "AngleConstraint"),
 }
 
 QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
+    QuantityType.Length: QUDT_QKIND.Length,
     QuantityType.Position: QUDT_QKIND.Position,
     QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
     QuantityType.Angle: QUDT_QKIND.PlaneAngle,
