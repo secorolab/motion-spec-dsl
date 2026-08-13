@@ -8,6 +8,7 @@ ktree inst (ns=ays_mjc) kinova of <kinova_tree>
 ktree inst (ns=ays_mjc) gripper of <gripper_tree>
 
 ktree (ns=ays_mjc) ft_tree {
+    root: <wrist_ft_body.wrist_ft_body_origin>
     body wrist_ft_body {
         // The coupler between bracelet and gripper: a 65 mm cylinder whose origin is the
         // bracelet mating face, +z along the tool axis -- which is -z of the bracelet.
@@ -47,6 +48,7 @@ ktree (ns=ays_mjc) ft_tree {
 }
 
 ktree (ns=ays_mjc) kinova_ft_2f85 {
+    root: <kinova.base_link.base_link_origin>
     tree <kinova>
     tree <ft_tree>
     tree <gripper>
@@ -68,6 +70,7 @@ ktree (ns=ays_mjc) kinova_ft_2f85 {
 }
 
 ktree (ns=ays_mjc) world_tree {
+    root: <world_body.world>
     tree <kinova_ft_2f85>
 
     body world_body {
@@ -119,6 +122,7 @@ scene inst (ns=ays_mjc) arc_yaw_scene_mjc {
     scene: <arc_yaw_scene>
 
     kgraph (ns=ays_mjc) arc_yaw_graph {
+        anchor: <world_tree.world_body.world>
         tree <world_tree>
     }
 

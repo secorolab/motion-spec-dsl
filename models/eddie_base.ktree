@@ -14,6 +14,7 @@
 // wheel torque, so no joint here carries an actuation block (the xacro states no gear ratio).
 // The base is a branching tree, not a serial chain, so it declares no joint composition.
 ktree eddie_base_tree {
+    root: <base_footprint.base_footprint_origin>
     body base_footprint {
         frame base_footprint_origin { }
         frame base_link_joint_anchor {

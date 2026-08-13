@@ -10,6 +10,7 @@ ktree inst (ns=ppd_mjc) kinova2 of <kinova_tree>
 ktree inst (ns=ppd_mjc) gripper2 of <gripper_tree>
 
 ktree (ns=ppd_mjc) arm1_tree {
+    root: <kinova1.base_link.base_link_origin>
     tree <kinova1>
     tree <gripper1>
     joints {
@@ -25,6 +26,7 @@ ktree (ns=ppd_mjc) arm1_tree {
 }
 
 ktree (ns=ppd_mjc) arm2_tree {
+    root: <kinova2.base_link.base_link_origin>
     tree <kinova2>
     tree <gripper2>
     joints {
@@ -40,6 +42,7 @@ ktree (ns=ppd_mjc) arm2_tree {
 }
 
 ktree (ns=ppd_mjc) world_tree {
+    root: <world_body.world>
     tree <arm1_tree>
     tree <arm2_tree>
 
@@ -110,6 +113,7 @@ scene inst (ns=ppd_mjc) pick_place_scene_mjc {
     scene: <pick_place_scene>
 
     kgraph (ns=ppd_mjc) pick_place_graph {
+        anchor: <world_tree.world_body.world>
         tree <world_tree>
 
         body cube {
