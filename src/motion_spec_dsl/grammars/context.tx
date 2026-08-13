@@ -31,7 +31,13 @@ GeoPropPair:
     | key="normalization" ":" normalization=AngleRange
 ;
 
-AngleRange: "(" lower=FLOAT "," upper=FLOAT ")" unit=AngleUnit ;
+AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
+
+AngleBound: pi=PiTerm | value=SIGNED_FLOAT ;
+
+PiTerm: negative?="-" (multiplier=SIGNED_FLOAT "*")? "pi" ;
+
+SIGNED_FLOAT: /-?\d+(\.\d+)?([eE][+-]?\d+)?/ ;
 
 QuantityValue:
     ScalarQuantity | VectorXYZ

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import math
+
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,9 +60,19 @@ def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
     return None
 
 
+def _angle_bound(bound) -> float:
+    """An authored angle bound as a number: a literal, or a multiple of pi."""
+    term = getattr(bound, "pi", None)
+    if term is None:
+        return float(getattr(bound, "value", bound))
+    multiplier = getattr(term, "multiplier", None)
+    magnitude = math.pi * (float(multiplier) if multiplier not in (None, "") else 1.0)
+    return -magnitude if getattr(term, "negative", False) else magnitude
+
+
 def _geo_prop_value(props: GeometricProps | None, key: str):
-    """The raw value of geometric prop `key`, unstringified: for props that carry a structure
-    rather than a reference to something already named in the graph."""
+    """The raw value of geometric prop `key`, for a prop carrying a structure rather than a
+    reference to something already named in the graph."""
     if props is None:
         return None
     for pair in props.pairs:

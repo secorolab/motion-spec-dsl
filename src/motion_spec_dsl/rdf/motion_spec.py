@@ -155,6 +155,7 @@ from motion_spec_dsl.rdf.common import (
     _DistancePlan,
     _dsl_unit,
     _evaluator_id,
+    _angle_bound,
     _geo_prop,
     _geo_prop_value,
     _is_distance_view,
@@ -3947,8 +3948,8 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, ALGO_EXT.AngularNormalization))
         scale = math.pi / 180.0 if getattr(angle_range, "unit", "rad") == "deg" else 1.0
         for edge, value in (
-            ("lower", float(angle_range.lower) * scale),
-            ("upper", float(angle_range.upper) * scale),
+            ("lower", _angle_bound(angle_range.lower) * scale),
+            ("upper", _angle_bound(angle_range.upper) * scale),
         ):
             predicate = ALGO_EXT[f"{edge}-bound"]
             bound = self._owned_uri(f"{name}-{edge}", owner)
