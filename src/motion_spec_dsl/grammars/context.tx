@@ -148,12 +148,14 @@ LinearJerkUnit: 'm/s^3' ;
 ForceUnit: 'N' ;
 TorqueUnit: 'Nm' ;
 TimeUnit: 's' | 'ms' ;
+FrequencyUnit: 'Hz' ;
 DimensionlessUnit: '1' ;
 
 Unit:
     LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
     AngularAccelerationUnit | AngularVelocityUnit |
-    LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | DimensionlessUnit
+    LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | FrequencyUnit |
+    DimensionlessUnit
 ;
 
 // Context quantities: values, poses, snapshots, and references.

@@ -113,6 +113,11 @@ from motion_spec_dsl.classes.path import (
 )
 from motion_spec_dsl.classes.ros import (
     Ros,
+    RosActionClients,
+    RosActionServers,
+    RosAlways,
+    RosPublishers,
+    RosSubscribers,
     RosActionServerDecl,
     RosMeasurementAssign,
     RosResult,
@@ -193,6 +198,11 @@ LANGUAGE_CLASSES = [
     MonitorStateBlock,
     MonitorAction,
     Ros,
+    RosPublishers,
+    RosSubscribers,
+    RosActionClients,
+    RosActionServers,
+    RosAlways,
     RosTopicDecl,
     RosSubscriptionDecl,
     RosActionDecl,

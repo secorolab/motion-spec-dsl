@@ -19,9 +19,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from rdflib.graph import Dataset
-from rdflib.namespace import Namespace, PROV, RDF, RDFS, SDO, XSD
-from rdflib.term import Literal, URIRef
 from rdf_utils.collection import add_literal_list_pred
 from rdf_utils.constraints import ConstraintViolation
 from rdf_utils.models.vocab import (
@@ -37,8 +34,8 @@ from rdf_utils.models.vocab import (
     URI_GEOM_PRED_OF_POSITION,
     URI_GEOM_PRED_ORIGIN,
     URI_GEOM_PRED_SEEN_BY,
-    URI_GEOM_PRED_WRT,
     URI_GEOM_PRED_W,
+    URI_GEOM_PRED_WRT,
     URI_GEOM_PRED_X,
     URI_GEOM_PRED_Y,
     URI_GEOM_PRED_Z,
@@ -46,13 +43,13 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_DIRECTION_COSINE_XYZ,
     URI_GEOM_TYPE_EULER_ANGLES,
     URI_GEOM_TYPE_EXTRINSIC,
-    URI_GEOM_TYPE_INTRINSIC,
     URI_GEOM_TYPE_FRAME,
-    URI_GEOM_TYPE_QUATERNION,
+    URI_GEOM_TYPE_INTRINSIC,
     URI_GEOM_TYPE_ORIENT_REF,
     URI_GEOM_TYPE_POINT,
     URI_GEOM_TYPE_POSE,
     URI_GEOM_TYPE_POSITION_REF,
+    URI_GEOM_TYPE_QUATERNION,
     URI_GEOM_TYPE_VECTOR_XYZ,
     URI_QUDT_QK_LENGTH,
     URI_QUDT_QK_MASS,
@@ -60,21 +57,132 @@ from rdf_utils.models.vocab import (
 from rdf_utils.namespace import (
     NS_MM_GEOM_REL,
     NS_MM_QUDT_QTY,
+)
+from rdf_utils.namespace import (
     NS_MM_QUDT_UNIT as QUDT_UNIT,
 )
-
+from rdflib.graph import Dataset
+from rdflib.namespace import PROV, RDF, RDFS, SDO, XSD, Namespace
+from rdflib.term import Literal, URIRef
 from textx import get_model
 from textx.scoping import get_included_models
 
+from motion_spec_dsl.classes.constraint_handler import (
+    CommandForwardingSolver,
+    ConstraintHandler,
+    ControllerEntry,
+    ControllerType,
+    MobilePlatformSolver,
+    SaturationSpec,
+    UntilMonitorRef,
+    WhenMonitorRef,
+    _resolved_solver,
+)
+from motion_spec_dsl.classes.constraints import (
+    BilateralConstraint,
+    ConstraintGroup,
+    ConstraintSpecification,
+    EqualityConstraint,
+    GoalStatusConstraint,
+    GreaterThanConstraint,
+    LessThanConstraint,
+    OutsideConstraint,
+    _flatten_constraint_items,
+    _resolved_spec,
+)
+from motion_spec_dsl.classes.context import (
+    ContextQuantity,
+    ContextRef,
+    GeometricPropKey,
+    GeometricProps,
+    GeoPropPair,
+    Measure,
+    QuantityType,
+    ReferenceGeneratorType,
+    ReferenceValue,
+    SnapshotValue,
+    VectorXYZ,
+    WorldQuantity,
+    WorldQuantityType,
+    _resolved_context_quantity,
+    _resolved_world_quantity,
+)
+from motion_spec_dsl.classes.controller_semantics import (
+    SUBSPACE_ALIAS,
+    controller_command_record,
+    controller_solver,
+)
+from motion_spec_dsl.classes.controller_semantics import (
+    axis_label as semantic_axis_label,
+)
+from motion_spec_dsl.classes.coordinates import (
+    AccelerationTwistCoordinate,
+    Coordinates,
+    OrientationCoordinate,
+    PoseCoordinate,
+    VelocityTwistCoordinate,
+    WrenchCoordinate,
+)
+from motion_spec_dsl.classes.motion_spec import (
+    ContextDeclReference,
+    ContextSpec,
+    ExecutionContext,
+    GuardedMotion,
+    Model,
+    PostContextDecl,
+    PreContextDecl,
+    SpecContextDecl,
+    ToleranceDefaults,
+    WorldContextDecl,
+)
+from motion_spec_dsl.classes.path import (
+    AdmittanceSpec,
+    PathValue,
+    ProfileSpec,
+)
+from motion_spec_dsl.classes.ros import (
+    Ros,
+    RosActionServerDecl,
+    RosSubscriptionDecl,
+)
+from motion_spec_dsl.rdf.common import (
+    ANGLE_UNITS,
+    _angle_unit,
+    _axis_vector,
+    _context_quantity,
+    _DistancePlan,
+    _dsl_unit,
+    _evaluator_id,
+    _geo_prop,
+    _is_distance_view,
+    _node_name,
+    _ns_term,
+    _resolved_constraint_items,
+    _scalar_id,
+    _scalar_type,
+    _view_subspace,
+)
+from motion_spec_dsl.rdf.model import (
+    _QKIND_PREFIXES,
+    CONSTRAINT_TYPE_OVERRIDE,
+    CONTEXT_COMPOSITE_WORLD_TYPE,
+    CSTR_TYPE_NAME,
+    GEOM_DOMAIN_SPLIT,
+    GRAPH_BINDINGS,
+    QUDT_KIND_BY_QUANTITY_TYPE,
+    ROS,
+    SCALAR_UNIT,
+    WORLD_SPECS,
+)
 from motion_spec_dsl.rdf_parser.vocab import (
     AGN,
     ALGO_EXT,
-    EL,
     APP,
     CSTR,
     CSTR_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
+    EL,
     EXEC,
     GEOM_COORD,
     GEOM_ENT,
@@ -91,119 +199,13 @@ from motion_spec_dsl.rdf_parser.vocab import (
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
+    SENSORS,
     SLV,
     SLV_EXT,
     SOSA,
     SSN,
     TIME,
 )
-from motion_spec_dsl.classes.controller_semantics import (
-    SUBSPACE_ALIAS,
-    axis_label as semantic_axis_label,
-    controller_command_record,
-    controller_solver,
-)
-from motion_spec_dsl.classes.constraint_handler import (
-    ConstraintHandler,
-    ControllerEntry,
-    ControllerType,
-    SaturationSpec,
-    MobilePlatformSolver,
-    CommandForwardingSolver,
-    UntilMonitorRef,
-    WhenMonitorRef,
-    _resolved_solver,
-)
-from motion_spec_dsl.classes.constraints import (
-    BilateralConstraint,
-    OutsideConstraint,
-    ConstraintGroup,
-    ConstraintSpecification,
-    EqualityConstraint,
-    GoalStatusConstraint,
-    GreaterThanConstraint,
-    LessThanConstraint,
-    _flatten_constraint_items,
-    _resolved_spec,
-)
-from motion_spec_dsl.classes.context import (
-    ContextRef,
-    GeoPropPair,
-    GeometricPropKey,
-    GeometricProps,
-    QuantityType,
-    ReferenceGeneratorType,
-    ReferenceValue,
-    Measure,
-    SnapshotValue,
-    ContextQuantity,
-    VectorXYZ,
-    WorldQuantity,
-    WorldQuantityType,
-    _resolved_context_quantity,
-    _resolved_world_quantity,
-)
-from motion_spec_dsl.classes.coordinates import (
-    AccelerationTwistCoordinate,
-    Coordinates,
-    OrientationCoordinate,
-    PoseCoordinate,
-    VelocityTwistCoordinate,
-    WrenchCoordinate,
-)
-from motion_spec_dsl.classes.motion_spec import (
-    ContextDeclReference,
-    ContextSpec,
-    ExecutionContext,
-    Model,
-    GuardedMotion,
-    PostContextDecl,
-    PreContextDecl,
-    SpecContextDecl,
-    ToleranceDefaults,
-    WorldContextDecl,
-)
-from motion_spec_dsl.classes.path import (
-    ProfileSpec,
-    AdmittanceSpec,
-    PathValue,
-)
-from motion_spec_dsl.classes.ros import (
-    Ros,
-    RosActionServerDecl,
-    RosSubscriptionDecl,
-)
-
-from motion_spec_dsl.rdf.model import (
-    GEOM_DOMAIN_SPLIT,
-    WORLD_SPECS,
-    SCALAR_UNIT,
-    CSTR_TYPE_NAME,
-    CONSTRAINT_TYPE_OVERRIDE,
-    QUDT_KIND_BY_QUANTITY_TYPE,
-    _QKIND_PREFIXES,
-    CONTEXT_COMPOSITE_WORLD_TYPE,
-    GRAPH_BINDINGS,
-    ROS,
-)
-from motion_spec_dsl.rdf.common import (
-    _ns_term,
-    _node_name,
-    _geo_prop,
-    _is_distance_view,
-    _view_subspace,
-    _scalar_id,
-    _axis_vector,
-    _scalar_type,
-    _evaluator_id,
-    ANGLE_UNITS,
-    _angle_unit,
-    _dsl_unit,
-    _context_quantity,
-    _resolved_constraint_items,
-    _DistancePlan,
-)
-
 
 _MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
     "VelocityComposition": (SLV.VelocityCompositionSolver, SLV.velocity),
@@ -432,13 +434,13 @@ class MotionSpecDatasetBuilder:
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
                 elif isinstance(spec, Ros):
-                    for server in spec.action_servers:
+                    for server in spec.servers:
                         self._emit_ros_action_server(server)
                     for subscription in spec.subscriptions:
                         self._emit_ros_subscription(subscription)
-                    for standing in spec.standing:
+                    for standing in spec.always:
                         self._emit_ros_standing_pub(standing)
-                    if spec.action_servers or spec.subscriptions or spec.standing:
+                    if spec.servers or spec.subscriptions or spec.always:
                         self.dataset.bind(spec.ns.name, spec.ns.uri)
                         context[spec.ns.name] = spec.ns.uri
 
@@ -509,21 +511,29 @@ class MotionSpecDatasetBuilder:
             )
 
     def _emit_ros_standing_pub(self, standing: Any) -> None:
-        """A publisher that reports measurements for the whole run.
+        """A declared topic published for the whole run, at the rate the model states.
 
-        Held by the execution context rather than by a monitor: what it publishes is true of the
-        run, so it is not scoped to any one motion the way a verdict is.
+        Held by the execution context rather than by a monitor: what it publishes is true of
+        the run, so it is not scoped to any one motion the way a verdict is. The quantity is
+        stated whole -- the message reports it, and only a field the model wants mapped
+        differently is written out.
         """
         node = URIRef(standing.uri)
         self.graph.add((node, RDF.type, ROS.Topic))
         self.graph.add((node, ROS["channel-name"], Literal(standing.topic.channel_name)))
         self.graph.add((node, ROS["type-name"], Literal(standing.topic.type_name)))
+        self.graph.add((node, RDF.value, URIRef(standing.quantity.uri)))
+
+        rate = URIRef(f"{standing.uri}.rate")
+        self._emit_scalar_quantity(
+            rate, float(standing.rate.value), NS_MM_QUDT_QTY["Frequency"], _dsl_unit(standing.rate.unit)
+        )
+        self.graph.add((node, SENSORS["update-rate"], rate))
+
         for index, assignment in enumerate(standing.fields):
             row = URIRef(f"{standing.uri}.f{index}")
             self.graph.add((node, RDFS.member, row))
             self.graph.add((row, ROS["field-path"], Literal(assignment.field_path)))
-            # The measurement itself, not a value: the scalar view of the quantity this field
-            # reports, which is the channel the runtime reads off the blackboard.
             self.graph.add((row, RDF.value, self._view_node(assignment, standing)))
         for context in self.model.specs:
             if isinstance(context, ExecutionContext):

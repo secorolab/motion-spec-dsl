@@ -38,6 +38,7 @@ DSL_UNIT: dict[str, Any] = {
     "Nm": QUDT_UNIT["N-M"],
     "s": QUDT_UNIT["SEC"],
     "ms": QUDT_UNIT["MilliSEC"],
+    "Hz": QUDT_UNIT["HZ"],
     "1": QUDT_UNIT.UNITLESS,
 }
 

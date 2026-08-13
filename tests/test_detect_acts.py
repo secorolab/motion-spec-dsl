@@ -19,7 +19,7 @@ ACTIONS = """ros (ns=app) {
 
 exec-context (ns=app) base-exec {"""
 
-DETECT = "    find-ee: detect <gripper.g_base.g_pinch> using <app.locate>\n\n    when {}"
+DETECT = "    find-ee: detect <gripper.g_base.g_pinch> using <ros.action-clients.locate>\n\n    when {}"
 
 UNTIL = """until all {
         settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
@@ -75,7 +75,7 @@ def test_a_target_no_world_pose_is_declared_of_is_rejected(parse_source, base_so
         _graph(
             parse_source,
             base_source,
-            detect="    find-ee: detect <world_tree.table> using <app.locate>\n\n    when {}",
+            detect="    find-ee: detect <world_tree.table> using <ros.action-clients.locate>\n\n    when {}",
         )
 
 
@@ -96,7 +96,7 @@ guarded-motion (ns=app) probe {
         }
     }
 
-    find-ee: detect <gripper.g_base.g_pinch> using <app.locate>
+    find-ee: detect <gripper.g_base.g_pinch> using <ros.action-clients.locate>
 
     when {}
 

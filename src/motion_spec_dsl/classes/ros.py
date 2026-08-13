@@ -107,40 +107,120 @@ class RosMeasurementAssign:
         return self.selector.axis
 
 
-@dataclass(eq=False)
-class RosStandingPub(NamedNamespaceObject):
-    """A publisher that reports measurements for the whole run.
+@dataclass
+class RosStandingPub:
+    """A declared topic, published for the whole run at a stated rate.
 
     A monitor's `publish:` states a verdict while its motion is active. This states readings,
-    and belongs to the run rather than to any motion, so it keeps publishing between them.
+    and belongs to the run rather than to any motion, so it keeps publishing between them. It
+    names no entity of its own: the topic is the thing being published, so these are further
+    facts about it.
     """
 
     parent: object
-    name: str
+    rate: object
     topic: RosTopicDecl
+    quantity: object
     fields: list = field(default_factory=list)
 
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    @property
+    def uri(self):
+        """The topic's own node: what is published always is a fact about the topic."""
+        return self.topic.uri
+
+    @property
+    def name(self) -> str:
+        return self.topic.name
+
+
+@dataclass
+class _RosGroup:
+    """One kind of ROS interface, named after the kind so an entry resolves by what it is."""
+
+    parent: object
+
+    @property
+    def name(self) -> str:
+        return self.GROUP
+
+    @property
+    def namespace(self) -> Namespace:
+        """Its entries mint under the block, so the group is a path segment like any other."""
+        return Namespace(self.parent.namespace + self.parent.name + "/")
+
+
+@dataclass
+class RosPublishers(_RosGroup):
+    GROUP = "publishers"
+    topics: list[RosTopicDecl] = field(default_factory=list)
+
+
+@dataclass
+class RosSubscribers(_RosGroup):
+    GROUP = "subscribers"
+    subscriptions: list[RosSubscriptionDecl] = field(default_factory=list)
+
+
+@dataclass
+class RosActionClients(_RosGroup):
+    GROUP = "action-clients"
+    action_clients: list = field(default_factory=list)
+
+
+@dataclass
+class RosActionServers(_RosGroup):
+    GROUP = "action-servers"
+    action_servers: list[RosActionServerDecl] = field(default_factory=list)
+
+
+@dataclass
+class RosAlways(_RosGroup):
+    GROUP = "always"
+    standing: list[RosStandingPub] = field(default_factory=list)
 
 
 @dataclass
 class Ros:
     """The model's ROS interface: what it publishes, what it subscribes to, what it calls, and
-    what it serves, all minted in one namespace."""
+    what it serves, each in a scope named after the kind and all minting IRIs in one namespace."""
 
     parent: object
     ns: NamespaceDeclLike
-    topics: list[RosTopicDecl] = field(default_factory=list)
-    subscriptions: list[RosSubscriptionDecl] = field(default_factory=list)
-    action_clients: list[RosActionDecl] = field(default_factory=list)
-    action_servers: list[RosActionServerDecl] = field(default_factory=list)
-    standing: list[RosStandingPub] = field(default_factory=list)
+    publishers: RosPublishers | None = None
+    subscribers: RosSubscribers | None = None
+    action_clients: RosActionClients | None = None
+    action_servers: RosActionServers | None = None
+    standing: RosAlways | None = None
 
     @property
     def name(self) -> str:
-        """The namespace prefix names this block, so `<ns.entry>` resolves by dotted path."""
-        return self.ns.name
+        """`ros` names the block, so an entry resolves as `<ros.publishers.entry>` -- the
+        namespace is where its IRI is minted, not how it is referred to."""
+        return "ros"
+
+    @property
+    def namespace(self) -> Namespace:
+        return Namespace(self.ns.uri)
+
+    @property
+    def topics(self) -> list[RosTopicDecl]:
+        return self.publishers.topics if self.publishers else []
+
+    @property
+    def subscriptions(self) -> list[RosSubscriptionDecl]:
+        return self.subscribers.subscriptions if self.subscribers else []
+
+    @property
+    def clients(self) -> list:
+        return self.action_clients.action_clients if self.action_clients else []
+
+    @property
+    def servers(self) -> list[RosActionServerDecl]:
+        return self.action_servers.action_servers if self.action_servers else []
+
+    @property
+    def always(self) -> list[RosStandingPub]:
+        return self.standing.standing if self.standing else []
 
     @property
     def namespace(self) -> Namespace:

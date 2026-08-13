@@ -29,10 +29,10 @@ ORDERED_UNTIL = """until all {
         risen-z: <shared.world.twist-ee-base>.linvel.z greater than <shared.spec.zero-linvel>
     }"""
 
-BOTH_STATES = """satisfied { publish: TRUE to <app.settled> },
-        violated { publish: FALSE to <app.settled> },"""
-BLOCK_FORM = """satisfied { publish: to <app.settled> { data: 1.0 } },
-        violated { publish: to <app.settled> { data: 0.0 } },"""
+BOTH_STATES = """satisfied { publish: TRUE to <ros.publishers.settled> },
+        violated { publish: FALSE to <ros.publishers.settled> },"""
+BLOCK_FORM = """satisfied { publish: to <ros.publishers.settled> { data: 1.0 } },
+        violated { publish: to <ros.publishers.settled> { data: 0.0 } },"""
 
 
 def _graph(parse_source, base_source: str, monitor: str, *, target: str = "home.until"):
@@ -83,7 +83,7 @@ def test_the_block_form_states_the_field_it_writes(parse_source, base_source):
 
 def test_a_satisfied_only_publish_is_legal(parse_source, base_source):
     """TRUE while satisfied, silence otherwise."""
-    graph = _graph(parse_source, base_source, "satisfied { publish: TRUE to <app.settled> },")
+    graph = _graph(parse_source, base_source, "satisfied { publish: TRUE to <ros.publishers.settled> },")
     monitor = next(graph.subjects(RDF.type, ROS.Topic))
     (row,) = _rows(graph)
     assert row[:2] == ("", "TRUE")
@@ -101,7 +101,7 @@ def test_a_conjunction_may_publish_on_violated(parse_source, base_source):
 
 def test_a_violated_only_publish_is_rejected(parse_source, base_source):
     with pytest.raises(TextXSemanticError, match="author the satisfied publish too"):
-        _graph(parse_source, base_source, "violated { publish: FALSE to <app.settled> },")
+        _graph(parse_source, base_source, "violated { publish: FALSE to <ros.publishers.settled> },")
 
 
 def test_every_state_publishes_the_same_channel(parse_source, base_source):
@@ -109,8 +109,8 @@ def test_every_state_publishes_the_same_channel(parse_source, base_source):
         _graph(
             parse_source,
             base_source,
-            """satisfied { publish: TRUE to <app.settled> },
-        violated { publish: FALSE to <app.other> },""",
+            """satisfied { publish: TRUE to <ros.publishers.settled> },
+        violated { publish: FALSE to <ros.publishers.other> },""",
             target="home.risen-z",
         )
 
@@ -121,8 +121,8 @@ def test_a_state_publishes_once(parse_source, base_source):
             parse_source,
             base_source,
             """satisfied {
-            publish: TRUE to <app.settled>,
-            publish: TRUE to <app.settled>,
+            publish: TRUE to <ros.publishers.settled>,
+            publish: TRUE to <ros.publishers.settled>,
         },""",
         )
 
@@ -130,4 +130,4 @@ def test_a_state_publishes_once(parse_source, base_source):
 def test_the_monitor_level_publish_is_gone(parse_source, base_source):
     """A publish belongs to a state block; there is no monitor-wide form to fall back on."""
     with pytest.raises(TextXSyntaxError):
-        _graph(parse_source, base_source, "publish: to <app.settled>,")
+        _graph(parse_source, base_source, "publish: to <ros.publishers.settled>,")

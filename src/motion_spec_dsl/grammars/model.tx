@@ -19,24 +19,35 @@ Specification:
     ContextSpec | ExecutionContext | ToleranceDefaults | Ros | GuardedMotion | ConstraintHandler
 ;
 
+// Each group is a scope of its own, so an entry is referred to by what it is --
+// `<ros.publishers.ext-wrench>` -- rather than by the namespace it happens to mint IRIs in,
+// which every other kind of name shares.
 Ros:
     "ros" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
-        ("publishers"     "{" topics+=RosTopicDecl[","] ","? "}" ","?)?
-        ("subscribers"    "{" subscriptions+=RosSubscriptionDecl[","] ","? "}" ","?)?
-        ("action-clients" "{" action_clients+=RosActionDecl[","] ","? "}" ","?)?
-        ("action-servers" "{" action_servers+=RosActionServerDecl[","] ","? "}" ","?)?
-        ("always"         "{" standing+=RosStandingPub[","] ","? "}" ","?)?
+        (publishers=RosPublishers ","?)?
+        (subscribers=RosSubscribers ","?)?
+        (action_clients=RosActionClients ","?)?
+        (action_servers=RosActionServers ","?)?
+        (standing=RosAlways ","?)?
     "}"
 ;
 
+RosPublishers:    "publishers"     "{" topics+=RosTopicDecl[","] ","? "}" ;
+RosSubscribers:   "subscribers"    "{" subscriptions+=RosSubscriptionDecl[","] ","? "}" ;
+RosActionClients: "action-clients" "{" action_clients+=RosActionDecl[","] ","? "}" ;
+RosActionServers: "action-servers" "{" action_servers+=RosActionServerDecl[","] ","? "}" ;
+RosAlways:        "always"         "{" standing+=RosStandingPub[","] ","? "}" ;
+
+// The topic is already declared above, so this states when it is published and what it carries,
+// rather than naming a second thing. The message reports the quantity whole: its fields are the
+// quantity's, and a model that wants a different mapping writes the ones it wants to change.
 RosStandingPub:
-    name=IRI_TRUNK ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{"
-        fields+=RosMeasurementAssign[","] ","?
-    "}"
+    "publish" "at" rate=Measure "to" "<" topic=[RosTopicDecl|FQN] ">"
+    "with" "<" quantity=[WorldQuantity|FQN] ">"
+    ("{" fields+=RosMeasurementAssign[","] ","? "}")?
 ;
 
-// A standing message reports measurements, so a field names a world quantity and the component
-// of it to report -- not a literal, which is all a monitor's `publish:` can carry.
+// One overridden field of a standing message: the component of a world quantity it reports.
 RosMeasurementAssign:
     path+=ID['.'] ":" "<" quantity=[WorldQuantity|FQN] ">" selector=SelectorTail
 ;

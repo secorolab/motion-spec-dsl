@@ -86,7 +86,7 @@ guarded-motion (ns=app) arc-yaw {
                 = (0.0, 0.0, 1.0),
             // Sagitta of that quarter circle: r * (1 - cos 45deg) with r = 0.677474 m, the
             // radius the home configuration puts the tool at.
-            length sweep-sagitta = 0.198428 m,
+            distance sweep-sagitta = 0.198428 m,
             // The tool at home with joint 1 at +90 deg. Joint 1 turns about the shoulder's
             // z, which the 180 deg mounting flips against the base z, so the arm yaws -90 deg
             // and the tool lands a quarter turn clockwise from where it starts.
@@ -140,7 +140,7 @@ constraint-handler (ns=app) handler-home {
         arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
             algorithm: rne,
-            gravity: (0.0, 0.0, 9.81) m/s^2
+            gravity: (0.0, 0.0, -9.81) m/s^2
         }
     }
 }

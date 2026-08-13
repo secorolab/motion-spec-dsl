@@ -150,7 +150,7 @@ guarded-motion (ns=app) arc-motion {
             length chord-y-lo = 0.27 m,
             length chord-y-hi = 0.33 m,
             length chord-z    = 0.0 m,
-            length arc-height = 0.18 m,
+            distance arc-height = 0.18 m,
             pose initial-pose          = snapshot of <shared.world.pose-ee-base>,
             pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
             length end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
@@ -282,9 +282,9 @@ constraint-handler (ns=app) handler-forward {
         mon-forward-done: monitor <forward.reached-forward> {
             satisfied {
                 trigger: event <aas.E_FORWARD_DONE>,
-                publish: to <aas.forward-done> { trinary.value: TRUE },
+                publish: to <ros.publishers.forward-done> { trinary.value: TRUE },
             },
-            violated { publish: to <aas.forward-done> { trinary.value: FALSE } },
+            violated { publish: to <ros.publishers.forward-done> { trinary.value: FALSE } },
         }
     }
     controllers {
@@ -339,7 +339,7 @@ constraint-handler (ns=app) handler-arc {
         rne-arm-solver: serial-chain {
             agent: <agents.kinova_ft_2f85>,
             algorithm: rne,
-            gravity: (0.0, 0.0, 9.81) m/s^2
+            gravity: (0.0, 0.0, -9.81) m/s^2
         }
     }
 }

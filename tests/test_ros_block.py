@@ -40,7 +40,7 @@ exec-context (ns=app) base-exec {"""
 MONITOR = "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },"
 OCCURRENCE = (
     "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED>, "
-    "publish: event to <app.bdd-events> },"
+    "publish: event to <ros.publishers.bdd-events> },"
 )
 
 
@@ -114,7 +114,7 @@ def test_an_occurrence_without_a_trigger_is_rejected(parse_source, base_source):
 def test_an_occurrence_beside_authored_fields_is_rejected(parse_source, base_source):
     source = _with_occurrence(base_source).replace(
         OCCURRENCE,
-        OCCURRENCE + '\n            violated { publish: to <app.bdd-events> { uri: "x" } },',
+        OCCURRENCE + '\n            violated { publish: to <ros.publishers.bdd-events> { uri: "x" } },',
         1,
     )
     with pytest.raises(TextXSemanticError, match="both an occurrence and authored fields"):

@@ -24,7 +24,7 @@ def validate_ros(model: Model) -> None:
     if not blocks:
         return
 
-    servers = blocks[0].action_servers
+    servers = blocks[0].servers
     if len(servers) > 1:
         raise semantic_error(
             f"Model serves {len(servers)} actions; a runtime answers one.",
