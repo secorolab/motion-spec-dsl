@@ -84,6 +84,47 @@ class RosSubscriptionDecl(NamedNamespaceObject):
 
 
 @dataclass
+class RosMeasurementAssign:
+    """One field of a standing message, and the measurement component it reports."""
+
+    parent: object
+    path: list
+    quantity: object
+    selector: object
+
+    @property
+    def field_path(self) -> str:
+        return ".".join(self.path)
+
+    # A view is what the graph already calls "this component of that quantity", so a standing
+    # field is read as one: same node names, same scalar, same blackboard channel.
+    @property
+    def subspace(self):
+        return self.selector.subspace
+
+    @property
+    def axis(self):
+        return self.selector.axis
+
+
+@dataclass(eq=False)
+class RosStandingPub(NamedNamespaceObject):
+    """A publisher that reports measurements for the whole run.
+
+    A monitor's `publish:` states a verdict while its motion is active. This states readings,
+    and belongs to the run rather than to any motion, so it keeps publishing between them.
+    """
+
+    parent: object
+    name: str
+    topic: RosTopicDecl
+    fields: list = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+
+@dataclass
 class Ros:
     """The model's ROS interface: what it publishes, what it subscribes to, what it calls, and
     what it serves, all minted in one namespace."""
@@ -94,6 +135,7 @@ class Ros:
     subscriptions: list[RosSubscriptionDecl] = field(default_factory=list)
     action_clients: list[RosActionDecl] = field(default_factory=list)
     action_servers: list[RosActionServerDecl] = field(default_factory=list)
+    standing: list[RosStandingPub] = field(default_factory=list)
 
     @property
     def name(self) -> str:

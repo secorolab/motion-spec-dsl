@@ -25,7 +25,20 @@ Ros:
         ("subscribers"    "{" subscriptions+=RosSubscriptionDecl[","] ","? "}" ","?)?
         ("action-clients" "{" action_clients+=RosActionDecl[","] ","? "}" ","?)?
         ("action-servers" "{" action_servers+=RosActionServerDecl[","] ","? "}" ","?)?
+        ("always"         "{" standing+=RosStandingPub[","] ","? "}" ","?)?
     "}"
+;
+
+RosStandingPub:
+    name=IRI_TRUNK ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{"
+        fields+=RosMeasurementAssign[","] ","?
+    "}"
+;
+
+// A standing message reports measurements, so a field names a world quantity and the component
+// of it to report -- not a literal, which is all a monitor's `publish:` can carry.
+RosMeasurementAssign:
+    path+=ID['.'] ":" "<" quantity=[WorldQuantity|FQN] ">" selector=SelectorTail
 ;
 
 RosSubscriptionDecl:

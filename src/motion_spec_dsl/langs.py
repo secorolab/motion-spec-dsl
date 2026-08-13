@@ -114,7 +114,9 @@ from motion_spec_dsl.classes.path import (
 from motion_spec_dsl.classes.ros import (
     Ros,
     RosActionServerDecl,
+    RosMeasurementAssign,
     RosResult,
+    RosStandingPub,
     RosSubscriptionDecl,
 )
 from motion_spec_dsl.classes.scoping import SceneRefProvider, finalize_imported_scenes
@@ -196,6 +198,8 @@ LANGUAGE_CLASSES = [
     RosActionDecl,
     RosActionServerDecl,
     RosResult,
+    RosStandingPub,
+    RosMeasurementAssign,
     DetectDecl,
     SceneObjRef,
     GoalStatusConstraint,

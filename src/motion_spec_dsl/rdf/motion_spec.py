@@ -436,7 +436,9 @@ class MotionSpecDatasetBuilder:
                         self._emit_ros_action_server(server)
                     for subscription in spec.subscriptions:
                         self._emit_ros_subscription(subscription)
-                    if spec.action_servers or spec.subscriptions:
+                    for standing in spec.standing:
+                        self._emit_ros_standing_pub(standing)
+                    if spec.action_servers or spec.subscriptions or spec.standing:
                         self.dataset.bind(spec.ns.name, spec.ns.uri)
                         context[spec.ns.name] = spec.ns.uri
 
@@ -505,6 +507,27 @@ class MotionSpecDatasetBuilder:
                     URIRef(str(getattr(target.ref, "uri", target.ref))),
                 )
             )
+
+    def _emit_ros_standing_pub(self, standing: Any) -> None:
+        """A publisher that reports measurements for the whole run.
+
+        Held by the execution context rather than by a monitor: what it publishes is true of the
+        run, so it is not scoped to any one motion the way a verdict is.
+        """
+        node = URIRef(standing.uri)
+        self.graph.add((node, RDF.type, ROS.Topic))
+        self.graph.add((node, ROS["channel-name"], Literal(standing.topic.channel_name)))
+        self.graph.add((node, ROS["type-name"], Literal(standing.topic.type_name)))
+        for index, assignment in enumerate(standing.fields):
+            row = URIRef(f"{standing.uri}.f{index}")
+            self.graph.add((node, RDFS.member, row))
+            self.graph.add((row, ROS["field-path"], Literal(assignment.field_path)))
+            # The measurement itself, not a value: the scalar view of the quantity this field
+            # reports, which is the channel the runtime reads off the blackboard.
+            self.graph.add((row, RDF.value, self._view_node(assignment, standing)))
+        for context in self.model.specs:
+            if isinstance(context, ExecutionContext):
+                self.graph.add((URIRef(context.uri), RDFS.member, node))
 
     def _emit_execution_context(self, context: ExecutionContext) -> None:
         """Emit the authored scene, platform, and control-period binding."""
