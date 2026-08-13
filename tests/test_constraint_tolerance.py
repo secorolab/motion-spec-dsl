@@ -106,6 +106,19 @@ def test_a_model_wide_default_bands_every_constraint_of_that_kind(
     assert len(bands) == 2  # the authored metre band, and the one default
 
 
+def test_one_default_bands_every_error_measured_in_its_unit(parse_source, base_source) -> None:
+    """A metre error is a metre error: an axis of a position and a distance between two poses
+    take the same `position` band the whole position does, so the author states it once."""
+    one_axis = (
+        "hold-position: keeping <shared.world.pose-ee-base>.position.x equal to "
+        "<spec.home-pose>.position.x"
+    )
+    source = _swap(base_source, ANCHOR, one_axis)
+    source = _swap(source, "guarded-motion", "tolerances { position: 0.02 m }\n\nguarded-motion")
+
+    assert _band_of(_graph(parse_source, source), "hold-position") == 0.02
+
+
 def test_an_authored_band_wins_over_the_default(parse_source, base_source) -> None:
     source = _swap(
         base_source, "guarded-motion", "tolerances { linear-velocity: 0.02 m/s }\n\nguarded-motion"
@@ -126,11 +139,12 @@ def test_a_default_must_be_measured_in_its_kind(parse_source, base_source) -> No
 
 
 def test_a_kind_takes_one_default(parse_source, base_source) -> None:
-    """`distance` and `linear-distance` name one kind, so the collision only shows up here."""
+    """The entries are a list, so a repeated key parses; which of the two applies is not a
+    question the model gets to leave open."""
     source = _swap(
         base_source,
         "guarded-motion",
-        "tolerances { linear-distance: 0.01 m, distance: 0.02 m }\n\nguarded-motion",
+        "tolerances { position: 0.01 m, position: 0.02 m }\n\nguarded-motion",
     )
     with pytest.raises(TextXSemanticError, match="already has a default band"):
         _graph(parse_source, source)

@@ -50,8 +50,6 @@ context (ns=app) shared {
 }
 
 tolerances {
-    linear-distance:  0.01 m,
-    angular-distance: 0.01 rad,
     linear-velocity:  0.01 m/s,
     position:         0.01 m,
     orientation:      0.01 rad

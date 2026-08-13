@@ -16,7 +16,7 @@ exec-context (ns=app) real-demo-monitor-exec {
 
 tolerances {
     position:         0.05 m,
-    angular-distance: 0.01 rad
+    orientation:      0.01 rad
 }
 
 context (ns=app) shared {

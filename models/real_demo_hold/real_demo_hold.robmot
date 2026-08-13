@@ -54,9 +54,7 @@ context (ns=app) shared {
 // than on each constraint that takes them.
 tolerances {
     position:         0.05 m,
-    linear-distance:  0.05 m,
-    orientation:      0.10 rad,
-    angular-distance: 0.01 rad
+    orientation:      0.01 rad
 }
 
 guarded-motion (ns=app) hold-close {

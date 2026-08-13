@@ -369,8 +369,7 @@ def validate_scalar_order_relations(model: Model) -> None:
 def validate_tolerance_defaults(model: Model) -> None:
     """A model-wide band applies to every constraint of its kind, so it has to be stated in
     that kind's units and stated once. Neither is decidable in the grammar: the value rule is
-    shared across kinds, and the entries only collide once their keywords resolve (`distance`
-    and `linear-distance` name the same kind).
+    shared across kinds, and the entries are a list, which admits a repeated key.
     """
     seen: dict[QuantityType, ToleranceDefault] = {}
     for entry in get_children_of_type(ToleranceDefault, model):

@@ -252,6 +252,16 @@ def _qudt_kind(quantity_type: Any) -> URIRef:
     return QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type) or QUDT_QKIND[quantity_type]
 
 
+# A band bounds a scalar error in one unit, so one default per unit family: an axis of a
+# position and a distance between two poses are both metres, an axis of an orientation and a
+# joint angle both radians. The author states `position` and `orientation`; the rest fold in.
+_TOLERANCE_DEFAULT_KIND: dict[Any, Any] = {
+    QuantityType.Distance: QuantityType.Position,
+    QuantityType.Angle: QuantityType.Orientation,
+    QuantityType.PlaneAngle: QuantityType.Orientation,
+}
+
+
 def _tolerance_defaults(models) -> dict[Any, ContextRef]:
     """Model-wide satisfaction bands by quantity kind, from every `tolerances` block.
 
@@ -2943,7 +2953,8 @@ class MotionSpecDatasetBuilder:
         scalar_t: Any,
     ) -> None:
         """Link a constraint's satisfaction band: its own `within`, else the model-wide
-        default for the kind its error carries.
+        default for the unit its error is measured in -- `position` for a metre error,
+        whether one axis or three, `orientation` for a radian one.
 
         An equality has to end up with one -- `equal to <x>` names a single point and `on
         <path>` a single curve, and neither is ever met exactly. A gate need not: its
@@ -2956,10 +2967,11 @@ class MotionSpecDatasetBuilder:
         """
         band = spec.tolerance
         owner, suffix = motion, f"{spec.name}-tolerance"
+        default_kind = _TOLERANCE_DEFAULT_KIND.get(scalar_t, scalar_t)
         if band is None:
             # One node per kind: the model states the default once, so the graph shows every
             # constraint that takes it pointing at the same band.
-            band = self._tolerance_defaults.get(scalar_t)
+            band = self._tolerance_defaults.get(default_kind)
             owner, suffix = self._default_ns_owner, f"default-tolerance-{scalar_t}"
         whole_pose = qty is not None and qty.type == WorldQuantityType.Pose
         if band is not None and whole_pose and axis is None and subspace == "pose":
@@ -2977,7 +2989,7 @@ class MotionSpecDatasetBuilder:
                 raise ValueError(
                     f"Equality constraint '{spec.name}' states no band. An equality is only ever "
                     "satisfied within one, so it must say which: '... within <band>', or "
-                    f"declare a model-wide default for '{scalar_t}' in a 'tolerances' block."
+                    f"declare a model-wide default for '{default_kind}' in a 'tolerances' block."
                 )
             return
         self.graph.add((node, CSTR_EXT.tolerance, self._band_node(band, owner, suffix, scalar_t)))
