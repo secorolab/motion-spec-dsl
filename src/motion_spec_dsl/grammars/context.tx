@@ -28,7 +28,10 @@ GeoPropPair:
     | key="as-seen-by" ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
+    | key="normalization" ":" normalization=AngleRange
 ;
+
+AngleRange: "(" lower=FLOAT "," upper=FLOAT ")" unit=AngleUnit ;
 
 QuantityValue:
     ScalarQuantity | VectorXYZ

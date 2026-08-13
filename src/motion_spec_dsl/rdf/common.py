@@ -58,6 +58,17 @@ def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
     return None
 
 
+def _geo_prop_value(props: GeometricProps | None, key: str):
+    """The raw value of geometric prop `key`, unstringified: for props that carry a structure
+    rather than a reference to something already named in the graph."""
+    if props is None:
+        return None
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            return pair.normalization or pair.value
+    return None
+
+
 def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `distance between A and B` form."""
     return (

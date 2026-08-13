@@ -386,6 +386,9 @@ class ControllerParams:
     measured_derivative: View | None = None
     output_saturation: SaturationSpec | None = None
     integral_saturation: SaturationSpec | None = None
+    # The interval this controller's error is normalized into, when its quantity lives on a
+    # circle and the model says which turn to read the error onto.
+    error_normalization: object | None = None
     terms: list[object] = field(default_factory=list)
     kp: float | None = field(init=False, default=None)
     ki: float | None = field(init=False, default=None)

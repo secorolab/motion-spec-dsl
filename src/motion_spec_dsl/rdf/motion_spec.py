@@ -15,6 +15,8 @@ registries rather than graph-membership checks.
 
 from __future__ import annotations
 
+import math
+
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -154,6 +156,7 @@ from motion_spec_dsl.rdf.common import (
     _dsl_unit,
     _evaluator_id,
     _geo_prop,
+    _geo_prop_value,
     _is_distance_view,
     _node_name,
     _ns_term,
@@ -526,7 +529,10 @@ class MotionSpecDatasetBuilder:
 
         rate = URIRef(f"{standing.uri}.rate")
         self._emit_scalar_quantity(
-            rate, float(standing.rate.value), NS_MM_QUDT_QTY["Frequency"], _dsl_unit(standing.rate.unit)
+            rate,
+            float(standing.rate.value),
+            NS_MM_QUDT_QTY["Frequency"],
+            _dsl_unit(standing.rate.unit),
         )
         self.graph.add((node, SENSORS["update-rate"], rate))
 
@@ -1363,6 +1369,9 @@ class MotionSpecDatasetBuilder:
                 joint = _geo_prop(props, "joint")
                 if joint:
                     self.graph.add((node, KC_STAT["of-joint"], self._owned_uri(joint, qty)))
+                normalization = _geo_prop_value(props, "normalization")
+                if normalization is not None:
+                    self._emit_angle_normalization(node, normalization, qty, f"norm-{qty.name}")
 
             if of_v:
                 self.graph.add((node, GEOM_REL.of, self._owned_uri(of_v, qty)))
@@ -3928,6 +3937,28 @@ class MotionSpecDatasetBuilder:
         self.graph.add((owner_node, ALGO_EXT.limits, node))
         return node
 
+    def _emit_angle_normalization(self, owner_node: URIRef, angle_range, owner, name: str) -> None:
+        """The interval an angle is normalized into, as a turn's worth of authored bounds.
+
+        Not a Saturation: a value outside the interval is moved onto it by whole turns, not
+        clamped to its nearest edge.
+        """
+        node = self._owned_uri(name, owner)
+        self.graph.add((node, RDF.type, ALGO_EXT.AngularNormalization))
+        scale = math.pi / 180.0 if getattr(angle_range, "unit", "rad") == "deg" else 1.0
+        for edge, value in (
+            ("lower", float(angle_range.lower) * scale),
+            ("upper", float(angle_range.upper) * scale),
+        ):
+            predicate = ALGO_EXT[f"{edge}-bound"]
+            bound = self._owned_uri(f"{name}-{edge}", owner)
+            self.graph.add((bound, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((bound, QUDT_SCHEMA.value, Literal(value, datatype=XSD.double)))
+            self.graph.add((bound, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+            self.graph.add((bound, QUDT_SCHEMA.hasQuantityKind, QUDT_QKIND.Angle))
+            self.graph.add((node, predicate, bound))
+        self.graph.add((owner_node, ALGO_EXT["normalization"], node))
+
     def _emit_controller_limits(
         self,
         controller_node: URIRef,
@@ -3946,6 +3977,11 @@ class MotionSpecDatasetBuilder:
                 output,
                 output,
                 controller,
+            )
+        error_normalization = getattr(controller.params, "error_normalization", None)
+        if error_normalization is not None:
+            self._emit_angle_normalization(
+                controller_node, error_normalization, controller, f"err-norm-{controller.name}"
             )
         if controller.params.integral_saturation is not None:
             integral = self._owned_uri(f"integral-state-{controller.name}", handler)

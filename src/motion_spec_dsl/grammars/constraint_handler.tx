@@ -80,6 +80,7 @@ PIDControllerParams:
     ("," "integral-saturation" ":" integral_saturation=SaturationSpec)?
     "," terms+=KpParam "," terms+=KiParam "," terms+=KdParam
     ("," terms+=DecayParam)?
+    ("," "error-normalization" ":" error_normalization=AngleRange)?
 ;
 
 ImpedanceControllerParams:

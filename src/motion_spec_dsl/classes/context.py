@@ -87,6 +87,7 @@ class GeometricPropKey(StrEnum):
     AsSeenBy = "as-seen-by"
     Joint = "joint"
     FtSensor = "ft-sensor"
+    Normalization = "normalization"
 
 
 @dataclass
@@ -98,12 +99,13 @@ class GeoPropPair:
     frame: object | None = None
     joint: object | None = None
     sensor: object | None = None
+    normalization: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         self.key = GeometricPropKey(self.key)
         if self.value is None:
-            self.value = self.frame or self.joint or self.sensor
+            self.value = self.frame or self.joint or self.sensor or self.normalization
 
 
 class QuantityType(StrEnum):
