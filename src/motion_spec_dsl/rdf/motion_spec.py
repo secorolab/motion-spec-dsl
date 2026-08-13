@@ -4639,8 +4639,10 @@ class MotionSpecDatasetBuilder:
                     )
                 self.graph.add((driver_node, SLV["cartesian-force"], spec_node))
 
+            # Both serial-chain algorithms consume a joint force: ACHD takes it as its
+            # feed-forward torque input, RNE adds it to the torque it computed.
             if (
-                solver.algorithm == "ACHD"
+                solver.algorithm in {"ACHD", "RNE"}
                 and command.is_posture_torque_command
                 and qty.type == WorldQuantityType.JointPosition
             ):
