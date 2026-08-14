@@ -1218,6 +1218,19 @@ class MotionSpecDatasetBuilder:
         self.graph.add((op_node, GEOM_OP.direction, direction_node))
         return direction_node
 
+    def _commanded_wrench_node(self, qty: WorldQuantity) -> URIRef | None:
+        """The declared wrench a command realizes, or None when `qty` is not one.
+
+        A wrench carrying `ft-sensor` states what that sensor reads and is never commanded;
+        validation rejects assigning to it.
+        """
+        if qty.type != WorldQuantityType.Wrench:
+            return None
+        props = qty.props if isinstance(qty.props, GeometricProps) else None
+        if _geo_prop(props, "ft-sensor") is not None:
+            return None
+        return URIRef(qty.uri)
+
     def _emit_force_command_wrench(
         self,
         ctrl: ControllerEntry,
@@ -1259,9 +1272,14 @@ class MotionSpecDatasetBuilder:
 
         point_node = self._owned_uri(f"point-force-{ctrl.name}", motion)
         position_node = self._owned_uri(f"position-force-{ctrl.name}", motion)
-        wrench_node = self._owned_uri(f"wrench-force-{ctrl.name}", motion)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
-        self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
+        # A commanded wrench -- one no sensor observes -- is what this op produces: the model
+        # declared the quantity the command realizes, so the value belongs in it rather than in
+        # a second wrench beside it. Its coordinate is already emitted with the world quantities.
+        wrench_node = self._commanded_wrench_node(qty)
+        if wrench_node is None:
+            wrench_node = self._owned_uri(f"wrench-force-{ctrl.name}", motion)
+            self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
 
         op_node = self._owned_uri(f"compute-wrench-force-{ctrl.name}", motion)
         self.graph.add((op_node, RDF.type, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude))

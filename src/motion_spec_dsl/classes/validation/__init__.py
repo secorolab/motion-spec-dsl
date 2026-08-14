@@ -28,6 +28,7 @@ from motion_spec_dsl.classes.validation.detects import (
     validate_subscription_targets,
 )
 from motion_spec_dsl.classes.validation.handlers import (
+    validate_commanded_quantity_is_measured,
     validate_controller_solver_assembly,
     validate_handler_constraint_assembly,
     validate_handler_requirements,
@@ -67,5 +68,6 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
+    validate_commanded_quantity_is_measured(model)
     validate_mobile_platform_solver_quantity(model)
     validate_ros(model)

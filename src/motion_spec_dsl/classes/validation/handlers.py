@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from motion_spec_dsl.classes.constraint_handler import (
+    ControllerType,
     MobilePlatformSolver,
     UntilMonitorRef,
     WhenMonitorRef,
@@ -17,8 +18,12 @@ from motion_spec_dsl.classes.constraints import (
     _flatten_constraint_items,
     _resolved_spec,
 )
+from motion_spec_dsl.classes.context import GeometricPropKey, GeometricProps
 from motion_spec_dsl.classes.motion_spec import Model
-from motion_spec_dsl.classes.controller_semantics import controller_solver
+from motion_spec_dsl.classes.controller_semantics import (
+    controller_solver,
+    resolved_constraint_quantity,
+)
 from motion_spec_dsl.classes.validation.common import (
     constraint_handlers,
     motion_constraint_items,
@@ -184,6 +189,44 @@ def validate_controller_solver_assembly(model: Model) -> None:
                     f"handler '{handler.name}' does not assemble it.",
                     controller,
                 )
+
+
+def _observing_sensor(quantity) -> object | None:
+    """The sensor a world quantity is observed by, or None when nothing measures it."""
+    props = getattr(quantity, "props", None)
+    if not isinstance(props, GeometricProps):
+        return None
+    return next(
+        (
+            pair.sensor
+            for pair in props.pairs
+            if pair.key == GeometricPropKey.FtSensor and pair.sensor is not None
+        ),
+        None,
+    )
+
+
+def validate_commanded_quantity_is_measured(model: Model) -> None:
+    """Raise if a feed-forward controller assigns onto a sensor-observed quantity.
+
+    A quantity carrying `ft-sensor` states what the sensor reads; its value comes from the
+    sensor and from nowhere else, so no controller may command it.
+    """
+    for handler in constraint_handlers(model):
+        for controller in handler.controllers:
+            resolved = _resolved_controller(controller)
+            if resolved.type != ControllerType.FeedForward:
+                continue
+            quantity = resolved_constraint_quantity(resolved.params.constraint.constraint)
+            sensor = _observing_sensor(quantity)
+            if sensor is None:
+                continue
+            raise semantic_error(
+                f"Controller '{controller.name}' assigns to '{quantity.name}', which "
+                f"'{getattr(sensor, 'name', sensor)}' measures. Command a quantity of its own "
+                f"instead: declare one without 'ft-sensor'.",
+                controller,
+            )
 
 
 _MOBILE_PLATFORM_QUANTITY_TYPE = {
