@@ -42,6 +42,11 @@ context (ns=app) shared {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
             ft-sensor:  <wrist_ft>
+        },
+        wrench press-wrench {
+            of:         <gripper.g_base.g_pinch>,
+            ref-point:  <gripper.g_base.g_pinch>,
+            as-seen-by: <kinova.base_link.base_link_origin>
         }
     },
     spec {
@@ -55,6 +60,8 @@ context (ns=app) shared {
         length bracelet-contact-z   = 0.07 m,
         force force-threshold                 = 10.0 N,
         force neg-force-threshold             = -10.0 N,
+        force press-force                     = -5.0 N,
+        force press-band                      = 0.5 N,
         force release-threshold               = 3.0 N,
         force neg-release-threshold           = -3.0 N,
         length comply-int-max         = 0.02 m,
@@ -128,7 +135,9 @@ guarded-motion (ns=app) forward {
 
     while {
         move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
-        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold-z:       keeping <shared.world.pose-ee-base>.position.z equal to <spec.start-pose>.position.z within <shared.spec.satisfied-band>,
+        press-down:   keeping <shared.world.press-wrench>.force.z equal to <shared.spec.press-force> within <shared.spec.press-band>
     }
 
     until {
@@ -289,9 +298,19 @@ constraint-handler (ns=app) handler-forward {
     }
     controllers {
         pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+        pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-forward-z { constraint: <forward.hold-z>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        feed-forward ctrl-press-down { constraint: <forward.press-down> }
+            as force
+            apply at <gripper.g_base>
     }
-    solvers { <handler-home.arm-solver> }
+    solvers {
+        rne-arm-solver: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: rne,
+            gravity: (0.0, 0.0, -9.81) m/s^2
+        }
+    }
 }
 
 constraint-handler (ns=app) handler-arc {
@@ -335,13 +354,7 @@ constraint-handler (ns=app) handler-arc {
             decay: 0
         }
     }
-    solvers {
-        rne-arm-solver: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
-            algorithm: rne,
-            gravity: (0.0, 0.0, -9.81) m/s^2
-        }
-    }
+    solvers { <handler-forward.rne-arm-solver> }
 }
 
 constraint-handler (ns=app) handler-admittance {
@@ -379,5 +392,5 @@ constraint-handler (ns=app) handler-admittance {
             decay: 0
         }
     }
-    solvers { <handler-arc.rne-arm-solver> }
+    solvers { <handler-forward.rne-arm-solver> }
 }
