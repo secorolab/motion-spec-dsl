@@ -507,8 +507,8 @@ class MotionSpecDatasetBuilder:
             self.graph.add((row, RDF.value, Literal(value)))
 
     def _emit_ros_subscription(self, subscription: RosSubscriptionDecl) -> None:
-        """A subscribed topic: the channel object poses arrive on, the message it carries, and
-        the scene objects it informs the model about. The features of interest are what make it
+        """A subscribed topic: the channel poses arrive on, the message it carries, and the
+        world poses it informs the model about. The features of interest are what make it
         a channel the model reads rather than one it writes.
         """
         node = URIRef(subscription.uri)
@@ -521,7 +521,7 @@ class MotionSpecDatasetBuilder:
                 (
                     node,
                     SOSA.hasFeatureOfInterest,
-                    URIRef(str(getattr(target.ref, "uri", target.ref))),
+                    URIRef(str(target.ref.uri)),
                 )
             )
 

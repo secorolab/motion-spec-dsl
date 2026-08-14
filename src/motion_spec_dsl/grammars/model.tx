@@ -54,10 +54,12 @@ RosMeasurementAssign:
 
 RosSubscriptionDecl:
     name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING "{"
-        "observes" "{" targets+=SceneObjRef[","] ","? "}"
+        "observes" "{" targets+=WorldQuantityRef[","] ","? "}"
         pose_field=ID "from" pose_container=ID ","?
     "}"
 ;
+
+WorldQuantityRef: "<" ref=[WorldQuantity|FQN] ">" ;
 
 RosActionServerDecl:
     name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING "{"

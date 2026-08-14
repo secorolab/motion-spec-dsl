@@ -124,6 +124,7 @@ from motion_spec_dsl.classes.ros import (
     RosResult,
     RosStandingPub,
     RosSubscriptionDecl,
+    WorldQuantityRef,
 )
 from motion_spec_dsl.classes.scoping import SceneRefProvider, finalize_imported_scenes
 from motion_spec_dsl.classes.validation import validate_model
@@ -207,6 +208,7 @@ LANGUAGE_CLASSES = [
     RosAlways,
     RosTopicDecl,
     RosSubscriptionDecl,
+    WorldQuantityRef,
     RosActionDecl,
     RosActionServerDecl,
     RosResult,

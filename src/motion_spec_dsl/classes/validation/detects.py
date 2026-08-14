@@ -18,15 +18,15 @@ from motion_spec_dsl.classes.ros import RosSubscriptionDecl
 from motion_spec_dsl.classes.validation.common import motion_specs, semantic_error
 
 
-def _pose_subjects(model: Model) -> set[int]:
-    """Every scene entity a world-context pose is declared `of:`, by identity."""
-    subjects = set()
+def _pose_subjects(model: Model) -> dict[int, int]:
+    """Every scene entity's world-pose identity, keyed by the entity identity."""
+    subjects = {}
     for quantity in get_children_of_type(WorldQuantity, model):
         if quantity.type != WorldQuantityType.Pose:
             continue
         for pair in getattr(quantity.props, "pairs", ()) or ():
             if isinstance(pair, GeoPropPair) and pair.key == "of" and pair.frame is not None:
-                subjects.add(id(pair.frame))
+                subjects[id(pair.frame)] = id(quantity)
     return subjects
 
 
@@ -47,25 +47,23 @@ def validate_detect_targets(model: Model) -> None:
 
 
 def validate_subscription_targets(model: Model) -> None:
-    """A subscription writes a pose: every observed object needs a world pose declared `of:` it
-    to land in, and no object may be observed by two sources -- a world pose has one producer.
+    """A subscription names each world pose it writes, and every pose has one producer.
     """
-    subjects = _pose_subjects(model)
     # Detects seed the set: a subscription and a detect claiming the same object is the same
     # two-producer error as two subscriptions doing so.
     observed = {
-        id(target.ref)
+        subjects[id(target.ref)]
         for motion in motion_specs(model)
         for act in motion.detects
         for target in act.targets
+        if id(target.ref) in subjects
     }
 
     for sub in get_children_of_type(RosSubscriptionDecl, model):
         for target in sub.targets:
-            if id(target.ref) not in subjects:
+            if target.ref.type != WorldQuantityType.Pose:
                 raise semantic_error(
-                    f"Subscription '{sub.name}' observes '{target.ref.name}', but no world pose "
-                    "is declared 'of:' it, so a detection has nowhere to land.",
+                    f"Subscription '{sub.name}' observes '{target.ref.name}', which is not a pose.",
                     sub,
                 )
             if id(target.ref) in observed:

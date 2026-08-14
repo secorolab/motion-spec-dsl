@@ -15,6 +15,14 @@ from motion_spec_dsl.classes.motion_spec import RosActionDecl
 
 
 @dataclass
+class WorldQuantityRef:
+    """A reference to the world pose a subscription writes."""
+
+    parent: object
+    ref: object
+
+
+@dataclass
 class RosResult:
     """The payload a goal is answered with, authored like a publish."""
 
@@ -62,8 +70,8 @@ class RosActionServerDecl(NamedNamespaceObject):
 
 @dataclass(eq=False)
 class RosSubscriptionDecl(NamedNamespaceObject):
-    """A standing subscription: the channel object poses arrive on, the scene objects the model
-    reads off it, and where in one detection the pose is found.
+    """A standing subscription: the channel poses arrive on, the world poses it writes, and where
+    in one detection each pose is found.
     """
 
     parent: object
