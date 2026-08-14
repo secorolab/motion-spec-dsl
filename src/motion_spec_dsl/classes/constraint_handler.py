@@ -199,9 +199,9 @@ class MonitorAction:
     value: object | None = None
     # Block form: the authored field assignments.
     fields: list = field(default_factory=list)
-    # Occurrence form (`publish: event to`): the payload is the triggered event's IRI, so the
-    # model authors no fields at all.
-    occurrence: str = ""
+    # Occurrence form (`publish: events {..} to`): the payload is one named event's IRI, one
+    # message per event, so the model authors no fields at all.
+    events: list = field(default_factory=list)
     topic: RosTopicDecl | None = None
 
     @property
@@ -290,9 +290,16 @@ class MonitorEntry(NamedNamespaceObject):
 
     @property
     def occurrence_topic(self) -> RosTopicDecl | None:
-        """The topic this monitor's triggered event leaves on, when it publishes occurrences."""
+        """The topic the events this monitor announces leave on."""
         return next(
-            (action.topic for _block, action in self.actions("publish") if action.occurrence), None
+            (action.topic for _block, action in self.actions("publish") if action.events), None
+        )
+
+    @property
+    def announced_events(self) -> list[EventName]:
+        """The events this monitor publishes, in authored order."""
+        return next(
+            (action.events for _block, action in self.actions("publish") if action.events), []
         )
 
     @property

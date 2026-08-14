@@ -40,7 +40,7 @@ exec-context (ns=app) base-exec {"""
 MONITOR = "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },"
 OCCURRENCE = (
     "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED>, "
-    "publish: event to <ros.publishers.bdd-events> },"
+    "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.bdd-events> },"
 )
 
 
@@ -78,8 +78,7 @@ def test_the_server_states_what_a_completed_run_answers_with(parse_source, base_
     server = next(graph.subjects(RDF.type, ROS.Action))
     rows = [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
     assert [
-        (str(graph.value(row, ROS["field-path"])), str(graph.value(row, RDF.value)))
-        for row in rows
+        (str(graph.value(row, ROS["field-path"])), str(graph.value(row, RDF.value))) for row in rows
     ] == [("result.trinary.value", "TRUE")]
 
 
@@ -103,21 +102,52 @@ def test_a_monitor_publishes_its_event_as_its_topics_member(parse_source, base_s
     assert graph.value(member, RDF.value) is None
 
 
-def test_an_occurrence_without_a_trigger_is_rejected(parse_source, base_source):
+def test_a_monitor_announces_events_it_does_not_trigger(parse_source, base_source):
+    """The set is the author's choice, so it is not tied to what this monitor fires -- each
+    named event becomes one member of the topic."""
+    source = _with_occurrence(base_source).replace(
+        "publish: events { <aas.E_HOME_SETTLED> }",
+        "publish: events { <aas.E_HOME_SETTLED>, <aas.E_CONTACT> }",
+        1,
+    )
+    graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
+    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    assert sorted(str(member) for member in graph.objects(monitor, RDFS.member)) == [
+        f"{AAS}E_CONTACT",
+        f"{AAS}E_HOME_SETTLED",
+    ]
+
+
+def test_announcing_without_a_trigger_is_legal(parse_source, base_source):
+    """An announced event rides the FSM, so a monitor may report one it never fires itself."""
     source = _with_occurrence(base_source).replace(
         "trigger: event <aas.E_HOME_SETTLED>, publish", "publish", 1
     )
-    with pytest.raises(TextXSemanticError, match="triggers no event"):
+    graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
+    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    assert [str(member) for member in graph.objects(monitor, RDFS.member)] == [
+        f"{AAS}E_HOME_SETTLED"
+    ]
+
+
+def test_the_same_event_announced_twice_is_rejected(parse_source, base_source):
+    source = _with_occurrence(base_source).replace(
+        "publish: events { <aas.E_HOME_SETTLED> }",
+        "publish: events { <aas.E_HOME_SETTLED>, <aas.E_HOME_SETTLED> }",
+        1,
+    )
+    with pytest.raises(TextXSemanticError, match="more than once"):
         parse_source(source)
 
 
 def test_an_occurrence_beside_authored_fields_is_rejected(parse_source, base_source):
     source = _with_occurrence(base_source).replace(
         OCCURRENCE,
-        OCCURRENCE + '\n            violated { publish: to <ros.publishers.bdd-events> { uri: "x" } },',
+        OCCURRENCE
+        + '\n            violated { publish: to <ros.publishers.bdd-events> { uri: "x" } },',
         1,
     )
-    with pytest.raises(TextXSemanticError, match="both an occurrence and authored fields"):
+    with pytest.raises(TextXSemanticError, match="both events and authored fields"):
         parse_source(source)
 
 

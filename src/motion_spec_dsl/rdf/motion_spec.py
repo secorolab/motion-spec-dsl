@@ -4024,12 +4024,13 @@ class MotionSpecDatasetBuilder:
         """
         occurrence = monitor.occurrence_topic
         if occurrence is not None:
-            # The occurrence is the whole payload: the one member is the event this monitor
-            # triggers, and it carries no value of its own to distinguish it from a field row.
+            # An announced event is the whole payload: each member is one event the monitor
+            # publishes, carrying no value of its own to distinguish it from a field row.
             self.graph.add((monitor_node, RDF.type, ROS.Topic))
             self.graph.add((monitor_node, ROS["channel-name"], Literal(occurrence.channel_name)))
             self.graph.add((monitor_node, ROS["type-name"], Literal(occurrence.type_name)))
-            self.graph.add((monitor_node, RDFS.member, URIRef(monitor.event.uri)))
+            for event in monitor.announced_events:
+                self.graph.add((monitor_node, RDFS.member, URIRef(event.uri)))
             return
         topic = monitor.topic
         if topic is None:

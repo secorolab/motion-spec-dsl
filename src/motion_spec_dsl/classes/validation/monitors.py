@@ -58,19 +58,20 @@ def _validate_actions(monitor) -> None:
 
 def _validate_publish(monitor) -> None:
     """Raise on a per-state `publish` that names a second topic, repeats within a state, mixes
-    an occurrence with authored fields, publishes an occurrence no event produces, or states the
-    otherwise without the case it is otherwise to.
+    announced events with authored fields, or states the otherwise without the case it is
+    otherwise to.
     """
     published = monitor.actions("publish")
     if not published:
         return
-    _validate_occurrence(monitor, published)
     if len({action.topic.uri for _block, action in published}) > 1:
         raise semantic_error(
             f"Monitor '{monitor.name}' publishes to more than one topic; every state of a "
             "monitor publishes the same channel.",
             monitor,
         )
+    if _validate_announced_events(monitor, published):
+        return
     states = {block.state for block, _action in published}
     if len(states) < len(published):
         raise semantic_error(
@@ -85,31 +86,32 @@ def _validate_publish(monitor) -> None:
         )
 
 
-def _validate_occurrence(monitor, published) -> None:
-    """An occurrence carries the event that fired, so it stands where the trigger stands and
-    leaves the whole payload to the message type.
+def _validate_announced_events(monitor, published) -> bool:
+    """An announced event is published on the cycle the FSM sees it, whatever state the monitor
+    is in, so it is stated once per monitor and never beside authored fields.
     """
-    occurrences = [block for block, action in published if action.occurrence]
-    if not occurrences:
-        return
+    announced = [action for _block, action in published if action.events]
+    if not announced:
+        return False
     if any(action.assignments for _block, action in published):
         raise semantic_error(
-            f"Monitor '{monitor.name}' publishes both an occurrence and authored fields; the "
-            "occurrence is the whole payload, so one monitor states one or the other.",
+            f"Monitor '{monitor.name}' publishes both events and authored fields; an announced "
+            "event is the whole payload, so one monitor states one or the other.",
             monitor,
         )
-    trigger = monitor.trigger
-    if trigger is None:
+    if len(announced) > 1:
         raise semantic_error(
-            f"Monitor '{monitor.name}' publishes an occurrence but triggers no event, so there "
-            "is no occurrence to report.",
+            f"Monitor '{monitor.name}' announces events in more than one state; an announced "
+            "event rides the event itself, so its state block does not change what is sent.",
             monitor,
         )
-    for block in occurrences:
-        if block.state != trigger[0]:
-            raise semantic_error(
-                f"Monitor '{monitor.name}' publishes an occurrence in '{block.state}' but "
-                f"triggers its event in '{trigger[0]}'; the occurrence is the event firing, so "
-                "both stand in the same state.",
-                monitor,
-            )
+    names = [event.name for event in announced[0].events]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise semantic_error(
+            f"Monitor '{monitor.name}' announces {', '.join(repeated)} more than once; one "
+            "firing sends one message.",
+            monitor,
+        )
+
+    return True
