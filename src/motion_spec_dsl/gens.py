@@ -33,6 +33,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/prov.shacl.ttl",
         "https://secorolab.github.io/metamodels/robot/sensors.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
+        "https://secorolab.github.io/metamodels/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-relations-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/execution-context.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
@@ -337,9 +338,7 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
                     "data": {
                         "name": get_valid_var_name(Path(imp.importURI).stem),
                         "source": Path(imp.importURI).name,
-                        "trees": build_kdl_trees(
-                            scene_graph, Path(loaded[0]._tx_filename).parent
-                        ),
+                        "trees": build_kdl_trees(scene_graph, Path(loaded[0]._tx_filename).parent),
                     }
                 }
             )

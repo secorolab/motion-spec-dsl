@@ -368,6 +368,14 @@ class RBDYN_OP(DefinedNamespace):
     _NS = Namespace(f"{URI_CR2B_MM}/newtonian-rigid-body-dynamics/operators#")
 
 
+class RBDYN_OP_EXT(DefinedNamespace):
+    WrenchFromDirectionAndMoment: URIRef
+
+    moment: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/newtonian-rigid-body-dynamics/operators#")
+
+
 class MAP(DefinedNamespace):
     View: URIRef
     PoseCoordinateView: URIRef

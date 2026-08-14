@@ -69,6 +69,19 @@ class ControllerCommandRecord:
             and self.quantity.type == WorldQuantityType.JointPosition
         )
 
+    @property
+    def is_moment_command(self) -> bool:
+        """Whether this commands a Cartesian moment (a couple about an axis), not a joint torque."""
+        return (
+            self.command_type == QuantityType.Torque
+            and self.quantity is not None
+            and self.quantity.type != WorldQuantityType.JointPosition
+        )
+
+
+# Resolved view subspaces whose command is a moment, not a force. A whole `.orientation` view
+# keeps its raw token; only the per-axis form aliases to "rotation".
+ANGULAR_SUBSPACES = frozenset({"orientation", "rotation", "angular", "angular-velocity"})
 
 LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
 ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
@@ -188,8 +201,11 @@ def controller_command_record(
         or infer_command_type(raw_subspace)
         or infer_command_type(view_subspace)
     )
-    if resolved_controller.type == ControllerType.Impedance and command_type != QuantityType.Force:
-        command_type = QuantityType.Force
+    # An impedance law commands through f_ext; the constrained subspace picks force vs moment.
+    if resolved_controller.type == ControllerType.Impedance:
+        command_type = (
+            QuantityType.Torque if view_subspace in ANGULAR_SUBSPACES else QuantityType.Force
+        )
 
     controlled_axes: tuple[tuple[str, str], ...] = ()
     whole_pose_command = (

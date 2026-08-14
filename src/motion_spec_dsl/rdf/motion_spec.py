@@ -111,6 +111,7 @@ from motion_spec_dsl.classes.context import (
     _resolved_world_quantity,
 )
 from motion_spec_dsl.classes.controller_semantics import (
+    ANGULAR_SUBSPACES,
     SUBSPACE_ALIAS,
     controller_command_record,
     controller_solver,
@@ -204,6 +205,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
+    RBDYN_OP_EXT,
     SENSORS,
     SLV,
     SLV_EXT,
@@ -324,6 +326,29 @@ def _authored_fqn(target) -> str:
         node = getattr(node, "parent", None)
     # A sensor's chain runs up through the scene instance; the agent that hosts it is enough.
     return ".".join(reversed(parts[:2]))
+
+
+# Resolved view subspaces whose command is a force, not a moment.
+_LINEAR_SUBSPACES = frozenset({"position", "distance", "linear", "linear-velocity"})
+
+
+def _validate_command_subspace(ctrl: ControllerEntry, spec, command) -> None:
+    """Reject an authored `as` that contradicts its constraint's subspace: an angular
+    subspace commands a moment, a linear one a force."""
+    authored = ctrl.command_type
+    if authored is None:
+        return
+    subspace = command.view_subspace
+    if subspace in ANGULAR_SUBSPACES and authored == QuantityType.Force:
+        raise ValueError(
+            f"Controller '{ctrl.name}' commands a force on the angular subspace of "
+            f"'{spec.name}'; an angular constraint commands a moment ('as torque')."
+        )
+    if subspace in _LINEAR_SUBSPACES and authored == QuantityType.Torque:
+        raise ValueError(
+            f"Controller '{ctrl.name}' commands a moment on the linear subspace of "
+            f"'{spec.name}'; a linear constraint commands a force ('as force')."
+        )
 
 
 _COERCIBLE_DATATYPES = (XSD.double, XSD.integer)
@@ -1134,6 +1159,15 @@ class MotionSpecDatasetBuilder:
         self._add_quantity(signal_node, QuantityType.Force)
         return signal_node
 
+    def _moment_control_signal_node(
+        self, ctrl: ControllerEntry, handler: ConstraintHandler, axis: str | None = None
+    ) -> URIRef:
+        """Owned Torque-quantity node carrying one axis of a moment controller's control signal."""
+        name = f"moment-{ctrl.name}" if axis is None else f"moment-{ctrl.name}-ang-{axis}"
+        signal_node = self._owned_uri(name, handler)
+        self._add_quantity(signal_node, QuantityType.Torque)
+        return signal_node
+
     def _emit_direction_coordinate(
         self,
         node: URIRef,
@@ -1289,6 +1323,69 @@ class MotionSpecDatasetBuilder:
         self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
 
         return wrench_node
+
+    def _emit_moment_command_wrench(
+        self,
+        ctrl: ControllerEntry,
+        qty: WorldQuantity,
+        command: Any,
+        handler: ConstraintHandler,
+        motion: GuardedMotion,
+    ) -> URIRef:
+        """Emit the op chain building a moment controller's command wrench: one
+        WrenchFromDirectionAndMoment per commanded angular axis, folded with AddWrench.
+        A couple is reference-point independent, so no position enters the ops.
+        """
+        apply_at = getattr(ctrl, "apply_at", None)
+        if apply_at is None or not hasattr(apply_at, "uri"):
+            raise ValueError(f"Moment controller '{ctrl.name}' must specify 'apply at <link>'.")
+
+        props = qty.props if isinstance(qty.props, GeometricProps) else None
+        as_seen_by_name = _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
+        if as_seen_by_name is None:
+            raise ValueError(
+                f"Moment controller '{ctrl.name}' needs a frame from the constrained quantity."
+            )
+        as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
+
+        axes = [axis for _, axis in command.controlled_axes if axis is not None]
+        if not axes:
+            raise ValueError(f"Moment controller '{ctrl.name}' commands no angular axis.")
+        multi = len(axes) > 1
+
+        # The wrench coordinate still needs a well-formed reference point; the op ignores it.
+        point_node = self._owned_uri(f"point-moment-{ctrl.name}", motion)
+        position_node = self._owned_uri(f"position-moment-{ctrl.name}", motion)
+        self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
+
+        wrench_nodes: list[URIRef] = []
+        for axis in axes:
+            direction_node = self._owned_uri(f"direction-moment-{ctrl.name}-ang-{axis}", motion)
+            self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
+            magnitude_node = self._moment_control_signal_node(
+                ctrl, handler, axis if multi else None
+            )
+            wrench_node = self._owned_uri(f"wrench-moment-{ctrl.name}-ang-{axis}", motion)
+            self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
+
+            op_node = self._owned_uri(f"compute-wrench-moment-{ctrl.name}-ang-{axis}", motion)
+            self.graph.add((op_node, RDF.type, RBDYN_OP_EXT.WrenchFromDirectionAndMoment))
+            self.graph.add((op_node, RBDYN_OP_EXT.moment, magnitude_node))
+            self.graph.add((op_node, RBDYN_OP.direction, direction_node))
+            self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
+            wrench_nodes.append(wrench_node)
+
+        total = wrench_nodes[0]
+        for index, addend in enumerate(wrench_nodes[1:], start=1):
+            sum_node = self._owned_uri(f"wrench-moment-{ctrl.name}-sum-{index}", motion)
+            self._emit_wrench_coordinate(sum_node, point_node, as_seen_by_node)
+            add_node = self._owned_uri(f"add-wrench-{ctrl.name}-{index}", motion)
+            self.graph.add((add_node, RDF.type, RBDYN_OP.AddWrench))
+            self.graph.add((add_node, RBDYN_OP["in1"], total))
+            self.graph.add((add_node, RBDYN_OP["in2"], addend))
+            self.graph.add((add_node, RBDYN_OP.out, sum_node))
+            total = sum_node
+        return total
 
     def _compute_shared_specs(
         self, handlers: list[ConstraintHandler]
@@ -3915,13 +4012,20 @@ class MotionSpecDatasetBuilder:
                 )
             )
 
-    def _emit_controller_base(self, ctrl_node: URIRef, ctrl: ControllerEntry) -> None:
+    def _emit_controller_base(
+        self, ctrl_node: URIRef, ctrl: ControllerEntry, command: Any = None
+    ) -> None:
         """Emit a controller's type and gains: PID (kp/ki/kd, optional decay), Impedance
         (stiffness/damping, optional integral gain), or feed-forward.
         """
         self.graph.add((ctrl_node, RDF.type, CSTR_HDL.Controller))
-        if ctrl.command_type is not None:
-            self.graph.add((ctrl_node, APP["command-type"], Literal(ctrl.command_type.value)))
+        # A derived moment must be visible downstream; everything else states only what was
+        # authored, so ids and existing force commands stay as they are.
+        command_type = ctrl.command_type
+        if command_type is None and command is not None and command.is_moment_command:
+            command_type = command.command_type
+        if command_type is not None:
+            self.graph.add((ctrl_node, APP["command-type"], Literal(command_type.value)))
         if ctrl.type == ControllerType.PID:
             self.graph.add((ctrl_node, RDF.type, CSTR_HDL.ProportionalIntegralDerivative))
             if ctrl.params.kp is not None:
@@ -4189,9 +4293,10 @@ class MotionSpecDatasetBuilder:
                 else (_scalar_type(qty, subspace, axis) if qty else subspace)
             )
             command = controller_command_record(ctrl)
+            _validate_command_subspace(ctrl, spec, command)
 
             authored_ctrl_node = URIRef(ctrl.uri)
-            self._emit_controller_base(authored_ctrl_node, ctrl)
+            self._emit_controller_base(authored_ctrl_node, ctrl, command)
             self.graph.add((authored_ctrl_node, APP.order, Literal(controller_order)))
             self.graph.add((authored_ctrl_node, CSTR_HDL.constraint, URIRef(spec.uri)))
             measured_derivative = getattr(ctrl.params, "measured_derivative", None)
@@ -4739,22 +4844,10 @@ class MotionSpecDatasetBuilder:
                 wrench_node = self._emit_force_command_wrench(
                     ctrl, spec, qty, axis, force_signal_node, motion
                 )
-                spec_node = self._owned_uri(f"spec-{ctrl.name}", handler)
-                self.graph.add((spec_node, RDF.type, SLV.CartesianForceSpecification))
-                self.graph.add((spec_node, SLV.force, wrench_node))
-                apply_at = getattr(ctrl, "apply_at", None)
-                if apply_at is not None and hasattr(apply_at, "uri"):
-                    # The scene reference is already the rigid body.
-                    body_node = URIRef(str(apply_at.uri))
-                    self.graph.add((body_node, RDF.type, GEOM_ENT.SimplicialComplex))
-                    self.graph.add(
-                        (
-                            spec_node,
-                            SLV["attached-to"],
-                            body_node,
-                        )
-                    )
-                self.graph.add((driver_node, SLV["cartesian-force"], spec_node))
+                self._emit_cartesian_force_spec(ctrl, wrench_node, handler, driver_node)
+            elif command.is_moment_command:
+                wrench_node = self._emit_moment_command_wrench(ctrl, qty, command, handler, motion)
+                self._emit_cartesian_force_spec(ctrl, wrench_node, handler, driver_node)
 
             # Both serial-chain algorithms consume a joint force: ACHD takes it as its
             # feed-forward torque input, RNE adds it to the torque it computed.
@@ -4789,6 +4882,26 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                 self.graph.add((spec_node, SLV["attached-to"], joint_node))
                 self.graph.add((driver_node, SLV["joint-force"], spec_node))
+
+    def _emit_cartesian_force_spec(
+        self,
+        ctrl: ControllerEntry,
+        wrench_node: URIRef,
+        handler: ConstraintHandler,
+        driver_node: URIRef,
+    ) -> None:
+        """Attach a commanded wrench (force or moment) to the `apply at` body as the driver's
+        Cartesian force specification."""
+        spec_node = self._owned_uri(f"spec-{ctrl.name}", handler)
+        self.graph.add((spec_node, RDF.type, SLV.CartesianForceSpecification))
+        self.graph.add((spec_node, SLV.force, wrench_node))
+        apply_at = getattr(ctrl, "apply_at", None)
+        if apply_at is not None and hasattr(apply_at, "uri"):
+            # The scene reference is already the rigid body.
+            body_node = URIRef(str(apply_at.uri))
+            self.graph.add((body_node, RDF.type, GEOM_ENT.SimplicialComplex))
+            self.graph.add((spec_node, SLV["attached-to"], body_node))
+        self.graph.add((driver_node, SLV["cartesian-force"], spec_node))
 
     def _controller_solver(self, handler: ConstraintHandler, ctrl: ControllerEntry) -> Any:
         """Return the shared semantic solver resolution for `ctrl`."""
