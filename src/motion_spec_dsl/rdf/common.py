@@ -163,7 +163,7 @@ def _evaluator_id(spec: ConstraintSpecification) -> str:
 
 def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
     """The ContextQuantity a ref points at, whether named or declared inline."""
-    return getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+    return getattr(ref, "quantity", None)
 
 
 def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecification]:

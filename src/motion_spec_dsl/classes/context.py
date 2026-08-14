@@ -161,6 +161,7 @@ class ContextQuantity(NamedNamespaceObject):
         | VelocityTwistCoordinate
         | AccelerationTwistCoordinate
         | WrenchCoordinate
+        | ConfigValue
         | None
     ) = None
     props: GeometricProps | None = field(default=None, kw_only=True)
@@ -237,6 +238,22 @@ class SnapshotValue:
     source: View
     offset: ContextRef | None = None
     trigger: object | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class ConfigValue:
+    """A pose whose numbers the deployment states, read at startup from the config file the
+    exec-context declares.
+
+    `key` is the path into that file, written `[config.<key>]` so a deployment lookup never
+    looks like a `<model element>` reference. `source` is the quantity it is a value for: it
+    contributes no number, only the of/wrt/as-seen-by frames the target is stated in -- the same
+    way a snapshot takes them from what it samples.
+    """
+
+    key: str
+    source: View
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
@@ -372,9 +389,6 @@ class ContextRef:
     """A reference to a context value, optionally with a subspace/axis or a bare literal."""
 
     quantity: ContextQuantity | None = None
-    inline_quantity: ContextQuantity | None = None
-    context_scope: str | None = None
-    literal_value: Measure | VectorXYZ | None = None
     bare: Measure | None = None
     subspace: SubSpace | None = None
     axis: Axis | None = None
@@ -389,12 +403,10 @@ class ContextRef:
             self.subspace = SubSpace(self.subspace)
         if self.axis is not None and isinstance(self.axis, str):
             self.axis = Axis(self.axis)
-        if self.quantity is None:
-            self.quantity = self.inline_quantity
 
     @property
     def name(self) -> str:
-        return self.context_scope or "ref"
+        return "ref"
 
     @property
     def namespace(self) -> Namespace:

@@ -48,10 +48,10 @@ from motion_spec_dsl.classes.validation.common import (
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
-    """Return the declared or inline context quantity selected by `ref`."""
+    """Return the context quantity selected by `ref`."""
     if getattr(ref, "bare", None) is not None:
         return None
-    value = getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+    value = getattr(ref, "quantity", None)
     return value if isinstance(value, ContextQuantity) else None
 
 
@@ -80,9 +80,6 @@ def _literal_xyz(coords: Coordinates) -> tuple[float, float, float] | None:
 
 
 def _static_vector(ref: ContextRef) -> tuple[float, float, float] | None:
-    literal = getattr(ref, "literal_value", None)
-    if isinstance(literal, VectorXYZ) and literal.coords is not None:
-        return _literal_xyz(literal.coords)
     quantity = _resolved_ref_quantity(ref)
     value = getattr(quantity, "value", None)
     if isinstance(value, VectorXYZ) and value.coords is not None:

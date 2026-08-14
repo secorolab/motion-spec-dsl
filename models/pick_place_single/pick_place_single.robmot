@@ -46,7 +46,10 @@ context (ns=app) shared {
         angle grasp-rot-z             = 1.5708 rad,
         angle gripper-closed        = 0.8 rad,
         angle gripper-open          = 0.0 rad,
-        length lost-dist   = 0.12 m
+        length lost-dist   = 0.12 m,
+        // Where this deployment parks the TCP: a property of the cell the arm stands in, not
+        // of the pick-and-place task, so robot.toml states it and this names which section.
+        pose home-pose = [config.poses.home] for <shared.world.pose-ee-base>
     }
     // nothing, the pose is the cube's start placement.
 }
@@ -58,19 +61,17 @@ tolerances {
 }
 
 guarded-motion (ns=app) home {
-    description: "Hold the TCP at the startup home pose"
+    description: "Hold the TCP at the home pose the deployment states"
 
     context {
-        spec {
-            pose home-pose = snapshot of <shared.world.pose-ee-base>
-        }
+        <shared.spec>
     }
 
     when {}
 
     while {
-        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
-        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 
     until {}

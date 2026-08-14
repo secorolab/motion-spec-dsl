@@ -205,7 +205,7 @@ def validate_mobile_platform_solver_quantity(model: Model) -> None:
             if not isinstance(solver, MobilePlatformSolver):
                 continue
             ref = solver.quantity
-            quantity = getattr(ref, "quantity", None) or getattr(ref, "inline_quantity", None)
+            quantity = getattr(ref, "quantity", None)
             wanted = _MOBILE_PLATFORM_QUANTITY_TYPE[solver.algorithm]
             if quantity is None or getattr(quantity, "type", None) != wanted:
                 got = getattr(quantity, "type", None)

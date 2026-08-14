@@ -93,6 +93,7 @@ from motion_spec_dsl.classes.constraints import (
     _resolved_spec,
 )
 from motion_spec_dsl.classes.context import (
+    ConfigValue,
     ContextQuantity,
     ContextRef,
     GeometricPropKey,
@@ -236,6 +237,15 @@ def _constraint_type_iri(scalar_t: Any) -> URIRef:
         namespace, local = override
         return _ns_term(namespace, local)
     return _ns_term(CSTR, f"{name}Constraint")
+
+
+def _owns_pose_subobjects(value) -> bool:
+    """Whether a pose quantity carries its own `.position`/`.orientation` coordinate nodes.
+
+    True for a pose stated coordinate-wise -- authored literally or read from the deployment
+    config. A snapshot or reference borrows its source's, so its subspaces hang off itself.
+    """
+    return isinstance(value, (PoseCoordinate, ConfigValue))
 
 
 def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
@@ -383,6 +393,7 @@ class MotionSpecDatasetBuilder:
         # Resolution indexes, populated once and read during emission (see module docstring).
         self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
+        self._config_resource: URIRef | None = None
         self._reference_value_index: dict[URIRef, URIRef] = {}
         self._controller_by_spec: dict[ConstraintSpecification, ControllerEntry] = {}
         self._profiled_controller_by_spec: dict[ConstraintSpecification, ControllerEntry] = {}
@@ -625,6 +636,7 @@ class MotionSpecDatasetBuilder:
             resolved = (declared_in.parent / context.config).resolve()
             self.graph.add((config, EXEC.path, Literal(str(resolved))))
             self.graph.add((node, EXEC["has-resource"], config))
+            self._config_resource = config
         # The device is a system this deployment owns, naming the hardware it is and the
         # modelled element it realizes. The element belongs to the scene, so it is only ever
         # referred to -- nothing is asserted onto it.
@@ -1825,7 +1837,7 @@ class MotionSpecDatasetBuilder:
             if axis is None:
                 position_coord = (
                     URIRef(f"{quantity.uri}.position")
-                    if isinstance(quantity.value, PoseCoordinate)
+                    if _owns_pose_subobjects(quantity.value)
                     else super_node
                 )
                 view_target = URIRef(f"{position_coord}-position-rel")
@@ -1836,7 +1848,7 @@ class MotionSpecDatasetBuilder:
         ):
             orientation_coord = (
                 URIRef(f"{quantity.uri}.orientation")
-                if isinstance(quantity.value, PoseCoordinate)
+                if _owns_pose_subobjects(quantity.value)
                 else super_node
             )
             view_target = URIRef(f"{orientation_coord}-orientation-rel")
@@ -1885,6 +1897,9 @@ class MotionSpecDatasetBuilder:
                 continue
             if quantity.type == QuantityType.Duration and isinstance(quantity.value, Measure):
                 self._emit_duration_measure(node, quantity.value)
+                continue
+            if isinstance(quantity.value, ConfigValue):
+                self._emit_config_pose_quantity(node, quantity)
                 continue
             if isinstance(quantity.value, PoseCoordinate):
                 self._emit_pose_value_quantity(node, quantity, constraints, world_qtys)
@@ -2121,6 +2136,82 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_node, MAP.subobject, subobject))
             self.graph.add((view_node, MAP.subspace, subspace))
             self.graph.add((view_node, MAP.axis, _ns_term(MAP, label)))
+
+    def _emit_config_pose_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        """Emit a pose the deployment states: the same relation, coordinates and views a literal
+        pose gets, minus the coordinate values, plus the resource they are read from.
+
+        The frames come from the quantity it is a value for, the way a snapshot's do, and the
+        authored key rides on `schema:identifier` -- what the config file calls this pose. The
+        declaration must be a shared one: the file is read once before the loop, so a per-motion
+        one would promise a value that changes with the state and never does.
+        """
+        if not isinstance(getattr(quantity.parent, "parent", None), ContextSpec):
+            raise ConstraintViolation(
+                "geometry",
+                f"Pose '{quantity.name}' reads the deployment config, so it must be declared in "
+                "a shared context: it is read once for the run, not per motion.",
+            )
+        if quantity.type != QuantityType.Pose:
+            raise ConstraintViolation(
+                "geometry",
+                f"'{quantity.name}' reads the deployment config, which states poses; "
+                f"a {quantity.type} cannot come from one.",
+            )
+        if self._config_resource is None:
+            raise ConstraintViolation(
+                "platform",
+                f"Pose '{quantity.name}' reads the deployment config, but the exec-context "
+                'declares no `config: "<file>.toml"`.',
+            )
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+        self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit("m")))
+        self.graph.add((node, EXEC["has-resource"], self._config_resource))
+        self.graph.add((node, SDO.identifier, Literal(quantity.value.key)))
+
+        pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
+        if pose_relation is None:
+            raise ConstraintViolation(
+                "geometry",
+                f"Pose '{quantity.name}' reads the deployment config, so the quantity it is "
+                "stated `for` must declare of/with-respect-to/as-seen-by frames.",
+            )
+        position_node = URIRef(f"{quantity.uri}.position")
+        orientation_node = URIRef(f"{quantity.uri}.orientation")
+        self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self.graph.add((position_node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
+        self.graph.add((position_node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+        self.graph.add((orientation_node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_orientation_type(orientation_node, None)
+
+        pose_of, pose_wrt, pose_asb = self._frame_coords_index[node]
+        position_relation = self._emit_geom_relation(
+            position_node,
+            "position",
+            self._frame_origin(pose_of),
+            self._frame_origin(pose_wrt),
+            pose_asb or pose_wrt,
+            (URI_QUDT_QK_LENGTH,),
+        )
+        orientation_relation = self._emit_geom_relation(
+            orientation_node, "orientation", pose_of, pose_wrt, pose_asb or pose_wrt
+        )
+        self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_POSITION_REF))
+        self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_ORIENT_REF))
+        self.graph.add((pose_relation, URI_GEOM_PRED_OF_POSITION, position_relation))
+        self.graph.add((pose_relation, URI_GEOM_PRED_OF_ORIENT, orientation_relation))
+        for subobject, subspace in (
+            (position_relation, MAP_EXT.position),
+            (orientation_relation, MAP_EXT.orientation),
+        ):
+            view_node = URIRef(f"{subobject}-view")
+            self._emit_view(view_node)
+            self.graph.add((view_node, RDF.type, MAP_EXT.PoseCoordinateView))
+            self.graph.add((view_node, MAP.superobject, node))
+            self.graph.add((view_node, MAP.subobject, subobject))
+            self.graph.add((view_node, MAP.subspace, subspace))
 
     def _emit_pose_value_quantity(
         self,
@@ -2939,51 +3030,23 @@ class MotionSpecDatasetBuilder:
 
     def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         """Resolve a context reference to its value node: a subspace view, a passthrough source,
-        the referenced quantity, or a freshly emitted literal quantity.
+        or the referenced quantity.
         """
         quantity = _context_quantity(ref)
         if not isinstance(quantity, ContextQuantity):
             return self._owned_uri(_node_name(quantity), owner)
 
         quantity = _resolved_context_quantity(quantity)
-        if ref.literal_value is None:
-            subspace_raw = getattr(ref, "subspace", None)
-            if subspace_raw is not None:
-                subspace = str(getattr(subspace_raw, "value", subspace_raw))
-                axis = semantic_axis_label(getattr(ref, "axis", None))
-                return self._emit_context_ref_view_node(quantity, subspace, axis)
-            if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
-                return self._emit_context_ref_node(quantity.value.source, owner, suffix)
-            if quantity.type == ReferenceGeneratorType.Path:
-                return self._reference_output_node(quantity)
-            return URIRef(quantity.uri)
-
-        node = URIRef(f"{quantity.uri}-{suffix}")
-        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
-        if quantity.type == QuantityType.Distance:
-            self.graph.add((node, RDF.type, GEOM_COORD.LinearDistanceCoordinate))
-        self._emit_quantity_kind(node, _qudt_kind(quantity.type))
-        self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(ref.literal_value.unit)))
-        if isinstance(ref.literal_value, Measure):
-            self.graph.add(
-                (
-                    node,
-                    QUDT_SCHEMA.value,
-                    Literal(
-                        float(ref.literal_value.value),
-                        datatype=XSD.double,
-                    ),
-                )
-            )
-        elif isinstance(ref.literal_value, VectorXYZ):
-            self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
-            for label, element in zip(("x", "y", "z"), ref.literal_value.coords.values):
-                if element.ref is not None:
-                    value_obj = self._emit_context_ref_node(element.ref, owner, f"{suffix}-{label}")
-                else:
-                    value_obj = Literal(float(element.value), datatype=XSD.double)
-                self.graph.add((node, GEOM_COORD[label], value_obj))
-        return node
+        subspace_raw = getattr(ref, "subspace", None)
+        if subspace_raw is not None:
+            subspace = str(getattr(subspace_raw, "value", subspace_raw))
+            axis = semantic_axis_label(getattr(ref, "axis", None))
+            return self._emit_context_ref_view_node(quantity, subspace, axis)
+        if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
+            return self._emit_context_ref_node(quantity.value.source, owner, suffix)
+        if quantity.type == ReferenceGeneratorType.Path:
+            return self._reference_output_node(quantity)
+        return URIRef(quantity.uri)
 
     def _emit_constraint_tolerance(
         self,
@@ -3079,7 +3142,7 @@ class MotionSpecDatasetBuilder:
         if quantity.type == QuantityType.Pose:
             component_prefix = (
                 f"{quantity.uri}.{{component}}"
-                if isinstance(quantity.value, PoseCoordinate)
+                if _owns_pose_subobjects(quantity.value)
                 else quantity.uri
             )
             if subspace == "position":

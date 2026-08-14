@@ -216,7 +216,7 @@ ScalarContextQuantityType:
 
 PlainContextQuantityValue:
     QuantityValue | SnapshotValue | PoseCoordinate | VelocityTwistCoordinate
-    | AccelerationTwistCoordinate | WrenchCoordinate | ReferenceValue
+    | AccelerationTwistCoordinate | WrenchCoordinate | ConfigValue | ReferenceValue
 ;
 
 VelocityTwistCoordinate:
@@ -264,6 +264,12 @@ SnapshotValue:
     ("on" "event" trigger=EventName)?
 ;
 
+ConfigValue:
+    "=" "[" "config" "." key=CONFIG_KEY "]" "for" source=View
+;
+
+CONFIG_KEY: /[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*/ ;
+
 PoseCoordinate:
     "=" "{"
         "position" ":" position=PositionCoordinate ","
@@ -272,14 +278,8 @@ PoseCoordinate:
 ;
 
 ContextRef:
-    "[" quantity=[ContextQuantity|FQN] literal_value=QuantityValue? "]"
-  | "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
-  | context_scope=ContextScope "[" inline_quantity=ContextQuantity "]"
+    "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
   | bare=Measure
-;
-
-ContextScope:
-    "pre" | "spec" | "post"
 ;
 
 ReferenceValue:
