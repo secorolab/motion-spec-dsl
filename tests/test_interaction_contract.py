@@ -46,7 +46,7 @@ def interaction_ir(admittance_arc_manifest: Path) -> dict:
 
 
 def _motion(ir: dict, motion_id: str):
-    return next(m for m in ir["coordination"]["motions"] if m.id == motion_id)
+    return next(m for m in ir["coordination"]["motions"] if m.motion_id == motion_id)
 
 
 def _spatial_rows(motion) -> set[tuple[str, str]]:
@@ -166,7 +166,7 @@ def test_no_motion_schedules_another_motions_closure(interaction_ir: dict) -> No
     """
     arc_only = {"arc_eval_arc_path"}
     for motion in interaction_ir["coordination"]["motions"]:
-        if motion.id == "motion_arc_motion":
+        if motion.motion_id == "motion_arc_motion":
             continue
         scheduled = set(motion.while_schedule) | set(motion.while_pre_schedule)
         assert not (arc_only & scheduled), f"{motion.id} schedules the arc path"

@@ -4130,7 +4130,7 @@ class MotionSpecDatasetBuilder:
                     (
                         authored_ctrl_node,
                         CSTR_HDL_EXT.solver,
-                        self._solver_node(handler, motion, solver),
+                        self._solver_node(handler, solver),
                     )
                 )
 
@@ -4487,8 +4487,10 @@ class MotionSpecDatasetBuilder:
         self._add_quantity(signal, signal_type)
         return signal
 
-    def _solver_node(self, handler, motion, solver) -> URIRef:
-        return self._owned_uri(f"{solver.name}-{motion.name}", handler)
+    def _solver_node(self, handler, solver) -> URIRef:
+        """A solver instance belongs to the handler that runs it: two handlers realizing the
+        same motion each drive their own, with their own controllers and drivers."""
+        return self._owned_uri(f"{solver.name}-{handler.name}", handler)
 
     def _emit_solvers(
         self,
@@ -4502,7 +4504,7 @@ class MotionSpecDatasetBuilder:
         multi = len(solvers) > 1
 
         for solver in solvers:
-            solver_node = self._solver_node(handler, motion, solver)
+            solver_node = self._solver_node(handler, solver)
             # The declared solvers are the handler's runtimes; controller plans alone cannot
             # recover one that no controller routes to (a monitor-only arm).
             self.graph.add((URIRef(handler.uri), CSTR_HDL_EXT["runs-solver"], solver_node))
@@ -4519,11 +4521,7 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((solver_node, predicate, URIRef(quantity.uri)))
                 continue
 
-            driver_stem = (
-                f"{solver.name}-{motion.name or handler.name}"
-                if multi
-                else (motion.name or handler.name)
-            )
+            driver_stem = f"{solver.name}-{handler.name}" if multi else handler.name
 
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
