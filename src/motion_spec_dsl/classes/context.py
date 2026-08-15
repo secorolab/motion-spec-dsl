@@ -303,15 +303,15 @@ class ProgressAlong:
 
 @dataclass
 class MovingAlong:
-    """A drive along a path at a commanded speed, holding the frame on the path's geometry.
+    """A profiled drive along a path, holding the frame on the path's geometry.
 
     This is the driver of the motion, not a comparison, so it carries no relation: the
-    tangent is commanded at `speed` while the directions normal to it are held at zero.
+    profile commands the tangent speed while the directions normal to it are held at zero.
     """
 
     moved: object
     path: object
-    speed: object
+    profile: object
     parent: object | None = field(default=None, repr=False, compare=False)
 
 

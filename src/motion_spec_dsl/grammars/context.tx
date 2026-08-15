@@ -119,7 +119,7 @@ ProgressAlong:
 ;
 
 MovingAlong:
-    "moving" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef "at" speed=ContextRef
+    "moving" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef "with" profile=ContextRef
 ;
 
 OnPath:

@@ -79,7 +79,11 @@ guarded-motion (ns=app) arc-yaw {
 
     context {
         spec {
-            linear-velocity arc-speed = 0.05 m/s,
+            velocity-profile arc-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.05 m/s^2,
+                shape: trapezoidal
+            },
             // Turning joint 1 sweeps the tool through a horizontal circle about the base
             // axis, so the arc plane is horizontal and the tool keeps its height.
             direction sweep-normal { as-seen-by: <kinova.base_link.base_link_origin> }
@@ -113,7 +117,7 @@ guarded-motion (ns=app) arc-yaw {
     when {}
 
     while {
-        follow-tangent:     moving <shared.world.pose-ee-base> along <spec.sweep-path> at <spec.arc-speed>,
+        follow-tangent:     moving <shared.world.pose-ee-base> along <spec.sweep-path> with <spec.arc-profile>,
         follow-position:    keeping <shared.world.pose-ee-base>.position on <spec.sweep-path>,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.sweep-path>,
         hold-elbow-z:       keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.elbow-z> within <shared.spec.satisfied-band>

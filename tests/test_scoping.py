@@ -171,16 +171,28 @@ def test_path_following_splits_driver_geometry_and_guard():
     model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
     metamodel = motion_spec_metamodel()
 
-    driver = "moving <shared.world.pose-ee-base> along <spec.approach-path> at <spec.approach-speed>"
+    driver = (
+        "moving <shared.world.pose-ee-base> along <spec.approach-path> "
+        "with <spec.approach-profile>"
+    )
     with pytest.raises(TextXSemanticError, match="drop the comparison"):
         metamodel.model_from_str(
-            source.replace(driver, f"{driver} equal to <spec.approach-speed>"),
+            source.replace(driver, f"{driver} equal to <spec.min-approach-speed>"),
+            file_name=model_path,
+        )
+
+    with pytest.raises(TextXSemanticError, match="must name a velocity profile"):
+        metamodel.model_from_str(
+            source.replace("with <spec.approach-profile>", "with <spec.min-approach-speed>"),
             file_name=model_path,
         )
 
     with pytest.raises(TextXSemanticError, match="one-sided"):
         metamodel.model_from_str(
-            source.replace("more than <spec.min-approach-speed>", "less than <spec.approach-speed>"),
+            source.replace(
+                "more than <spec.min-approach-speed>",
+                "less than <spec.min-approach-speed>",
+            ),
             file_name=model_path,
         )
 

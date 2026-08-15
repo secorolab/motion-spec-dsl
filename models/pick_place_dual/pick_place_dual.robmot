@@ -107,8 +107,12 @@ guarded-motion (ns=app) pick-above {
     context {
         spec {
             length above-z = 0.26 m,
-            linear-velocity approach-speed     = 0.08 m/s,
             linear-velocity min-approach-speed = 0.005 m/s,
+            velocity-profile approach-profile = profile {
+                max-velocity: 0.08 m/s,
+                max-acceleration: 0.05 m/s^2,
+                shape: trapezoidal
+            },
             pose start1-pose = snapshot of <shared.world.pose-ee1-base>,
             length start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x,
             length start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y,
@@ -135,11 +139,11 @@ guarded-motion (ns=app) pick-above {
     }
 
     while {
-        follow1-tan: moving <shared.world.pose-ee1-base> along <spec.arm1-approach-path> at <spec.approach-speed>,
+        follow1-tan: moving <shared.world.pose-ee1-base> along <spec.arm1-approach-path> with <spec.approach-profile>,
         follow1-lat: keeping <shared.world.pose-ee1-base>.position    on <spec.arm1-approach-path> within <shared.spec.satisfied-band>,
         follow1-ori: keeping <shared.world.pose-ee1-base>.orientation on <spec.arm1-approach-path> within <shared.spec.satisfied-band-rot>,
         advance1:    progress of <shared.world.pose-ee1-base> along <spec.arm1-approach-path> more than <spec.min-approach-speed>,
-        follow2-tan: moving <shared.world.pose-ee2-base> along <spec.arm2-approach-path> at <spec.approach-speed>,
+        follow2-tan: moving <shared.world.pose-ee2-base> along <spec.arm2-approach-path> with <spec.approach-profile>,
         follow2-lat: keeping <shared.world.pose-ee2-base>.position    on <spec.arm2-approach-path> within <shared.spec.satisfied-band>,
         follow2-ori: keeping <shared.world.pose-ee2-base>.orientation on <spec.arm2-approach-path> within <shared.spec.satisfied-band-rot>,
         advance2:    progress of <shared.world.pose-ee2-base> along <spec.arm2-approach-path> more than <spec.min-approach-speed>

@@ -1,0 +1,28 @@
+ns lct = "https://secorolab.github.io/models/look-cartesian-test/fsm/"
+
+evt loop (ns=lct) look_cartesian_test_events {
+    evt E_STEP,
+    evt E_HOME_SETTLED,
+    evt E_LOOK_DONE,
+    evt E_HOLD_DONE
+}
+
+fsm (ns=lct) look_cartesian_test_fsm {
+    description: "Run one Cartesian look motion and stop."
+    states { S_START, S_HOME, S_LOOK, S_HOLD, S_DONE }
+    evt loop: <look_cartesian_test_events>
+    start: <S_START>
+    end: <S_DONE>
+    transitions {
+        T_START_HOME { from: <S_START>, to: <S_HOME> },
+        T_HOME_LOOK  { from: <S_HOME>,  to: <S_LOOK> },
+        T_LOOK_HOLD  { from: <S_LOOK>,  to: <S_HOLD> },
+        T_HOLD_DONE  { from: <S_HOLD>,  to: <S_DONE> }
+    }
+    reactions {
+        R_START { when: <look_cartesian_test_events.E_STEP>, do: <T_START_HOME> },
+        R_HOME_SETTLED { when: <look_cartesian_test_events.E_HOME_SETTLED>, do: <T_HOME_LOOK> },
+        R_LOOK_DONE { when: <look_cartesian_test_events.E_LOOK_DONE>, do: <T_LOOK_HOLD> },
+        R_HOLD_DONE { when: <look_cartesian_test_events.E_HOLD_DONE>, do: <T_HOLD_DONE> }
+    }
+}

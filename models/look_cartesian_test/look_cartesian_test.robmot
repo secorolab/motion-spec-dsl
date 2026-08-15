@@ -1,0 +1,186 @@
+import "look_cartesian_test.fsm"
+import "../admittance_arc_single/admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/look-cartesian-test/"
+ns lct = "https://secorolab.github.io/models/look-cartesian-test/fsm/"
+
+exec-context (ns=app) look-cartesian-test-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform: simulation { name: "MuJoCo" }
+    config: "robot.toml"
+    timestep: 1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose tcp {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist tcp-twist {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose elbow-base {
+            of: <kinova.forearm_link.forearm_link_origin>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        }
+    },
+    spec {
+        pose home-pose = snapshot of <shared.world.tcp>,
+        pose look-pose = [config.poses.look] for <shared.world.tcp>,
+        angle orientation-band = 0.15 rad,
+        linear-velocity zero-linear = 0.0 m/s,
+        linear-velocity velocity-band = 0.005 m/s,
+        angular-velocity zero-angular = 0.0 rad/s,
+        angular-velocity angular-velocity-band = 0.01 rad/s,
+        torque arm-torque-limit = 35.0 Nm,
+        length elbow-support-lift = 0.008 m,
+        length elbow-z = snapshot of <shared.world.elbow-base>.position.z + <shared.spec.elbow-support-lift>
+    }
+}
+
+tolerances {
+    position: 0.05 m,
+    orientation: 0.05 rad,
+    linear-velocity: 0.005 m/s
+}
+
+guarded-motion (ns=app) home {
+    description: "Hold the reset pose until the arm settles"
+    context {}
+    when {}
+    while {
+        hold-position: keeping <shared.world.tcp>.position equal to <shared.spec.home-pose>.position,
+        hold-orientation: keeping <shared.world.tcp>.orientation equal to <shared.spec.home-pose>.orientation,
+        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+    }
+    until all {
+        settled-x: <shared.world.tcp-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-y: <shared.world.tcp-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-z: <shared.world.tcp-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-rx: <shared.world.tcp-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        settled-ry: <shared.world.tcp-twist>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        settled-rz: <shared.world.tcp-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
+    }
+}
+
+guarded-motion (ns=app) look {
+    description: "Follow the TCP arc corresponding to a 120 degree joint-1 rotation"
+    context {
+        <shared.spec>,
+        spec {
+            pose start = snapshot of <shared.world.tcp>,
+            velocity-profile speed-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.01 m/s^2,
+                shape: trapezoidal
+            },
+            length position-band = 0.005 m,
+            direction plane-normal { as-seen-by: <kinova.base_link.base_link_origin> } = (0.0, 0.0, 1.0),
+            distance arc-height = 0.336836 m,
+            path trajectory = arc {
+                start: <spec.start>,
+                end: <shared.spec.look-pose>,
+                amplitude: <spec.arc-height>,
+                plane-normal: <spec.plane-normal>
+            }
+        }
+    }
+    when {}
+    while {
+        tangent: moving <shared.world.tcp> along <spec.trajectory> with <spec.speed-profile>,
+        position: keeping <shared.world.tcp>.position on <spec.trajectory>,
+        orientation: keeping <shared.world.tcp>.orientation on <spec.trajectory>,
+        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+    }
+    until all {
+        tcp-position: <shared.world.tcp>.position equal to <shared.spec.look-pose>.position within <spec.position-band>,
+        tcp-orientation: <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.orientation-band>,
+        stopped-x: <shared.world.tcp-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-y: <shared.world.tcp-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-z: <shared.world.tcp-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-rx: <shared.world.tcp-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        stopped-ry: <shared.world.tcp-twist>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        stopped-rz: <shared.world.tcp-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
+    }
+}
+
+guarded-motion (ns=app) hold {
+    description: "Hold the configured look pose for five seconds"
+    context {}
+    when {}
+    while {
+        position: keeping <shared.world.tcp>.position equal to <shared.spec.look-pose>.position,
+        orientation: keeping <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation,
+        elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+    }
+    until {
+        timeout: elapsed greater than 5.0 s
+    }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    runs-in: <lct.S_HOME>
+    monitors {
+        mon-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <lct.E_HOME_SETTLED> },
+        }
+    }
+    controllers {
+        pid home-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid home-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        impedance home-elbow { constraint: <home.hold-elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-look {
+    handles: <look>
+    runs-in: <lct.S_LOOK>
+    monitors {
+        mon-done: monitor <look.until> {
+            satisfied for 0.3 s { trigger: event <lct.E_LOOK_DONE> },
+        }
+    }
+    controllers {
+        pid look-tangent { constraint: <look.tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid look-position { constraint: <look.position>, measured-derivative: <shared.world.tcp-twist>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid look-orientation { constraint: <look.orientation>, measured-derivative: <shared.world.tcp-twist>.angvel, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        impedance look-elbow { constraint: <look.hold-elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-hold {
+    handles: <hold>
+    runs-in: <lct.S_HOLD>
+    monitors {
+        mon-timeout: monitor <hold.until> {
+            satisfied { trigger: event <lct.E_HOLD_DONE> },
+        }
+    }
+    controllers {
+        pid hold-position { constraint: <hold.position>, measured-derivative: <shared.world.tcp-twist>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid hold-orientation { constraint: <hold.orientation>, measured-derivative: <shared.world.tcp-twist>.angvel, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        impedance hold-elbow { constraint: <hold.elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+    }
+    solvers { <handler-look.arm> }
+}

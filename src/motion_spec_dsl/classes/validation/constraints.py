@@ -5,8 +5,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import math
+from collections import defaultdict
 
 from textx import get_children_of_type
 
@@ -38,7 +38,7 @@ from motion_spec_dsl.classes.coordinates import (
     WrenchCoordinate,
 )
 from motion_spec_dsl.classes.motion_spec import Model, ToleranceDefault
-from motion_spec_dsl.classes.path import PathValue
+from motion_spec_dsl.classes.path import PathValue, ProfileSpec
 from motion_spec_dsl.classes.validation.common import (
     motion_constraint_items,
     motion_constraints,
@@ -207,10 +207,20 @@ def _require_speed_reference(spec: ConstraintSpecification, ref: ContextRef, rol
         )
 
 
+def _require_profile_reference(spec: ConstraintSpecification, ref: ContextRef) -> None:
+    """Require a path driver to name a velocity profile."""
+    quantity = _resolved_ref_quantity(ref)
+    if quantity is None or not isinstance(quantity.value, ProfileSpec):
+        raise semantic_error(
+            f"'{spec.name}' drives a path, so 'with' must name a velocity profile.",
+            spec,
+        )
+
+
 def validate_path_following(model: Model) -> None:
     """Check the driver/geometry/guard split a path specification rests on.
 
-    A path constrains geometry but not timing, so `moving ... along ... at ...` drives the
+    A path constrains geometry but not timing, so `moving ... along ... with ...` drives the
     motion and `keeping ... on ...` holds it on the geometry -- neither compares anything, so
     neither carries a relation -- while `progress ... along ...` only guards continuation and
     must. Every other view still compares something, and the grammar can no longer require it.
@@ -240,7 +250,7 @@ def validate_path_following(model: Model) -> None:
             continue
         _require_path_reference(spec, operand)
         if driver is not None:
-            _require_speed_reference(spec, driver.speed, "commanded speed")
+            _require_profile_reference(spec, driver.profile)
         elif guard is not None:
             _require_speed_reference(spec, spec.expr.threshold, "minimum speed")
         else:

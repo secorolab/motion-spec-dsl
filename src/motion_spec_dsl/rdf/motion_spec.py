@@ -3003,7 +3003,30 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
         if spec.view.moving is not None:
             self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
-            ref_node = self._emit_context_ref_node(operand.speed, motion, f"{spec.name}-ref")
+            ctrl = self._controller_for_spec(spec)
+            if ctrl is None:
+                raise ValueError(
+                    f"Profiled path constraint '{spec.name}' needs a tracking controller."
+                )
+            profile_qty = _resolved_context_quantity(_context_quantity(operand.profile))
+            ref_node = self._emit_velocity_profile_reference(
+                ctrl,
+                spec,
+                motion,
+                None,
+                self._path_along_speed_node(path),
+                QuantityType.LinearVelocity,
+                profile_qty,
+            )
+            profile_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
+            self.graph.add((profile_node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
+            self.graph.add(
+                (
+                    profile_node,
+                    _ns_term(GEOM_OP_EXT, "path-parameter"),
+                    self._owned_uri(f"{path.name}-s", path),
+                )
+            )
             self.graph.add((node, CSTR["reference-value"], ref_node))
             self._reference_value_index[node] = ref_node
             # A commanded speed is an equality like any other: it is never met exactly, so it
@@ -3491,16 +3514,17 @@ class MotionSpecDatasetBuilder:
         ctrl: ControllerEntry,
         spec: ConstraintSpecification,
         motion: GuardedMotion,
-        goal_node: URIRef,
+        goal_node: URIRef | None,
         measured_node: URIRef | None,
         scalar_t: Any,
+        profile_qty: ContextQuantity | None = None,
     ) -> URIRef:
         """Emit a velocity-profile reference-generating op (goal + measured -> profiled velocity)
         for a profiled controller. Returns the reference-value node.
         """
         if measured_node is None:
             raise ValueError(f"Profiled controller '{ctrl.name}' needs a measured quantity.")
-        profile_qty = _context_quantity(ctrl.params.profile)
+        profile_qty = profile_qty or _context_quantity(ctrl.params.profile)
         if not isinstance(profile_qty, ContextQuantity):
             raise ValueError(f"Controller '{ctrl.name}' has an unresolved velocity profile.")
         profile_qty = _resolved_context_quantity(profile_qty)
@@ -3519,22 +3543,31 @@ class MotionSpecDatasetBuilder:
         self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         # Where it is driving to. The value it starts from is the constraint's own
         # quantity, so the profile does not restate it.
-        self.graph.add((op_node, _ns_term(ALGO_EXT, "target"), goal_node))
+        max_velocity_node = self._emit_profile_limit(
+            profile_qty.value.max_velocity,
+            profile_qty,
+            "max-velocity",
+            QuantityType.LinearVelocity,
+        )
+        self.graph.add(
+            (op_node, _ns_term(ALGO_EXT, "target"), goal_node or max_velocity_node)
+        )
         self.graph.add(
             (
                 op_node,
                 _ns_term(ALGO_EXT, "maximum-velocity"),
-                self._emit_context_ref_node(
-                    profile_qty.value.max_velocity, profile_qty, "max-velocity"
-                ),
+                max_velocity_node,
             )
         )
         self.graph.add(
             (
                 op_node,
                 _ns_term(ALGO_EXT, "maximum-acceleration"),
-                self._emit_context_ref_node(
-                    profile_qty.value.max_acceleration, profile_qty, "max-acceleration"
+                self._emit_profile_limit(
+                    profile_qty.value.max_acceleration,
+                    profile_qty,
+                    "max-acceleration",
+                    QuantityType.LinearAcceleration,
                 ),
             )
         )
@@ -3551,8 +3584,11 @@ class MotionSpecDatasetBuilder:
                 (
                     op_node,
                     _ns_term(ALGO_EXT, "maximum-jerk"),
-                    self._emit_context_ref_node(
-                        profile_qty.value.max_jerk, profile_qty, "max-jerk"
+                    self._emit_profile_limit(
+                        profile_qty.value.max_jerk,
+                        profile_qty,
+                        "max-jerk",
+                        QuantityType.LinearJerk,
                     ),
                 )
             )
@@ -3561,6 +3597,20 @@ class MotionSpecDatasetBuilder:
         )
         self.graph.add((op_node, ALGO_EXT.out, out_node))
         return out_node
+
+    def _emit_profile_limit(
+        self, ref: ContextRef, owner: ContextQuantity, suffix: str, quantity_type: QuantityType
+    ) -> URIRef:
+        """Emit an inline profile limit or resolve its named quantity."""
+        measure = getattr(ref, "bare", None)
+        if not isinstance(measure, Measure):
+            return self._emit_context_ref_node(ref, owner, suffix)
+        return self._emit_scalar_quantity(
+            self._owned_uri(f"{owner.name}-{suffix}", owner),
+            float(measure.value),
+            QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type, QUDT_QKIND[quantity_type.value]),
+            _dsl_unit(measure.unit),
+        )
 
     def _emit_profile_view_node(self, view: Any, owner: Any) -> URIRef:
         """Resolve a profile/admittance measured-velocity view to its value node, registering the

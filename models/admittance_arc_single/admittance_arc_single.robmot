@@ -150,8 +150,12 @@ guarded-motion (ns=app) arc-motion {
 
     context {
         spec {
-            linear-velocity arc-speed     = 0.05 m/s,
             linear-velocity min-arc-speed = 0.005 m/s,
+            velocity-profile arc-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.05 m/s^2,
+                shape: trapezoidal
+            },
             direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
                 = (0.9863939238, 0.1643989873, 0.0),
             length chord-x    = -0.05 m,
@@ -183,7 +187,7 @@ guarded-motion (ns=app) arc-motion {
     when {}
 
     while {
-        follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> at <spec.arc-speed>,
+        follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> with <spec.arc-profile>,
         follow-position: keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
         advance: progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
