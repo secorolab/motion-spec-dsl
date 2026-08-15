@@ -47,10 +47,10 @@ def validate_detect_targets(model: Model) -> None:
 
 
 def validate_subscription_targets(model: Model) -> None:
-    """A subscription names each world pose it writes, and every pose has one producer.
-    """
+    """A subscription names each world pose it writes, and every pose has one producer."""
     # Detects seed the set: a subscription and a detect claiming the same object is the same
     # two-producer error as two subscriptions doing so.
+    subjects = _pose_subjects(model)
     observed = {
         subjects[id(target.ref)]
         for motion in motion_specs(model)

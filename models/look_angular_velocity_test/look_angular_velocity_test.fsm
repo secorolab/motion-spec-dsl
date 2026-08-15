@@ -1,0 +1,28 @@
+ns lav = "https://secorolab.github.io/models/look-angular-velocity-test/fsm/"
+
+evt loop (ns=lav) look_angular_velocity_test_events {
+    evt E_STEP,
+    evt E_HOME_SETTLED,
+    evt E_LOOK_DONE
+}
+
+fsm (ns=lav) look_angular_velocity_test_fsm {
+    description: "Settle at home, then turn about the base axis to the joint-1 120 degree pose."
+
+    states { S_START, S_HOME, S_LOOK, S_HOLD, S_DONE }
+    evt loop: <look_angular_velocity_test_events>
+    start: <S_START>
+    end: <S_DONE>
+
+    transitions {
+        T_START_HOME { from: <S_START>, to: <S_HOME> },
+        T_HOME_LOOK  { from: <S_HOME>,  to: <S_LOOK> },
+        T_LOOK_HOLD { from: <S_LOOK>, to: <S_HOLD> }
+    }
+
+    reactions {
+        R_START { when: <look_angular_velocity_test_events.E_STEP>, do: <T_START_HOME> },
+        R_HOME  { when: <look_angular_velocity_test_events.E_HOME_SETTLED>, do: <T_HOME_LOOK> },
+        R_LOOK_DONE { when: <look_angular_velocity_test_events.E_LOOK_DONE>, do: <T_LOOK_HOLD> }
+    }
+}

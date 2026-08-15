@@ -1,0 +1,177 @@
+import "look_angular_velocity_test.fsm"
+import "../yaw_screw_single/yaw_screw_single.scenex"
+ns app = "https://secorolab.github.io/models/look-angular-velocity-test/"
+ns lav = "https://secorolab.github.io/models/look-angular-velocity-test/fsm/"
+
+exec-context (ns=app) look-angular-velocity-test-exec {
+    runs-scene: <yaw_screw_scene_mjc>
+    platform: simulation { name: "MuJoCo" }
+    config: "robot.toml"
+    timestep: 1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose tcp-base {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist tcp-base-twist {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist tcp-tool-twist {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <gripper.g_base.g_pinch>
+        },
+        pose elbow-base {
+            of: <kinova.forearm_link.forearm_link_origin>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        }
+    },
+    spec {
+        length position-band = 0.01 m,
+        angle orientation-band = 0.01 rad,
+        linear-velocity velocity-band = 0.01 m/s,
+        angular-velocity angular-velocity-band = 0.01 rad/s,
+        linear-velocity zero-linear = 0.0 m/s,
+        angular-velocity zero-angular = 0.0 rad/s,
+        length reach-band = 0.06 m,
+        length negative-reach-band = -0.06 m,
+        pose home-pose = snapshot of <shared.world.tcp-base>,
+        length elbow-z = snapshot of <shared.world.elbow-base>.position.z
+    }
+}
+
+tolerances {
+    linear-velocity: 0.01 m/s,
+    angular-velocity: 0.01 rad/s,
+    position: 0.01 m,
+    orientation: 0.01 rad
+}
+
+guarded-motion (ns=app) home {
+    description: "Hold the reset pose until the arm settles"
+    context { }
+    when { }
+    while {
+        hold-position: keeping <shared.world.tcp-base>.position equal to <shared.spec.home-pose>.position within <shared.spec.position-band>,
+        hold-orientation: keeping <shared.world.tcp-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.orientation-band>
+    }
+    until all {
+        settled-x: <shared.world.tcp-base-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-y: <shared.world.tcp-base-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-z: <shared.world.tcp-base-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>
+    }
+}
+
+guarded-motion (ns=app) look {
+    description: "Turn about the base axis at constant angular velocity to the joint-1 120 degree pose"
+    context {
+        spec {
+            angular-velocity turn-rate = -0.0738 rad/s,
+            linear-velocity travel-rate = -0.05 m/s,
+            length target-x = -0.335671 m,
+            length target-y = -0.584089 m,
+            length target-x-lo = <spec.target-x> + <shared.spec.negative-reach-band>,
+            length target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
+            length target-y-lo = <spec.target-y> + <shared.spec.negative-reach-band>,
+            length target-y-hi = <spec.target-y> + <shared.spec.reach-band>
+        }
+    }
+    when { }
+    while {
+        turn: keeping <shared.world.tcp-tool-twist>.angvel.y equal to <spec.turn-rate> within <shared.spec.angular-velocity-band>,
+        no-tilt-x: keeping <shared.world.tcp-tool-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        no-tilt-z: keeping <shared.world.tcp-tool-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        travel: keeping <shared.world.tcp-tool-twist>.linvel.x equal to <spec.travel-rate> within <shared.spec.velocity-band>,
+        hold-height: keeping <shared.world.tcp-tool-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        hold-radius: keeping <shared.world.tcp-tool-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z> within <shared.spec.position-band>
+    }
+    until all {
+        at-target-x: <shared.world.tcp-base>.position.x between <spec.target-x-lo> and <spec.target-x-hi>,
+        at-target-y: <shared.world.tcp-base>.position.y between <spec.target-y-lo> and <spec.target-y-hi>
+    }
+}
+
+guarded-motion (ns=app) hold {
+    description: "Hold the pose reached by the look motion"
+    context {
+        spec {
+            pose target = snapshot of <shared.world.tcp-base>,
+            length elbow-z = snapshot of <shared.world.elbow-base>.position.z
+        }
+    }
+    when { }
+    while {
+        position: keeping <shared.world.tcp-base>.position equal to <spec.target>.position within <shared.spec.position-band>,
+        orientation: keeping <shared.world.tcp-base>.orientation equal to <spec.target>.orientation within <shared.spec.orientation-band>,
+        elbow-z: keeping <shared.world.elbow-base>.position.z equal to <spec.elbow-z> within <shared.spec.position-band>
+    }
+    until { }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    monitors {
+        settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <lav.E_HOME_SETTLED> },
+        }
+    }
+    controllers {
+        pid hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        impedance hold-orientation { constraint: <home.hold-orientation>, stiffness: 40, damping: 8 } apply at <gripper.g_base>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: rne,
+            gravity: (0.0, 0.0, -9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-look {
+    handles: <look>
+    monitors {
+        done: monitor <look.until> {
+            satisfied for 0.3 s { trigger: event <lav.E_LOOK_DONE> },
+        }
+    }
+    controllers {
+        pid turn { constraint: <look.turn>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid no-tilt-x { constraint: <look.no-tilt-x>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid no-tilt-z { constraint: <look.no-tilt-z>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid travel { constraint: <look.travel>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid hold-height { constraint: <look.hold-height>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid hold-radius { constraint: <look.hold-radius>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        impedance support-elbow {
+            constraint: <look.hold-elbow-z>,
+            Ki: 200,
+            stiffness: 2500,
+            damping: 80
+        } apply at <kinova.forearm_link>
+    }
+    solvers { <handler-home.arm> }
+}
+
+constraint-handler (ns=app) handler-hold {
+    handles: <hold>
+    runs-in: <lav.S_HOLD>
+    controllers {
+        pid position { constraint: <hold.position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        impedance orientation { constraint: <hold.orientation>, stiffness: 40, damping: 8 } apply at <gripper.g_base>,
+        impedance elbow-z {
+            constraint: <hold.elbow-z>,
+            Ki: 200,
+            stiffness: 2500,
+            damping: 80
+        } apply at <kinova.forearm_link>
+    }
+    solvers { <handler-home.arm> }
+}

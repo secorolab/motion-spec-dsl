@@ -1,0 +1,25 @@
+ns ljt = "https://secorolab.github.io/models/look-joint1-test/fsm/"
+
+evt loop (ns=ljt) look_joint1_test_events {
+    evt E_STEP,
+    evt E_DONE
+}
+
+fsm (ns=ljt) look_joint1_test_fsm {
+    description: "Run one joint-1 look motion and stop."
+
+    states { S_START, S_LOOK, S_DONE }
+    evt loop: <look_joint1_test_events>
+    start: <S_START>
+    end: <S_DONE>
+
+    transitions {
+        T_START_LOOK { from: <S_START>, to: <S_LOOK> },
+        T_LOOK_DONE  { from: <S_LOOK>,  to: <S_DONE> }
+    }
+
+    reactions {
+        R_START { when: <look_joint1_test_events.E_STEP>, do: <T_START_LOOK> },
+        R_DONE  { when: <look_joint1_test_events.E_DONE>, do: <T_LOOK_DONE> }
+    }
+}

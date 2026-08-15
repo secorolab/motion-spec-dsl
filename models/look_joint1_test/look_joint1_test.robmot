@@ -1,0 +1,92 @@
+import "look_joint1_test.fsm"
+import "../admittance_arc_single/admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/look-joint1-test/"
+ns ljt = "https://secorolab.github.io/models/look-joint1-test/fsm/"
+
+exec-context (ns=app) look-joint1-test-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform: simulation { name: "MuJoCo" }
+    config: "robot.toml"
+    timestep: 1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        joint-position joint-1 { joint: <kinova.joint_1>, normalization: (-pi, pi) rad },
+        joint-position joint-2 { joint: <kinova.joint_2>, normalization: (-pi, pi) rad },
+        joint-position joint-3 { joint: <kinova.joint_3>, normalization: (-pi, pi) rad },
+        joint-position joint-4 { joint: <kinova.joint_4>, normalization: (-pi, pi) rad },
+        joint-position joint-5 { joint: <kinova.joint_5>, normalization: (-pi, pi) rad },
+        joint-position joint-6 { joint: <kinova.joint_6>, normalization: (-pi, pi) rad },
+        joint-position joint-7 { joint: <kinova.joint_7>, normalization: (-pi, pi) rad },
+        pose tcp {
+            of: <gripper.g_base.g_pinch>,
+            wrt: <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        }
+    },
+    spec {
+        angle q1-target = 120 deg,
+        angle q2-target = 0.2618 rad,
+        angle q3-target = 3.14 rad,
+        angle q4-target = -2.2689 rad,
+        angle q5-target = 0.0 rad,
+        angle q6-target = 0.9599 rad,
+        angle q7-target = 1.5708 rad,
+        angle joint-band = 2 deg,
+        torque drive-limit = 12.0 Nm,
+        torque hold-limit = 5.0 Nm,
+        pose look-pose = [config.poses.look] for <shared.world.tcp>
+    }
+}
+
+tolerances {
+    position: 0.05 m,
+    orientation: 0.05 rad
+}
+
+guarded-motion (ns=app) look {
+    description: "Rotate joint 1 by 120 degrees while holding joints 2 through 7"
+    context { <shared.spec> }
+    when {}
+    while {
+        drive-1: keeping <shared.world.joint-1> equal to <shared.spec.q1-target>,
+        hold-2: keeping <shared.world.joint-2> equal to <shared.spec.q2-target>,
+        hold-3: keeping <shared.world.joint-3> equal to <shared.spec.q3-target>,
+        hold-4: keeping <shared.world.joint-4> equal to <shared.spec.q4-target>,
+        hold-5: keeping <shared.world.joint-5> equal to <shared.spec.q5-target>,
+        hold-6: keeping <shared.world.joint-6> equal to <shared.spec.q6-target>,
+        hold-7: keeping <shared.world.joint-7> equal to <shared.spec.q7-target>
+    }
+    until {
+        joint-arrived: <shared.world.joint-1> equal to <shared.spec.q1-target> within <shared.spec.joint-band>,
+        tcp-position: <shared.world.tcp>.position equal to <shared.spec.look-pose>.position,
+        tcp-orientation: <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation
+    }
+}
+
+constraint-handler (ns=app) handler-look {
+    handles: <look>
+    runs-in: <ljt.S_LOOK>
+    monitors {
+        mon-done: monitor <look.until> {
+            satisfied for 0.3 s { trigger: event <ljt.E_DONE> },
+        }
+    }
+    controllers {
+        pid drive-1 { constraint: <look.drive-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 8, Ki: 0, Kd: 5, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-2 { constraint: <look.hold-2>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-3 { constraint: <look.hold-3>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-4 { constraint: <look.hold-4>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-5 { constraint: <look.hold-5>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-6 { constraint: <look.hold-6>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid hold-7 { constraint: <look.hold-7>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: rne,
+            gravity: (0.0, 0.0, -9.81) m/s^2
+        }
+    }
+}
