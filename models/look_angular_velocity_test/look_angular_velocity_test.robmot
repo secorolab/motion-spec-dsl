@@ -1,10 +1,10 @@
 import "look_angular_velocity_test.fsm"
-import "../yaw_screw_single/yaw_screw_single.scenex"
+import "../admittance_arc_single/admittance_arc_single.scenex"
 ns app = "https://secorolab.github.io/models/look-angular-velocity-test/"
 ns lav = "https://secorolab.github.io/models/look-angular-velocity-test/fsm/"
 
 exec-context (ns=app) look-angular-velocity-test-exec {
-    runs-scene: <yaw_screw_scene_mjc>
+    runs-scene: <admittance_arc_scene_mjc>
     platform: simulation { name: "MuJoCo" }
     config: "robot.toml"
     timestep: 1.0 ms
@@ -27,6 +27,13 @@ context (ns=app) shared {
             wrt: <kinova.base_link.base_link_origin>,
             as-seen-by: <gripper.g_base.g_pinch>
         },
+        joint-position joint-1 { joint: <kinova.joint_1>, normalization: (-pi, pi) rad },
+        joint-position joint-2 { joint: <kinova.joint_2>, normalization: (-pi, pi) rad },
+        joint-position joint-3 { joint: <kinova.joint_3>, normalization: (-pi, pi) rad },
+        joint-position joint-4 { joint: <kinova.joint_4>, normalization: (-pi, pi) rad },
+        joint-position joint-5 { joint: <kinova.joint_5>, normalization: (-pi, pi) rad },
+        joint-position joint-6 { joint: <kinova.joint_6>, normalization: (-pi, pi) rad },
+        joint-position joint-7 { joint: <kinova.joint_7>, normalization: (-pi, pi) rad },
         pose elbow-base {
             of: <kinova.forearm_link.forearm_link_origin>,
             wrt: <kinova.base_link.base_link_origin>,
@@ -43,6 +50,7 @@ context (ns=app) shared {
         length reach-band = 0.06 m,
         length negative-reach-band = -0.06 m,
         pose home-pose = snapshot of <shared.world.tcp-base>,
+        pose look-pose = [config.poses.look] for <shared.world.tcp-base>,
         length elbow-z = snapshot of <shared.world.elbow-base>.position.z
     }
 }
@@ -74,7 +82,7 @@ guarded-motion (ns=app) look {
     context {
         spec {
             angular-velocity turn-rate = -0.0738 rad/s,
-            linear-velocity travel-rate = -0.05 m/s,
+            linear-velocity travel-rate = -0.0497 m/s,
             length target-x = -0.335671 m,
             length target-y = -0.584089 m,
             length target-x-lo = <spec.target-x> + <shared.spec.negative-reach-band>,
@@ -99,18 +107,62 @@ guarded-motion (ns=app) look {
     }
 }
 
-guarded-motion (ns=app) hold {
-    description: "Hold the pose reached by the look motion"
+guarded-motion (ns=app) reach {
+    description: "variant path_posture_damp_wide"
     context {
         spec {
-            pose target = snapshot of <shared.world.tcp-base>,
+            angle arrival-band = 0.15 rad,
+            length arrive-pos = 0.025 m,
+            angle q1-target = 120 deg,
+            angle q2-target = 0.2618 rad,
+            angle q3-target = 3.1416 rad,
+            angle q4-target = -2.2689 rad,
+            angle q5-target = 0.0 rad,
+            angle q6-target = 0.9599 rad,
+            angle q7-target = 1.5708 rad,
+            torque posture-limit = 8.0 Nm,
+            pose start = snapshot of <shared.world.tcp-base>,
+            velocity-profile approach-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.01 m/s^2,
+                shape: trapezoidal
+            },
+            path to-look = lerp {
+                start: <spec.start>,
+                goal: <shared.spec.look-pose>
+            }
+        }
+    }
+    when { }
+    while {
+        reach-tangent: moving <shared.world.tcp-base> along <spec.to-look> with <spec.approach-profile>,
+        reach-position: keeping <shared.world.tcp-base>.position on <spec.to-look>,
+        reach-orientation: keeping <shared.world.tcp-base>.orientation on <spec.to-look>,
+        posture-1: keeping <shared.world.joint-1> equal to <spec.q1-target>,
+        posture-2: keeping <shared.world.joint-2> equal to <spec.q2-target>,
+        posture-3: keeping <shared.world.joint-3> equal to <spec.q3-target>,
+        posture-4: keeping <shared.world.joint-4> equal to <spec.q4-target>,
+        posture-5: keeping <shared.world.joint-5> equal to <spec.q5-target>,
+        posture-6: keeping <shared.world.joint-6> equal to <spec.q6-target>,
+        posture-7: keeping <shared.world.joint-7> equal to <spec.q7-target>
+    }
+    until all {
+        at-position: <shared.world.tcp-base>.position equal to <shared.spec.look-pose>.position within <spec.arrive-pos>,
+        at-orientation: <shared.world.tcp-base>.orientation equal to <shared.spec.look-pose>.orientation within <spec.arrival-band>
+    }
+}
+
+guarded-motion (ns=app) hold {
+    description: "Settle the last millimetres onto the configured look pose and hold it"
+    context {
+        spec {
             length elbow-z = snapshot of <shared.world.elbow-base>.position.z
         }
     }
     when { }
     while {
-        position: keeping <shared.world.tcp-base>.position equal to <spec.target>.position within <shared.spec.position-band>,
-        orientation: keeping <shared.world.tcp-base>.orientation equal to <spec.target>.orientation within <shared.spec.orientation-band>,
+        position: keeping <shared.world.tcp-base>.position equal to <shared.spec.look-pose>.position within <shared.spec.position-band>,
+        orientation: keeping <shared.world.tcp-base>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.orientation-band>,
         elbow-z: keeping <shared.world.elbow-base>.position.z equal to <spec.elbow-z> within <shared.spec.position-band>
     }
     until { }
@@ -158,6 +210,35 @@ constraint-handler (ns=app) handler-look {
         } apply at <kinova.forearm_link>
     }
     solvers { <handler-home.arm> }
+}
+
+constraint-handler (ns=app) handler-reach {
+    handles: <reach>
+    runs-in: <lav.S_REACH>
+    monitors {
+        arrived: monitor <reach.until> {
+            satisfied for 0.3 s { trigger: event <lav.E_REACH_DONE> },
+        }
+    }
+    controllers {
+        pid reach-tangent { constraint: <reach.reach-tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid reach-position { constraint: <reach.reach-position>, measured-derivative: <shared.world.tcp-base-twist>.linvel, Kp: 200, Ki: 20, Kd: 12, decay: 0 },
+        pid reach-orientation { constraint: <reach.reach-orientation>, measured-derivative: <shared.world.tcp-base-twist>.angvel, Kp: 120, Ki: 10, Kd: 8, decay: 0 },
+        pid posture-1 { constraint: <reach.posture-1>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-2 { constraint: <reach.posture-2>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-3 { constraint: <reach.posture-3>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-4 { constraint: <reach.posture-4>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-5 { constraint: <reach.posture-5>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-6 { constraint: <reach.posture-6>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid posture-7 { constraint: <reach.posture-7>, output-saturation: saturation { max: <reach.spec.posture-limit> }, Kp: 0, Ki: 0, Kd: 20, decay: 0, error-normalization: (-pi, pi) rad } as torque
+    }
+    solvers {
+        reach-arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
 }
 
 constraint-handler (ns=app) handler-hold {
