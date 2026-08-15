@@ -521,20 +521,15 @@ class MotionSpecDatasetBuilder:
 
     def _emit_ros_action_server(self, server: RosActionServerDecl) -> None:
         """The action the runtime answers goals on: its one valueless member is the event an
-        accepted goal produces, and its field rows are what a completed run answers with. What a
-        scenario observes while the run plays out is authored on the monitors
-        (`publish: event to`), not here.
+        accepted goal produces. What a scenario observes while the run plays out, and what the
+        goal is finally answered with, are authored on the monitors (`publish: event to`,
+        `result: succeeded`), not here.
         """
         node = URIRef(server.uri)
         self.graph.add((node, RDF.type, ROS.Action))
         self.graph.add((node, ROS["channel-name"], Literal(server.channel_name)))
         self.graph.add((node, ROS["type-name"], Literal(server.type_name)))
         self.graph.add((node, RDFS.member, URIRef(server.goal_event.uri)))
-        for row_index, (path, value) in enumerate(server.result):
-            row = URIRef(f"{server.uri}.r{row_index}")
-            self.graph.add((node, RDFS.member, row))
-            self.graph.add((row, ROS["field-path"], Literal(path)))
-            self.graph.add((row, RDF.value, Literal(value)))
 
     def _emit_ros_subscription(self, subscription: RosSubscriptionDecl) -> None:
         """A subscribed topic: the channel poses arrive on, the message it carries, and the
@@ -4314,6 +4309,9 @@ class MotionSpecDatasetBuilder:
         """Name the channel a monitor publishes on, the message it carries, and every field
         assignment it authored, each under the condition its state block holds.
         """
+        answer = monitor.answer
+        if answer is not None:
+            self._emit_ros_answer(monitor, monitor_node, watched, *answer)
         occurrence = monitor.occurrence_topic
         if occurrence is not None:
             # An announced event is the whole payload: each member is one event the monitor
@@ -4352,6 +4350,41 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((row, RDF.value, Literal(value)))
                 for condition in conditions:
                     self.graph.add((row, CSTR_EXT["has-constraint"], condition))
+
+    def _emit_ros_answer(
+        self,
+        monitor: Any,
+        monitor_node: URIRef,
+        watched: list[URIRef],
+        block: Any,
+        action: Any,
+    ) -> None:
+        """The goal this monitor's state answers: the action it is served on, the status it
+        answers with, and the result fields it states.
+
+        The monitor is where the run finishes, so the answer is stated here rather than at the
+        action, which knows only that goals arrive. It is a member of the monitor rather than the
+        monitor itself, so the same monitor may also publish: one node states one message. Its
+        own outcome member carries the answer's status and, when the answering state is the
+        satisfied one, the constraint that state holds under; the remaining members are the
+        result's field rows.
+        """
+        server = action.server
+        answer_node = URIRef(f"{monitor.uri}.answer")
+        self.graph.add((monitor_node, RDFS.member, answer_node))
+        self.graph.add((answer_node, RDF.type, ROS.Action))
+        self.graph.add((answer_node, ROS["channel-name"], Literal(server.channel_name)))
+        self.graph.add((answer_node, ROS["type-name"], Literal(server.type_name)))
+        outcome = URIRef(f"{answer_node}.outcome")
+        self.graph.add((answer_node, RDFS.member, outcome))
+        self.graph.add((outcome, RDF.value, Literal(f"STATUS_{action.outcome.upper()}")))
+        for condition in watched if block.state == "satisfied" else []:
+            self.graph.add((outcome, CSTR_EXT["has-constraint"], condition))
+        for row_index, (path, value) in enumerate(action.assignments):
+            row = URIRef(f"{answer_node}.f{row_index}")
+            self.graph.add((answer_node, RDFS.member, row))
+            self.graph.add((row, ROS["field-path"], Literal(path)))
+            self.graph.add((row, RDF.value, Literal(value)))
 
     def _emit_constraint_handler(
         self,

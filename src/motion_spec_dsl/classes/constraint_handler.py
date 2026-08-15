@@ -206,6 +206,10 @@ class MonitorAction:
     # How often the verdict goes out. Unstated, it goes out every cycle the motion is active,
     # which is the loop rate and far more than a reader of a verdict asks for.
     rate: object | None = None
+    # Answer form (`result: succeeded <server> {..}`): the served action this state answers, and
+    # the goal status it answers with. Its rows are the `fields` above.
+    server: object | None = None
+    outcome: str = ""
 
     @property
     def kind(self) -> str:
@@ -213,6 +217,8 @@ class MonitorAction:
             return "trigger"
         if self.fallback is not None:
             return "hold"
+        if self.server is not None:
+            return "result"
         if self.topic is not None:
             return "publish"
         return "flag"
@@ -284,6 +290,13 @@ class MonitorEntry(NamedNamespaceObject):
     def fallback(self) -> GuardedMotion | None:
         found = self._single("hold")
         return None if found is None else found[1].fallback
+
+    @property
+    def answer(self) -> tuple[MonitorStateBlock, MonitorAction] | None:
+        """The state that answers a goal, and what it answers with: reaching this state is what
+        the model calls the goal finished.
+        """
+        return self._single("result")
 
     @property
     def topic(self) -> RosTopicDecl | None:

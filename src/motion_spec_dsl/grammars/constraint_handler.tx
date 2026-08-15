@@ -53,6 +53,7 @@ MonitorAction:
     | "publish" ":" "events" "{" events+=EventName[","] ","? "}" "to" "<" topic=[RosTopicDecl|FQN] ">"
     | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}" ("at" rate=Measure)?
     | "publish" ":" value=RosFieldValue "to" "<" topic=[RosTopicDecl|FQN] ">" ("at" rate=Measure)?
+    | "result"  ":" outcome=GoalStatusToken "<" server=[RosActionServerDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
 ;
 
 RosFieldAssign: path+=ID['.'] ":" value=RosFieldValue ;
@@ -60,6 +61,12 @@ RosFieldAssign: path+=ID['.'] ":" value=RosFieldValue ;
 RosFieldValue: literal=FLOAT | literal=STRING | constant=ID ;
 
 RosTopicDecl: name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING ;
+
+RosActionServerDecl:
+    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING "{"
+        "on-goal" ":" "produce" "event" goal_event=EventName ","?
+    "}"
+;
 
 ControllerEntry:
     (

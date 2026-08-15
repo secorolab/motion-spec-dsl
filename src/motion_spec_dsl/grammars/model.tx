@@ -67,15 +67,6 @@ RosSubscriptionDecl:
 
 WorldQuantityRef: "<" ref=[WorldQuantity|FQN] ">" ;
 
-RosActionServerDecl:
-    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING "{"
-        "on-goal" ":" "produce" "event" goal_event=EventName ","
-        ("on-end" ":" on_end=RosResult ","?)?
-    "}"
-;
-
-RosResult: value=RosFieldValue | "{" fields+=RosFieldAssign[","] ","? "}" ;
-
 // Model-wide satisfaction bands, one per quantity kind. A constraint that authors no
 // `within` takes the band declared for the kind its error carries, so the band a model is
 // tuned against is stated once instead of on every gate.

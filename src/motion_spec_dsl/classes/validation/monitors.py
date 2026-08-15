@@ -15,7 +15,12 @@ _ALLOWED_STATES = {
     "hold": ("violated",),
     "flag": ("satisfied",),
     "publish": ("satisfied", "violated"),
+    "result": ("satisfied", "violated"),
 }
+
+# A run answers its own goal with what it established; it does not cancel it -- a cancel is
+# the client's to ask for, and the runtime reports it wherever it stops.
+_ANSWERABLE = ("succeeded", "aborted")
 
 
 def validate_monitor_state_blocks(model: Model) -> None:
@@ -27,6 +32,7 @@ def validate_monitor_state_blocks(model: Model) -> None:
             _validate_blocks(monitor)
             _validate_actions(monitor)
             _validate_publish(monitor)
+            _validate_result(monitor)
 
 
 def _validate_blocks(monitor) -> None:
@@ -49,7 +55,7 @@ def _validate_actions(monitor) -> None:
                     f"it belongs in {' or '.join(allowed)}.",
                     monitor,
                 )
-    for kind in ("trigger", "hold", "flag"):
+    for kind in ("trigger", "hold", "flag", "result"):
         if len(monitor.actions(kind)) > 1:
             raise semantic_error(
                 f"Monitor '{monitor.name}' authors more than one '{kind}' action.", monitor
@@ -82,6 +88,20 @@ def _validate_publish(monitor) -> None:
             f"Monitor '{monitor.name}' publishes when violated only; the violated publish is "
             "the otherwise of the satisfied one, so author the satisfied publish too. A "
             "violated-only publish is not expressible.",
+            monitor,
+        )
+
+
+def _validate_result(monitor) -> None:
+    """Raise on an answer that states a status the run cannot reach on its own."""
+    answer = monitor.answer
+    if answer is None:
+        return
+    _block, action = answer
+    if action.outcome not in _ANSWERABLE:
+        raise semantic_error(
+            f"Monitor '{monitor.name}' answers its goal '{action.outcome}'; a run answers "
+            f"{' or '.join(_ANSWERABLE)}, and a cancel is the client's to ask for.",
             monitor,
         )
 

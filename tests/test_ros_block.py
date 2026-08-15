@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: MPL-2.0
 """One `ros` block states what a model publishes, calls and serves. A served action carries the
-event an accepted goal produces as its valueless member, and what a completed run answers with as
-its field rows. What a scenario observes while the run plays out is authored on the monitors: a
-monitor that publishes an occurrence carries the event it triggers as its member.
+event an accepted goal produces as its valueless member. What a scenario observes while the run
+plays out, and what the goal is finally answered with, are authored on the monitors: a monitor
+that publishes an occurrence carries the event it triggers as its member, and a monitor that
+answers a goal carries the status it answers with and the result's field rows.
 """
 
 from __future__ import annotations
 
 import pytest
-from motion_spec_dsl.rdf.model import ROS
+from motion_spec_dsl.rdf.model import CSTR_EXT, ROS
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdflib import Literal
 from rdflib.namespace import RDF, RDFS
@@ -21,12 +22,13 @@ SERVER = """ros (ns=app) {
     action-servers {
         arc-behaviour: action "run_arc" type "bdd_ros2_interfaces/action/Behaviour" {
             on-goal: produce event <aas.E_HOME_SETTLED>,
-            on-end: { result.trinary.value: TRUE },
         },
     },
 }
 
 """
+
+ANSWER = "result: succeeded <ros.action-servers.arc-behaviour> { result.trinary.value: TRUE }"
 
 
 TOPICS = """ros (ns=app) {
@@ -55,9 +57,28 @@ def _with_occurrence(base_source: str) -> str:
     )
 
 
+def _with_answer(base_source: str, answer: str = ANSWER) -> str:
+    """The fixture's one monitor, answering the served goal when it settles."""
+    return _with(base_source, SERVER).replace(
+        "trigger: event <aas.E_HOME_SETTLED>",
+        f"trigger: event <aas.E_HOME_SETTLED>, {answer}",
+        1,
+    )
+
+
 def _graph(parse_source, base_source: str, block: str = SERVER):
     return (
         MotionSpecDatasetBuilder(parse_source(_with(base_source, block))).build()[0].default_graph
+    )
+
+
+def _answer_node(graph):
+    """The answer a monitor states: an action that is not the served one, which is the only
+    action carrying a member with no value of its own."""
+    return next(
+        node
+        for node in graph.subjects(RDF.type, ROS.Action)
+        if all(graph.value(m, RDF.value) is not None for m in graph.objects(node, RDFS.member))
     )
 
 
@@ -72,21 +93,85 @@ def test_the_server_names_its_action_and_the_event_a_goal_produces(parse_source,
     assert [str(uri) for uri in goal_event] == [f"{AAS}E_HOME_SETTLED"]
 
 
-def test_the_server_states_what_a_completed_run_answers_with(parse_source, base_source):
-    """A row is a field the result carries; a run that never finishes states none of them."""
+def test_the_server_states_no_result_of_its_own(parse_source, base_source):
+    """The action knows only that goals arrive on it: where a run finishes is the monitor's to
+    state, so the server carries the goal event and nothing else."""
     graph = _graph(parse_source, base_source)
     server = next(graph.subjects(RDF.type, ROS.Action))
-    rows = [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
+    assert not [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
+
+
+def test_the_answer_is_a_member_of_the_monitor_that_states_it(parse_source, base_source):
+    """The monitor is where the run finishes; the answer hangs off it rather than being it, so
+    the same monitor may publish as well."""
+    graph = MotionSpecDatasetBuilder(parse_source(_with_answer(base_source))).build()[0]
+    graph = graph.default_graph
+    answer = _answer_node(graph)
+    assert str(answer).endswith("mon-home-settled.answer")
+    monitor = next(graph.subjects(RDFS.member, answer))
+    assert str(monitor).endswith("mon-home-settled")
+    assert str(graph.value(answer, ROS["channel-name"])) == "run_arc"
+    assert str(graph.value(answer, ROS["type-name"])) == "bdd_ros2_interfaces/action/Behaviour"
+
+
+def test_the_answer_states_its_status_and_its_result_fields(parse_source, base_source):
+    """The outcome carries the status and no field of its own; every other member is one field
+    the result states."""
+    graph = MotionSpecDatasetBuilder(parse_source(_with_answer(base_source))).build()[0]
+    graph = graph.default_graph
+    answer = _answer_node(graph)
+    members = list(graph.objects(answer, RDFS.member))
+    outcome = [m for m in members if graph.value(m, ROS["field-path"]) is None]
+    assert [str(graph.value(m, RDF.value)) for m in outcome] == ["STATUS_SUCCEEDED"]
+    rows = [m for m in members if graph.value(m, ROS["field-path"]) is not None]
     assert [
         (str(graph.value(row, ROS["field-path"])), str(graph.value(row, RDF.value))) for row in rows
     ] == [("result.trinary.value", "TRUE")]
 
 
-def test_a_server_that_authors_no_result_states_no_rows(parse_source, base_source):
-    block = SERVER.replace("\n            on-end: { result.trinary.value: TRUE },", "", 1)
-    graph = _graph(parse_source, base_source, block)
-    server = next(graph.subjects(RDF.type, ROS.Action))
-    assert not [row for row in graph.objects(server, RDFS.member) if graph.value(row, RDF.value)]
+def test_the_answer_carries_the_constraint_its_state_holds_under(parse_source, base_source):
+    """A satisfied answer holds under the constraint the monitor watches; a violated one is the
+    otherwise, and states no condition at all."""
+    graph = MotionSpecDatasetBuilder(parse_source(_with_answer(base_source))).build()[0]
+    graph = graph.default_graph
+    answer = _answer_node(graph)
+    (outcome,) = [
+        m for m in graph.objects(answer, RDFS.member) if graph.value(m, ROS["field-path"]) is None
+    ]
+    assert list(graph.objects(outcome, CSTR_EXT["has-constraint"]))
+
+
+def test_a_run_that_cancels_its_own_goal_is_rejected(parse_source, base_source):
+    """A cancel is the client's to ask for; a run answers what it established."""
+    source = _with_answer(base_source, ANSWER.replace("succeeded", "canceled", 1))
+    with pytest.raises(TextXSemanticError, match="a cancel is the client's"):
+        parse_source(source)
+
+
+def test_a_monitor_may_publish_and_answer_at_once(parse_source, base_source):
+    block = SERVER.replace(
+        "    action-servers {",
+        """    publishers {
+        bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+    },
+    action-servers {""",
+        1,
+    )
+    source = _with(base_source, block).replace(
+        MONITOR,
+        f"satisfied for 0.3 s {{ {ANSWER}, "
+        "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.bdd-events> },",
+        1,
+    )
+    graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
+    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    # The topic carries the announced event; the answer is a member of its own, and neither
+    # reads the other's members as its payload.
+    answer = _answer_node(graph)
+    assert (monitor, RDF.type, ROS.Topic) in graph
+    assert (monitor, RDFS.member, answer) in graph
+    assert str(answer).endswith("mon-home-settled.answer")
+    assert f"{AAS}E_HOME_SETTLED" in [str(m) for m in graph.objects(monitor, RDFS.member)]
 
 
 def test_a_monitor_publishes_its_event_as_its_topics_member(parse_source, base_source):
