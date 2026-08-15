@@ -226,7 +226,13 @@ class VectorXYZ:
 class ReferenceValue:
     source: ContextRef
     offset: ContextRef | None = None
+    sign: str = "+"
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def subtracts(self) -> bool:
+        """Whether the offset is taken from the source rather than added to it."""
+        return self.sign == "-"
 
 
 @dataclass
@@ -237,8 +243,14 @@ class SnapshotValue:
 
     source: View
     offset: ContextRef | None = None
+    sign: str = "+"
     trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def subtracts(self) -> bool:
+        """Whether the offset is taken from the sample rather than added to it."""
+        return self.sign == "-"
 
 
 @dataclass

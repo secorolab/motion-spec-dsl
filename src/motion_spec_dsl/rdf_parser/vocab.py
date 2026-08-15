@@ -417,6 +417,7 @@ class MAP_EXT(DefinedNamespace):
 class ALGO_EXT(DefinedNamespace):
     Saturation: URIRef
     Addition: URIRef
+    Subtraction: URIRef
     VelocityProfile: URIRef
     Snapshot: URIRef
     Admittance: URIRef
@@ -433,6 +434,8 @@ class ALGO_EXT(DefinedNamespace):
     parameter: URIRef
     path: URIRef
     progress: URIRef
+    minuend: URIRef
+    subtrahend: URIRef
 
     _extras = [
         "in",

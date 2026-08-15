@@ -260,7 +260,7 @@ ProfileSpec:
 VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 SnapshotValue:
-    "=" "snapshot" "of" source=View ("+" offset=ContextRef)?
+    "=" "snapshot" "of" source=View (sign=OffsetSign offset=ContextRef)?
     ("on" "event" trigger=EventName)?
 ;
 
@@ -283,5 +283,7 @@ ContextRef:
 ;
 
 ReferenceValue:
-    "=" source=ContextRef ("+" offset=ContextRef)?
+    "=" source=ContextRef (sign=OffsetSign offset=ContextRef)?
 ;
+
+OffsetSign: "+" | "-" ;

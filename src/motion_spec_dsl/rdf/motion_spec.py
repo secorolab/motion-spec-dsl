@@ -250,6 +250,11 @@ def _owns_pose_subobjects(value) -> bool:
     return isinstance(value, (PoseCoordinate, ConfigValue))
 
 
+def _offset_op_name(value) -> str:
+    """The op an offset declaration lowers to, as an IRI fragment."""
+    return "subtract" if getattr(value, "subtracts", False) else "add"
+
+
 def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
     """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
     source quantity when the pose declares none. None when they are not resolvable."""
@@ -704,6 +709,33 @@ class MotionSpecDatasetBuilder:
             return URIRef(name)
         ns_uri = str(self._namespace_owner(owner).ns.uri)
         return Namespace(ns_uri)[name]
+
+    def _emit_offset_op(
+        self,
+        value: ReferenceValue | SnapshotValue,
+        quantity: ContextQuantity,
+        node: URIRef,
+        source_node: URIRef,
+        out_node: URIRef,
+    ) -> None:
+        """Emit the op combining a declaration's source with the offset it states.
+
+        Addition collects its addends under one predicate because their order does not matter.
+        Subtraction's does, so the metamodel names the two operands and the source stays the
+        minuend -- what the author wrote `-` after is what gets taken away.
+        """
+        op_name = _offset_op_name(value)
+        op_node = URIRef(f"{node}-{op_name}")
+        offset_node = self._emit_context_ref_node(value.offset, quantity, f"{op_name}-offset")
+        if value.subtracts:
+            self.graph.add((op_node, RDF.type, ALGO_EXT.Subtraction))
+            self.graph.add((op_node, ALGO_EXT.minuend, source_node))
+            self.graph.add((op_node, ALGO_EXT.subtrahend, offset_node))
+        else:
+            self.graph.add((op_node, RDF.type, ALGO_EXT.Addition))
+            self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), source_node))
+            self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), offset_node))
+        self.graph.add((op_node, ALGO_EXT.out, out_node))
 
     def _declared_uri(self, name: str, quantity: ContextQuantity) -> URIRef:
         """Create a URI for a node named after `quantity`, under the quantity itself.
@@ -2078,14 +2110,7 @@ class MotionSpecDatasetBuilder:
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
                 if quantity.value.offset is not None:
-                    offset_ref_node = self._emit_context_ref_node(
-                        quantity.value.offset, quantity, "add-offset"
-                    )
-                    add_node = URIRef(f"{node}-add")
-                    self.graph.add((add_node, RDF.type, ALGO_EXT.Addition))
-                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), source_node))
-                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), offset_ref_node))
-                    self.graph.add((add_node, ALGO_EXT.out, node))
+                    self._emit_offset_op(quantity.value, quantity, node, source_node, node)
                 else:
                     self.graph.add((node, CSTR["reference-value"], source_node))
                 continue
@@ -2094,20 +2119,13 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((snapshot_node, RDF.type, ALGO_EXT.Snapshot))
                 view_node = self._view_node(quantity.value.source, quantity)
                 if quantity.value.offset is not None:
-                    offset_ref_node = self._emit_context_ref_node(
-                        quantity.value.offset, quantity, "add-offset"
-                    )
                     # Own the op nodes by the quantity's motion-qualified URI (not the flat namespace) so two
                     # motions declaring a same-named quantity don't collapse into one op accumulating both inputs.
-                    add_node = URIRef(f"{node}-add")
-                    out_node = URIRef(f"{node}-add-out")
+                    out_node = URIRef(f"{node}-{_offset_op_name(quantity.value)}-out")
                     qkind = (
                         QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
                     )
-                    self.graph.add((add_node, RDF.type, ALGO_EXT.Addition))
-                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), view_node))
-                    self.graph.add((add_node, _ns_term(ALGO_EXT, "in"), offset_ref_node))
-                    self.graph.add((add_node, ALGO_EXT.out, out_node))
+                    self._emit_offset_op(quantity.value, quantity, node, view_node, out_node)
                     self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
                     self._emit_quantity_kind(out_node, qkind)
                     self.graph.add(
