@@ -1110,32 +1110,39 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_node, RDF.type, MAP.View))
         self._emitted_views.add(view_node)
 
-    def _emit_snapshot_position_metadata(
+    def _emit_snapshot_geometry_metadata(
         self,
         node: URIRef,
         quantity: ContextQuantity,
     ) -> None:
-        """Tag a snapshot of a `<pose>.position` with Position-coordinate metadata so the IR
-        surfaces it as a Position vector rather than a plain scalar.
+        """Give a snapshot-with-offset result the frames its own quantity is stated in.
+
+        The offset's output is a new quantity carrying none of them. A position without frames
+        surfaces as a plain scalar; a pose without them is rejected outright, as a relation that
+        links to no `of`. `_pose_frame_names` supplies the precedence: the frames the quantity
+        declares, or the snapshotted source's when it declares none. That distinction matters for
+        a derived goal — a pose built from the handle but authored `of` the gripper is a goal for
+        the gripper, and a path may only join endpoints that are poses of the same body.
         """
-        source = getattr(quantity.value, "source", None)
-        source_qty = getattr(source, "quantity", None) if source is not None else None
-        if not isinstance(source_qty, WorldQuantity) or not isinstance(
-            source_qty.props, GeometricProps
-        ):
+        if quantity.type == QuantityType.Pose:
+            # A pose coordinate carries both of its units, the way a world pose does.
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+            self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+            pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
+            if pose_relation is not None:
+                self._emit_combined_pose_coordinate(node, pose_relation)
             return
-        of_frame = _geo_prop(source_qty.props, "of")
-        wrt_frame = _geo_prop(source_qty.props, "wrt")
-        if of_frame is None or wrt_frame is None:
+        frames = _pose_frame_names(quantity)
+        if frames is None:
             return
-        as_seen_by = _geo_prop(source_qty.props, "as-seen-by") or wrt_frame
+        of_frame, wrt_frame, as_seen_by = frames
         self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
         self._emit_geom_relation(
             node,
             "position",
-            self._owned_uri(of_frame, source_qty),
-            self._owned_uri(wrt_frame, source_qty),
-            self._owned_uri(as_seen_by, source_qty),
+            self._owned_uri(of_frame, quantity),
+            self._owned_uri(wrt_frame, quantity),
+            self._owned_uri(as_seen_by, quantity),
             (URI_QUDT_QK_LENGTH,),
         )
 
@@ -2134,18 +2141,24 @@ class MotionSpecDatasetBuilder:
                     )
                     self._emit_offset_op(quantity.value, quantity, node, view_node, out_node)
                     self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
-                    self._emit_quantity_kind(out_node, qkind)
-                    self.graph.add(
-                        (
-                            out_node,
-                            QUDT_SCHEMA.unit,
-                            SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS),
+                    # A pose's kind is structural and its units are the pair a pose coordinate
+                    # carries, so both are left to the geometry emission below; stamping the
+                    # scalar forms here would type the coordinate as the relation itself and
+                    # give it a unitless length.
+                    if quantity.type is not QuantityType.Pose:
+                        self._emit_quantity_kind(out_node, qkind)
+                        self.graph.add(
+                            (
+                                out_node,
+                                QUDT_SCHEMA.unit,
+                                SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS),
+                            )
                         )
-                    )
-                    # A vector-valued (Position) offset result is a 3-vector: tag it with
-                    # Position-coordinate metadata so the IR types it as a 3-vector, not a scalar. (Scalar offsets, e.g. LinearDistance, stay scalar.)
-                    if quantity.type == QuantityType.Position:
-                        self._emit_snapshot_position_metadata(out_node, quantity)
+                    # A geometry-valued offset result keeps the source's frames: Position so the IR
+                    # types it as a 3-vector rather than a scalar, Pose so it is a well-formed
+                    # relation. (Scalar offsets, e.g. LinearDistance, stay scalar.)
+                    if quantity.type in {QuantityType.Position, QuantityType.Pose}:
+                        self._emit_snapshot_geometry_metadata(out_node, quantity)
                     snap_source = out_node
                 else:
                     snap_source = view_node
@@ -2169,10 +2182,10 @@ class MotionSpecDatasetBuilder:
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
-                if qkind == GEOM_REL.Pose:
+                if quantity.type is QuantityType.Pose:
                     self._emit_declared_pose_frame_metadata(node, quantity)
                 elif quantity.type == QuantityType.Position:
-                    self._emit_snapshot_position_metadata(node, quantity)
+                    self._emit_snapshot_geometry_metadata(node, quantity)
                 continue
             if isinstance(
                 quantity.value,
@@ -2222,6 +2235,12 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.LinearVelocity))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT["M-PER-SEC"]))
+
+    def _add_literal_list_once(self, node: URIRef, predicate: URIRef, values: tuple) -> None:
+        """Shared context re-emits per motion; plain triples dedupe but an RDF list mints
+        fresh blank nodes each time, so a second emission must be skipped."""
+        if (node, predicate, None) not in self.graph:
+            add_literal_list_pred(self.graph, node, predicate, values)
 
     def _emit_coordinate_components(
         self,
@@ -2577,8 +2596,7 @@ class MotionSpecDatasetBuilder:
                 (dc.y_axis, URI_GEOM_PRED_DIRECTION_COSINE_Y),
                 (dc.z_axis, URI_GEOM_PRED_DIRECTION_COSINE_Z),
             ):
-                add_literal_list_pred(
-                    self.graph,
+                self._add_literal_list_once(
                     orientation_node,
                     pred,
                     tuple(float(element.value) for element in axis_coords.values),
@@ -2690,8 +2708,7 @@ class MotionSpecDatasetBuilder:
                         "geometry",
                         f"Relative orientation '{quantity.uri}' has a symbolic direction cosine",
                     )
-                add_literal_list_pred(
-                    self.graph,
+                self._add_literal_list_once(
                     delta_node,
                     predicate,
                     tuple(float(element.value) for element in axis_coords.values),
@@ -2776,8 +2793,7 @@ class MotionSpecDatasetBuilder:
         if isinstance(value, WrenchCoordinate):
             for label, coords, unit, predicate, kind in subspaces:
                 if all(element.ref is None for element in coords.values):
-                    add_literal_list_pred(
-                        self.graph,
+                    self._add_literal_list_once(
                         node,
                         predicate,
                         tuple(float(element.value) for element in coords.values),
