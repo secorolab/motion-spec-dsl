@@ -693,11 +693,29 @@ class MotionSpecDatasetBuilder:
         return self._default_ns_owner
 
     def _owned_uri(self, name: str, owner: Any | None) -> URIRef:
-        """Create a URI in the nearest namespace owned by owner or its parents."""
+        """Create a URI in the nearest namespace owned by owner or its parents.
+
+        For a node named after something the namespace names -- a world quantity, a solver, a
+        robot -- which is why one view, one gravity value and one gripper position serve every
+        motion that asks for them. A node named after a context quantity takes `_declared_uri`
+        instead: those names are scoped to the block they are written in.
+        """
         if urlsplit(str(name)).scheme:
             return URIRef(name)
         ns_uri = str(self._namespace_owner(owner).ns.uri)
         return Namespace(ns_uri)[name]
+
+    def _declared_uri(self, name: str, quantity: ContextQuantity) -> URIRef:
+        """Create a URI for a node named after `quantity`, under the quantity itself.
+
+        A context quantity's name is scoped to the block declaring it, so two motions may each
+        call their path `trajectory`. Hanging the geometry, the projection and the parameters
+        generated from one under its own IRI keeps them apart; minting them in the namespace
+        root would collapse both motions onto one node.
+        """
+        if urlsplit(str(name)).scheme:
+            return URIRef(name)
+        return URIRef(f"{quantity.uri}/{name}")
 
     def _emit_scalar_quantity(
         self, node: URIRef, value: float, qkind: URIRef | None, unit: URIRef
@@ -1458,7 +1476,7 @@ class MotionSpecDatasetBuilder:
                 reference_point = (
                     self._owned_uri(reference_name, qty)
                     if reference_name
-                    else self._owned_uri(f"point-{qty.name}-origin", qty)
+                    else self._declared_uri(f"point-{qty.name}-origin", qty)
                 )
                 self.graph.add((reference_point, RDF.type, GEOM_ENT.Point))
                 seen_name = _geo_prop(props, "as-seen-by") or sensor_frame_name
@@ -1509,7 +1527,7 @@ class MotionSpecDatasetBuilder:
                 ref_node = self._owned_uri(rp_v, qty)
                 self.graph.add((node, GEOM_REL["reference-point"], ref_node))
             elif qty.type == WorldQuantityType.VelocityTwist:
-                point_node = self._owned_uri(f"point-{qty.name}-origin", qty)
+                point_node = self._declared_uri(f"point-{qty.name}-origin", qty)
                 self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
                 self.graph.add((node, GEOM_REL["reference-point"], point_node))
             if qty.type == WorldQuantityType.Pose and wrt_v:
@@ -1795,7 +1813,7 @@ class MotionSpecDatasetBuilder:
             reference_point = (
                 self._owned_uri(reference_name, owner)
                 if reference_name
-                else self._owned_uri(f"point-{quantity.name}-origin", quantity)
+                else self._declared_uri(f"point-{quantity.name}-origin", quantity)
             )
             self.graph.add((reference_point, RDF.type, GEOM_ENT.Point))
             seen_name = _geo_prop(props, "as-seen-by")
@@ -1856,7 +1874,7 @@ class MotionSpecDatasetBuilder:
             point_node = (
                 self._owned_uri(rp_v, owner)
                 if rp_v
-                else self._owned_uri(f"point-{quantity.name}-origin", quantity)
+                else self._declared_uri(f"point-{quantity.name}-origin", quantity)
             )
             self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
             self.graph.add((node, GEOM_REL["reference-point"], point_node))
@@ -2931,7 +2949,7 @@ class MotionSpecDatasetBuilder:
         world_qtys: dict[str, WorldQuantity] | None,
     ) -> None:
         """Emit a geometric linear path and its eventual setpoint metadata."""
-        lerp_node = self._owned_uri(f"lerp-{quantity.name}", quantity)
+        lerp_node = self._declared_uri(f"lerp-{quantity.name}", quantity)
         value_kind = self._lerp_value_kind(lerp)
         self._emit_path_pose_metadata(quantity, value_kind, constraints, world_qtys)
         self.graph.add((lerp_node, RDF.type, GEOM_PATH.Path))
@@ -2955,7 +2973,7 @@ class MotionSpecDatasetBuilder:
     ) -> None:
         """Emit path geometry and its eventual setpoint metadata."""
         self._emit_path_pose_metadata(quantity, URI_GEOM_TYPE_POSE, constraints, world_qtys)
-        path_node = self._owned_uri(f"{spec_prefix}-{quantity.name}", quantity)
+        path_node = self._declared_uri(f"{spec_prefix}-{quantity.name}", quantity)
         self.graph.add((path_node, RDF.type, GEOM_PATH.Path))
         self.graph.add((path_node, RDF.type, path_type))
         for suffix, predicate, ref in inputs:
@@ -2984,7 +3002,7 @@ class MotionSpecDatasetBuilder:
 
     def _path_geometry_node(self, path: ContextQuantity) -> URIRef:
         """The node carrying `path`'s geometry (its shape and that shape's inputs)."""
-        return self._owned_uri(f"{self._path_shape(path)}-{path.name}", path)
+        return self._declared_uri(f"{self._path_shape(path)}-{path.name}", path)
 
     def _emit_along_path_constraint(
         self, node: URIRef, spec: ConstraintSpecification, motion: GuardedMotion
@@ -3024,7 +3042,7 @@ class MotionSpecDatasetBuilder:
                 (
                     profile_node,
                     _ns_term(GEOM_OP_EXT, "path-parameter"),
-                    self._owned_uri(f"{path.name}-s", path),
+                    self._declared_uri(f"{path.name}-s", path),
                 )
             )
             self.graph.add((node, CSTR["reference-value"], ref_node))
@@ -3048,7 +3066,7 @@ class MotionSpecDatasetBuilder:
 
     def _path_along_speed_node(self, path: ContextQuantity) -> URIRef:
         """The measured speed of the followed frame along `path`, shared by driver and guard."""
-        return self._owned_uri(f"{path.name}-along-speed", path)
+        return self._declared_uri(f"{path.name}-along-speed", path)
 
     def _measured_twist_of(
         self, moved: WorldQuantity, world_qtys: dict[str, WorldQuantity]
@@ -3091,7 +3109,7 @@ class MotionSpecDatasetBuilder:
         separates travelling along the path from leaving it. Nothing upstream can outrun the
         robot because nothing upstream writes the parameter.
         """
-        projection_node = self._owned_uri(f"projection-{path.name}", path)
+        projection_node = self._declared_uri(f"projection-{path.name}", path)
         if projection_node in self._path_projections:
             return
         self._path_projections.add(projection_node)
@@ -3104,7 +3122,7 @@ class MotionSpecDatasetBuilder:
             )
         as_seen_by = self._owned_uri(as_seen_by_name, moved)
 
-        parameter_node = self._owned_uri(f"{path.name}-s", path)
+        parameter_node = self._declared_uri(f"{path.name}-s", path)
         self.graph.add((parameter_node, RDF.type, QUDT_SCHEMA.Quantity))
         self._emit_quantity_kind(parameter_node, NS_MM_QUDT_QTY["Dimensionless"])
         self.graph.add((parameter_node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
@@ -3122,11 +3140,11 @@ class MotionSpecDatasetBuilder:
         # The local frame there: one axis along the path, two across it.
         directions = {}
         for term in ("tangent", "normal-a", "normal-b"):
-            direction_node = self._owned_uri(f"{path.name}-{term}", path)
+            direction_node = self._declared_uri(f"{path.name}-{term}", path)
             self.graph.add((direction_node, RDF.type, QUDT_SCHEMA.Quantity))
             self._emit_direction_coordinate(direction_node, as_seen_by)
             directions[term] = direction_node
-        frame_node = self._owned_uri(f"frame-{path.name}", path)
+        frame_node = self._declared_uri(f"frame-{path.name}", path)
         self.graph.add((frame_node, RDF.type, GEOM_OP_EXT.PathTangentFrame))
         self.graph.add((frame_node, GEOM_OP_EXT.path, path_node))
         self.graph.add((frame_node, _ns_term(GEOM_OP_EXT, "path-parameter"), parameter_node))
@@ -3134,7 +3152,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((frame_node, _ns_term(GEOM_OP_EXT, term), direction_node))
 
         # How fast the frame travels along the path: the measured twist onto that tangent.
-        along_node = self._owned_uri(f"along-{path.name}", path)
+        along_node = self._declared_uri(f"along-{path.name}", path)
         self.graph.add((along_node, RDF.type, GEOM_OP_EXT.TwistToLinearVelocityAlong))
         self.graph.add(
             (along_node, GEOM_OP["in"], URIRef(self._measured_twist_of(moved, world_qtys).uri))
@@ -3143,7 +3161,7 @@ class MotionSpecDatasetBuilder:
         self.graph.add((along_node, _ns_term(GEOM_OP_EXT, "along-speed"), speed_node))
 
         # The pose the path carries there, which is what the setpoint follows.
-        evaluator_node = self._owned_uri(f"evaluator-{path.name}", path)
+        evaluator_node = self._declared_uri(f"evaluator-{path.name}", path)
         self.graph.add((evaluator_node, RDF.type, GEOM_OP_EXT.PathEvaluator))
         self.graph.add((evaluator_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         self.graph.add((evaluator_node, GEOM_OP_EXT.path, path_node))
@@ -3549,9 +3567,7 @@ class MotionSpecDatasetBuilder:
             "max-velocity",
             QuantityType.LinearVelocity,
         )
-        self.graph.add(
-            (op_node, _ns_term(ALGO_EXT, "target"), goal_node or max_velocity_node)
-        )
+        self.graph.add((op_node, _ns_term(ALGO_EXT, "target"), goal_node or max_velocity_node))
         self.graph.add(
             (
                 op_node,
@@ -3606,7 +3622,7 @@ class MotionSpecDatasetBuilder:
         if not isinstance(measure, Measure):
             return self._emit_context_ref_node(ref, owner, suffix)
         return self._emit_scalar_quantity(
-            self._owned_uri(f"{owner.name}-{suffix}", owner),
+            self._declared_uri(f"{owner.name}-{suffix}", owner),
             float(measure.value),
             QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type, QUDT_QKIND[quantity_type.value]),
             _dsl_unit(measure.unit),
