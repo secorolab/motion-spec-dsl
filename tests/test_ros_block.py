@@ -20,7 +20,7 @@ ANCHOR = "guarded-motion (ns=app) home {"
 
 SERVER = """ros (ns=app) {
     action-servers {
-        arc-behaviour: action "run_arc" type "bdd_ros2_interfaces/action/Behaviour" {
+        arc-behaviour: action "run_arc" type "control_msgs/action/GripperCommand" {
             on-goal: produce event <aas.E_HOME_SETTLED>,
         },
     },
@@ -28,12 +28,12 @@ SERVER = """ros (ns=app) {
 
 """
 
-ANSWER = "result: succeeded <ros.action-servers.arc-behaviour> { result.trinary.value: TRUE }"
+ANSWER = "result: succeeded <ros.action-servers.arc-behaviour> { position: 0.5 }"
 
 
 TOPICS = """ros (ns=app) {
     publishers {
-        bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+        events: topic "/events" message "std_msgs/msg/String",
     },
 }
 
@@ -42,7 +42,7 @@ exec-context (ns=app) base-exec {"""
 MONITOR = "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },"
 OCCURRENCE = (
     "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED>, "
-    "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.bdd-events> },"
+    "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.events> },"
 )
 
 
@@ -87,7 +87,7 @@ def test_the_server_names_its_action_and_the_event_a_goal_produces(parse_source,
     server = next(graph.subjects(RDF.type, ROS.Action))
     assert str(server).endswith("arc-behaviour")
     assert str(graph.value(server, ROS["channel-name"])) == "run_arc"
-    assert str(graph.value(server, ROS["type-name"])) == "bdd_ros2_interfaces/action/Behaviour"
+    assert str(graph.value(server, ROS["type-name"])) == "control_msgs/action/GripperCommand"
     members = list(graph.objects(server, RDFS.member))
     goal_event = [m for m in members if graph.value(m, RDF.value) is None]
     assert [str(uri) for uri in goal_event] == [f"{AAS}E_HOME_SETTLED"]
@@ -111,7 +111,7 @@ def test_the_answer_is_a_member_of_the_monitor_that_states_it(parse_source, base
     monitor = next(graph.subjects(RDFS.member, answer))
     assert str(monitor).endswith("mon-home-settled")
     assert str(graph.value(answer, ROS["channel-name"])) == "run_arc"
-    assert str(graph.value(answer, ROS["type-name"])) == "bdd_ros2_interfaces/action/Behaviour"
+    assert str(graph.value(answer, ROS["type-name"])) == "control_msgs/action/GripperCommand"
 
 
 def test_the_answer_states_its_status_and_its_result_fields(parse_source, base_source):
@@ -126,7 +126,7 @@ def test_the_answer_states_its_status_and_its_result_fields(parse_source, base_s
     rows = [m for m in members if graph.value(m, ROS["field-path"]) is not None]
     assert [
         (str(graph.value(row, ROS["field-path"])), str(graph.value(row, RDF.value))) for row in rows
-    ] == [("result.trinary.value", "TRUE")]
+    ] == [("position", "0.5")]
 
 
 def test_the_answer_carries_the_constraint_its_state_holds_under(parse_source, base_source):
@@ -152,7 +152,7 @@ def test_a_monitor_may_publish_and_answer_at_once(parse_source, base_source):
     block = SERVER.replace(
         "    action-servers {",
         """    publishers {
-        bdd-events: topic "/bdd/events" message "bdd_ros2_interfaces/msg/Event",
+        events: topic "/events" message "std_msgs/msg/String",
     },
     action-servers {""",
         1,
@@ -160,11 +160,11 @@ def test_a_monitor_may_publish_and_answer_at_once(parse_source, base_source):
     source = _with(base_source, block).replace(
         MONITOR,
         f"satisfied for 0.3 s {{ {ANSWER}, "
-        "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.bdd-events> },",
+        "publish: events { <aas.E_HOME_SETTLED> } to <ros.publishers.events> },",
         1,
     )
     graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
-    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    monitor = next(graph.subjects(ROS["type-name"], Literal("std_msgs/msg/String")))
     # The topic carries the announced event; the answer is a member of its own, and neither
     # reads the other's members as its payload.
     answer = _answer_node(graph)
@@ -179,9 +179,9 @@ def test_a_monitor_publishes_its_event_as_its_topics_member(parse_source, base_s
     value is how the graph says occurrence rather than payload."""
     graph = MotionSpecDatasetBuilder(parse_source(_with_occurrence(base_source))).build()[0]
     graph = graph.default_graph
-    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    monitor = next(graph.subjects(ROS["type-name"], Literal("std_msgs/msg/String")))
     assert (monitor, RDF.type, ROS.Topic) in graph
-    assert str(graph.value(monitor, ROS["channel-name"])) == "/bdd/events"
+    assert str(graph.value(monitor, ROS["channel-name"])) == "/events"
     (member,) = graph.objects(monitor, RDFS.member)
     assert str(member) == f"{AAS}E_HOME_SETTLED"
     assert graph.value(member, RDF.value) is None
@@ -196,7 +196,7 @@ def test_a_monitor_announces_events_it_does_not_trigger(parse_source, base_sourc
         1,
     )
     graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
-    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    monitor = next(graph.subjects(ROS["type-name"], Literal("std_msgs/msg/String")))
     assert sorted(str(member) for member in graph.objects(monitor, RDFS.member)) == [
         f"{AAS}E_CONTACT",
         f"{AAS}E_HOME_SETTLED",
@@ -209,7 +209,7 @@ def test_announcing_without_a_trigger_is_legal(parse_source, base_source):
         "trigger: event <aas.E_HOME_SETTLED>, publish", "publish", 1
     )
     graph = MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
-    monitor = next(graph.subjects(ROS["type-name"], Literal("bdd_ros2_interfaces/msg/Event")))
+    monitor = next(graph.subjects(ROS["type-name"], Literal("std_msgs/msg/String")))
     assert [str(member) for member in graph.objects(monitor, RDFS.member)] == [
         f"{AAS}E_HOME_SETTLED"
     ]
@@ -228,8 +228,7 @@ def test_the_same_event_announced_twice_is_rejected(parse_source, base_source):
 def test_an_occurrence_beside_authored_fields_is_rejected(parse_source, base_source):
     source = _with_occurrence(base_source).replace(
         OCCURRENCE,
-        OCCURRENCE
-        + '\n            violated { publish: to <ros.publishers.bdd-events> { uri: "x" } },',
+        OCCURRENCE + '\n            violated { publish: to <ros.publishers.events> { uri: "x" } },',
         1,
     )
     with pytest.raises(TextXSemanticError, match="both events and authored fields"):
@@ -267,7 +266,7 @@ def test_a_second_served_action_is_rejected(parse_source, base_source):
     block = SERVER.replace(
         "        },\n    },",
         """        },
-        other-behaviour: action "run_other" type "bdd_ros2_interfaces/action/Behaviour" {
+        other-behaviour: action "run_other" type "control_msgs/action/GripperCommand" {
             on-goal: produce event <aas.E_HOME_SETTLED>,
         },
     },""",
