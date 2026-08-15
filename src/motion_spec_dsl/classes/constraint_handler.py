@@ -203,6 +203,9 @@ class MonitorAction:
     # message per event, so the model authors no fields at all.
     events: list = field(default_factory=list)
     topic: RosTopicDecl | None = None
+    # How often the verdict goes out. Unstated, it goes out every cycle the motion is active,
+    # which is the loop rate and far more than a reader of a verdict asks for.
+    rate: object | None = None
 
     @property
     def kind(self) -> str:

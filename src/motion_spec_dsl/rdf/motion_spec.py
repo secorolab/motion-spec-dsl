@@ -4315,6 +4315,15 @@ class MotionSpecDatasetBuilder:
         self.graph.add((monitor_node, ROS["type-name"], Literal(topic.type_name)))
         row_index = 0
         for block, action in monitor.actions("publish"):
+            if action.rate is not None:
+                rate = URIRef(f"{monitor.uri}.rate")
+                self._emit_scalar_quantity(
+                    rate,
+                    float(action.rate.value),
+                    NS_MM_QUDT_QTY["Frequency"],
+                    _dsl_unit(action.rate.unit),
+                )
+                self.graph.add((monitor_node, SENSORS["update-rate"], rate))
             # A satisfied row holds under the watched constraint; a violated row is the
             # otherwise, and states no condition at all.
             conditions = watched if block.state == "satisfied" else []

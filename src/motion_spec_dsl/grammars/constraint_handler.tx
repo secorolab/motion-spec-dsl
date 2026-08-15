@@ -51,8 +51,8 @@ MonitorAction:
     | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
     | "flag"    ":" flag=IRI_TRUNK
     | "publish" ":" "events" "{" events+=EventName[","] ","? "}" "to" "<" topic=[RosTopicDecl|FQN] ">"
-    | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
-    | "publish" ":" value=RosFieldValue "to" "<" topic=[RosTopicDecl|FQN] ">"
+    | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}" ("at" rate=Measure)?
+    | "publish" ":" value=RosFieldValue "to" "<" topic=[RosTopicDecl|FQN] ">" ("at" rate=Measure)?
 ;
 
 RosFieldAssign: path+=ID['.'] ":" value=RosFieldValue ;
