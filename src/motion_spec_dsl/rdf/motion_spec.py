@@ -743,17 +743,18 @@ class MotionSpecDatasetBuilder:
             self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), offset_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
 
-    def _declared_uri(self, name: str, quantity: ContextQuantity) -> URIRef:
-        """Create a URI for a node named after `quantity`, under the quantity itself.
+    def _declared_uri(self, name: str, declaration: Any) -> URIRef:
+        """Create a URI for a node named after `declaration`, under the declaration itself.
 
-        A context quantity's name is scoped to the block declaring it, so two motions may each
-        call their path `trajectory`. Hanging the geometry, the projection and the parameters
-        generated from one under its own IRI keeps them apart; minting them in the namespace
-        root would collapse both motions onto one node.
+        A name written inside a motion or a handler -- a context quantity, a controller -- is
+        scoped to that block, so two motions may each call their path `trajectory` and two
+        handlers each call a controller `look-tangent`. Hanging what is generated from one under
+        its own IRI keeps them apart; minting in the namespace root collapses them onto one node,
+        which then collects both motions' inputs.
         """
         if urlsplit(str(name)).scheme:
             return URIRef(name)
-        return URIRef(f"{quantity.uri}/{name}")
+        return URIRef(f"{declaration.uri}/{name}")
 
     def _emit_scalar_quantity(
         self, node: URIRef, value: float, qkind: URIRef | None, unit: URIRef
@@ -1211,7 +1212,7 @@ class MotionSpecDatasetBuilder:
         self, ctrl: ControllerEntry, handler: ConstraintHandler
     ) -> URIRef:
         """Owned Force-quantity node carrying a force controller's control signal."""
-        signal_node = self._owned_uri(f"force-{ctrl.name}", handler)
+        signal_node = self._declared_uri(f"force-{ctrl.name}", ctrl)
         self._add_quantity(signal_node, QuantityType.Force)
         return signal_node
 
@@ -1346,7 +1347,7 @@ class MotionSpecDatasetBuilder:
             )
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
-        direction_node = self._owned_uri(f"direction-{ctrl.name}", motion)
+        direction_node = self._declared_uri(f"direction-{ctrl.name}", ctrl)
         if (
             qty.type == WorldQuantityType.Pose
             and _view_subspace(spec) == "distance"
@@ -1360,18 +1361,18 @@ class MotionSpecDatasetBuilder:
                 )
             self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
 
-        point_node = self._owned_uri(f"point-force-{ctrl.name}", motion)
-        position_node = self._owned_uri(f"position-force-{ctrl.name}", motion)
+        point_node = self._declared_uri(f"point-force-{ctrl.name}", ctrl)
+        position_node = self._declared_uri(f"position-force-{ctrl.name}", ctrl)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
         # A commanded wrench -- one no sensor observes -- is what this op produces: the model
         # declared the quantity the command realizes, so the value belongs in it rather than in
         # a second wrench beside it. Its coordinate is already emitted with the world quantities.
         wrench_node = self._commanded_wrench_node(qty)
         if wrench_node is None:
-            wrench_node = self._owned_uri(f"wrench-force-{ctrl.name}", motion)
+            wrench_node = self._declared_uri(f"wrench-force-{ctrl.name}", ctrl)
             self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
 
-        op_node = self._owned_uri(f"compute-wrench-force-{ctrl.name}", motion)
+        op_node = self._declared_uri(f"compute-wrench-force-{ctrl.name}", ctrl)
         self.graph.add((op_node, RDF.type, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude))
         self.graph.add((op_node, RBDYN_OP.magnitude, magnitude_node))
         self.graph.add((op_node, RBDYN_OP.direction, direction_node))
@@ -1410,21 +1411,21 @@ class MotionSpecDatasetBuilder:
         multi = len(axes) > 1
 
         # The wrench coordinate still needs a well-formed reference point; the op ignores it.
-        point_node = self._owned_uri(f"point-moment-{ctrl.name}", motion)
-        position_node = self._owned_uri(f"position-moment-{ctrl.name}", motion)
+        point_node = self._declared_uri(f"point-moment-{ctrl.name}", ctrl)
+        position_node = self._declared_uri(f"position-moment-{ctrl.name}", ctrl)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
 
         wrench_nodes: list[URIRef] = []
         for axis in axes:
-            direction_node = self._owned_uri(f"direction-moment-{ctrl.name}-ang-{axis}", motion)
+            direction_node = self._declared_uri(f"direction-moment-{ctrl.name}-ang-{axis}", ctrl)
             self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
             magnitude_node = self._moment_control_signal_node(
                 ctrl, handler, axis if multi else None
             )
-            wrench_node = self._owned_uri(f"wrench-moment-{ctrl.name}-ang-{axis}", motion)
+            wrench_node = self._declared_uri(f"wrench-moment-{ctrl.name}-ang-{axis}", ctrl)
             self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
 
-            op_node = self._owned_uri(f"compute-wrench-moment-{ctrl.name}-ang-{axis}", motion)
+            op_node = self._declared_uri(f"compute-wrench-moment-{ctrl.name}-ang-{axis}", ctrl)
             self.graph.add((op_node, RDF.type, RBDYN_OP_EXT.WrenchFromDirectionAndMoment))
             self.graph.add((op_node, RBDYN_OP_EXT.moment, magnitude_node))
             self.graph.add((op_node, RBDYN_OP.direction, direction_node))
@@ -1433,9 +1434,9 @@ class MotionSpecDatasetBuilder:
 
         total = wrench_nodes[0]
         for index, addend in enumerate(wrench_nodes[1:], start=1):
-            sum_node = self._owned_uri(f"wrench-moment-{ctrl.name}-sum-{index}", motion)
+            sum_node = self._declared_uri(f"wrench-moment-{ctrl.name}-sum-{index}", ctrl)
             self._emit_wrench_coordinate(sum_node, point_node, as_seen_by_node)
-            add_node = self._owned_uri(f"add-wrench-{ctrl.name}-{index}", motion)
+            add_node = self._declared_uri(f"add-wrench-{ctrl.name}-{index}", ctrl)
             self.graph.add((add_node, RDF.type, RBDYN_OP.AddWrench))
             self.graph.add((add_node, RBDYN_OP["in1"], total))
             self.graph.add((add_node, RBDYN_OP["in2"], addend))
@@ -3060,7 +3061,7 @@ class MotionSpecDatasetBuilder:
                 QuantityType.LinearVelocity,
                 profile_qty,
             )
-            profile_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
+            profile_node = self._declared_uri(f"profile-{spec.name}-{ctrl.name}", ctrl)
             self.graph.add((profile_node, GEOM_OP_EXT.path, self._path_geometry_node(path)))
             self.graph.add(
                 (
@@ -3518,10 +3519,10 @@ class MotionSpecDatasetBuilder:
         if not isinstance(spec_val, AdmittanceSpec):
             raise ValueError(f"Admittance quantity '{admit_qty.name}' has no filter spec.")
 
-        out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-admit-ref", motion)
+        out_node = self._declared_uri(f"{spec.name}-{ctrl.name}-admit-ref", ctrl)
         self._add_quantity(out_node, scalar_t)
 
-        op_node = self._owned_uri(f"admit-{spec.name}-{ctrl.name}", motion)
+        op_node = self._declared_uri(f"admit-{spec.name}-{ctrl.name}", ctrl)
         self.graph.add((op_node, RDF.type, ALGO_EXT.Admittance))
         self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         self.graph.add(
@@ -3577,10 +3578,10 @@ class MotionSpecDatasetBuilder:
 
         # The profile emits a setpoint for the quantity it drives, so the output carries
         # that quantity's kind, not a velocity.
-        out_node = self._owned_uri(f"{spec.name}-{ctrl.name}-profile-ref", motion)
+        out_node = self._declared_uri(f"{spec.name}-{ctrl.name}-profile-ref", ctrl)
         self._add_quantity(out_node, scalar_t)
 
-        op_node = self._owned_uri(f"profile-{spec.name}-{ctrl.name}", motion)
+        op_node = self._declared_uri(f"profile-{spec.name}-{ctrl.name}", ctrl)
         self.graph.add((op_node, RDF.type, ALGO_EXT.VelocityProfile))
         self.graph.add((op_node, RDF.type, CSTR_HDL_EXT.SetpointGenerator))
         # Where it is driving to. The value it starts from is the constraint's own
@@ -4244,11 +4245,11 @@ class MotionSpecDatasetBuilder:
     ) -> None:
         """Emit authored controller limits without choosing a solver representation."""
         if controller.params.output_saturation is not None:
-            output = self._owned_uri(f"output-{controller.name}", handler)
+            output = self._declared_uri(f"output-{controller.name}", controller)
             self._add_quantity(output, command.command_type)
             self._emit_saturation(
                 controller_node,
-                self._owned_uri(f"sat-output-{controller.name}", handler),
+                self._declared_uri(f"sat-output-{controller.name}", controller),
                 controller.params.output_saturation,
                 output,
                 output,
@@ -4260,11 +4261,11 @@ class MotionSpecDatasetBuilder:
                 controller_node, error_normalization, controller, f"err-norm-{controller.name}"
             )
         if controller.params.integral_saturation is not None:
-            integral = self._owned_uri(f"integral-state-{controller.name}", handler)
+            integral = self._declared_uri(f"integral-state-{controller.name}", controller)
             self.graph.add((integral, RDF.type, QUDT_SCHEMA.Quantity))
             self._emit_saturation(
                 controller_node,
-                self._owned_uri(f"sat-integral-{controller.name}", handler),
+                self._declared_uri(f"sat-integral-{controller.name}", controller),
                 controller.params.integral_saturation,
                 integral,
                 integral,
@@ -4767,7 +4768,7 @@ class MotionSpecDatasetBuilder:
         handler: ConstraintHandler,
     ) -> URIRef:
         """Emit the authored signal forwarded directly to a device command."""
-        signal = self._owned_uri(f"cmd-{ctrl.name}", handler)
+        signal = self._declared_uri(f"cmd-{ctrl.name}", ctrl)
         signal_type = _scalar_type(qty, subspace, axis) if qty else QuantityType.FreeVector
         self._add_quantity(signal, signal_type)
         return signal
@@ -4975,7 +4976,7 @@ class MotionSpecDatasetBuilder:
                 joint_node = self._owned_uri(joint_name, qty)
                 self.graph.add((torque_node, KC_STAT["of-joint"], joint_node))
 
-                spec_node = self._owned_uri(f"jf-spec-{ctrl.name}", handler)
+                spec_node = self._declared_uri(f"jf-spec-{ctrl.name}", ctrl)
                 self.graph.add((spec_node, RDF.type, SLV.JointForceSpecification))
                 self.graph.add((spec_node, SLV.force, torque_node))
                 self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
@@ -4991,7 +4992,7 @@ class MotionSpecDatasetBuilder:
     ) -> None:
         """Attach a commanded wrench (force or moment) to the `apply at` body as the driver's
         Cartesian force specification."""
-        spec_node = self._owned_uri(f"spec-{ctrl.name}", handler)
+        spec_node = self._declared_uri(f"spec-{ctrl.name}", ctrl)
         self.graph.add((spec_node, RDF.type, SLV.CartesianForceSpecification))
         self.graph.add((spec_node, SLV.force, wrench_node))
         apply_at = getattr(ctrl, "apply_at", None)
