@@ -43,8 +43,14 @@ RosAlways:        "always"         "{" standing+=RosStandingPub[","] ","? "}" ;
 // quantity's, and a model that wants a different mapping writes the ones it wants to change.
 RosStandingPub:
     "publish" "at" rate=Measure "to" "<" topic=[RosTopicDecl|FQN] ">"
-    "with" "<" quantity=[WorldQuantity|FQN] ">"
+    "with" ("{" entries+=RosStandingEntry[","] ","? "}" | entries+=RosStandingEntry)
     ("{" fields+=RosMeasurementAssign[","] ","? "}")?
+;
+
+// One entry of the message: the quantity it reports, and -- when the message carries many and so
+// must tell them apart -- the scene entity that entry is about.
+RosStandingEntry:
+    ("<" subject=[OBJECT|FQN] ">" ":")? "<" quantity=[WorldQuantity|FQN] ">"
 ;
 
 // One overridden field of a standing message: the component of a world quantity it reports.

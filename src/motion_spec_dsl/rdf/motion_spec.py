@@ -559,15 +559,21 @@ class MotionSpecDatasetBuilder:
         """A declared topic published for the whole run, at the rate the model states.
 
         Held by the execution context rather than by a monitor: what it publishes is true of
-        the run, so it is not scoped to any one motion the way a verdict is. The quantity is
-        stated whole -- the message reports it, and only a field the model wants mapped
-        differently is written out.
+        the run, so it is not scoped to any one motion the way a verdict is. Each entry is one
+        quantity stated whole -- the message reports it, and only a field the model wants mapped
+        differently is written out -- and the entity it is about, for a message that carries
+        several and so has to say which is which.
         """
         node = URIRef(standing.uri)
         self.graph.add((node, RDF.type, ROS.Topic))
         self.graph.add((node, ROS["channel-name"], Literal(standing.topic.channel_name)))
         self.graph.add((node, ROS["type-name"], Literal(standing.topic.type_name)))
-        self.graph.add((node, RDF.value, URIRef(standing.quantity.uri)))
+        for index, entry in enumerate(standing.entries):
+            row = URIRef(f"{standing.uri}.e{index}")
+            self.graph.add((node, RDFS.member, row))
+            self.graph.add((row, RDF.value, URIRef(entry.quantity.uri)))
+            if entry.subject is not None:
+                self.graph.add((row, SOSA.hasFeatureOfInterest, URIRef(entry.subject.uri)))
 
         rate = URIRef(f"{standing.uri}.rate")
         self._emit_scalar_quantity(

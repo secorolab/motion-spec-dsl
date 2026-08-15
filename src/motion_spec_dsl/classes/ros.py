@@ -116,6 +116,15 @@ class RosMeasurementAssign:
 
 
 @dataclass
+class RosStandingEntry:
+    """One quantity a standing message reports, and the scene entity it reports it of."""
+
+    parent: object
+    quantity: object
+    subject: object | None = None
+
+
+@dataclass
 class RosStandingPub:
     """A declared topic, published for the whole run at a stated rate.
 
@@ -128,7 +137,9 @@ class RosStandingPub:
     parent: object
     rate: object
     topic: RosTopicDecl
-    quantity: object
+    # One entry of the message per quantity: a message carrying an array of them reports every
+    # one, and a message carrying a quantity whole reports the one it was given.
+    entries: list[RosStandingEntry] = field(default_factory=list)
     fields: list = field(default_factory=list)
 
     @property
