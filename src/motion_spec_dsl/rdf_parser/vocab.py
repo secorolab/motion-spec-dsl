@@ -307,6 +307,7 @@ class GEOM_OP_EXT(DefinedNamespace):
     ComposeOrientation: URIRef
     PoseDiffEvaluator: URIRef
     PoseToAngularDistance: URIRef
+    RotationVectorFromDirections: URIRef
     PathProjection: URIRef
     PathEvaluator: URIRef
     PathTangentFrame: URIRef

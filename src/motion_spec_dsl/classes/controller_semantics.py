@@ -26,6 +26,7 @@ from motion_spec_dsl.classes.context import (
     SubSpace,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_context_quantity,
     _resolved_world_quantity,
 )
 
@@ -71,21 +72,43 @@ class ControllerCommandRecord:
 
     @property
     def is_moment_command(self) -> bool:
-        """Whether this commands a Cartesian moment (a couple about an axis), not a joint torque."""
-        return (
-            self.command_type == QuantityType.Torque
-            and self.quantity is not None
-            and self.quantity.type != WorldQuantityType.JointPosition
-        )
+        """Whether this commands a Cartesian moment (a couple about an axis), not a joint torque.
+
+        An alignment view names two directions rather than a world quantity, so it has none to
+        classify by; its command is a couple about the axes it drives.
+        """
+        if self.command_type != QuantityType.Torque:
+            return False
+        if self.view_subspace == "alignment":
+            return True
+        return self.quantity is not None and self.quantity.type != WorldQuantityType.JointPosition
 
 
 # Resolved view subspaces whose command is a moment, not a force. A whole `.orientation` view
 # keeps its raw token; only the per-axis form aliases to "rotation".
-ANGULAR_SUBSPACES = frozenset({"orientation", "rotation", "angular", "angular-velocity"})
+ANGULAR_SUBSPACES = frozenset(
+    {"orientation", "rotation", "angular", "angular-velocity", "alignment"}
+)
 
 LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
 ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
 POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
+
+
+def _alignment_controlled_axes(
+    constraint: ConstraintSpecification,
+) -> tuple[tuple[str, str], ...]:
+    """The angular axes an alignment drives: every axis but the reference direction's own, whose
+    rotation-vector component is identically zero -- that zero is the free spin about the axis.
+    """
+    reference = getattr(constraint.view, "angle_to", None)
+    if reference is None:
+        return ANGULAR_AXES
+    coords = getattr(getattr(_resolved_context_quantity(reference), "value", None), "coords", None)
+    if coords is None or len(coords.values) != 3:
+        return ANGULAR_AXES
+    free = max(range(3), key=lambda i: abs(float(coords.values[i].value)))
+    return tuple(("angular", axis) for index, axis in enumerate("xyz") if index != free)
 
 
 def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | ControllerAlias):
@@ -233,6 +256,8 @@ def controller_command_record(
             controlled_axes = (("linear", axis),) if axis is not None else LINEAR_AXES
         elif raw_subspace in {SubSpace.Orientation, SubSpace.AngVel}:
             controlled_axes = (("angular", axis),) if axis is not None else ANGULAR_AXES
+        elif view_subspace == "alignment":
+            controlled_axes = _alignment_controlled_axes(constraint)
         elif view_subspace == "distance" and raw_subspace is None:
             controlled_axes = (("linear", "distance"),)
 

@@ -152,6 +152,7 @@ from motion_spec_dsl.classes.ros import (
 from motion_spec_dsl.rdf.common import (
     ANGLE_UNITS,
     _angle_unit,
+    _AlignmentPlan,
     _axis_vector,
     _context_quantity,
     _DistancePlan,
@@ -160,6 +161,7 @@ from motion_spec_dsl.rdf.common import (
     _angle_bound,
     _geo_prop,
     _geo_prop_value,
+    _is_alignment_view,
     _is_distance_view,
     _node_name,
     _ns_term,
@@ -425,6 +427,7 @@ class MotionSpecDatasetBuilder:
 
         # Resolution indexes, populated once and read during emission (see module docstring).
         self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
+        self._alignment_plans: dict[ConstraintSpecification, _AlignmentPlan] = {}
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
         self._config_resource: URIRef | None = None
         self._reference_value_index: dict[URIRef, URIRef] = {}
@@ -442,6 +445,7 @@ class MotionSpecDatasetBuilder:
         # Emitted-node registries for idempotency (keep emission write-only).
         self._emitted_bands: set[URIRef] = set()
         self._emitted_distance_ops: set[str] = set()
+        self._emitted_alignment_ops: set[str] = set()
         self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
@@ -747,7 +751,9 @@ class MotionSpecDatasetBuilder:
         op_node = URIRef(f"{node}-{op_name}")
         operand_nodes = [
             self._emit_context_ref_node(
-                offset.operand, quantity, f"{op_name}-offset" if index == 0 else f"{op_name}-offset-{index}"
+                offset.operand,
+                quantity,
+                f"{op_name}-offset" if index == 0 else f"{op_name}-offset-{index}",
             )
             for index, offset in enumerate(offsets)
         ]
@@ -1020,6 +1026,8 @@ class MotionSpecDatasetBuilder:
             return None
         if _is_distance_view(spec):
             return self._distance_plan(spec, world_qtys).target
+        if _is_alignment_view(spec):
+            return self._alignment_plan(spec, world_qtys).target
         return self._resolve_qty(spec.view.quantity, world_qtys)
 
     def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
@@ -1090,6 +1098,52 @@ class MotionSpecDatasetBuilder:
         )
         plan = _DistancePlan(start, end, target)
         self._distance_plans[spec] = plan
+        return plan
+
+    def _alignment_plan(
+        self,
+        spec: ConstraintSpecification,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> _AlignmentPlan:
+        """Resolve an authored `angle between` view's direction operands and the already
+        computed pose (moving frame wrt reference frame) the rotated-direction op reads.
+
+        Unlike a distance's endpoints, this pose's *value* is read at runtime, so it must be an
+        existing solver-computed `world` quantity -- there is no operator to derive a fresh
+        relative pose from two bare frame names.
+        """
+        cached = self._alignment_plans.get(spec)
+        if cached is not None:
+            return cached
+
+        moving = spec.view.angle_from
+        reference = spec.view.angle_to
+        context = f"Alignment constraint '{spec.name}'"
+        moving_frame = _geo_prop(moving.props, "as-seen-by") or _geo_prop(moving.props, "wrt")
+        reference_frame = _geo_prop(reference.props, "as-seen-by") or _geo_prop(
+            reference.props, "wrt"
+        )
+        if moving_frame is None or reference_frame is None:
+            raise ValueError(f"{context} needs 'as-seen-by' frames on both directions.")
+        target = next(
+            (
+                qty
+                for qty in world_qtys.values()
+                if qty.type == WorldQuantityType.Pose
+                and isinstance(qty.props, GeometricProps)
+                and _geo_prop(qty.props, "of") == moving_frame
+                and _geo_prop(qty.props, "wrt") == reference_frame
+            ),
+            None,
+        )
+        if target is None:
+            raise ValueError(
+                f"{context} needs a declared 'world' pose of '{moving_frame}' wrt "
+                f"'{reference_frame}': alignment reads an already-computed pose, it does "
+                "not derive one."
+            )
+        plan = _AlignmentPlan(moving, reference, target)
+        self._alignment_plans[spec] = plan
         return plan
 
     def _linear_distance_relation(self, start_uri: str, end_uri: str) -> URIRef:
@@ -3250,9 +3304,14 @@ class MotionSpecDatasetBuilder:
                 raise ValueError(f"Constraint '{spec.name}' follows a path with an unknown frame.")
             self._emit_path_projection(path, moved, world_qtys)
 
-    def _emit_context_ref_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
+    def _emit_context_ref_node(
+        self, ref: ContextRef, owner: Any, suffix: str, scalar_t: Any = None
+    ) -> URIRef:
         """Resolve a context reference to its value node: a subspace view, a passthrough source,
         or the referenced quantity.
+
+        `scalar_t` types a bare literal when `owner` is not itself a typed quantity (e.g. a
+        motion, for a constraint's threshold/reference); it falls back to `owner.type`.
         """
         # A literal operand names nothing, so it carries its own node: the number and the unit
         # the author wrote, typed like any other quantity the op takes.
@@ -3261,7 +3320,7 @@ class MotionSpecDatasetBuilder:
             return self._emit_scalar_quantity(
                 self._declared_uri(suffix, owner),
                 bare.value,
-                _qudt_kind(owner.type),
+                _qudt_kind(scalar_t if scalar_t is not None else owner.type),
                 _dsl_unit(bare.unit),
             )
         quantity = _context_quantity(ref)
@@ -3275,7 +3334,7 @@ class MotionSpecDatasetBuilder:
             axis = semantic_axis_label(getattr(ref, "axis", None))
             return self._emit_context_ref_view_node(quantity, subspace, axis)
         if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
-            return self._emit_context_ref_node(quantity.value.source, owner, suffix)
+            return self._emit_context_ref_node(quantity.value.source, owner, suffix, scalar_t)
         if quantity.type == ReferenceGeneratorType.Path:
             return self._reference_output_node(quantity)
         return URIRef(quantity.uri)
@@ -3362,11 +3421,12 @@ class MotionSpecDatasetBuilder:
         suffix: str,
         subspace: str,
         axis: str | None,
+        scalar_t: Any = None,
     ) -> URIRef:
         """The node a constraint compares against, promoted to a position/orientation coordinate
         for a whole-subspace (axis-less) pose/path reference.
         """
-        ref_node = self._emit_context_ref_node(ref, owner, suffix)
+        ref_node = self._emit_context_ref_node(ref, owner, suffix, scalar_t)
         quantity = _context_quantity(ref)
         if not isinstance(quantity, ContextQuantity) or axis is not None:
             return ref_node
@@ -3485,7 +3545,7 @@ class MotionSpecDatasetBuilder:
             if isinstance(expr, EqualityConstraint):
                 self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
                 ref_node = self._constraint_reference_node(
-                    expr.reference, motion, f"{spec.name}-ref", subspace, axis
+                    expr.reference, motion, f"{spec.name}-ref", subspace, axis, scalar_t
                 )
                 profiled_ctrl = self._profiled_controller_for_spec(spec)
                 if profiled_ctrl is not None:
@@ -3519,26 +3579,34 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.GreaterThanConstraint))
                 thr_node = self._emit_context_ref_node(
-                    expr.threshold, motion, f"{spec.name}-threshold"
+                    expr.threshold, motion, f"{spec.name}-threshold", scalar_t
                 )
                 self.graph.add((node, CSTR.threshold, thr_node))
             elif isinstance(expr, LessThanConstraint):
                 self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
                 self.graph.add((node, RDF.type, CSTR.LessThanConstraint))
                 thr_node = self._emit_context_ref_node(
-                    expr.threshold, motion, f"{spec.name}-threshold"
+                    expr.threshold, motion, f"{spec.name}-threshold", scalar_t
                 )
                 self.graph.add((node, CSTR.threshold, thr_node))
             elif isinstance(expr, BilateralConstraint):
                 self.graph.add((node, RDF.type, CSTR.BilateralConstraint))
-                lo_node = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
-                up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
+                lo_node = self._emit_context_ref_node(
+                    expr.lower, motion, f"{spec.name}-lower", scalar_t
+                )
+                up_node = self._emit_context_ref_node(
+                    expr.upper, motion, f"{spec.name}-upper", scalar_t
+                )
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
             elif isinstance(expr, OutsideConstraint):
                 self.graph.add((node, RDF.type, CSTR_EXT.OutsideConstraint))
-                lo_node = self._emit_context_ref_node(expr.lower, motion, f"{spec.name}-lower")
-                up_node = self._emit_context_ref_node(expr.upper, motion, f"{spec.name}-upper")
+                lo_node = self._emit_context_ref_node(
+                    expr.lower, motion, f"{spec.name}-lower", scalar_t
+                )
+                up_node = self._emit_context_ref_node(
+                    expr.upper, motion, f"{spec.name}-upper", scalar_t
+                )
                 self.graph.add((node, CSTR["lower-threshold"], lo_node))
                 self.graph.add((node, CSTR["upper-threshold"], up_node))
 
@@ -4153,6 +4221,49 @@ class MotionSpecDatasetBuilder:
                     self._linear_distance_relation(plan.start.uri, plan.end.uri),
                 )
             )
+
+        seen_alignment_ops = self._emitted_alignment_ops
+        for spec in constraints:
+            if not _is_alignment_view(spec):
+                continue
+            qty = self._resolve_constraint_quantity(spec, world_qtys)
+            alignment_id = _scalar_id(qty, "alignment", None)
+            if alignment_id in seen_alignment_ops:
+                continue
+            seen_alignment_ops.add(alignment_id)
+
+            plan = self._alignment_plan(spec, world_qtys)
+            reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
+
+            rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
+            self._emit_direction_coordinate(rotated_node, reference_frame)
+            rotate_op = self._owned_uri(f"compute-{alignment_id}-rotated", motion)
+            self.graph.add((rotate_op, RDF.type, GEOM_OP.RotateDirectionDistalToProximalWithPose))
+            self.graph.add((rotate_op, GEOM_OP.pose, URIRef(plan.target.uri)))
+            self.graph.add((rotate_op, GEOM_OP["from"], URIRef(plan.moving.uri)))
+            self.graph.add((rotate_op, GEOM_OP.to, rotated_node))
+
+            theta_node = self._owned_uri(alignment_id, motion)
+            self._add_quantity(theta_node, QuantityType.Angle)
+            # Base-alignment (fixed-axis solver rows) is decided from this frame downstream.
+            self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
+            self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
+            self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
+            self.graph.add((angle_op, GEOM_OP["from-directions"], URIRef(plan.reference.uri)))
+            self.graph.add((angle_op, GEOM_OP.angle, theta_node))
+
+            vector_node = self._owned_uri(f"{alignment_id}-error", motion)
+            self._add_quantity(vector_node, QuantityType.FreeVector)
+            self.graph.add((vector_node, RDF.type, GEOM_COORD.VectorXYZ))
+            self.graph.remove((vector_node, QUDT_SCHEMA.unit, None))
+            self.graph.add((vector_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+            self.graph.add((vector_node, GEOM_COORD["as-seen-by"], reference_frame))
+            vector_op = self._owned_uri(f"compute-{alignment_id}-error", motion)
+            self.graph.add((vector_op, RDF.type, GEOM_OP_EXT.RotationVectorFromDirections))
+            self.graph.add((vector_op, GEOM_OP.in1, rotated_node))
+            self.graph.add((vector_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+            self.graph.add((vector_op, GEOM_OP.out, vector_node))
 
     def _emit_controller_base(
         self, ctrl_node: URIRef, ctrl: ControllerEntry, command: Any = None

@@ -147,6 +147,8 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
             return QuantityType.Distance
         if subspace == "rotation":
             return QuantityType.PlaneAngle
+        if subspace == "alignment":
+            return QuantityType.Angle
     spec = WORLD_SPECS.get(quantity.type)
     if spec is None:
         return subspace
@@ -191,4 +193,13 @@ class _DistancePlan:
 
     start: WorldQuantity
     end: WorldQuantity
+    target: WorldQuantity
+
+
+@dataclass(frozen=True)
+class _AlignmentPlan:
+    """Resolved direction operands and pose carrier for an authored `angle between` view."""
+
+    moving: ContextQuantity
+    reference: ContextQuantity
     target: WorldQuantity
