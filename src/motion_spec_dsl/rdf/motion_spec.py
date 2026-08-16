@@ -3254,6 +3254,16 @@ class MotionSpecDatasetBuilder:
         """Resolve a context reference to its value node: a subspace view, a passthrough source,
         or the referenced quantity.
         """
+        # A literal operand names nothing, so it carries its own node: the number and the unit
+        # the author wrote, typed like any other quantity the op takes.
+        bare = getattr(ref, "bare", None)
+        if isinstance(bare, Measure):
+            return self._emit_scalar_quantity(
+                self._declared_uri(suffix, owner),
+                bare.value,
+                _qudt_kind(owner.type),
+                _dsl_unit(bare.unit),
+            )
         quantity = _context_quantity(ref)
         if not isinstance(quantity, ContextQuantity):
             return self._owned_uri(_node_name(quantity), owner)
