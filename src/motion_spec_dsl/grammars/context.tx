@@ -103,6 +103,13 @@ View:
         "<" distance_to=[DistancePoseOperand|FQN] ">"
     )
     |
+    (
+        "angle" "between"
+        "<" angle_from=[AlignDirectionOperand|FQN] ">"
+        "and"
+        "<" angle_to=[AlignDirectionOperand|FQN] ">"
+    )
+    |
     elapsed=ElapsedTime
     |
     progress=ProgressAlong
@@ -118,6 +125,8 @@ View:
 ;
 
 DistancePoseOperand: WorldQuantity | ContextQuantity ;
+
+AlignDirectionOperand: ContextQuantity ;
 
 ElapsedTime:
     marker?="elapsed"

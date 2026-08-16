@@ -146,6 +146,12 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
     view = constraint.view
 
     if (
+        getattr(view, "angle_from", None) is not None
+        and getattr(view, "angle_to", None) is not None
+    ):
+        return "alignment"
+
+    if (
         getattr(view, "distance_from", None) is not None
         and getattr(view, "distance_to", None) is not None
     ):

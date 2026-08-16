@@ -21,6 +21,7 @@ from motion_spec_dsl.classes.constraints import (
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
     ContextRef,
+    GeometricPropKey,
     Measure,
     QuantityType,
     ReferenceGeneratorType,
@@ -373,6 +374,66 @@ def validate_scalar_order_relations(model: Model) -> None:
                 )
 
 
+def _direction_frame(quantity: ContextQuantity) -> object | None:
+    """The as-seen-by (or wrt) frame of a direction context quantity, if stated."""
+    if quantity.props is None:
+        return None
+    for pair in quantity.props.pairs:
+        if pair.key in (GeometricPropKey.AsSeenBy, GeometricPropKey.Wrt):
+            return pair.value
+    return None
+
+
+def _alignment_operand(
+    quantity: ContextQuantity, label: str, owner: object
+) -> tuple[float, float, float]:
+    """Require `quantity` to be a `direction` with a frame and literal 3-vector; return it."""
+    quantity = _resolved_context_quantity(quantity)
+    if quantity.type != QuantityType.Direction:
+        raise semantic_error(f"{label} must be a 'direction' context quantity.", owner)
+    if _direction_frame(quantity) is None:
+        raise semantic_error(f"{label} '{quantity.name}' needs an 'as-seen-by' frame.", owner)
+    vector = quantity.value
+    vector = (
+        _literal_xyz(vector.coords) if isinstance(vector, VectorXYZ) and vector.coords else None
+    )
+    if vector is None:
+        raise semantic_error(f"{label} '{quantity.name}' needs a literal 3-vector value.", owner)
+    return vector
+
+
+def validate_alignment_views(model: Model) -> None:
+    """Check `angle between <a> and <b>` views: both operands are authored directions, the
+    reference is a signed frame axis, and the target is equality to a bare zero.
+    """
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        view = spec.view
+        angle_from = getattr(view, "angle_from", None)
+        angle_to = getattr(view, "angle_to", None)
+        if angle_from is None or angle_to is None:
+            continue
+        _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
+        reference = _alignment_operand(angle_to, f"'{spec.name}' reference operand", spec)
+        nonzero = [v for v in reference if abs(v) > 1e-9]
+        if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
+            raise semantic_error(
+                f"'{spec.name}' reference operand must be a signed unit frame axis "
+                "(exactly one component, +-1).",
+                spec,
+            )
+        if not isinstance(spec.expr, EqualityConstraint):
+            raise semantic_error(
+                f"'{spec.name}' aligns two directions, which only supports equality.", spec
+            )
+        reference_measure = spec.expr.reference.bare
+        if reference_measure is None or reference_measure.value != 0.0:
+            raise semantic_error(
+                f"'{spec.name}' must align to a bare zero angle -- nonzero alignment targets "
+                "are not supported.",
+                spec,
+            )
+
+
 def validate_tolerance_defaults(model: Model) -> None:
     """A model-wide band applies to every constraint of its kind, so it has to be stated in
     that kind's units and stated once. Neither is decidable in the grammar: the value rule is
@@ -390,8 +451,7 @@ def validate_tolerance_defaults(model: Model) -> None:
         if allowed is None or unit is None or unit in allowed:
             continue
         raise semantic_error(
-            f"a default band for {entry.kind} is not measured in '{unit}' "
-            f"({', '.join(allowed)}).",
+            f"a default band for {entry.kind} is not measured in '{unit}' ({', '.join(allowed)}).",
             entry,
         )
 

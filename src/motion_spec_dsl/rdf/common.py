@@ -85,6 +85,14 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     )
 
 
+def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is an `angle between A and B` form."""
+    return (
+        getattr(constraint.view, "angle_from", None) is not None
+        and getattr(constraint.view, "angle_to", None) is not None
+    )
+
+
 def _view_subspace(constraint: ConstraintSpecification) -> str:
     """The constraint's resolved view subspace; raises if it declares none."""
     subspace = constraint_view_subspace(constraint)

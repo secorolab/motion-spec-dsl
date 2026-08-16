@@ -390,6 +390,8 @@ class View:
     selector: SelectorTail | None = None
     distance_from: WorldQuantity | None = None
     distance_to: WorldQuantity | None = None
+    angle_from: ContextQuantity | None = None
+    angle_to: ContextQuantity | None = None
     elapsed: ElapsedTime | None = None
     progress: ProgressAlong | None = None
     moving: MovingAlong | None = None
