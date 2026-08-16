@@ -29,6 +29,7 @@ from motion_spec_dsl.classes.context import (
     ContextQuantity,
     WorldQuantity,
     WorldQuantityType,
+    _resolved_context_quantity,
 )
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
 
@@ -91,6 +92,22 @@ def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
         getattr(constraint.view, "angle_from", None) is not None
         and getattr(constraint.view, "angle_to", None) is not None
     )
+
+
+def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
+    """Scalar id of an `angle between` view: the carrier pose and both direction operands. The
+    operands belong in it because two alignments can share one pose and mean different angles.
+    """
+    moving = _resolved_context_quantity(constraint.view.angle_from).name
+    reference = _resolved_context_quantity(constraint.view.angle_to).name
+    stem = f"alignment-{moving}-{reference}"
+    # The tolerated cone is part of what the angle is computed for, so two motions that tolerate
+    # different cones get their own op chain rather than one that can only answer for one of them.
+    upper = getattr(constraint.expr, "upper", None)
+    band = _resolved_context_quantity(_context_quantity(upper)) if upper is not None else None
+    if band is not None:
+        stem = f"{stem}-{band.name}"
+    return _scalar_id(quantity, stem, None)
 
 
 def _view_subspace(constraint: ConstraintSpecification) -> str:

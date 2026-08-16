@@ -27,8 +27,8 @@ context (ns=app) shared {
             wrt:        <kinova.base_link>,
             as-seen-by: <kinova.base_link>
         },
-        pose pose-elbow-base {
-            of:         <kinova.half_arm_2_link>,
+        pose pose-forearm-base {
+            of:         <kinova.forearm_link>,
             wrt:        <kinova.base_link>,
             as-seen-by: <kinova.base_link>
         },
@@ -50,9 +50,13 @@ context (ns=app) shared {
         // Where this deployment parks the TCP: a property of the cell the arm stands in, not
         // of the pick-and-place task, so robot.toml states it and this names which section.
         pose home-pose = [config.poses.home] for <shared.world.pose-ee-base>,
-        direction elbow-up { as-seen-by: <kinova.half_arm_2_link> } = (0, 0, -1),
+        // The forearm's own up axis: its z runs along the elbow hinge, so y is the one that
+        // stands up when the arm is upright.
+        direction forearm-up { as-seen-by: <kinova.forearm_link> } = (0, 1, 0),
         direction base-up { as-seen-by: <kinova.base_link> } = (0, 0, 1),
-        angle align-band = 0.05 rad
+        angle align-band = 0.05 rad,
+        angle align-cone = 0.35 rad,
+        angle align-cone-hold = 0.05 rad
     }
     // nothing, the pose is the cube's start placement.
 }
@@ -67,11 +71,7 @@ guarded-motion (ns=app) home {
     description: "Hold the TCP at the home pose the deployment states"
 
     context {
-        <shared.spec>,
-        spec {
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>
-        }
+        <shared.spec>
     }
 
     when {}
@@ -79,8 +79,7 @@ guarded-motion (ns=app) home {
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow:  keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until {}
@@ -108,9 +107,7 @@ guarded-motion (ns=app) pick-above {
             path approach-path = lerp {
                 start: <spec.start-pose>,
                 goal:  <spec.goal-pose>
-            },
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>
+            }
         }
     }
 
@@ -123,8 +120,7 @@ guarded-motion (ns=app) pick-above {
         follow-lat: keeping <shared.world.pose-ee-base>.position    on <spec.approach-path> within <shared.spec.satisfied-band>,
         follow-ori: keeping <shared.world.pose-ee-base>.orientation on <spec.approach-path> within <shared.spec.satisfied-band-rot>,
         advance:    progress of <shared.world.pose-ee-base> along <spec.approach-path> more than <spec.min-approach-speed>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
     }
 
     until {}
@@ -138,8 +134,6 @@ guarded-motion (ns=app) pick {
             length grasp-x         = snapshot of <shared.world.pose-cube-base>.position.x,
             length grasp-y         = snapshot of <shared.world.pose-cube-base>.position.y,
             length grasp-z         = 0.015 m,
-            length support-lift    = 0.06 m,
-            length support-z       = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose pick-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -156,8 +150,7 @@ guarded-motion (ns=app) pick {
         hold-y:     keeping <shared.world.pose-ee-base>.position.y  equal to <spec.grasp-y> within <shared.spec.satisfied-band>,
         lower-z:    keeping <shared.world.pose-ee-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
         follow-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.pick-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until {}
@@ -168,8 +161,6 @@ guarded-motion (ns=app) grasp-hold {
 
     context {
         spec {
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>,
             length grasp-reach  = 0.015 m
         }
@@ -184,8 +175,7 @@ guarded-motion (ns=app) grasp-hold {
         hold-y:          keeping <shared.world.pose-ee-base>.position.y equal to <spec.hold-orientation-pose>.position.y within <shared.spec.satisfied-band>,
         hold-z:          keeping <shared.world.pose-ee-base>.position.z equal to <spec.hold-orientation-pose>.position.z within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         close-gripper:   keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
@@ -201,8 +191,6 @@ guarded-motion (ns=app) lift {
             angle grasp-threshold        = 0.15 rad,
             length lift-start-x = snapshot of <shared.world.pose-ee-base>.position.x,
             length lift-start-y = snapshot of <shared.world.pose-ee-base>.position.y,
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose lift-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -219,8 +207,7 @@ guarded-motion (ns=app) lift {
         hold-y:        keeping <shared.world.pose-ee-base>.position.y  equal to <spec.lift-start-y> within <shared.spec.satisfied-band>,
         lift-z:        keeping <shared.world.pose-ee-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
         follow-ori:    keeping <shared.world.pose-ee-base>.orientation equal to <spec.lift-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         close-gripper: keeping <shared.world.gripper-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
@@ -238,8 +225,6 @@ guarded-motion (ns=app) place-above {
             length place-y       = 0.24 m,
             length place-above-z = 0.22 m,
             length lifted-z      = 0.30 m,
-            length support-lift  = 0.06 m,
-            length support-z     = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose goal-pose-above = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -256,8 +241,7 @@ guarded-motion (ns=app) place-above {
         reach-y:       keeping <shared.world.pose-ee-base>.position.y         equal to <spec.place-y> within <shared.spec.satisfied-band>,
         reach-z:       keeping <shared.world.pose-ee-base>.position.z         equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
         align-ori:     keeping <shared.world.pose-ee-base>.orientation        equal to <spec.goal-pose-above>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z   equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         close-gripper: keeping <shared.world.gripper-pos>                 equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
@@ -275,8 +259,6 @@ guarded-motion (ns=app) place {
             length place-y      = 0.24 m,
             length place-z      = 0.03 m,
             length place-y-gate = 0.20 m,
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose goal-pose-place = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -293,8 +275,7 @@ guarded-motion (ns=app) place {
         reach-y:       keeping <shared.world.pose-ee-base>.position.y         equal to <spec.place-y> within <shared.spec.satisfied-band>,
         reach-z:       keeping <shared.world.pose-ee-base>.position.z         equal to <spec.place-z> within <shared.spec.satisfied-band>,
         align-ori:     keeping <shared.world.pose-ee-base>.orientation        equal to <spec.goal-pose-place>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z   equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         close-gripper: keeping <shared.world.gripper-pos>                 equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>
     }
 
@@ -308,8 +289,6 @@ guarded-motion (ns=app) open-grasp-hold {
 
     context {
         spec {
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>,
             length release-z    = 0.04 m
         }
@@ -324,8 +303,7 @@ guarded-motion (ns=app) open-grasp-hold {
         hold-y:          keeping <shared.world.pose-ee-base>.position.y equal to <spec.hold-orientation-pose>.position.y within <shared.spec.satisfied-band>,
         hold-z:          keeping <shared.world.pose-ee-base>.position.z equal to <spec.hold-orientation-pose>.position.z within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         open-gripper:    keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
@@ -342,8 +320,6 @@ guarded-motion (ns=app) retreat {
             length place-above-z = 0.22 m,
             length retreat-z-lo  = 0.20 m,
             length retreat-z-hi  = 0.24 m,
-            length support-lift  = 0.06 m,
-            length support-z     = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose goal-pose-retreat = {
                 position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -360,8 +336,7 @@ guarded-motion (ns=app) retreat {
         reach-y:       keeping <shared.world.pose-ee-base>.position.y         equal to <spec.place-y> within <shared.spec.satisfied-band>,
         reach-z:       keeping <shared.world.pose-ee-base>.position.z         equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
         align-ori:     keeping <shared.world.pose-ee-base>.orientation        equal to <spec.goal-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z: keeping <shared.world.pose-elbow-base>.position.z   equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow: keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
         open-gripper:  keeping <shared.world.gripper-pos>                 equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
@@ -375,8 +350,6 @@ guarded-motion (ns=app) recover {
 
     context {
         spec {
-            length support-lift = 0.06 m,
-            length support-z    = snapshot of <shared.world.pose-elbow-base>.position.z + <spec.support-lift>,
             pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>
         }
     }
@@ -388,8 +361,7 @@ guarded-motion (ns=app) recover {
         hold-y:           keeping <shared.world.pose-ee-base>.position.y equal to <spec.hold-orientation-pose>.position.y within <shared.spec.satisfied-band>,
         hold-z:           keeping <shared.world.pose-ee-base>.position.z equal to <spec.hold-orientation-pose>.position.z within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <spec.support-z> within <shared.spec.satisfied-band>,
-        align-elbow:  keeping angle between <shared.spec.elbow-up> and <shared.spec.base-up> equal to 0 rad within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until {}
@@ -402,10 +374,8 @@ constraint-handler (ns=app) handler-home {
     controllers {
         pid ctrl-hold-position    { constraint: <home.hold-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
-        impedance ctrl-home-support-z { constraint: <home.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-home-support-z-align-elbow { constraint: <home.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>
+        impedance ctrl-home-align-forearm { constraint: <home.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
 
     solvers {
@@ -422,10 +392,10 @@ constraint-handler (ns=app) handler-pick-above {
     monitors {
         mon-pick-above-ready: monitor <pick-above.gripper-ready> {
             satisfied { trigger: event <pp.E_PICK_ABOVE_READY> },
-            violated { hold: <home> },
+            violated { hold: <home> }
         },
         mon-pa-advancing: monitor <pick-above.advance> {
-            satisfied { flag: pa-advancing },
+            satisfied { flag: pa-advancing }
         }
     }
 
@@ -433,10 +403,8 @@ constraint-handler (ns=app) handler-pick-above {
         pid ctrl-pa-follow-tan { constraint: <pick-above.follow-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 },
         pid ctrl-pa-follow-lat { constraint: <pick-above.follow-lat>, measured-derivative: <shared.world.twist-ee-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-pa-follow-ori { constraint: <pick-above.follow-ori>, measured-derivative: <shared.world.twist-ee-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
-        impedance ctrl-pa-support-z { constraint: <pick-above.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-pa-support-z-align-elbow { constraint: <pick-above.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>
+        impedance ctrl-pa-align-forearm { constraint: <pick-above.align-forearm>, stiffness: 40, damping: 8 }
+            apply at <kinova.forearm_link>
     }
 
     solvers {
@@ -449,7 +417,7 @@ constraint-handler (ns=app) handler-pick {
     monitors {
         mon-pick-ready: monitor <pick.aligned-above> {
             satisfied { trigger: event <pp.E_PICK_READY> },
-            violated { hold: <pick-above> },
+            violated { hold: <pick-above> }
         }
     }
 
@@ -458,10 +426,8 @@ constraint-handler (ns=app) handler-pick {
         pid ctrl-pk-hold-y     { constraint: <pick.hold-y>,     Kp: 200, Ki: 30, Kd: 40, decay: 0 },
         pid ctrl-pk-lower-z    { constraint: <pick.lower-z>,    Kp: 12, Ki: 5,  Kd: 15, decay: 0 },
         pid ctrl-pk-follow-ori { constraint: <pick.follow-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-pk-support-z { constraint: <pick.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-pk-support-z-align-elbow { constraint: <pick.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>
+        impedance ctrl-pk-align-forearm { constraint: <pick.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
 
     solvers {
@@ -474,7 +440,7 @@ constraint-handler (ns=app) handler-close-grip {
     monitors {
         mon-grasp-ready: monitor <grasp-hold.near-cube> {
             satisfied { trigger: event <pp.E_GRASP_READY> },
-            violated { hold: <pick> },
+            violated { hold: <pick> }
         }
     }
 
@@ -483,10 +449,8 @@ constraint-handler (ns=app) handler-close-grip {
         pid ctrl-cg-hold-y      { constraint: <grasp-hold.hold-y>,      Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-cg-hold-z      { constraint: <grasp-hold.hold-z>,      Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-cg-hold-orientation { constraint: <grasp-hold.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-cg-support-z  { constraint: <grasp-hold.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-cg-support-z-align-elbow { constraint: <grasp-hold.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-cg-align-forearm { constraint: <grasp-hold.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-cg-close-gripper { constraint: <grasp-hold.close-gripper> }
     }
 
@@ -503,10 +467,10 @@ constraint-handler (ns=app) handler-lift {
     monitors {
         mon-lift-ready: monitor <lift.grasped> {
             satisfied { trigger: event <pp.E_LIFT_READY> },
-            violated { hold: <grasp-hold> },
+            violated { hold: <grasp-hold> }
         },
         mon-lift-grasp-lost: monitor <lift.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_LIFT> },
+            satisfied { trigger: event <pp.E_GRASP_LOST_LIFT> }
         }
     }
 
@@ -515,10 +479,8 @@ constraint-handler (ns=app) handler-lift {
         pid ctrl-lt-hold-y     { constraint: <lift.hold-y>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-lt-lift-z     { constraint: <lift.lift-z>,     Kp: 15, Ki: 5,  Kd: 20, decay: 0 },
         pid ctrl-lt-follow-ori { constraint: <lift.follow-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-lt-support-z { constraint: <lift.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-lt-support-z-align-elbow { constraint: <lift.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-lt-align-forearm { constraint: <lift.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-lt-close-gripper { constraint: <lift.close-gripper> }
     }
 
@@ -533,10 +495,10 @@ constraint-handler (ns=app) handler-place-above {
     monitors {
         mon-place-above-ready: monitor <place-above.lifted> {
             satisfied { trigger: event <pp.E_PLACE_ABOVE_READY> },
-            violated { hold: <lift> },
+            violated { hold: <lift> }
         },
         mon-place-above-grasp-lost: monitor <place-above.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE_ABOVE> },
+            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE_ABOVE> }
         }
     }
 
@@ -545,10 +507,8 @@ constraint-handler (ns=app) handler-place-above {
         pid ctrl-pla-reach-y   { constraint: <place-above.reach-y>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 },
         pid ctrl-pla-reach-z   { constraint: <place-above.reach-z>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 },
         pid ctrl-pla-align-ori { constraint: <place-above.align-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-pla-support-z { constraint: <place-above.support-elbow-z>, stiffness: 800, damping: 80 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-pla-support-z-align-elbow { constraint: <place-above.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-pla-align-forearm { constraint: <place-above.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-pla-close-gripper { constraint: <place-above.close-gripper> }
     }
 
@@ -563,10 +523,10 @@ constraint-handler (ns=app) handler-place {
     monitors {
         mon-place-ready: monitor <place.at-pre-place> {
             satisfied { trigger: event <pp.E_PLACE_READY> },
-            violated { hold: <place-above> },
+            violated { hold: <place-above> }
         },
         mon-place-grasp-lost: monitor <place.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE> },
+            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE> }
         }
     }
 
@@ -575,10 +535,8 @@ constraint-handler (ns=app) handler-place {
         pid ctrl-pl-reach-y   { constraint: <place.reach-y>,   Kp: 140, Ki: 20, Kd: 55, decay: 0 },
         pid ctrl-pl-reach-z   { constraint: <place.reach-z>,   Kp: 60,  Ki: 15, Kd: 55, decay: 0 },
         pid ctrl-pl-align-ori { constraint: <place.align-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 },
-        impedance ctrl-pl-support-z { constraint: <place.support-elbow-z>, stiffness: 800, damping: 160 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-pl-support-z-align-elbow { constraint: <place.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-pl-align-forearm { constraint: <place.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-pl-close-gripper { constraint: <place.close-gripper> }
     }
 
@@ -593,7 +551,7 @@ constraint-handler (ns=app) handler-open-grip {
     monitors {
         mon-open-ready: monitor <open-grasp-hold.at-place> {
             satisfied { trigger: event <pp.E_OPEN_READY> },
-            violated { hold: <place> },
+            violated { hold: <place> }
         }
     }
 
@@ -602,10 +560,8 @@ constraint-handler (ns=app) handler-open-grip {
         pid ctrl-og-hold-y      { constraint: <open-grasp-hold.hold-y>, Kp: 140, Ki: 20, Kd: 55, decay: 0 },
         pid ctrl-og-hold-z      { constraint: <open-grasp-hold.hold-z>, Kp: 140, Ki: 20, Kd: 55, decay: 0 },
         pid ctrl-og-hold-orientation { constraint: <open-grasp-hold.hold-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 },
-        impedance ctrl-og-support-z  { constraint: <open-grasp-hold.support-elbow-z>, stiffness: 800, damping: 160 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-og-support-z-align-elbow { constraint: <open-grasp-hold.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-og-align-forearm { constraint: <open-grasp-hold.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-og-open-gripper { constraint: <open-grasp-hold.open-gripper> }
     }
 
@@ -620,10 +576,10 @@ constraint-handler (ns=app) handler-retreat {
     monitors {
         mon-retreat-ready: monitor <retreat.released> {
             satisfied { trigger: event <pp.E_RETREAT_READY> },
-            violated { hold: <open-grasp-hold> },
+            violated { hold: <open-grasp-hold> }
         },
         mon-retreat-settled: monitor <retreat.until> {
-            satisfied { trigger: event <pp.E_RETREAT_SETTLED> },
+            satisfied { trigger: event <pp.E_RETREAT_SETTLED> }
         }
     }
 
@@ -632,10 +588,8 @@ constraint-handler (ns=app) handler-retreat {
         pid ctrl-ret-reach-y   { constraint: <retreat.reach-y>,   Kp: 140, Ki: 20, Kd: 55, decay: 0 },
         pid ctrl-ret-reach-z   { constraint: <retreat.reach-z>,   Kp: 60,  Ki: 15, Kd: 55, decay: 0 },
         pid ctrl-ret-align-ori { constraint: <retreat.align-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 },
-        impedance ctrl-ret-support-z { constraint: <retreat.support-elbow-z>, stiffness: 800, damping: 160 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-ret-support-z-align-elbow { constraint: <retreat.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>,
+        impedance ctrl-ret-align-forearm { constraint: <retreat.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>,
         feed-forward ctrl-ret-open-gripper { constraint: <retreat.open-gripper> }
     }
 
@@ -649,7 +603,7 @@ constraint-handler (ns=app) handler-recover {
     handles: <recover>
     monitors {
         mon-recover-hold: monitor <recover.hold-x> {
-            satisfied for 0.1 s { trigger: event <pp.E_RECOVER> },
+            satisfied for 0.1 s { trigger: event <pp.E_RECOVER> }
         }
     }
 
@@ -658,10 +612,8 @@ constraint-handler (ns=app) handler-recover {
         pid ctrl-rc-hold-y           { constraint: <recover.hold-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-rc-hold-z           { constraint: <recover.hold-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-rc-hold-orientation { constraint: <recover.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
-        impedance ctrl-rc-support-z  { constraint: <recover.support-elbow-z>, stiffness: 800, damping: 160 }
-            apply at <kinova.half_arm_2_link>,
-        impedance ctrl-rc-support-z-align-elbow { constraint: <recover.align-elbow>, stiffness: 40, damping: 8 }
-            apply at <kinova.half_arm_2_link>
+        impedance ctrl-rc-align-forearm { constraint: <recover.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
 
     solvers {

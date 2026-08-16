@@ -152,6 +152,7 @@ from motion_spec_dsl.classes.ros import (
 from motion_spec_dsl.rdf.common import (
     ANGLE_UNITS,
     _angle_unit,
+    _alignment_id,
     _AlignmentPlan,
     _axis_vector,
     _context_quantity,
@@ -1141,6 +1142,13 @@ class MotionSpecDatasetBuilder:
                 f"{context} needs a declared 'world' pose of '{moving_frame}' wrt "
                 f"'{reference_frame}': alignment reads an already-computed pose, it does "
                 "not derive one."
+            )
+        # The rotation carries the moving direction into the frame the pose is seen by, and the
+        # reference direction is read in `wrt`; a third frame would compare two unrelated vectors.
+        if _geo_prop(target.props, "as-seen-by") not in (None, reference_frame):
+            raise ValueError(
+                f"{context} needs '{target.name}' seen by '{reference_frame}', the frame its "
+                "reference direction is stated in."
             )
         plan = _AlignmentPlan(moving, reference, target)
         self._alignment_plans[spec] = plan
@@ -3518,7 +3526,11 @@ class MotionSpecDatasetBuilder:
                 ):
                     qty_node = URIRef(qty.uri)
                 else:
-                    sid = _scalar_id(qty, subspace, axis)
+                    sid = (
+                        _alignment_id(qty, spec)
+                        if _is_alignment_view(spec)
+                        else _scalar_id(qty, subspace, axis)
+                    )
                     qty_node = self._owned_uri(sid, motion)
             else:
                 qty_node = None
@@ -4227,7 +4239,7 @@ class MotionSpecDatasetBuilder:
             if not _is_alignment_view(spec):
                 continue
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            alignment_id = _scalar_id(qty, "alignment", None)
+            alignment_id = _alignment_id(qty, spec)
             if alignment_id in seen_alignment_ops:
                 continue
             seen_alignment_ops.add(alignment_id)

@@ -402,9 +402,53 @@ def _alignment_operand(
     return vector
 
 
+def _alignment_target(spec) -> None:
+    """An alignment either drives the angle to zero or tolerates a cone around it: equality to a
+    bare zero, or a band starting at zero. A band starting anywhere else asks the directions to
+    hold an angle apart, which is a different constraint than aligning them.
+    """
+    expr = spec.expr
+    if isinstance(expr, EqualityConstraint):
+        measure = expr.reference.bare
+        if measure is None or measure.value != 0.0:
+            raise semantic_error(
+                f"'{spec.name}' must align to a bare zero angle -- nonzero alignment targets "
+                "are not supported.",
+                spec,
+            )
+        return
+    if isinstance(expr, BilateralConstraint):
+        lower = expr.lower.bare
+        if lower is None or lower.value != 0.0:
+            raise semantic_error(
+                f"'{spec.name}' must open its band at zero -- a band that starts elsewhere holds "
+                "the directions apart rather than aligning them.",
+                spec,
+            )
+        upper = expr.upper.bare
+        if upper is not None:
+            if upper.value <= 0.0:
+                raise semantic_error(
+                    f"'{spec.name}' needs a positive upper bound on its band.", spec
+                )
+            return
+        # A declared bound says how wide the tolerated cone is, so it has to be an angle.
+        quantity = _resolved_ref_quantity(expr.upper)
+        if quantity is None or quantity.type != QuantityType.Angle:
+            raise semantic_error(
+                f"'{spec.name}' needs its band's upper bound stated as an angle.", spec
+            )
+        return
+    raise semantic_error(
+        f"'{spec.name}' aligns two directions, which supports equality to zero or a band "
+        "from zero.",
+        spec,
+    )
+
+
 def validate_alignment_views(model: Model) -> None:
     """Check `angle between <a> and <b>` views: both operands are authored directions, the
-    reference is a signed frame axis, and the target is equality to a bare zero.
+    reference is a signed frame axis, and the target is zero or a band opening at zero.
     """
     for spec in get_children_of_type(ConstraintSpecification, model):
         view = spec.view
@@ -421,17 +465,7 @@ def validate_alignment_views(model: Model) -> None:
                 "(exactly one component, +-1).",
                 spec,
             )
-        if not isinstance(spec.expr, EqualityConstraint):
-            raise semantic_error(
-                f"'{spec.name}' aligns two directions, which only supports equality.", spec
-            )
-        reference_measure = spec.expr.reference.bare
-        if reference_measure is None or reference_measure.value != 0.0:
-            raise semantic_error(
-                f"'{spec.name}' must align to a bare zero angle -- nonzero alignment targets "
-                "are not supported.",
-                spec,
-            )
+        _alignment_target(spec)
 
 
 def validate_tolerance_defaults(model: Model) -> None:

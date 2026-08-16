@@ -38,6 +38,11 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        pose pose-forearm-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
@@ -51,6 +56,13 @@ context (ns=app) shared {
     },
     spec {
         length satisfied-band     = 0.01 m,
+        // The forearm's own up axis: its z runs along the elbow hinge, so y is the one that
+        // stands up when the arm is upright.
+        direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
+        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        angle align-band = 0.05 rad,
+        angle align-cone = 0.35 rad,
+        angle align-cone-hold = 0.05 rad,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel          = 0.0 m/s,
@@ -88,7 +100,8 @@ guarded-motion (ns=app) home {
 
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
-        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until all {
@@ -113,7 +126,8 @@ guarded-motion (ns=app) touchdown {
         hold-x:   keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x within <shared.spec.satisfied-band>,
         hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
         lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel> within <shared.spec.satisfied-band-vel>,
-        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>
+        hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until {
@@ -137,7 +151,8 @@ guarded-motion (ns=app) forward {
         move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
         hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
         hold-z:       keeping <shared.world.pose-ee-base>.position.z equal to <spec.start-pose>.position.z within <shared.spec.satisfied-band>,
-        press-down:   keeping <shared.world.press-wrench>.force.z equal to <shared.spec.press-force> within <shared.spec.press-band>
+        press-down:   keeping <shared.world.press-wrench>.force.z equal to <shared.spec.press-force> within <shared.spec.press-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
 
     until {
@@ -190,6 +205,7 @@ guarded-motion (ns=app) arc-motion {
         follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> with <spec.arc-profile>,
         follow-position: keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
         advance: progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
         force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
         force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
@@ -237,7 +253,8 @@ guarded-motion (ns=app) compliance {
         comply-x:   keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x> within <shared.spec.satisfied-band-vel>,
         comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y> within <shared.spec.satisfied-band-vel>,
         comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z> within <shared.spec.satisfied-band-vel>,
-        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>
+        comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
     }
 
     until {
@@ -262,7 +279,9 @@ constraint-handler (ns=app) handler-home {
     }
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+        pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        impedance ctrl-home-align-forearm { constraint: <home.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
     solvers {
         arm-solver: serial-chain {
@@ -284,7 +303,9 @@ constraint-handler (ns=app) handler-touchdown {
         pid ctrl-touchdown-x { constraint: <touchdown.hold-x>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
         pid ctrl-touchdown-y { constraint: <touchdown.hold-y>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
         pid ctrl-touchdown-z { constraint: <touchdown.lower-z>, Kp: 200, Ki: 0, Kd: 0, decay: 0 },
-        pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }
+        pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        impedance ctrl-td-align-forearm { constraint: <touchdown.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
     solvers { <handler-home.arm-solver> }
 }
@@ -306,7 +327,9 @@ constraint-handler (ns=app) handler-forward {
         pid ctrl-forward-z { constraint: <forward.hold-z>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         feed-forward ctrl-press-down { constraint: <forward.press-down> }
             as force
-            apply at <gripper.g_base>
+            apply at <gripper.g_base>,
+        impedance ctrl-fwd-align-forearm { constraint: <forward.align-forearm>, stiffness: 400, damping: 40 }
+            apply at <kinova.forearm_link>
     }
     solvers {
         rne-arm-solver: serial-chain {
@@ -356,7 +379,9 @@ constraint-handler (ns=app) handler-arc {
             Ki: 0,
             Kd: 160,
             decay: 0
-        }
+        },
+        impedance ctrl-arc-align-forearm { constraint: <arc-motion.align-forearm>, stiffness: 40, damping: 8 }
+            apply at <kinova.forearm_link>
     }
     solvers { <handler-forward.rne-arm-solver> }
 }
@@ -394,7 +419,9 @@ constraint-handler (ns=app) handler-admittance {
             Ki: 0,
             Kd: 160,
             decay: 0
-        }
+        },
+        impedance ctrl-comply-align-forearm { constraint: <compliance.align-forearm>, stiffness: 40, damping: 8 }
+            apply at <kinova.forearm_link>
     }
     solvers { <handler-forward.rne-arm-solver> }
 }

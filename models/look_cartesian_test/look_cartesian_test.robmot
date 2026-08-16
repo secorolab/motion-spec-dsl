@@ -37,8 +37,13 @@ context (ns=app) shared {
         angular-velocity zero-angular = 0.0 rad/s,
         angular-velocity angular-velocity-band = 0.01 rad/s,
         torque arm-torque-limit = 35.0 Nm,
-        length elbow-support-lift = 0.008 m,
-        length elbow-z = snapshot of <shared.world.elbow-base>.position.z + <shared.spec.elbow-support-lift>
+        // The forearm's own up axis: its z runs along the elbow hinge, so y is the one that
+        // stands up when the arm is upright.
+        direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
+        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        angle align-band = 0.05 rad,
+        angle align-cone = 0.35 rad,
+        angle align-cone-hold = 0.05 rad
     }
 }
 
@@ -55,7 +60,7 @@ guarded-motion (ns=app) home {
     while {
         hold-position: keeping <shared.world.tcp>.position equal to <shared.spec.home-pose>.position,
         hold-orientation: keeping <shared.world.tcp>.orientation equal to <shared.spec.home-pose>.orientation,
-        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
     until all {
         settled-x: <shared.world.tcp-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
@@ -94,7 +99,7 @@ guarded-motion (ns=app) look {
         tangent: moving <shared.world.tcp> along <spec.trajectory> with <spec.speed-profile>,
         position: keeping <shared.world.tcp>.position on <spec.trajectory>,
         orientation: keeping <shared.world.tcp>.orientation on <spec.trajectory>,
-        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
     }
     until all {
         tcp-position: <shared.world.tcp>.position equal to <shared.spec.look-pose>.position within <spec.position-band>,
@@ -115,7 +120,7 @@ guarded-motion (ns=app) hold {
     while {
         position: keeping <shared.world.tcp>.position equal to <shared.spec.look-pose>.position,
         orientation: keeping <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation,
-        elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
     until {
         timeout: elapsed greater than 5.0 s
@@ -127,13 +132,13 @@ constraint-handler (ns=app) handler-home {
     runs-in: <lct.S_HOME>
     monitors {
         mon-settled: monitor <home.until> {
-            satisfied for 0.3 s { trigger: event <lct.E_HOME_SETTLED> },
+            satisfied for 0.3 s { trigger: event <lct.E_HOME_SETTLED> }
         }
     }
     controllers {
         pid home-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid home-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance home-elbow { constraint: <home.hold-elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+        impedance home-align-forearm { constraint: <home.align-forearm>, stiffness: 400, damping: 40 } apply at <kinova.forearm_link>
     }
     solvers {
         arm: serial-chain {
@@ -150,14 +155,14 @@ constraint-handler (ns=app) handler-look {
     runs-in: <lct.S_LOOK>
     monitors {
         mon-done: monitor <look.until> {
-            satisfied for 0.3 s { trigger: event <lct.E_LOOK_DONE> },
+            satisfied for 0.3 s { trigger: event <lct.E_LOOK_DONE> }
         }
     }
     controllers {
         pid look-tangent { constraint: <look.tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         pid look-position { constraint: <look.position>, measured-derivative: <shared.world.tcp-twist>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid look-orientation { constraint: <look.orientation>, measured-derivative: <shared.world.tcp-twist>.angvel, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance look-elbow { constraint: <look.hold-elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+        impedance look-align-forearm { constraint: <look.align-forearm>, stiffness: 40, damping: 8 } apply at <kinova.forearm_link>
     }
     solvers {
         arm: serial-chain {
@@ -174,13 +179,13 @@ constraint-handler (ns=app) handler-hold {
     runs-in: <lct.S_HOLD>
     monitors {
         mon-timeout: monitor <hold.until> {
-            satisfied { trigger: event <lct.E_HOLD_DONE> },
+            satisfied { trigger: event <lct.E_HOLD_DONE> }
         }
     }
     controllers {
         pid hold-position { constraint: <hold.position>, measured-derivative: <shared.world.tcp-twist>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid hold-orientation { constraint: <hold.orientation>, measured-derivative: <shared.world.tcp-twist>.angvel, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance hold-elbow { constraint: <hold.elbow-z>, Ki: 0, stiffness: 2500, damping: 200 } apply at <kinova.forearm_link>
+        impedance hold-align-forearm { constraint: <hold.align-forearm>, stiffness: 400, damping: 40 } apply at <kinova.forearm_link>
     }
     solvers { <handler-look.arm> }
 }
