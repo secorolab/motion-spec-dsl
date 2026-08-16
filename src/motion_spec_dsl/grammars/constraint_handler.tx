@@ -105,12 +105,12 @@ FeedForwardControllerParams:
     ("," "output-saturation" ":" output_saturation=SaturationSpec)?
 ;
 
-KpParam: name="Kp" ":" value=FLOAT ;
-KiParam: name="Ki" ":" value=FLOAT ;
-KdParam: name="Kd" ":" value=FLOAT ;
-DecayParam: name="decay" ":" value=FLOAT ;
-StiffnessParam: name="stiffness" ":" value=FLOAT ;
-DampingParam: name="damping" ":" value=FLOAT ;
+KpParam: name="Kp" ":" value=ConstExpr ;
+KiParam: name="Ki" ":" value=ConstExpr ;
+KdParam: name="Kd" ":" value=ConstExpr ;
+DecayParam: name="decay" ":" value=ConstExpr ;
+StiffnessParam: name="stiffness" ":" value=ConstExpr ;
+DampingParam: name="damping" ":" value=ConstExpr ;
 MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
 UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
 WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;

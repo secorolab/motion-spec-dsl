@@ -24,7 +24,7 @@ from motion_spec_dsl.classes.context import (
     View,
     _authored_enum,
 )
-from motion_spec_dsl.classes.coordinates import Coordinates
+from motion_spec_dsl.classes.coordinates import Coordinates, const_value
 from motion_spec_dsl.classes.motion_spec import (
     ContextDeclReference,
     GuardedMotion,
@@ -424,18 +424,19 @@ class ControllerParams:
     def __post_init__(self):
         for term in self.terms:
             name = _authored_enum(ControllerParamName, str(term.name))
+            value = const_value(term.value)
             if name == ControllerParamName.Kp:
-                self.kp = term.value
+                self.kp = value
             elif name == ControllerParamName.Ki:
-                self.ki = term.value
+                self.ki = value
             elif name == ControllerParamName.Kd:
-                self.kd = term.value
+                self.kd = value
             elif name == ControllerParamName.Stiffness:
-                self.stiffness = term.value
+                self.stiffness = value
             elif name == ControllerParamName.Damping:
-                self.damping = term.value
+                self.damping = value
             elif name == ControllerParamName.Decay:
-                self.decay = term.value
+                self.decay = value
 
 
 @dataclass

@@ -25,6 +25,7 @@ from motion_spec_dsl.classes.context import (
     WorldQuantity,
     _authored_enum,
 )
+from motion_spec_dsl.classes.coordinates import const_value
 
 if TYPE_CHECKING:
     from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
@@ -63,6 +64,7 @@ class ExecutionContext(IHasNamespaceDeclare):
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+        self.timestep = const_value(self.timestep)
 
 
 @dataclass

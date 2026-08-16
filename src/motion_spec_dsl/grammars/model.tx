@@ -86,7 +86,7 @@ ExecutionContext:
         "runs-scene" ":" "<" scene=[scene.SceneInstance|FQN] ">"
         "platform"   ":" platform=Platform
         ("config"    ":" config=STRING)?
-        "timestep"   ":" timestep=FLOAT timestep_unit=TimeUnit
+        "timestep"   ":" timestep=ConstExpr timestep_unit=TimeUnit
     "}"
 ;
 
