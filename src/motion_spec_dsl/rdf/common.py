@@ -67,6 +67,16 @@ def _angle_bound(bound) -> float:
     return const_value(getattr(bound, "value", bound))
 
 
+def _geo_prop_events(props: GeometricProps | None, key: str) -> list:
+    """The event list carried by geometric prop `key`, or empty."""
+    if props is None:
+        return []
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            return list(pair.events or [])
+    return []
+
+
 def _geo_prop_value(props: GeometricProps | None, key: str):
     """The raw value of geometric prop `key`, for a prop carrying a structure rather than a
     reference to something already named in the graph."""

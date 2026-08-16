@@ -161,6 +161,7 @@ from motion_spec_dsl.rdf.common import (
     _evaluator_id,
     _angle_bound,
     _geo_prop,
+    _geo_prop_events,
     _geo_prop_value,
     _is_alignment_view,
     _is_distance_view,
@@ -1628,6 +1629,35 @@ class MotionSpecDatasetBuilder:
                 if ft_ref:
                     self.graph.add((node, RDF.type, SOSA.Observation))
                     self.graph.add((node, SOSA.madeBySensor, URIRef(ft_ref)))
+                retare_events = _geo_prop_events(props, "re-tare-on")
+                if retare_events and not ft_ref:
+                    raise ConstraintViolation(
+                        "dynamics",
+                        f"Wrench '{qty.name}' names re-tare-on events but no ft-sensor to tare.",
+                    )
+                # The tare is a sampling of what the sensor reads unloaded: once at startup, and
+                # again on each named occurrence. Same sampling/trigger pair a snapshot states.
+                if ft_ref:
+                    self.graph.add(
+                        (
+                            node,
+                            _ns_term(ALGO_EXT, "sampling"),
+                            _ns_term(
+                                ALGO_EXT,
+                                "event-triggered-sampling"
+                                if retare_events
+                                else "initial-sampling",
+                            ),
+                        )
+                    )
+                for event in retare_events:
+                    if event.event is None:
+                        raise ConstraintViolation(
+                            "dynamics",
+                            f"Wrench '{qty.name}' re-tare-on '{event.name}' carries no namespace, "
+                            "so it resolves to no declared event; write it as ns.EVENT.",
+                        )
+                    self.graph.add((node, _ns_term(ALGO_EXT, "trigger"), URIRef(event.uri)))
                 continue
             rdf_types, qkinds, units, _ = spec
             node = URIRef(qty.uri)
@@ -3679,7 +3709,26 @@ class MotionSpecDatasetBuilder:
             QUDT_QKIND.LinearVelocity,
             _dsl_unit(spec_val.max_velocity_unit or "m/s"),
         )
-        self.graph.add((op_node, CSTR_HDL["maximum-velocity"], max_velocity_node))
+        self.graph.add((op_node, ALGO_EXT["maximum-velocity"], max_velocity_node))
+        # The excursion bound is a saturation on how far the yield travels.
+        max_excursion_node = URIRef(f"{op_node}-max-excursion")
+        self._emit_scalar_quantity(
+            max_excursion_node,
+            float(spec_val.max_excursion),
+            URI_QUDT_QK_LENGTH,
+            _dsl_unit(spec_val.max_excursion_unit or "m"),
+        )
+        self.graph.add((op_node, ALGO_EXT["maximum-absolute-value"], max_excursion_node))
+        # The deadband is an outside-band on the input force: the same pair of thresholds the
+        # detection constraint states, applied to the signal instead of monitored.
+        deadband_unit = _dsl_unit(spec_val.deadband_unit or "N")
+        for term, value in (
+            ("lower-threshold", -float(spec_val.deadband)),
+            ("upper-threshold", float(spec_val.deadband)),
+        ):
+            band_node = URIRef(f"{op_node}-{term}")
+            self._emit_scalar_quantity(band_node, value, QUDT_QKIND.Force, deadband_unit)
+            self.graph.add((op_node, CSTR[term], band_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
         return out_node
 

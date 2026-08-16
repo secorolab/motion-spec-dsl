@@ -88,6 +88,7 @@ class GeometricPropKey(StrEnum):
     AsSeenBy = "as-seen-by"
     Joint = "joint"
     FtSensor = "ft-sensor"
+    ReTareOn = "re-tare-on"
     Normalization = "normalization"
 
 
@@ -100,6 +101,7 @@ class GeoPropPair:
     frame: object | None = None
     joint: object | None = None
     sensor: object | None = None
+    events: list = field(default_factory=list)
     normalization: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 

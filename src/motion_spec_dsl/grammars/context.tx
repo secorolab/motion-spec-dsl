@@ -28,6 +28,9 @@ GeoPropPair:
     | key="as-seen-by" ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
+    // Re-take the tare on each of these: the load below the sensor changes when the robot picks
+    // something up, and the startup bias then reports that payload as an external push.
+    | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
     | key="normalization" ":" normalization=AngleRange
 ;
 
@@ -262,6 +265,12 @@ AdmittanceSpec:
         "damping" ":" damping=ConstExpr ","
         "stiffness" ":" stiffness=ConstExpr
         "," "max-velocity" ":" max_velocity=ConstExpr (max_velocity_unit=LinearVelocityUnit)?
+        // How far the yield may travel from where the motion started. A limit, not a spring:
+        // outward motion stops at the bound, and letting go leaves the arm where it is.
+        ("," "max-excursion" ":" max_excursion=ConstExpr (max_excursion_unit=LengthUnit)?)?
+        // How much force counts as none. Subtracted from the magnitude, not zeroed inside the
+        // band, so the force stays continuous as a push crosses it.
+        ("," "deadband" ":" deadband=ConstExpr (deadband_unit=ForceUnit)?)?
     "}"
 ;
 

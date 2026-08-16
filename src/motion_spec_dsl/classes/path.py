@@ -91,9 +91,16 @@ class AdmittanceSpec:
     stiffness: float
     max_velocity: float
     max_velocity_unit: object | None = None
+    max_excursion: float = 0.0
+    max_excursion_unit: object | None = None
+    deadband: float = 0.0
+    deadband_unit: object | None = None
 
     def __post_init__(self) -> None:
         self.mass = const_value(self.mass)
         self.damping = const_value(self.damping)
         self.stiffness = const_value(self.stiffness)
         self.max_velocity = const_value(self.max_velocity)
+        # Zero is "unbounded" for the excursion and "off" for the deadband; both are one-sided.
+        self.max_excursion = abs(const_value(self.max_excursion) or 0.0)
+        self.deadband = abs(const_value(self.deadband) or 0.0)
