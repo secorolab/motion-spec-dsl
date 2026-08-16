@@ -63,6 +63,7 @@ context (ns=app) shared {
         angle align-band = 0.05 rad,
         angle align-cone = 0.35 rad,
         angle align-cone-hold = 0.05 rad,
+        torque align-moment-max = 30.0 Nm,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel          = 0.0 m/s,
@@ -141,7 +142,13 @@ guarded-motion (ns=app) forward {
     context {
         spec {
             pose start-pose          = snapshot of <shared.world.pose-ee-base>,
-            length target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>
+            length target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>,
+            velocity-profile forward-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.05 m/s^2,
+                measured-velocity: <shared.world.twist-ee-base>.linvel.x,
+                shape: trapezoidal
+            }
         }
     }
 
@@ -149,8 +156,8 @@ guarded-motion (ns=app) forward {
 
     while {
         move-forward: keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
+        hold-y:       keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
         hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        hold-z:       keeping <shared.world.pose-ee-base>.position.z equal to <spec.start-pose>.position.z within <shared.spec.satisfied-band>,
         press-down:   keeping <shared.world.press-wrench>.force.z equal to <shared.spec.press-force> within <shared.spec.press-band>,
         align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
     }
@@ -280,7 +287,7 @@ constraint-handler (ns=app) handler-home {
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-home-align-forearm { constraint: <home.align-forearm>, stiffness: 400, damping: 40 }
+        impedance ctrl-home-align-forearm { constraint: <home.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
             apply at <kinova.forearm_link>
     }
     solvers {
@@ -304,7 +311,7 @@ constraint-handler (ns=app) handler-touchdown {
         pid ctrl-touchdown-y { constraint: <touchdown.hold-y>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
         pid ctrl-touchdown-z { constraint: <touchdown.lower-z>, Kp: 200, Ki: 0, Kd: 0, decay: 0 },
         pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-td-align-forearm { constraint: <touchdown.align-forearm>, stiffness: 400, damping: 40 }
+        impedance ctrl-td-align-forearm { constraint: <touchdown.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
             apply at <kinova.forearm_link>
     }
     solvers { <handler-home.arm-solver> }
@@ -322,22 +329,16 @@ constraint-handler (ns=app) handler-forward {
         }
     }
     controllers {
-        pid ctrl-move-forward { constraint: <forward.move-forward>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-move-forward { constraint: <forward.move-forward>, profile: <forward.spec.forward-profile>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-y { constraint: <forward.hold-y>, measured-derivative: <shared.world.twist-ee-base>.linvel.y, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-forward-ori { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        pid ctrl-forward-z { constraint: <forward.hold-z>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         feed-forward ctrl-press-down { constraint: <forward.press-down> }
             as force
             apply at <gripper.g_base>,
-        impedance ctrl-fwd-align-forearm { constraint: <forward.align-forearm>, stiffness: 400, damping: 40 }
+        impedance ctrl-fwd-align-forearm { constraint: <forward.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
             apply at <kinova.forearm_link>
     }
-    solvers {
-        rne-arm-solver: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
-            algorithm: rne,
-            gravity: (0.0, 0.0, -9.81) m/s^2
-        }
-    }
+    solvers { <handler-home.arm-solver> }
 }
 
 constraint-handler (ns=app) handler-arc {
@@ -380,10 +381,16 @@ constraint-handler (ns=app) handler-arc {
             Kd: 160,
             decay: 0
         },
-        impedance ctrl-arc-align-forearm { constraint: <arc-motion.align-forearm>, stiffness: 40, damping: 8 }
+        impedance ctrl-arc-align-forearm { constraint: <arc-motion.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 40, damping: 8 }
             apply at <kinova.forearm_link>
     }
-    solvers { <handler-forward.rne-arm-solver> }
+    solvers {
+        rne-arm-solver: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: rne,
+            gravity: (0.0, 0.0, -9.81) m/s^2
+        }
+    }
 }
 
 constraint-handler (ns=app) handler-admittance {
@@ -420,8 +427,8 @@ constraint-handler (ns=app) handler-admittance {
             Kd: 160,
             decay: 0
         },
-        impedance ctrl-comply-align-forearm { constraint: <compliance.align-forearm>, stiffness: 40, damping: 8 }
+        impedance ctrl-comply-align-forearm { constraint: <compliance.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 40, damping: 8 }
             apply at <kinova.forearm_link>
     }
-    solvers { <handler-forward.rne-arm-solver> }
+    solvers { <handler-arc.rne-arm-solver> }
 }
