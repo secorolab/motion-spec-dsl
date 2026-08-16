@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from motion_spec_dsl.classes.coordinates import const_value
 from dataclasses import dataclass
 
 
@@ -90,3 +91,9 @@ class AdmittanceSpec:
     stiffness: float
     max_velocity: float
     max_velocity_unit: object | None = None
+
+    def __post_init__(self) -> None:
+        self.mass = const_value(self.mass)
+        self.damping = const_value(self.damping)
+        self.stiffness = const_value(self.stiffness)
+        self.max_velocity = const_value(self.max_velocity)

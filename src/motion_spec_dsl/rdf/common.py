@@ -14,6 +14,7 @@ from rdflib.term import URIRef
 
 
 from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
+from motion_spec_dsl.classes.coordinates import const_value
 from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
     GoalStatusConstraint,
@@ -61,13 +62,8 @@ def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
 
 
 def _angle_bound(bound) -> float:
-    """An authored angle bound as a number: a literal, or a multiple of pi."""
-    term = getattr(bound, "pi", None)
-    if term is None:
-        return float(getattr(bound, "value", bound))
-    multiplier = getattr(term, "multiplier", None)
-    magnitude = math.pi * (float(multiplier) if multiplier not in (None, "") else 1.0)
-    return -magnitude if getattr(term, "negative", False) else magnitude
+    """An authored angle bound as a number: any constant expression over literals and pi."""
+    return const_value(getattr(bound, "value", bound))
 
 
 def _geo_prop_value(props: GeometricProps | None, key: str):

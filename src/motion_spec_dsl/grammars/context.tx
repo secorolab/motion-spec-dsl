@@ -33,11 +33,20 @@ GeoPropPair:
 
 AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
 
-AngleBound: pi=PiTerm | value=SIGNED_FLOAT ;
+AngleBound: value=ConstExpr ;
 
-PiTerm: negative?="-" (multiplier=SIGNED_FLOAT "*")? "pi" ;
+// Arithmetic over literals and pi. Folded to a number by the DSL, so nothing downstream sees
+// an expression -- quantity arithmetic is a different thing and travels as an RDF operation.
+ConstExpr: head=ConstTerm tail*=AddTail ;
+AddTail: op=AddOp operand=ConstTerm ;
+ConstTerm: head=ConstFactor tail*=MulTail ;
+MulTail: op=MulOp operand=ConstFactor ;
+ConstFactor: neg?="-" atom=ConstAtom ;
+ConstAtom: pi?="pi" | value=NUMBER_LIT | "(" group=ConstExpr ")" ;
+AddOp: "+" | "-" ;
+MulOp: "*" | "/" ;
 
-SIGNED_FLOAT: /-?\d+(\.\d+)?([eE][+-]?\d+)?/ ;
+NUMBER_LIT: /\d+(\.\d+)?([eE][+-]?\d+)?/ ;
 
 QuantityValue:
     ScalarQuantity | VectorXYZ
@@ -47,14 +56,14 @@ ScalarQuantity:
     "=" Measure
 ;
 
-Measure: value=FLOAT unit=Unit ;
+Measure: value=ConstExpr unit=Unit ;
 
 VectorXYZ:
     "=" coords=Coordinates (unit=Unit)?
 ;
 
 Coordinates: "(" values+=CoordinateElement[","] ")" ;
-CoordinateElement: value=FLOAT | ref=ContextRef ;
+CoordinateElement: value=ConstExpr | ref=ContextRef ;
 
 QuantityType:
     ContextQuantityWithGeometryType | ScalarQuantityType
@@ -240,10 +249,10 @@ WrenchCoordinate:
 AdmittanceSpec:
     "=" "{"
         "force" ":" force=View ","
-        "mass" ":" mass=FLOAT ","
-        "damping" ":" damping=FLOAT ","
-        "stiffness" ":" stiffness=FLOAT
-        "," "max-velocity" ":" max_velocity=FLOAT (max_velocity_unit=LinearVelocityUnit)?
+        "mass" ":" mass=ConstExpr ","
+        "damping" ":" damping=ConstExpr ","
+        "stiffness" ":" stiffness=ConstExpr
+        "," "max-velocity" ":" max_velocity=ConstExpr (max_velocity_unit=LinearVelocityUnit)?
     "}"
 ;
 
@@ -260,7 +269,7 @@ ProfileSpec:
 VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 SnapshotValue:
-    "=" "snapshot" "of" source=View (sign=OffsetSign offset=ContextRef)?
+    "=" "snapshot" "of" source=View offsets*=Offset
     ("on" "event" trigger=EventName)?
 ;
 
@@ -283,7 +292,10 @@ ContextRef:
 ;
 
 ReferenceValue:
-    "=" source=ContextRef (sign=OffsetSign offset=ContextRef)?
+    "=" source=ContextRef offsets*=Offset
 ;
 
-OffsetSign: "+" | "-" ;
+// One operator repeated: `a + b + c` is a single n-ary op. Mixing operators would need
+// precedence and intermediate results, which this does not have.
+Offset: sign=OffsetSign operand=ContextRef ;
+OffsetSign: "+" | "-" | "*" | "/" ;

@@ -250,9 +250,12 @@ def _owns_pose_subobjects(value) -> bool:
     return isinstance(value, (PoseCoordinate, ConfigValue))
 
 
+_OFFSET_OPS = {"+": "add", "-": "subtract", "*": "multiply", "/": "divide"}
+
+
 def _offset_op_name(value) -> str:
     """The op an offset declaration lowers to, as an IRI fragment."""
-    return "subtract" if getattr(value, "subtracts", False) else "add"
+    return _OFFSET_OPS.get(getattr(value, "sign", "+"), "add")
 
 
 def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
@@ -721,21 +724,48 @@ class MotionSpecDatasetBuilder:
     ) -> None:
         """Emit the op combining a declaration's source with the offset it states.
 
-        Addition collects its addends under one predicate because their order does not matter.
-        Subtraction's does, so the metamodel names the two operands and the source stays the
-        minuend -- what the author wrote `-` after is what gets taken away.
+        Addition and Multiplication collect their operands under one predicate because their
+        order does not matter. Subtraction's and Division's does, so the metamodel names the two
+        operands and the source stays the minuend or dividend -- what the author wrote the
+        operator after is what gets taken away or divided by.
         """
+        offsets = list(getattr(value, "offsets", ()))
+        signs = {offset.sign for offset in offsets}
+        if len(signs) > 1:
+            raise ValueError(
+                f"'{quantity.name}' mixes {' and '.join(sorted(signs))} in one declaration. "
+                "Only one operator can be repeated; name the intermediate result to combine "
+                "different ones."
+            )
+        sign = offsets[0].sign
+        if len(offsets) > 1 and sign in ("-", "/"):
+            raise ValueError(
+                f"'{quantity.name}' repeats '{sign}', which takes exactly two operands. "
+                "Name the intermediate result instead."
+            )
         op_name = _offset_op_name(value)
         op_node = URIRef(f"{node}-{op_name}")
-        offset_node = self._emit_context_ref_node(value.offset, quantity, f"{op_name}-offset")
-        if value.subtracts:
+        operand_nodes = [
+            self._emit_context_ref_node(
+                offset.operand, quantity, f"{op_name}-offset" if index == 0 else f"{op_name}-offset-{index}"
+            )
+            for index, offset in enumerate(offsets)
+        ]
+        if sign == "-":
             self.graph.add((op_node, RDF.type, ALGO_EXT.Subtraction))
             self.graph.add((op_node, ALGO_EXT.minuend, source_node))
-            self.graph.add((op_node, ALGO_EXT.subtrahend, offset_node))
+            self.graph.add((op_node, ALGO_EXT.subtrahend, operand_nodes[0]))
+        elif sign == "/":
+            self.graph.add((op_node, RDF.type, ALGO_EXT.Division))
+            self.graph.add((op_node, ALGO_EXT.dividend, source_node))
+            self.graph.add((op_node, ALGO_EXT.divisor, operand_nodes[0]))
         else:
-            self.graph.add((op_node, RDF.type, ALGO_EXT.Addition))
+            self.graph.add(
+                (op_node, RDF.type, ALGO_EXT.Multiplication if sign == "*" else ALGO_EXT.Addition)
+            )
             self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), source_node))
-            self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), offset_node))
+            for operand_node in operand_nodes:
+                self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), operand_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
 
     def _declared_uri(self, name: str, declaration: Any) -> URIRef:

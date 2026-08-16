@@ -18,6 +18,7 @@ from motion_spec_dsl.classes.coordinates import (
     PoseCoordinate,
     VelocityTwistCoordinate,
     WrenchCoordinate,
+    const_value,
 )
 from motion_spec_dsl.classes.path import AdmittanceSpec, PathValue, ProfileSpec
 
@@ -214,6 +215,9 @@ class Measure:
     unit: str = ""
     parent: object | None = field(default=None, repr=False, compare=False)
 
+    def __post_init__(self) -> None:
+        self.value = const_value(self.value)
+
 
 @dataclass
 class VectorXYZ:
@@ -225,9 +229,18 @@ class VectorXYZ:
 @dataclass
 class ReferenceValue:
     source: ContextRef
-    offset: ContextRef | None = None
-    sign: str = "+"
+    offsets: list = field(default_factory=list)
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def sign(self) -> str:
+        """The operator joining the offsets to the source; `+` when there are none."""
+        return self.offsets[0].sign if self.offsets else "+"
+
+    @property
+    def offset(self) -> ContextRef | None:
+        """The first offset operand, or None when the declaration states none."""
+        return self.offsets[0].operand if self.offsets else None
 
     @property
     def subtracts(self) -> bool:
@@ -242,10 +255,19 @@ class SnapshotValue:
     """
 
     source: View
-    offset: ContextRef | None = None
-    sign: str = "+"
+    offsets: list = field(default_factory=list)
     trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def sign(self) -> str:
+        """The operator joining the offsets to the sample; `+` when there are none."""
+        return self.offsets[0].sign if self.offsets else "+"
+
+    @property
+    def offset(self) -> ContextRef | None:
+        """The first offset operand, or None when the declaration states none."""
+        return self.offsets[0].operand if self.offsets else None
 
     @property
     def subtracts(self) -> bool:
