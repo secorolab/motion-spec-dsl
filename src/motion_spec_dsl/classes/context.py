@@ -229,6 +229,26 @@ class VectorXYZ:
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
+def _add_chain_tree(head, tail: list):
+    """Normalize a `head [+/- term]*` chain into the nested op structure the emitter and
+    validator share: runs of `+` collapse to one n-ary node, `-` is left-associative binary,
+    and a chain with no tail collapses to `head` itself. Shared by `QExpr` and `SnapshotValue`,
+    whose tails are both `QAddTail` chains over a different kind of head.
+    """
+    acc = head
+    group: list | None = None
+    for step in tail:
+        operand = step.operand._term_tree()
+        if step.op == "+":
+            group = [acc] if group is None else group
+            group.append(operand)
+            acc = QOpNode("add", group)
+        else:
+            group = None
+            acc = QOpNode("subtract", [acc, operand])
+    return acc
+
+
 @dataclass
 class QExpr:
     """An expression over quantity refs and measures: `+`/`-` terms of `*`/`/` factors."""
@@ -238,22 +258,10 @@ class QExpr:
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def as_op_tree(self):
-        """Normalize into the nested op structure the emitter and validator share: runs of
-        `+` (resp. `*`) collapse to one n-ary node, `-` and `/` are left-associative binary
-        nodes, and a bare leaf with no tail collapses to itself.
+        """Normalize into the nested op structure the emitter and validator share (see
+        `_add_chain_tree`); a bare leaf with no tail and no group collapses to itself.
         """
-        acc = self.head._term_tree()
-        group: list | None = None
-        for step in self.tail:
-            operand = step.operand._term_tree()
-            if step.op == "+":
-                group = [acc] if group is None else group
-                group.append(operand)
-                acc = QOpNode("add", group)
-            else:
-                group = None
-                acc = QOpNode("subtract", [acc, operand])
-        return acc
+        return _add_chain_tree(self.head._term_tree(), self.tail)
 
 
 @dataclass
@@ -403,6 +411,12 @@ class SnapshotValue:
     tail: list = field(default_factory=list)
     trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
+
+    def as_op_tree(self):
+        """Normalize `source [+/- term]*` into the nested op structure (see `_add_chain_tree`);
+        `source` itself collapses to itself when `tail` is empty.
+        """
+        return _add_chain_tree(self.source, self.tail)
 
     @property
     def degenerate_offset(self) -> list[_LegacyOffset]:
