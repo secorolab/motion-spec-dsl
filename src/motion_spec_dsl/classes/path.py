@@ -102,5 +102,5 @@ class AdmittanceSpec:
         self.stiffness = const_value(self.stiffness)
         self.max_velocity = const_value(self.max_velocity)
         # Zero is "unbounded" for the excursion and "off" for the deadband; both are one-sided.
-        self.max_excursion = abs(const_value(self.max_excursion) or 0.0)
-        self.deadband = abs(const_value(self.deadband) or 0.0)
+        self.max_excursion = abs(const_value(self.max_excursion)) if self.max_excursion else 0.0
+        self.deadband = abs(const_value(self.deadband)) if self.deadband else 0.0
