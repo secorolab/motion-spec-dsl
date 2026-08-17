@@ -111,7 +111,11 @@ from motion_spec_dsl.classes.context import (
     _resolved_context_quantity,
     _resolved_world_quantity,
 )
-from motion_spec_dsl.classes.dimensions import infer as _infer_expr_type
+from motion_spec_dsl.classes.dimensions import (
+    DIMENSION_VECTOR,
+    infer as _infer_expr_type,
+    resolve_leaf as _resolve_expr_leaf_type,
+)
 from motion_spec_dsl.classes.controller_semantics import (
     ANGULAR_SUBSPACES,
     SUBSPACE_ALIAS,
@@ -763,11 +767,12 @@ class MotionSpecDatasetBuilder:
     def _emit_qexpr_leaf(self, leaf: Any, owner: Any, suffix: str) -> URIRef:
         """A quantity-expression leaf's value node: a world-quantity view resolves through
         `_view_node` (subspace/axis-aware); everything else (context ref, bare measure) through
-        `_emit_context_ref_node`, unchanged.
+        `_emit_context_ref_node`, typed by what the leaf itself infers to -- `owner` need not
+        be a typed quantity (a motion, for a constraint's expression).
         """
         if isinstance(getattr(leaf, "quantity", None), WorldQuantity):
             return self._view_node(leaf, owner)
-        return self._emit_context_ref_node(leaf, owner, suffix)
+        return self._emit_context_ref_node(leaf, owner, suffix, _resolve_expr_leaf_type(leaf))
 
     def _stamp_expr_result(self, node: URIRef, tree: Any) -> None:
         """Type a compiler-generated interior op result by what it dimensionally infers to."""
@@ -3516,6 +3521,54 @@ class MotionSpecDatasetBuilder:
                 return URIRef(f"{ref_node}-orientation-rel")
         return ref_node
 
+    def _constraint_context_quantity(self, spec: ConstraintSpecification) -> ContextQuantity | None:
+        """The scalar context quantity a constraint's view names directly, or None."""
+        quantity = spec.view.quantity
+        if isinstance(quantity, ContextQuantity):
+            return _resolved_context_quantity(quantity)
+        return None
+
+    def _constraint_quantityless_view(
+        self,
+        spec: ConstraintSpecification,
+        motion: GuardedMotion,
+        context_qty: ContextQuantity | None,
+    ) -> tuple[URIRef, Any]:
+        """`qty_node`/`scalar_t` for a constraint view naming no world quantity: a scalar
+        context quantity, or an inline parenthesized expression owned by the constraint.
+        """
+        tree = None
+        if context_qty is not None:
+            scalar_t = context_qty.type
+        else:
+            tree = spec.view.expr.as_op_tree()
+            scalar_t = _infer_expr_type(tree)
+        if scalar_t not in DIMENSION_VECTOR and scalar_t != QuantityType.Pose:
+            raise ValueError(
+                f"Constraint '{spec.name}' names no known kind; select a scalar quantity."
+            )
+        if scalar_t == QuantityType.Pose:
+            raise ValueError(
+                f"Constraint '{spec.name}' names a whole pose; select '.position' or "
+                "'.orientation', each with its own tolerance."
+            )
+        if scalar_t == QuantityType.Mass:
+            raise ValueError(f"Constraint '{spec.name}': no constraint type for kind Mass.")
+
+        if context_qty is not None:
+            return URIRef(context_qty.uri), scalar_t
+        if isinstance(tree, QOpNode):
+            qty_node = URIRef(f"{spec.uri}/expr")
+            self._emit_qexpr(tree, motion, qty_node)
+            self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
+            self._emit_quantity_kind(qty_node, _qudt_kind(scalar_t))
+            self.graph.add(
+                (qty_node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(scalar_t, QUDT_UNIT.UNITLESS))
+            )
+        else:
+            qty_node = self._emit_qexpr_leaf(tree, motion, "expr")
+        return qty_node, scalar_t
+
     def _emit_constraints(
         self,
         motion: GuardedMotion,
@@ -3541,24 +3594,27 @@ class MotionSpecDatasetBuilder:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None:
+            context_qty = self._constraint_context_quantity(spec) if qty is None else None
+            if qty is None and context_qty is None and spec.view.expr is None:
                 raise ValueError(f"Constraint '{spec.name}' does not resolve to a world quantity.")
-            subspace = _view_subspace(spec)
-            axis_raw = spec.view.axis
-            axis = semantic_axis_label(axis_raw)
-            if (
-                qty is not None
-                and qty.type == WorldQuantityType.Pose
-                and subspace == "distance"
-                and axis is None
-                and not _is_distance_view(spec)
-            ):
-                raise ValueError(
-                    f"Constraint '{spec.name}' must use explicit "
-                    "'distance between <pose-a> and <pose-b>' syntax."
-                )
 
-            if qty is not None:
+            if qty is None:
+                subspace = axis = None
+                qty_node, scalar_t = self._constraint_quantityless_view(spec, motion, context_qty)
+            else:
+                subspace = _view_subspace(spec)
+                axis_raw = spec.view.axis
+                axis = semantic_axis_label(axis_raw)
+                if (
+                    qty.type == WorldQuantityType.Pose
+                    and subspace == "distance"
+                    and axis is None
+                    and not _is_distance_view(spec)
+                ):
+                    raise ValueError(
+                        f"Constraint '{spec.name}' must use explicit "
+                        "'distance between <pose-a> and <pose-b>' syntax."
+                    )
                 if (
                     qty.type == WorldQuantityType.Pose
                     and not _is_distance_view(spec)
@@ -3592,10 +3648,8 @@ class MotionSpecDatasetBuilder:
                         else _scalar_id(qty, subspace, axis)
                     )
                     qty_node = self._owned_uri(sid, motion)
-            else:
-                qty_node = None
+                scalar_t = _scalar_type(qty, subspace, axis)
 
-            scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
             self.graph.add((node, RDF.type, CSTR.Constraint))
             self.graph.add((node, RDF.type, _constraint_type_iri(scalar_t)))
             if qty_node is not None:
@@ -4237,6 +4291,7 @@ class MotionSpecDatasetBuilder:
                 _node_name(spec.view.quantity)
                 for spec in constraints
                 if not getattr(spec.view, "is_elapsed", False)
+                and self._resolve_constraint_quantity(spec, world_qtys) is not None
                 and _view_subspace(spec) == "rotation"
                 and spec.view.axis is None
             ),
