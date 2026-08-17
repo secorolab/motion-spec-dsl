@@ -3524,10 +3524,23 @@ class MotionSpecDatasetBuilder:
 
     def _constraint_context_quantity(self, spec: ConstraintSpecification) -> ContextQuantity | None:
         """The scalar context quantity a constraint's view names directly, or None."""
-        quantity = spec.view.quantity
+        quantity = getattr(spec.view, "quantity", None)
         if isinstance(quantity, ContextQuantity):
             return _resolved_context_quantity(quantity)
         return None
+
+    def _quantityless_scalar_type(self, spec: ConstraintSpecification) -> Any:
+        """The kind a constraint acts on when its view names no world quantity -- a scalar
+        context quantity's declared type, or what its inline expression infers to. None when the
+        view names neither, which is every constraint the world-quantity path already answers.
+        """
+        if getattr(spec, "view", None) is None:
+            return None
+        context_qty = self._constraint_context_quantity(spec)
+        if context_qty is not None:
+            return context_qty.type
+        expr = getattr(spec.view, "expr", None)
+        return _infer_expr_type(expr.as_op_tree()) if expr is not None else None
 
     def _constraint_quantityless_view(
         self,
@@ -4726,17 +4739,22 @@ class MotionSpecDatasetBuilder:
 
             along_path = self._along_path_scalar(spec)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None and along_path is None:
+            derived_t = (
+                self._quantityless_scalar_type(spec) if qty is None and along_path is None else None
+            )
+            if qty is None and along_path is None and derived_t is None:
                 raise ValueError(
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )
-            subspace = _view_subspace(spec)
+            subspace = None if derived_t is not None else _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             shared = spec in shared_spec_ids
             scalar_t = (
                 along_path[1]
                 if along_path
+                else derived_t
+                if derived_t is not None
                 else (_scalar_type(qty, subspace, axis) if qty else subspace)
             )
             command = controller_command_record(ctrl)
@@ -4771,8 +4789,16 @@ class MotionSpecDatasetBuilder:
 
             controller_error_id: str | None = None
             evaluator_error_id: str | None = None
-            if qty is not None or along_path is not None:
-                sid = along_path[0] if along_path else _scalar_id(qty, subspace, axis)
+            if qty is not None or along_path is not None or derived_t is not None:
+                # A constraint on a context quantity or an expression names no scalar view, so
+                # its error is named after the evaluator, which is already motion-qualified.
+                sid = (
+                    along_path[0]
+                    if along_path
+                    else _evaluator_id(spec)
+                    if qty is None
+                    else _scalar_id(qty, subspace, axis)
+                )
                 candidate_error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
                 if ctrl.type != ControllerType.FeedForward:
                     controller_error_id = candidate_error_id
@@ -4915,14 +4941,16 @@ class MotionSpecDatasetBuilder:
                         )
                         continue
                     qty = self._resolve_constraint_quantity(spec, world_qtys)
-                    if qty is None:
+                    derived_t = self._quantityless_scalar_type(spec) if qty is None else None
+                    if qty is None and derived_t is None:
                         raise ValueError(
                             f"Aggregate monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
                         )
-                    subspace = _view_subspace(spec)
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
-                    scalar_t = _scalar_type(qty, subspace, axis) if qty else subspace
+                    scalar_t = (
+                        derived_t if qty is None else _scalar_type(qty, _view_subspace(spec), axis)
+                    )
                     error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
 
                     if error_id not in seen_error_ids:
@@ -5024,14 +5052,24 @@ class MotionSpecDatasetBuilder:
             else:
                 along_path = self._along_path_scalar(spec)
                 qty = self._resolve_constraint_quantity(spec, world_qtys)
-                if qty is None and along_path is None:
+                derived_t = (
+                    self._quantityless_scalar_type(spec)
+                    if qty is None and along_path is None
+                    else None
+                )
+                if qty is None and along_path is None and derived_t is None:
                     raise ValueError(
                         f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
                     )
-                subspace = _view_subspace(spec)
                 axis_raw = spec.view.axis
                 axis = semantic_axis_label(axis_raw)
-                scalar_t = along_path[1] if along_path else _scalar_type(qty, subspace, axis)
+                scalar_t = (
+                    along_path[1]
+                    if along_path
+                    else derived_t
+                    if derived_t is not None
+                    else _scalar_type(qty, _view_subspace(spec), axis)
+                )
                 error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
                 error_node = self._owned_uri(error_id, spec.parent)
                 if error_id not in seen_error_ids:
@@ -5269,12 +5307,13 @@ class MotionSpecDatasetBuilder:
                 continue
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if qty is None and self._along_path_scalar(spec) is None:
+            quantityless = qty is None and self._quantityless_scalar_type(spec) is not None
+            if qty is None and not quantityless and self._along_path_scalar(spec) is None:
                 raise ValueError(
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )
 
-            subspace = _view_subspace(spec)
+            subspace = None if quantityless else _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             command = controller_command_record(ctrl)
@@ -5301,6 +5340,7 @@ class MotionSpecDatasetBuilder:
             if (
                 solver.algorithm in {"ACHD", "RNE"}
                 and command.is_posture_torque_command
+                and qty is not None
                 and qty.type == WorldQuantityType.JointPosition
             ):
                 torque_id = f"tau-{ctrl.name}"
