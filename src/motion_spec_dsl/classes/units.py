@@ -40,6 +40,7 @@ DSL_UNIT: dict[str, Any] = {
     "ms": QUDT_UNIT["MilliSEC"],
     "Hz": QUDT_UNIT["HZ"],
     "1": QUDT_UNIT.UNITLESS,
+    "kg": QUDT_UNIT["KiloGM"],
 }
 
 ANGLE_UNITS: tuple[Any, ...] = (DSL_UNIT["rad"], DSL_UNIT["deg"])

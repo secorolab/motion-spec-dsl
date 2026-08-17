@@ -259,7 +259,9 @@ _OFFSET_OPS = {"+": "add", "-": "subtract", "*": "multiply", "/": "divide"}
 
 def _offset_op_name(value) -> str:
     """The op an offset declaration lowers to, as an IRI fragment."""
-    return _OFFSET_OPS.get(getattr(value, "sign", "+"), "add")
+    offsets = value.degenerate_offset
+    sign = offsets[0].sign if offsets else "+"
+    return _OFFSET_OPS.get(sign, "add")
 
 
 def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
@@ -735,7 +737,7 @@ class MotionSpecDatasetBuilder:
         operands and the source stays the minuend or dividend -- what the author wrote the
         operator after is what gets taken away or divided by.
         """
-        offsets = list(getattr(value, "offsets", ()))
+        offsets = value.degenerate_offset
         signs = {offset.sign for offset in offsets}
         if len(signs) > 1:
             raise ValueError(
@@ -1644,9 +1646,7 @@ class MotionSpecDatasetBuilder:
                             _ns_term(ALGO_EXT, "sampling"),
                             _ns_term(
                                 ALGO_EXT,
-                                "event-triggered-sampling"
-                                if retare_events
-                                else "initial-sampling",
+                                "event-triggered-sampling" if retare_events else "initial-sampling",
                             ),
                         )
                     )
@@ -2240,7 +2240,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )
-                if quantity.value.offset is not None:
+                if quantity.value.degenerate_offset:
                     self._emit_offset_op(quantity.value, quantity, node, source_node, node)
                 else:
                     self.graph.add((node, CSTR["reference-value"], source_node))
@@ -2249,7 +2249,7 @@ class MotionSpecDatasetBuilder:
                 snapshot_node = URIRef(f"{node}-snapshot")
                 self.graph.add((snapshot_node, RDF.type, ALGO_EXT.Snapshot))
                 view_node = self._view_node(quantity.value.source, quantity)
-                if quantity.value.offset is not None:
+                if quantity.value.degenerate_offset:
                     # Own the op nodes by the quantity's motion-qualified URI (not the flat namespace) so two
                     # motions declaring a same-named quantity don't collapse into one op accumulating both inputs.
                     out_node = URIRef(f"{node}-{_offset_op_name(quantity.value)}-out")
@@ -3371,7 +3371,7 @@ class MotionSpecDatasetBuilder:
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
             axis = semantic_axis_label(getattr(ref, "axis", None))
             return self._emit_context_ref_view_node(quantity, subspace, axis)
-        if isinstance(quantity.value, ReferenceValue) and quantity.value.offset is None:
+        if isinstance(quantity.value, ReferenceValue) and not quantity.value.degenerate_offset:
             return self._emit_context_ref_node(quantity.value.source, owner, suffix, scalar_t)
         if quantity.type == ReferenceGeneratorType.Path:
             return self._reference_output_node(quantity)

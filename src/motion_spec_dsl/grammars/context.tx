@@ -91,7 +91,7 @@ ContextQuantityWithGeometryType:
 ;
 
 ScalarQuantityType:
-    "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter"
+    "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter" | "mass"
 ;
 
 ToleranceQuantityType:
@@ -121,11 +121,15 @@ View:
     |
     on=OnPath
     |
+    "(" expr=QExpr ")"
+    |
     (
-        "<" quantity=[WorldQuantity|FQN] ">"
+        "<" quantity=[ConstraintViewQuantity|FQN] ">"
         selector=SelectorTail?
     )
 ;
+
+ConstraintViewQuantity: WorldQuantity | ContextQuantity ;
 
 DistancePoseOperand: WorldQuantity | ContextQuantity ;
 
@@ -180,12 +184,13 @@ TorqueUnit: 'Nm' ;
 TimeUnit: 's' | 'ms' ;
 FrequencyUnit: 'Hz' ;
 DimensionlessUnit: '1' ;
+MassUnit: 'kg' ;
 
 Unit:
     LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
     AngularAccelerationUnit | AngularVelocityUnit |
     LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | FrequencyUnit |
-    DimensionlessUnit
+    DimensionlessUnit | MassUnit
 ;
 
 // Context quantities: values, poses, snapshots, and references.
@@ -287,7 +292,7 @@ ProfileSpec:
 VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 SnapshotValue:
-    "=" "snapshot" "of" source=View offsets*=Offset
+    "=" "snapshot" "of" source=View tail*=QAddTail
     ("on" "event" trigger=EventName)?
 ;
 
@@ -307,13 +312,20 @@ PoseCoordinate:
 ContextRef:
     "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
   | bare=Measure
+  | "(" expr=QExpr ")"
 ;
 
 ReferenceValue:
-    "=" source=ContextRef offsets*=Offset
+    "=" expr=QExpr
 ;
 
-// One operator repeated: `a + b + c` is a single n-ary op. Mixing operators would need
-// precedence and intermediate results, which this does not have.
-Offset: sign=OffsetSign operand=ContextRef ;
-OffsetSign: "+" | "-" | "*" | "/" ;
+QExpr: head=QTerm tail*=QAddTail ;
+QAddTail: op=AddOp operand=QTerm ;
+QTerm: head=QFactor tail*=QMulTail ;
+QMulTail: op=MulOp operand=QFactor ;
+QFactor: neg?="-"? ( "(" group=QExpr ")" | leaf=QuantityLeaf ) ;
+QuantityLeaf:
+    "<" quantity=[LeafQuantity|ScopedName] ">" selector=SelectorTail?
+  | bare=Measure
+;
+LeafQuantity: WorldQuantity | ContextQuantity ;

@@ -130,6 +130,7 @@ class QuantityType(StrEnum):
     LinearJerk = "LinearJerk"
     Force = "Force"
     Torque = "Torque"
+    Mass = "Mass"
     FreeVector = "FreeVector"
     Dimensionless = "Dimensionless"
     Duration = "Duration"
@@ -229,52 +230,186 @@ class VectorXYZ:
 
 
 @dataclass
+class QExpr:
+    """An expression over quantity refs and measures: `+`/`-` terms of `*`/`/` factors."""
+
+    head: QTerm
+    tail: list = field(default_factory=list)
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def as_op_tree(self):
+        """Normalize into the nested op structure the emitter and validator share: runs of
+        `+` (resp. `*`) collapse to one n-ary node, `-` and `/` are left-associative binary
+        nodes, and a bare leaf with no tail collapses to itself.
+        """
+        acc = self.head._term_tree()
+        group: list | None = None
+        for step in self.tail:
+            operand = step.operand._term_tree()
+            if step.op == "+":
+                group = [acc] if group is None else group
+                group.append(operand)
+                acc = QOpNode("add", group)
+            else:
+                group = None
+                acc = QOpNode("subtract", [acc, operand])
+        return acc
+
+
+@dataclass
+class QAddTail:
+    op: str = "+"
+    operand: QTerm | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class QTerm:
+    head: QFactor
+    tail: list = field(default_factory=list)
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def _term_tree(self):
+        acc = self.head._factor_tree()
+        group: list | None = None
+        for step in self.tail:
+            operand = step.operand._factor_tree()
+            if step.op == "*":
+                group = [acc] if group is None else group
+                group.append(operand)
+                acc = QOpNode("multiply", group)
+            else:
+                group = None
+                acc = QOpNode("divide", [acc, operand])
+        return acc
+
+
+@dataclass
+class QMulTail:
+    op: str = "*"
+    operand: QFactor | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class QFactor:
+    neg: bool = False
+    group: QExpr | None = None
+    leaf: QuantityLeaf | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def _factor_tree(self):
+        inner = self.group.as_op_tree() if self.group is not None else self.leaf
+        if not self.neg:
+            return inner
+        neg_one = QuantityLeaf(bare=Measure(value=-1.0, unit="1", parent=self), parent=self)
+        return QOpNode("multiply", [neg_one, inner])
+
+
+@dataclass
+class QuantityLeaf:
+    """A quantity-expression leaf: a world/context quantity ref, or a bare measure literal."""
+
+    quantity: object | None = None
+    bare: Measure | None = None
+    subspace: SubSpace | None = None
+    axis: Axis | None = None
+    selector: SelectorTail | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+    def __post_init__(self):
+        if self.selector is not None:
+            self.subspace = self.selector.subspace
+            self.axis = self.selector.axis
+        if isinstance(self.subspace, str):
+            self.subspace = SubSpace(self.subspace)
+        if self.axis is not None and isinstance(self.axis, str):
+            self.axis = Axis(self.axis)
+
+
+@dataclass
+class QOpNode:
+    """A normalized interior node of a quantity-expression op tree."""
+
+    op: str
+    operands: list
+
+
+@dataclass
+class _LegacyOffset:
+    """One `sign operand` step, restated in the pre-expression Offset shape."""
+
+    sign: str
+    operand: object
+
+
+def _leftmost_leaf(expr: QExpr):
+    """The leaf nothing in `expr` combines into -- frame/metadata inheritance reads it."""
+    factor = expr.head.head
+    return _leftmost_leaf(factor.group) if factor.group is not None else factor.leaf
+
+
+def _plain_factor_leaf(factor: QFactor) -> QuantityLeaf:
+    if factor.neg or factor.group is not None:
+        raise ValueError("expression is not a plain reference offset")
+    return factor.leaf
+
+
+def _plain_term_leaf(term: QTerm) -> QuantityLeaf:
+    if term.tail:
+        raise ValueError("expression is not a plain reference offset")
+    return _plain_factor_leaf(term.head)
+
+
+def _degenerate_offsets(expr: QExpr) -> list[_LegacyOffset]:
+    """`expr` restated in the pre-expression Offset shape when it fits that shape: a bare
+    leaf, or that leaf under one repeated `+`, one repeated `*`, a single `-`, or a single `/`.
+    Richer trees raise -- `_emit_offset_op` itself enforces the single-operator constraint on
+    what this returns.
+    """
+    _plain_factor_leaf(expr.head.head)  # the source itself must be a plain leaf
+    if expr.tail and expr.head.tail:
+        raise ValueError("expression combines '+/-' and '*//' in one declaration")
+    if expr.tail:
+        return [_LegacyOffset(step.op, _plain_term_leaf(step.operand)) for step in expr.tail]
+    if expr.head.tail:
+        return [_LegacyOffset(step.op, _plain_factor_leaf(step.operand)) for step in expr.head.tail]
+    return []
+
+
+@dataclass
 class ReferenceValue:
-    source: ContextRef
-    offsets: list = field(default_factory=list)
+    expr: QExpr
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
-    def sign(self) -> str:
-        """The operator joining the offsets to the source; `+` when there are none."""
-        return self.offsets[0].sign if self.offsets else "+"
+    def source(self) -> QuantityLeaf:
+        """The expression's leftmost quantity leaf; frame/metadata inheritance reads this."""
+        return _leftmost_leaf(self.expr)
 
     @property
-    def offset(self) -> ContextRef | None:
-        """The first offset operand, or None when the declaration states none."""
-        return self.offsets[0].operand if self.offsets else None
-
-    @property
-    def subtracts(self) -> bool:
-        """Whether the offset is taken from the source rather than added to it."""
-        return self.sign == "-"
+    def degenerate_offset(self) -> list[_LegacyOffset]:
+        """`expr` restated in the pre-expression Offset shape (see `_degenerate_offsets`)."""
+        return _degenerate_offsets(self.expr)
 
 
 @dataclass
 class SnapshotValue:
-    """A quantity view sampled with an optional offset. Sampled once when its owning motion
-    starts, or re-sampled on every occurrence of `trigger` when one is given.
+    """A quantity view sampled with an optional trailing expression. Sampled once when its
+    owning motion starts, or re-sampled on every occurrence of `trigger` when one is given.
     """
 
     source: View
-    offsets: list = field(default_factory=list)
+    tail: list = field(default_factory=list)
     trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     @property
-    def sign(self) -> str:
-        """The operator joining the offsets to the sample; `+` when there are none."""
-        return self.offsets[0].sign if self.offsets else "+"
-
-    @property
-    def offset(self) -> ContextRef | None:
-        """The first offset operand, or None when the declaration states none."""
-        return self.offsets[0].operand if self.offsets else None
-
-    @property
-    def subtracts(self) -> bool:
-        """Whether the offset is taken from the sample rather than added to it."""
-        return self.sign == "-"
+    def degenerate_offset(self) -> list[_LegacyOffset]:
+        """`tail` restated in the pre-expression Offset shape: a single repeated `+`, a
+        single `-`, or none -- what `snapshot of <view> ...` could author before expressions.
+        """
+        return [_LegacyOffset(step.op, _plain_term_leaf(step.operand)) for step in self.tail]
 
 
 @dataclass
@@ -387,6 +522,7 @@ class View:
 
     parent: object
     quantity: WorldQuantity | None = None
+    expr: QExpr | None = None
     subspace: SubSpace | None = None
     axis: Axis | None = None
     selector: SelectorTail | None = None
@@ -428,6 +564,7 @@ class ContextRef:
 
     quantity: ContextQuantity | None = None
     bare: Measure | None = None
+    expr: QExpr | None = None
     subspace: SubSpace | None = None
     axis: Axis | None = None
     selector: SelectorTail | None = None
