@@ -76,7 +76,7 @@ def test_a_composite_leaf_with_no_selected_axis_is_rejected_in_multiplication(
 
 def test_a_declared_type_must_equal_the_expressions_inferred_type(parse_mutated) -> None:
     with pytest.raises(TextXSemanticError, match="declared"):
-        _mutate(parse_mutated, "distance mismatch = <shared.spec.satisfied-band>")
+        _mutate(parse_mutated, "duration mismatch = <shared.spec.satisfied-band>")
 
 
 def test_literal_division_by_zero_is_rejected(parse_mutated) -> None:
@@ -85,3 +85,12 @@ def test_literal_division_by_zero_is_rejected(parse_mutated) -> None:
             parse_mutated,
             "mass k = 1.2 kg,\n        mass bad-div = <spec.k> / 0.0 kg",
         )
+
+
+def test_a_scalar_spelling_of_the_same_dimension_is_accepted(parse_mutated) -> None:
+    """A length and a projected distance are both metres; the declared spelling need not
+    match inference's canonical one."""
+    _mutate(
+        parse_mutated,
+        "distance gap = <shared.spec.satisfied-band> + <shared.spec.satisfied-band>",
+    )

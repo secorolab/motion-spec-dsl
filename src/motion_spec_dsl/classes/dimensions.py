@@ -280,3 +280,19 @@ def infer(expr, resolve_leaf=resolve_leaf) -> QuantityType:
     """
     tree = expr.as_op_tree() if hasattr(expr, "as_op_tree") else expr
     return _infer_node(tree, resolve_leaf)
+
+
+def same_scalar_dimension(declared, inferred: QuantityType) -> bool:
+    """Whether a declared/slot kind accepts an inferred one: identical, or two scalar
+    spellings of one physical dimension (a length and a projected distance are both metres).
+    A geometry kind accepts only itself; a non-QuantityType slot (legacy subspace string)
+    is not enforced here.
+    """
+    if declared == inferred:
+        return True
+    if not isinstance(declared, QuantityType):
+        return True
+    if declared in GEOMETRY_TYPES or inferred in GEOMETRY_TYPES:
+        return False
+    declared_vector = DIMENSION_VECTOR.get(declared)
+    return declared_vector is not None and declared_vector == DIMENSION_VECTOR.get(inferred)

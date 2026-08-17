@@ -115,6 +115,7 @@ from motion_spec_dsl.classes.dimensions import (
     DIMENSION_VECTOR,
     infer as _infer_expr_type,
     resolve_leaf as _resolve_expr_leaf_type,
+    same_scalar_dimension as _same_scalar_dimension,
 )
 from motion_spec_dsl.classes.controller_semantics import (
     ANGULAR_SUBSPACES,
@@ -3399,7 +3400,7 @@ class MotionSpecDatasetBuilder:
         """
         tree = expr.as_op_tree()
         inferred = _infer_expr_type(tree)
-        if scalar_t is not None and inferred != scalar_t:
+        if scalar_t is not None and not _same_scalar_dimension(scalar_t, inferred):
             raise ValueError(
                 f"'{suffix}' is a {scalar_t} slot, but its expression infers {inferred}."
             )

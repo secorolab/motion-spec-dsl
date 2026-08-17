@@ -16,7 +16,7 @@ from motion_spec_dsl.classes.context import (
     View,
     _resolved_context_quantity,
 )
-from motion_spec_dsl.classes.dimensions import DimensionError, infer
+from motion_spec_dsl.classes.dimensions import DimensionError, infer, same_scalar_dimension
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.classes.validation.common import semantic_error
 
@@ -44,7 +44,7 @@ def validate_expression_dimensions(model: Model) -> None:
 
 def _check_declared(quantity: ContextQuantity, expr) -> None:
     inferred = _infer_or_raise(expr, quantity)
-    if quantity.type != inferred:
+    if not same_scalar_dimension(quantity.type, inferred):
         raise semantic_error(
             f"'{quantity.name}' is declared {quantity.type}, but its expression infers {inferred}.",
             quantity,
