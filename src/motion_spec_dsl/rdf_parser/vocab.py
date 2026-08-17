@@ -197,6 +197,7 @@ class QUDT_QKIND(DefinedNamespace):
     AccelerationEnergy: URIRef
     Torque: URIRef
     Force: URIRef
+    Mass: URIRef
 
     _NS = NS_MM_QUDT_QTY
 

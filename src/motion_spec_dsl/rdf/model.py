@@ -190,6 +190,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.Dimensionless: QUDT_UNIT.UNITLESS,
     QuantityType.PathParameter: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
+    QuantityType.Mass: QUDT_UNIT["KiloGM"],
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
@@ -223,6 +224,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Duration: NS_MM_QUDT_QTY["Time"],
     QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
     QuantityType.LinearJerk: QKIND_EXT.LinearJerk,
+    QuantityType.Mass: QUDT_QKIND.Mass,
 }
 
 # Quantity kinds are individuals, not classes; these namespaces distinguish them

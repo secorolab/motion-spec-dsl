@@ -343,46 +343,10 @@ class QOpNode:
     operands: list
 
 
-@dataclass
-class _LegacyOffset:
-    """One `sign operand` step, restated in the pre-expression Offset shape."""
-
-    sign: str
-    operand: object
-
-
 def _leftmost_leaf(expr: QExpr):
     """The leaf nothing in `expr` combines into -- frame/metadata inheritance reads it."""
     factor = expr.head.head
     return _leftmost_leaf(factor.group) if factor.group is not None else factor.leaf
-
-
-def _plain_factor_leaf(factor: QFactor) -> QuantityLeaf:
-    if factor.neg or factor.group is not None:
-        raise ValueError("expression is not a plain reference offset")
-    return factor.leaf
-
-
-def _plain_term_leaf(term: QTerm) -> QuantityLeaf:
-    if term.tail:
-        raise ValueError("expression is not a plain reference offset")
-    return _plain_factor_leaf(term.head)
-
-
-def _degenerate_offsets(expr: QExpr) -> list[_LegacyOffset]:
-    """`expr` restated in the pre-expression Offset shape when it fits that shape: a bare
-    leaf, or that leaf under one repeated `+`, one repeated `*`, a single `-`, or a single `/`.
-    Richer trees raise -- `_emit_offset_op` itself enforces the single-operator constraint on
-    what this returns.
-    """
-    _plain_factor_leaf(expr.head.head)  # the source itself must be a plain leaf
-    if expr.tail and expr.head.tail:
-        raise ValueError("expression combines '+/-' and '*//' in one declaration")
-    if expr.tail:
-        return [_LegacyOffset(step.op, _plain_term_leaf(step.operand)) for step in expr.tail]
-    if expr.head.tail:
-        return [_LegacyOffset(step.op, _plain_factor_leaf(step.operand)) for step in expr.head.tail]
-    return []
 
 
 @dataclass
@@ -394,11 +358,6 @@ class ReferenceValue:
     def source(self) -> QuantityLeaf:
         """The expression's leftmost quantity leaf; frame/metadata inheritance reads this."""
         return _leftmost_leaf(self.expr)
-
-    @property
-    def degenerate_offset(self) -> list[_LegacyOffset]:
-        """`expr` restated in the pre-expression Offset shape (see `_degenerate_offsets`)."""
-        return _degenerate_offsets(self.expr)
 
 
 @dataclass
@@ -417,13 +376,6 @@ class SnapshotValue:
         `source` itself collapses to itself when `tail` is empty.
         """
         return _add_chain_tree(self.source, self.tail)
-
-    @property
-    def degenerate_offset(self) -> list[_LegacyOffset]:
-        """`tail` restated in the pre-expression Offset shape: a single repeated `+`, a
-        single `-`, or none -- what `snapshot of <view> ...` could author before expressions.
-        """
-        return [_LegacyOffset(step.op, _plain_term_leaf(step.operand)) for step in self.tail]
 
 
 @dataclass

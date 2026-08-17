@@ -100,6 +100,7 @@ from motion_spec_dsl.classes.context import (
     GeometricProps,
     GeoPropPair,
     Measure,
+    QOpNode,
     QuantityType,
     ReferenceGeneratorType,
     ReferenceValue,
@@ -110,6 +111,7 @@ from motion_spec_dsl.classes.context import (
     _resolved_context_quantity,
     _resolved_world_quantity,
 )
+from motion_spec_dsl.classes.dimensions import infer as _infer_expr_type
 from motion_spec_dsl.classes.controller_semantics import (
     ANGULAR_SUBSPACES,
     SUBSPACE_ALIAS,
@@ -252,16 +254,6 @@ def _owns_pose_subobjects(value) -> bool:
     config. A snapshot or reference borrows its source's, so its subspaces hang off itself.
     """
     return isinstance(value, (PoseCoordinate, ConfigValue))
-
-
-_OFFSET_OPS = {"+": "add", "-": "subtract", "*": "multiply", "/": "divide"}
-
-
-def _offset_op_name(value) -> str:
-    """The op an offset declaration lowers to, as an IRI fragment."""
-    offsets = value.degenerate_offset
-    sign = offsets[0].sign if offsets else "+"
-    return _OFFSET_OPS.get(sign, "add")
 
 
 def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
@@ -722,61 +714,67 @@ class MotionSpecDatasetBuilder:
         ns_uri = str(self._namespace_owner(owner).ns.uri)
         return Namespace(ns_uri)[name]
 
-    def _emit_offset_op(
-        self,
-        value: ReferenceValue | SnapshotValue,
-        quantity: ContextQuantity,
-        node: URIRef,
-        source_node: URIRef,
-        out_node: URIRef,
-    ) -> None:
-        """Emit the op combining a declaration's source with the offset it states.
-
-        Addition and Multiplication collect their operands under one predicate because their
-        order does not matter. Subtraction's and Division's does, so the metamodel names the two
-        operands and the source stays the minuend or dividend -- what the author wrote the
-        operator after is what gets taken away or divided by.
+    def _emit_qexpr(self, tree: Any, owner: Any, node: URIRef) -> URIRef:
+        """Emit `tree` (a `QExpr`/`SnapshotValue` `as_op_tree()`) as a chain of ALGO ops whose
+        root result lands at `node`; returns `node`. Interior op/result nodes below the root
+        are suffixed by their DFS position off `node` -- deterministic and stable across
+        regeneration, mirroring the flat node this replaces.
         """
-        offsets = value.degenerate_offset
-        signs = {offset.sign for offset in offsets}
-        if len(signs) > 1:
-            raise ValueError(
-                f"'{quantity.name}' mixes {' and '.join(sorted(signs))} in one declaration. "
-                "Only one operator can be repeated; name the intermediate result to combine "
-                "different ones."
-            )
-        sign = offsets[0].sign
-        if len(offsets) > 1 and sign in ("-", "/"):
-            raise ValueError(
-                f"'{quantity.name}' repeats '{sign}', which takes exactly two operands. "
-                "Name the intermediate result instead."
-            )
-        op_name = _offset_op_name(value)
-        op_node = URIRef(f"{node}-{op_name}")
-        operand_nodes = [
-            self._emit_context_ref_node(
-                offset.operand,
-                quantity,
-                f"{op_name}-offset" if index == 0 else f"{op_name}-offset-{index}",
-            )
-            for index, offset in enumerate(offsets)
-        ]
-        if sign == "-":
+        self._emit_qexpr_at(tree, owner, node, node, "")
+        return node
+
+    def _emit_qexpr_at(
+        self, tree: Any, owner: Any, stem: URIRef, out_node: URIRef, path: str
+    ) -> None:
+        """Emit the op chain for `tree` landing its result at `out_node`. `stem` is the fixed
+        per-declaration naming root; `path` is this node's DFS position under it.
+        """
+        op_node = URIRef(f"{stem}-{tree.op}-{path}" if path else f"{stem}-{tree.op}")
+        operand_nodes = []
+        for index, operand in enumerate(tree.operands):
+            child_path = f"{path}-{index}" if path else str(index)
+            if isinstance(operand, QOpNode):
+                operand_out = URIRef(f"{stem}-{operand.op}-{child_path}-out")
+                self._emit_qexpr_at(operand, owner, stem, operand_out, child_path)
+                self._stamp_expr_result(operand_out, operand)
+                operand_nodes.append(operand_out)
+            else:
+                operand_nodes.append(self._emit_qexpr_leaf(operand, owner, f"expr-{child_path}"))
+        if tree.op == "subtract":
             self.graph.add((op_node, RDF.type, ALGO_EXT.Subtraction))
-            self.graph.add((op_node, ALGO_EXT.minuend, source_node))
-            self.graph.add((op_node, ALGO_EXT.subtrahend, operand_nodes[0]))
-        elif sign == "/":
+            self.graph.add((op_node, ALGO_EXT.minuend, operand_nodes[0]))
+            self.graph.add((op_node, ALGO_EXT.subtrahend, operand_nodes[1]))
+        elif tree.op == "divide":
             self.graph.add((op_node, RDF.type, ALGO_EXT.Division))
-            self.graph.add((op_node, ALGO_EXT.dividend, source_node))
-            self.graph.add((op_node, ALGO_EXT.divisor, operand_nodes[0]))
+            self.graph.add((op_node, ALGO_EXT.dividend, operand_nodes[0]))
+            self.graph.add((op_node, ALGO_EXT.divisor, operand_nodes[1]))
         else:
             self.graph.add(
-                (op_node, RDF.type, ALGO_EXT.Multiplication if sign == "*" else ALGO_EXT.Addition)
+                (
+                    op_node,
+                    RDF.type,
+                    ALGO_EXT.Multiplication if tree.op == "multiply" else ALGO_EXT.Addition,
+                )
             )
-            self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), source_node))
             for operand_node in operand_nodes:
                 self.graph.add((op_node, _ns_term(ALGO_EXT, "in"), operand_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
+
+    def _emit_qexpr_leaf(self, leaf: Any, owner: Any, suffix: str) -> URIRef:
+        """A quantity-expression leaf's value node: a world-quantity view resolves through
+        `_view_node` (subspace/axis-aware); everything else (context ref, bare measure) through
+        `_emit_context_ref_node`, unchanged.
+        """
+        if isinstance(getattr(leaf, "quantity", None), WorldQuantity):
+            return self._view_node(leaf, owner)
+        return self._emit_context_ref_node(leaf, owner, suffix)
+
+    def _stamp_expr_result(self, node: URIRef, tree: Any) -> None:
+        """Type a compiler-generated interior op result by what it dimensionally infers to."""
+        qty_type = _infer_expr_type(tree)
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_quantity_kind(node, _qudt_kind(qty_type))
+        self.graph.add((node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(qty_type, QUDT_UNIT.UNITLESS)))
 
     def _declared_uri(self, name: str, declaration: Any) -> URIRef:
         """Create a URI for a node named after `declaration`, under the declaration itself.
@@ -2236,27 +2234,34 @@ class MotionSpecDatasetBuilder:
                         f"Direct geometry alias '{quantity.name}' ({quantity.type}) is unsupported; "
                         "reference pose components through their map views instead",
                     )
-                source_node = self._emit_context_ref_node(quantity.value.source, quantity, "source")
-                self.graph.add(
-                    (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
-                )
-                if quantity.value.degenerate_offset:
-                    self._emit_offset_op(quantity.value, quantity, node, source_node, node)
+                expr_tree = quantity.value.expr.as_op_tree()
+                if isinstance(expr_tree, QOpNode):
+                    self._emit_qexpr(expr_tree, quantity, node)
+                    self.graph.add(
+                        (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
+                    )
                 else:
+                    source_node = self._emit_context_ref_node(
+                        quantity.value.source, quantity, "source"
+                    )
+                    self.graph.add(
+                        (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
+                    )
                     self.graph.add((node, CSTR["reference-value"], source_node))
                 continue
             if isinstance(quantity.value, SnapshotValue):
                 snapshot_node = URIRef(f"{node}-snapshot")
                 self.graph.add((snapshot_node, RDF.type, ALGO_EXT.Snapshot))
                 view_node = self._view_node(quantity.value.source, quantity)
-                if quantity.value.degenerate_offset:
+                snap_tree = quantity.value.as_op_tree()
+                if isinstance(snap_tree, QOpNode):
                     # Own the op nodes by the quantity's motion-qualified URI (not the flat namespace) so two
                     # motions declaring a same-named quantity don't collapse into one op accumulating both inputs.
-                    out_node = URIRef(f"{node}-{_offset_op_name(quantity.value)}-out")
+                    out_node = URIRef(f"{node}-{snap_tree.op}-out")
                     qkind = (
                         QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
                     )
-                    self._emit_offset_op(quantity.value, quantity, node, view_node, out_node)
+                    self._emit_qexpr(snap_tree, quantity, out_node)
                     self.graph.add((out_node, RDF.type, QUDT_SCHEMA.Quantity))
                     # A pose's kind is structural and its units are the pair a pose coordinate
                     # carries, so both are left to the geometry emission below; stamping the
@@ -3361,6 +3366,9 @@ class MotionSpecDatasetBuilder:
                 _qudt_kind(scalar_t if scalar_t is not None else owner.type),
                 _dsl_unit(bare.unit),
             )
+        expr = getattr(ref, "expr", None)
+        if expr is not None:
+            return self._emit_inline_qexpr(expr, owner, suffix, scalar_t)
         quantity = _context_quantity(ref)
         if not isinstance(quantity, ContextQuantity):
             return self._owned_uri(_node_name(quantity), owner)
@@ -3371,11 +3379,33 @@ class MotionSpecDatasetBuilder:
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
             axis = semantic_axis_label(getattr(ref, "axis", None))
             return self._emit_context_ref_view_node(quantity, subspace, axis)
-        if isinstance(quantity.value, ReferenceValue) and not quantity.value.degenerate_offset:
+        if isinstance(quantity.value, ReferenceValue) and not isinstance(
+            quantity.value.expr.as_op_tree(), QOpNode
+        ):
             return self._emit_context_ref_node(quantity.value.source, owner, suffix, scalar_t)
         if quantity.type == ReferenceGeneratorType.Path:
             return self._reference_output_node(quantity)
         return URIRef(quantity.uri)
+
+    def _emit_inline_qexpr(self, expr: Any, owner: Any, suffix: str, scalar_t: Any) -> URIRef:
+        """A parenthesized inline expression at a `ContextRef` slot: sugar for a
+        compiler-named quantity owned by the consuming declaration (constraint RHS, reference,
+        tolerance, saturation bound, profile limit, solver gravity, coordinate element).
+        """
+        tree = expr.as_op_tree()
+        inferred = _infer_expr_type(tree)
+        if scalar_t is not None and inferred != scalar_t:
+            raise ValueError(
+                f"'{suffix}' is a {scalar_t} slot, but its expression infers {inferred}."
+            )
+        if not isinstance(tree, QOpNode):
+            return self._emit_qexpr_leaf(tree, owner, suffix)
+        root = self._owned_uri(suffix, owner)
+        self._emit_qexpr(tree, owner, root)
+        self.graph.add((root, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_quantity_kind(root, _qudt_kind(inferred))
+        self.graph.add((root, QUDT_SCHEMA.unit, SCALAR_UNIT.get(inferred, QUDT_UNIT.UNITLESS)))
+        return root
 
     def _emit_constraint_tolerance(
         self,
