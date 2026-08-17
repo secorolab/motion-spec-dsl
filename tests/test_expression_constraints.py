@@ -62,7 +62,8 @@ def test_an_inline_expression_view_mints_a_gensym_root_and_op_chain(
         s for s in graph.subjects(RDF.type, CSTR_EXT.OutsideConstraint) if "residual-band" in s
     ]
     (qty,) = list(graph.objects(node, CSTR.quantity))
-    assert str(qty).endswith("/expr")
+    # Motion-qualified: the downstream id is the last segment, so it must be unique per constraint.
+    assert "/expr-" in str(qty) and str(qty).rsplit("/", 1)[1].count("-") >= 2
     assert list(graph.subjects(ALGO_EXT.out, qty))
 
 

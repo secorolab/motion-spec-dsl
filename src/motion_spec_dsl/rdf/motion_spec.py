@@ -3572,7 +3572,9 @@ class MotionSpecDatasetBuilder:
         if context_qty is not None:
             return URIRef(context_qty.uri), scalar_t
         if isinstance(tree, QOpNode):
-            qty_node = URIRef(f"{spec.uri}/expr")
+            # Motion-qualified last segment: the downstream id is the last segment alone, so a
+            # bare "expr" would collapse every inline-expression constraint onto one field.
+            qty_node = URIRef(f"{spec.uri}/expr-{motion.name}-{spec.name}")
             self._emit_qexpr(tree, motion, qty_node)
             self.graph.add((qty_node, RDF.type, QUDT_SCHEMA.Quantity))
             self._emit_quantity_kind(qty_node, _qudt_kind(scalar_t))
