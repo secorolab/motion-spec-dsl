@@ -19,6 +19,9 @@ from motion_spec_dsl.classes.constraints import (
     OutsideConstraint,
 )
 from motion_spec_dsl.classes.context import (
+    GEOMETRIC_DISTANCE_OPS,
+    GEOMETRIC_PROJECTION_OPS,
+    UNSIGNED_GEOMETRIC_DISTANCE_OP,
     ContextQuantity,
     ContextRef,
     GeometricPropKey,
@@ -27,6 +30,7 @@ from motion_spec_dsl.classes.context import (
     ReferenceGeneratorType,
     VectorXYZ,
     WorldQuantityType,
+    _geometric_operand_kind,
     _resolved_context_quantity,
 )
 from motion_spec_dsl.classes.coordinates import (
@@ -46,6 +50,7 @@ from motion_spec_dsl.classes.validation.common import (
     motion_specs,
     semantic_error,
 )
+from motion_spec_dsl.rdf.common import _is_distance_view
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
@@ -500,6 +505,84 @@ def validate_line_plane_primitives(model: Model) -> None:
                 )
         referent = next(pair.value for pair in quantity.props.pairs if pair.key == direction_key)
         _alignment_operand(referent, f"'{quantity.name}' {direction_key}", quantity)
+
+
+def _drives_unsigned_distance_to_zero(spec) -> bool:
+    """Whether `spec`'s expression pins an unsigned distance to exactly zero: a bare-zero
+    equality, or a band whose bounds are both zero. Its derivative is undefined there.
+    """
+    expr = spec.expr
+    if isinstance(expr, EqualityConstraint):
+        measure = expr.reference.bare
+        return measure is not None and measure.value == 0.0
+    if isinstance(expr, BilateralConstraint):
+        lower = expr.lower.bare
+        upper = expr.upper.bare
+        return lower is not None and upper is not None and lower.value == 0.0 and upper.value == 0.0
+    return False
+
+
+def _reject_unsigned_distance_to_zero(spec) -> None:
+    if not _drives_unsigned_distance_to_zero(spec):
+        return
+    raise semantic_error(
+        f"'{spec.name}' drives an unsigned distance to zero, where its derivative is undefined "
+        "and control goes locally unstable. State the coincidence as signed projections instead "
+        "(Borghesan et al. 2016, section VII-B).",
+        spec,
+    )
+
+
+def validate_geometric_distance_views(model: Model) -> None:
+    """Check Table IIa `distance of <A> from <B>` / `projection of <A> on <B>` views (plan 08):
+    operand typing, the point-first operand order, projection's line-only second operand, and
+    the unsigned-zero rule -- which also applies to the pre-existing point-point
+    `distance between`, since its scalar is the same kind of unsigned magnitude.
+    """
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        view = spec.view
+        if _is_distance_view(spec):
+            _reject_unsigned_distance_to_zero(spec)
+            continue
+
+        distance_of = getattr(view, "distance_of", None)
+        distance_from_primitive = getattr(view, "distance_from_primitive", None)
+        if distance_of is not None and distance_from_primitive is not None:
+            a_kind = _geometric_operand_kind(distance_of)
+            b_kind = _geometric_operand_kind(distance_from_primitive)
+            op_type = GEOMETRIC_DISTANCE_OPS.get((a_kind, b_kind))
+            if op_type is None:
+                if a_kind != b_kind and GEOMETRIC_DISTANCE_OPS.get((b_kind, a_kind)):
+                    raise semantic_error(
+                        f"'{spec.name}' takes a distance of a pose from a plane, a pose from a "
+                        "line, or a line from a line; the point (or line) must come first, since "
+                        "the sign is stated in terms of the primitive's normal/direction.",
+                        spec,
+                    )
+                raise semantic_error(
+                    f"'{spec.name}' takes a distance of a pose from a plane, a pose from a line, "
+                    f"or a line from a line; got {a_kind or 'unknown'} from {b_kind or 'unknown'}.",
+                    spec,
+                )
+            if op_type == UNSIGNED_GEOMETRIC_DISTANCE_OP:
+                _reject_unsigned_distance_to_zero(spec)
+            continue
+
+        projection_of = getattr(view, "projection_of", None)
+        projection_on = getattr(view, "projection_on", None)
+        if projection_of is not None and projection_on is not None:
+            a_kind = _geometric_operand_kind(projection_of)
+            b_kind = _geometric_operand_kind(projection_on)
+            if b_kind != "line":
+                raise semantic_error(
+                    f"'{spec.name}' projects onto a line; got {b_kind or 'unknown'}.", spec
+                )
+            if a_kind not in ("point", "line"):
+                raise semantic_error(
+                    f"'{spec.name}' projects a pose or a line onto a line; got "
+                    f"{a_kind or 'unknown'}.",
+                    spec,
+                )
 
 
 def validate_tolerance_defaults(model: Model) -> None:

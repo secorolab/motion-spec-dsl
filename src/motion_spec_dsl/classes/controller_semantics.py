@@ -22,14 +22,17 @@ from motion_spec_dsl.classes.constraints import (
     EqualityConstraint,
 )
 from motion_spec_dsl.classes.context import (
+    GEOMETRIC_DISTANCE_OPS,
+    GEOMETRIC_DISTANCE_SUBSPACE,
+    GEOMETRIC_PROJECTION_OPS,
     QuantityType,
     SubSpace,
     WorldQuantity,
     WorldQuantityType,
+    _geometric_operand_kind,
     _resolved_context_quantity,
     _resolved_world_quantity,
 )
-
 
 SUBSPACE_ALIAS: dict[str, str] = {
     "angacc": "angular-acceleration",
@@ -151,8 +154,9 @@ def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
         return None
     # A `distance between <A> and <B>` view has no raw SubSpace enum (it resolves
     # via constraint_view_subspace to the string "distance"); it is control-wise a
-    # linear command, the same as SubSpace.Position.
-    if subspace == "distance":
+    # linear command, the same as SubSpace.Position. Every Table IIa expression (plan 08) is
+    # linear-subspace too -- a length, signed or not, never an angle.
+    if subspace == "distance" or subspace in GEOMETRIC_DISTANCE_SUBSPACE.values():
         return QuantityType.LinearVelocity
     return {
         SubSpace.LinVel: QuantityType.LinearVelocity,
@@ -179,6 +183,22 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
         and getattr(view, "distance_to", None) is not None
     ):
         return "distance"
+
+    distance_of = getattr(view, "distance_of", None)
+    distance_from_primitive = getattr(view, "distance_from_primitive", None)
+    if distance_of is not None and distance_from_primitive is not None:
+        op_type = GEOMETRIC_DISTANCE_OPS.get(
+            (_geometric_operand_kind(distance_of), _geometric_operand_kind(distance_from_primitive))
+        )
+        return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
+
+    projection_of = getattr(view, "projection_of", None)
+    projection_on = getattr(view, "projection_on", None)
+    if projection_of is not None and projection_on is not None:
+        op_type = GEOMETRIC_PROJECTION_OPS.get(
+            (_geometric_operand_kind(projection_of), _geometric_operand_kind(projection_on))
+        )
+        return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
 
     subspace = view.subspace
     if subspace is None:

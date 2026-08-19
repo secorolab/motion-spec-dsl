@@ -409,6 +409,48 @@ def _resolved_context_quantity(item: ContextQuantity | ContextQuantityAlias) -> 
     return item.ref if isinstance(item, ContextQuantityAlias) else item
 
 
+def _geometric_operand_kind(operand: object) -> str | None:
+    """Table IIa operand kind ('point'/'line'/'plane') of a distance/projection operand, or
+    None when `operand` is neither a pose, a line, nor a plane."""
+    if isinstance(operand, WorldQuantity):
+        resolved = _resolved_world_quantity(operand)
+        return "point" if resolved.type == WorldQuantityType.Pose else None
+    if isinstance(operand, ContextQuantity):
+        resolved = _resolved_context_quantity(operand)
+        return {
+            QuantityType.Pose: "point",
+            QuantityType.Line: "line",
+            QuantityType.Plane: "plane",
+        }.get(resolved.type)
+    return None
+
+
+# Table IIa distance/projection operators, keyed by (first operand kind, second operand kind).
+# Line-line operand order is not a dispatch key: both directions carry the same op, and which
+# line is `in1`/`in2` is what makes `LineLineProjection` compute s1 vs s2 (see plan 08 ruling 2).
+GEOMETRIC_DISTANCE_OPS: dict[tuple[str, str], str] = {
+    ("point", "plane"): "PointPlaneDistance",
+    ("point", "line"): "PointLineDistance",
+    ("line", "line"): "LineLineDistance",
+}
+GEOMETRIC_PROJECTION_OPS: dict[tuple[str, str], str] = {
+    ("point", "line"): "PointOnLineProjection",
+    ("line", "line"): "LineLineProjection",
+}
+# The one Table IIa expression whose scalar is an unsigned magnitude (no derivative at zero).
+UNSIGNED_GEOMETRIC_DISTANCE_OP = "PointLineDistance"
+
+# Constraint-view subspace token per Table IIa operator, matching the lowercase style
+# ("alignment", "distance") the rest of `constraint_view_subspace` already uses.
+GEOMETRIC_DISTANCE_SUBSPACE: dict[str, str] = {
+    "PointPlaneDistance": "point-plane-distance",
+    "PointLineDistance": "point-line-distance",
+    "PointOnLineProjection": "point-line-projection",
+    "LineLineDistance": "line-line-distance",
+    "LineLineProjection": "line-line-projection",
+}
+
+
 class SubSpace(StrEnum):
     Position = "position"
     Orientation = "orientation"
@@ -503,6 +545,10 @@ class View:
     distance_to: WorldQuantity | None = None
     angle_from: ContextQuantity | None = None
     angle_to: ContextQuantity | None = None
+    distance_of: WorldQuantity | ContextQuantity | None = None
+    distance_from_primitive: WorldQuantity | ContextQuantity | None = None
+    projection_of: WorldQuantity | ContextQuantity | None = None
+    projection_on: WorldQuantity | ContextQuantity | None = None
     elapsed: ElapsedTime | None = None
     progress: ProgressAlong | None = None
     moving: MovingAlong | None = None

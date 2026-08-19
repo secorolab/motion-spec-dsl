@@ -324,6 +324,15 @@ class GEOM_OP_EXT(DefinedNamespace):
     PathEvaluator: URIRef
     PathTangentFrame: URIRef
     TwistToLinearVelocityAlong: URIRef
+    # Table IIa (plan 08): in1/in2 are pose coordinates for the point-primitive ops below, but
+    # direction coordinates for the line-line pair -- same asymmetric reuse of in1/in2 the
+    # AngleGradientFromDirections/RotationVectorFromDirections ops already establish.
+    PointPlaneDistance: URIRef
+    PointLineDistance: URIRef
+    PointOnLineProjection: URIRef
+    LineLineDistance: URIRef
+    LineLineProjection: URIRef
+    gradient: URIRef
     path: URIRef
     tangent: URIRef
     linear: URIRef

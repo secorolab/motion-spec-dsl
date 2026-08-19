@@ -32,6 +32,11 @@ context (ns=app) shared {
             wrt:        <kinova.base_link>,
             as-seen-by: <kinova.base_link>
         },
+        pose pose-table-base {
+            of:         <table.table_top>,
+            wrt:        <kinova.base_link>,
+            as-seen-by: <kinova.base_link>
+        },
         joint-position gripper-pos {
             joint: <gripper.g_left_driver_joint>
         }
@@ -56,7 +61,9 @@ context (ns=app) shared {
         direction base-up { as-seen-by: <kinova.base_link> } = (0, 0, 1),
         angle align-band = 0.05 rad,
         angle align-cone = 0.35 rad,
-        angle align-cone-hold = 0.05 rad
+        angle align-cone-hold = 0.05 rad,
+        // The table surface the arm mounts on, normal up (same frame as pose-ee-base's wrt).
+        plane table { of: <table.table_top>, normal: <shared.spec.base-up> }
     }
     // nothing, the pose is the cube's start placement.
 }
@@ -79,7 +86,8 @@ guarded-motion (ns=app) home {
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        above-table: keeping distance of <shared.world.pose-ee-base> from <shared.spec.table> greater than 0.05 m
     }
 
     until {}

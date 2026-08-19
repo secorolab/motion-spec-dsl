@@ -126,6 +126,20 @@ View:
     "(" expr=QExpr ")"
     |
     (
+        "distance" "of"
+        "<" distance_of=[GeometricDistanceOperand|FQN] ">"
+        "from"
+        "<" distance_from_primitive=[GeometricDistanceOperand|FQN] ">"
+    )
+    |
+    (
+        "projection" "of"
+        "<" projection_of=[GeometricDistanceOperand|FQN] ">"
+        "on"
+        "<" projection_on=[ContextQuantity|FQN] ">"
+    )
+    |
+    (
         "<" quantity=[ConstraintViewQuantity|FQN] ">"
         selector=SelectorTail?
     )
@@ -136,6 +150,8 @@ ConstraintViewQuantity: WorldQuantity | ContextQuantity ;
 DistancePoseOperand: WorldQuantity | ContextQuantity ;
 
 AlignDirectionOperand: ContextQuantity ;
+
+GeometricDistanceOperand: WorldQuantity | ContextQuantity ;
 
 ElapsedTime:
     marker?="elapsed"

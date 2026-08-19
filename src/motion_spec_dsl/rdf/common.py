@@ -6,15 +6,11 @@
 from __future__ import annotations
 
 import math
-
 from dataclasses import dataclass
 from typing import Any
 
 from rdflib.term import URIRef
 
-
-from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
-from motion_spec_dsl.classes.coordinates import const_value
 from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
     GoalStatusConstraint,
@@ -22,23 +18,28 @@ from motion_spec_dsl.classes.constraints import (
     _resolved_spec,
 )
 from motion_spec_dsl.classes.context import (
-    ContextRef,
-    GeoPropPair,
-    GeometricProps,
-    QuantityType,
     ContextQuantity,
+    ContextRef,
+    GeometricProps,
+    GeoPropPair,
+    QuantityType,
     WorldQuantity,
     WorldQuantityType,
     _resolved_context_quantity,
 )
+from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
+from motion_spec_dsl.classes.coordinates import const_value
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
-
-from motion_spec_dsl.rdf.model import WORLD_SPECS
 from motion_spec_dsl.classes.units import (
     ANGLE_UNITS as ANGLE_UNITS,
+)
+from motion_spec_dsl.classes.units import (
     _angle_unit as _angle_unit,
+)
+from motion_spec_dsl.classes.units import (
     _dsl_unit as _dsl_unit,
 )
+from motion_spec_dsl.rdf.model import WORLD_SPECS
 
 
 def _ns_term(namespace: Any, name: str) -> URIRef:
@@ -104,6 +105,22 @@ def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
     )
 
 
+def _is_geometric_distance_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `distance of A from B` (Table IIa) form."""
+    return (
+        getattr(constraint.view, "distance_of", None) is not None
+        and getattr(constraint.view, "distance_from_primitive", None) is not None
+    )
+
+
+def _is_projection_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `projection of A on B` (Table IIa) form."""
+    return (
+        getattr(constraint.view, "projection_of", None) is not None
+        and getattr(constraint.view, "projection_on", None) is not None
+    )
+
+
 def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
     """Scalar id of an `angle between` view: the carrier pose and both direction operands. The
     operands belong in it because two alignments can share one pose and mean different angles.
@@ -158,6 +175,19 @@ def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
     return None
 
 
+# Table IIa (plan 08) constraint-view subspace tokens: every one of them is a length, signed or
+# not, so they all resolve to QuantityType.Distance -- same as the existing "distance" subspace.
+_GEOMETRIC_DISTANCE_SUBSPACES = frozenset(
+    {
+        "point-plane-distance",
+        "point-line-distance",
+        "point-line-projection",
+        "line-line-distance",
+        "line-line-projection",
+    }
+)
+
+
 def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
     """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
     (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
@@ -170,7 +200,7 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
             return QuantityType.Position if axis is None else QuantityType.Distance
         if subspace == "orientation":
             return QuantityType.Orientation if axis is None else QuantityType.Angle
-        if subspace == "distance":
+        if subspace == "distance" or subspace in _GEOMETRIC_DISTANCE_SUBSPACES:
             return QuantityType.Distance
         if subspace == "rotation":
             return QuantityType.PlaneAngle
@@ -229,4 +259,30 @@ class _AlignmentPlan:
 
     moving: ContextQuantity
     reference: ContextQuantity
+    target: WorldQuantity
+
+
+@dataclass(frozen=True)
+class _GeometricDistancePlan:
+    """Resolved operands and scalar-view carrier for an authored Table IIa distance/projection
+    view (plan 08): a point-plane/point-line/point-on-line expression, or a line-line one.
+
+    `direction`/`pose` are mutually exclusive with `diff_in1`/`diff_in2`: the first three ops
+    (point vs. primitive) carry a direction role; the line-line pair instead composes a
+    PoseDiffEvaluator over the two lines' origins and carries its `pose` output plus the two
+    origin poses that fed it.
+    """
+
+    op_type: str
+    in1: str
+    in2: str
+    direction: str | None
+    pose: str | None
+    diff_in1: str | None
+    diff_in2: str | None
+    relation_a: str
+    relation_b: str
+    # The frame the gradient's DirectionCoordinate is stated in: the point operand's own
+    # reference frame for ops 1-3, the (shared, validated-equal) direction frame for ops 4-5.
+    gradient_frame: str
     target: WorldQuantity

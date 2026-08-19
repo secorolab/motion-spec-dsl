@@ -16,7 +16,6 @@ registries rather than graph-membership checks.
 from __future__ import annotations
 
 import math
-
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -93,6 +92,8 @@ from motion_spec_dsl.classes.constraints import (
     _resolved_spec,
 )
 from motion_spec_dsl.classes.context import (
+    GEOMETRIC_DISTANCE_OPS,
+    GEOMETRIC_PROJECTION_OPS,
     ConfigValue,
     ContextQuantity,
     ContextRef,
@@ -108,14 +109,9 @@ from motion_spec_dsl.classes.context import (
     VectorXYZ,
     WorldQuantity,
     WorldQuantityType,
+    _geometric_operand_kind,
     _resolved_context_quantity,
     _resolved_world_quantity,
-)
-from motion_spec_dsl.classes.dimensions import (
-    DIMENSION_VECTOR,
-    infer as _infer_expr_type,
-    resolve_leaf as _resolve_expr_leaf_type,
-    same_scalar_dimension as _same_scalar_dimension,
 )
 from motion_spec_dsl.classes.controller_semantics import (
     ANGULAR_SUBSPACES,
@@ -133,6 +129,18 @@ from motion_spec_dsl.classes.coordinates import (
     PoseCoordinate,
     VelocityTwistCoordinate,
     WrenchCoordinate,
+)
+from motion_spec_dsl.classes.dimensions import (
+    DIMENSION_VECTOR,
+)
+from motion_spec_dsl.classes.dimensions import (
+    infer as _infer_expr_type,
+)
+from motion_spec_dsl.classes.dimensions import (
+    resolve_leaf as _resolve_expr_leaf_type,
+)
+from motion_spec_dsl.classes.dimensions import (
+    same_scalar_dimension as _same_scalar_dimension,
 )
 from motion_spec_dsl.classes.motion_spec import (
     ContextDeclReference,
@@ -158,20 +166,23 @@ from motion_spec_dsl.classes.ros import (
 )
 from motion_spec_dsl.rdf.common import (
     ANGLE_UNITS,
-    _angle_unit,
     _alignment_id,
     _AlignmentPlan,
+    _angle_bound,
+    _angle_unit,
     _axis_vector,
     _context_quantity,
     _DistancePlan,
     _dsl_unit,
     _evaluator_id,
-    _angle_bound,
     _geo_prop,
     _geo_prop_events,
     _geo_prop_value,
+    _GeometricDistancePlan,
     _is_alignment_view,
     _is_distance_view,
+    _is_geometric_distance_view,
+    _is_projection_view,
     _node_name,
     _ns_term,
     _resolved_constraint_items,
@@ -430,6 +441,7 @@ class MotionSpecDatasetBuilder:
         # Resolution indexes, populated once and read during emission (see module docstring).
         self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
         self._alignment_plans: dict[ConstraintSpecification, _AlignmentPlan] = {}
+        self._geometric_distance_plans: dict[ConstraintSpecification, _GeometricDistancePlan] = {}
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
         self._config_resource: URIRef | None = None
         self._reference_value_index: dict[URIRef, URIRef] = {}
@@ -448,6 +460,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_bands: set[URIRef] = set()
         self._emitted_distance_ops: set[str] = set()
         self._emitted_alignment_ops: set[str] = set()
+        self._emitted_geometric_distance_ops: set[str] = set()
         self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
@@ -898,10 +911,21 @@ class MotionSpecDatasetBuilder:
                 qtys.setdefault(quantity.name, quantity)
 
     def _add_view_world_quantities(self, qtys: dict[str, WorldQuantity], view: Any) -> None:
-        """Collect the WorldQuantities a view references (quantity, distance_from/to) into `qtys`."""
+        """Collect the WorldQuantities a view references (quantity, distance_from/to, and the
+        Table IIa distance/projection operands, when the operand in question is a pose) into
+        `qtys`. A line/plane operand resolves to a ContextQuantity and is a no-op here.
+        """
         if view is None:
             return
-        for attr in ("quantity", "distance_from", "distance_to"):
+        for attr in (
+            "quantity",
+            "distance_from",
+            "distance_to",
+            "distance_of",
+            "distance_from_primitive",
+            "projection_of",
+            "projection_on",
+        ):
             self._add_world_quantity(qtys, getattr(view, attr, None))
 
     def _add_value_world_quantities(self, qtys: dict[str, WorldQuantity], value: Any) -> None:
@@ -1037,6 +1061,8 @@ class MotionSpecDatasetBuilder:
             return self._distance_plan(spec, world_qtys).target
         if _is_alignment_view(spec):
             return self._alignment_plan(spec, world_qtys).target
+        if _is_geometric_distance_view(spec) or _is_projection_view(spec):
+            return self._geometric_distance_plan(spec, world_qtys).target
         return self._resolve_qty(spec.view.quantity, world_qtys)
 
     def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
@@ -1160,6 +1186,183 @@ class MotionSpecDatasetBuilder:
             )
         plan = _AlignmentPlan(moving, reference, target)
         self._alignment_plans[spec] = plan
+        return plan
+
+    def _primitive_direction(self, primitive: ContextQuantity, context: str) -> ContextQuantity:
+        """The direction context quantity a `line`/`plane` primitive composes (its `along` or
+        `normal`); plan 06 validation guarantees it exists and resolves to a well-formed
+        direction by the time RDF emission runs.
+        """
+        key = (
+            GeometricPropKey.Normal
+            if primitive.type == QuantityType.Plane
+            else GeometricPropKey.Along
+        )
+        referent = next((pair.value for pair in primitive.props.pairs if pair.key == key), None)
+        if referent is None:
+            raise ValueError(f"{context} needs '{primitive.name}' to declare its {key.value}.")
+        return _resolved_context_quantity(referent)
+
+    def _existing_world_pose(
+        self, world_qtys: dict[str, WorldQuantity], of_frame: str, wrt_frame: str
+    ) -> WorldQuantity | None:
+        """An already-declared `world` Pose(of, wrt) quantity, or None.
+
+        Mirrors `_alignment_plan`: a Table IIa expression reads an already-computed pose the
+        same way alignment does, it does not derive one -- minting a fresh of/wrt pose here
+        would duplicate whatever fixed/articulated chain already relates the two frames, which
+        is exactly the resources.py agent-placement and dataflow-scheduling machinery's job, not
+        this emitter's (`feedback_no_generated_copies_of_runtime_data`).
+        """
+        return next(
+            (
+                qty
+                for qty in world_qtys.values()
+                if qty.type == WorldQuantityType.Pose
+                and isinstance(qty.props, GeometricProps)
+                and _geo_prop(qty.props, "of") == of_frame
+                and _geo_prop(qty.props, "wrt") == wrt_frame
+            ),
+            None,
+        )
+
+    def _emit_pose_difference_coordinate(
+        self, node: URIRef, as_seen_by_frame: str, motion: GuardedMotion, stem: str
+    ) -> None:
+        """Emit a `PoseDifferenceCoordinate` node: the shape `quantities.pose_difference` (the
+        motion-spec IR reader `emit-call-PoseDiffEvaluator`'s closure writes into) expects.
+        """
+        point_node = self._declared_uri(f"point-{stem}-origin", motion)
+        self.graph.add((point_node, RDF.type, GEOM_ENT.Point))
+        self.graph.add((node, RDF.type, GEOM_COORD.PoseDifferenceCoordinate))
+        self.graph.add((node, RDF.type, GEOM_COORD.VectorXYZ))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], QUDT_QKIND.PlaneAngle))
+        self.graph.add((node, QUDT_SCHEMA["hasQuantityKind"], URI_QUDT_QK_LENGTH))
+        self.graph.add((node, GEOM_REL["reference-point"], point_node))
+        self.graph.add((node, GEOM_COORD["as-seen-by"], self._owned_uri(as_seen_by_frame, motion)))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
+        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+
+    def _geometric_distance_plan(
+        self,
+        spec: ConstraintSpecification,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> _GeometricDistancePlan:
+        """Resolve an authored Table IIa `distance of`/`projection of` view (plan 08): which of
+        the five operators it dispatches to, its operand poses/directions, and the scalar-view
+        carrier `_resolve_constraint_quantity` returns for it.
+
+        Every pose operand -- the point (ops 1-3) and both line origins (ops 4-5) -- has to
+        already be a declared `world` pose (same requirement `_alignment_plan` has): this
+        emitter reads already-computed poses, it does not derive new ones. Ops 4-5 additionally
+        difference the two origins through a `PoseDiffEvaluator`.
+        """
+        cached = self._geometric_distance_plans.get(spec)
+        if cached is not None:
+            return cached
+
+        view = spec.view
+        if _is_geometric_distance_view(spec):
+            a_ref, b_ref = view.distance_of, view.distance_from_primitive
+            table = GEOMETRIC_DISTANCE_OPS
+        else:
+            a_ref, b_ref = view.projection_of, view.projection_on
+            table = GEOMETRIC_PROJECTION_OPS
+        op_type = table[(_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref))]
+        context = f"Constraint '{spec.name}'"
+        motion = getattr(getattr(spec, "parent", None), "parent", None)
+        stem = f"geo-distance-{getattr(motion, 'name', '')}-{spec.name}"
+
+        if op_type in ("LineLineDistance", "LineLineProjection"):
+            line_a = _resolved_context_quantity(a_ref)
+            line_b = _resolved_context_quantity(b_ref)
+            dir_a = self._primitive_direction(line_a, context)
+            dir_b = self._primitive_direction(line_b, context)
+            frame = _geo_prop(dir_a.props, "as-seen-by")
+            if frame is None or _geo_prop(dir_b.props, "as-seen-by") != frame:
+                raise ValueError(
+                    f"{context} needs both lines' directions stated 'as-seen-by' the same frame."
+                )
+            origin_a = self._existing_world_pose(world_qtys, _geo_prop(line_a.props, "of"), frame)
+            origin_b = self._existing_world_pose(world_qtys, _geo_prop(line_b.props, "of"), frame)
+            for line, origin in ((line_a, origin_a), (line_b, origin_b)):
+                if origin is None:
+                    raise ValueError(
+                        f"{context} needs a declared 'world' pose of '{_geo_prop(line.props, 'of')}' "
+                        f"wrt '{frame}': a Table IIa expression reads an already-computed pose, "
+                        "it does not derive one."
+                    )
+            pose_diff = self._owned_uri(f"{stem}-pose-diff", motion)
+            diff_op = self._owned_uri(f"compute-{stem}-pose-diff", motion)
+            self.graph.add((diff_op, RDF.type, GEOM_OP_EXT.PoseDiffEvaluator))
+            self.graph.add((diff_op, GEOM_OP.in1, URIRef(origin_a.uri)))
+            self.graph.add((diff_op, GEOM_OP.in2, URIRef(origin_b.uri)))
+            self.graph.add((diff_op, GEOM_OP.out, pose_diff))
+            self._emit_pose_difference_coordinate(pose_diff, frame, motion, stem)
+            target_props = GeometricProps(
+                [
+                    GeoPropPair(GeometricPropKey.Of, _geo_prop(line_b.props, "of")),
+                    GeoPropPair(GeometricPropKey.Wrt, frame),
+                    GeoPropPair(GeometricPropKey.AsSeenBy, frame),
+                ]
+            )
+            target = WorldQuantity(
+                parent=motion, name=stem, type=WorldQuantityType.Pose, props=target_props
+            )
+            plan = _GeometricDistancePlan(
+                op_type=op_type,
+                in1=str(dir_a.uri),
+                in2=str(dir_b.uri),
+                direction=None,
+                pose=str(pose_diff),
+                diff_in1=str(origin_a.uri),
+                diff_in2=str(origin_b.uri),
+                relation_a=str(line_a.uri),
+                relation_b=str(line_b.uri),
+                gradient_frame=frame,
+                target=target,
+            )
+        else:
+            point_qty = self._distance_operand(a_ref, world_qtys)
+            primitive = _resolved_context_quantity(b_ref)
+            direction_qty = self._primitive_direction(primitive, context)
+            direction_frame = _geo_prop(direction_qty.props, "as-seen-by")
+            point_frames = _pose_frame_names(point_qty)
+            if point_frames is None:
+                raise ValueError(f"{context} needs an explicit-frame pose operand.")
+            _, point_wrt, _ = point_frames
+            if direction_frame is None or direction_frame != point_wrt:
+                role = "normal" if primitive.type == QuantityType.Plane else "direction"
+                raise ValueError(
+                    f"{context} needs '{primitive.name}' {role} stated 'as-seen-by' "
+                    f"'{point_wrt}', the point operand's own reference frame."
+                )
+            primitive_frame = _geo_prop(primitive.props, "of")
+            origin = self._existing_world_pose(world_qtys, primitive_frame, point_wrt)
+            if origin is None:
+                raise ValueError(
+                    f"{context} needs a declared 'world' pose of '{primitive_frame}' wrt "
+                    f"'{point_wrt}': a Table IIa expression reads an already-computed pose, it "
+                    "does not derive one."
+                )
+            target = WorldQuantity(
+                parent=motion, name=stem, type=WorldQuantityType.Pose, props=origin.props
+            )
+            plan = _GeometricDistancePlan(
+                op_type=op_type,
+                in1=str(point_qty.uri),
+                in2=str(origin.uri),
+                direction=str(direction_qty.uri),
+                pose=None,
+                diff_in1=None,
+                diff_in2=None,
+                relation_a=str(point_qty.uri),
+                relation_b=str(primitive.uri),
+                gradient_frame=point_wrt,
+                target=target,
+            )
+
+        self._geometric_distance_plans[spec] = plan
         return plan
 
     def _linear_distance_relation(self, start_uri: str, end_uri: str) -> URIRef:
@@ -4453,6 +4656,47 @@ class MotionSpecDatasetBuilder:
             self.graph.add((vector_op, GEOM_OP.in1, rotated_node))
             self.graph.add((vector_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
             self.graph.add((vector_op, GEOM_OP.out, vector_node))
+
+        # Table IIa (plan 08): point-plane/point-line/point-on-line distance, and line-line
+        # distance/projection. One operator node per expression, wired to its already-resolved
+        # in1/in2/direction (or pose-difference) operands.
+        seen_geometric_ops = self._emitted_geometric_distance_ops
+        for spec in constraints:
+            if not (_is_geometric_distance_view(spec) or _is_projection_view(spec)):
+                continue
+            qty = self._resolve_constraint_quantity(spec, world_qtys)
+            subspace = _view_subspace(spec)
+            distance_id = _scalar_id(qty, subspace, None)
+            if distance_id in seen_geometric_ops:
+                continue
+            seen_geometric_ops.add(distance_id)
+
+            plan = self._geometric_distance_plan(spec, world_qtys)
+            distance_node = self._owned_uri(distance_id, motion)
+            self._add_quantity(distance_node, QuantityType.Distance)
+            self.graph.add(
+                (
+                    distance_node,
+                    GEOM_COORD.of,
+                    self._linear_distance_relation(plan.relation_a, plan.relation_b),
+                )
+            )
+
+            gradient_node = self._owned_uri(f"{distance_id}-gradient", motion)
+            self._emit_direction_coordinate(
+                gradient_node, self._owned_uri(plan.gradient_frame, motion)
+            )
+
+            op_node = self._owned_uri(f"compute-{distance_id}", motion)
+            self.graph.add((op_node, RDF.type, GEOM_OP_EXT[plan.op_type]))
+            self.graph.add((op_node, GEOM_OP.in1, URIRef(plan.in1)))
+            self.graph.add((op_node, GEOM_OP.in2, URIRef(plan.in2)))
+            if plan.direction is not None:
+                self.graph.add((op_node, GEOM_OP.direction, URIRef(plan.direction)))
+            if plan.pose is not None:
+                self.graph.add((op_node, GEOM_OP.pose, URIRef(plan.pose)))
+            self.graph.add((op_node, GEOM_OP.distance, distance_node))
+            self.graph.add((op_node, GEOM_OP_EXT.gradient, gradient_node))
 
     def _emit_controller_base(
         self, ctrl_node: URIRef, ctrl: ControllerEntry, command: Any = None
