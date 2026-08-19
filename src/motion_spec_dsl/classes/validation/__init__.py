@@ -14,6 +14,7 @@ from motion_spec_dsl.classes.validation.constraints import (
     validate_alignment_views,
     validate_direction_cosine_components,
     validate_euler_components,
+    validate_line_plane_primitives,
     validate_path_following,
     validate_quaternion_components,
     validate_scalar_order_relations,
@@ -67,6 +68,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_expression_dimensions(model)
     validate_scalar_order_relations(model)
     validate_alignment_views(model)
+    validate_line_plane_primitives(model)
     validate_tolerance_defaults(model)
     validate_detect_targets(model)
     validate_subscription_targets(model)

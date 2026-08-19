@@ -32,6 +32,8 @@ GeoPropPair:
     // something up, and the startup bias then reports that payload as an external push.
     | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
     | key="normalization" ":" normalization=AngleRange
+    | key="normal"     ":" "<" quantity=[ContextQuantity|ScopedName] ">"
+    | key="along"      ":" "<" quantity=[ContextQuantity|ScopedName] ">"
 ;
 
 AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
@@ -232,6 +234,8 @@ DirectionCosineXYZ:
 ContextQuantity:
       type="velocity-profile" name=IRI_TRUNK value=ProfileSpec
     | type="admittance" name=IRI_TRUNK value=AdmittanceSpec
+    | type="plane" name=IRI_TRUNK "{" props=GeometricProps "}"
+    | type="line"  name=IRI_TRUNK "{" props=GeometricProps "}"
     | type=ContextQuantityWithGeometryType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=PlainContextQuantityValue?
     | type=ScalarContextQuantityType name=IRI_TRUNK value=PlainContextQuantityValue?
 ;

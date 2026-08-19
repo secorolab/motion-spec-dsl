@@ -90,6 +90,8 @@ class GeometricPropKey(StrEnum):
     FtSensor = "ft-sensor"
     ReTareOn = "re-tare-on"
     Normalization = "normalization"
+    Normal = "normal"
+    Along = "along"
 
 
 @dataclass
@@ -101,6 +103,7 @@ class GeoPropPair:
     frame: object | None = None
     joint: object | None = None
     sensor: object | None = None
+    quantity: object | None = None
     events: list = field(default_factory=list)
     normalization: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
@@ -108,7 +111,9 @@ class GeoPropPair:
     def __post_init__(self):
         self.key = GeometricPropKey(self.key)
         if self.value is None:
-            self.value = self.frame or self.joint or self.sensor or self.normalization
+            self.value = (
+                self.frame or self.joint or self.sensor or self.quantity or self.normalization
+            )
 
 
 class QuantityType(StrEnum):
@@ -119,6 +124,8 @@ class QuantityType(StrEnum):
     AccelerationTwist = "AccelerationTwist"
     Wrench = "Wrench"
     Direction = "Direction"
+    Line = "Line"
+    Plane = "Plane"
     Length = "Length"
     Distance = "Distance"
     Angle = "Angle"

@@ -203,6 +203,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     EXEC,
     GEOM_COORD,
     GEOM_ENT,
+    GEOM_EXT,
     GEOM_OP,
     GEOM_OP_EXT,
     GEOM_PATH,
@@ -2189,6 +2190,9 @@ class MotionSpecDatasetBuilder:
             if quantity.type == QuantityType.Direction:
                 self._emit_direction_quantity(node, quantity)
                 continue
+            if quantity.type in (QuantityType.Line, QuantityType.Plane):
+                self._emit_structural_primitive(node, quantity)
+                continue
             if quantity.type == ReferenceGeneratorType.VelocityProfile:
                 self._emit_velocity_profile_quantity(node, quantity)
                 continue
@@ -3010,6 +3014,29 @@ class MotionSpecDatasetBuilder:
             )
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self._emit_direction_coordinate(node, as_seen_by_node, vector)
+
+    def _emit_structural_primitive(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+    ) -> None:
+        """Emit a `line`/`plane` as an origin point (the `of` frame's) plus the unit vector
+        carried by the referenced `direction` quantity.
+        """
+        is_plane = quantity.type == QuantityType.Plane
+        frame_name = _geo_prop(quantity.props, GeometricPropKey.Of)
+        vector_name = _geo_prop(
+            quantity.props, GeometricPropKey.Normal if is_plane else GeometricPropKey.Along
+        )
+        vector_node = self._owned_uri(vector_name, quantity)
+        # The referenced direction is emitted as a direction coordinate; the entity role ranges
+        # over the structural unit vector, so state that type on the same node.
+        self.graph.add((vector_node, RDF.type, GEOM_ENT.UnitVector))
+        self.graph.add((node, RDF.type, GEOM_EXT.Plane if is_plane else GEOM_EXT.Line))
+        self.graph.add(
+            (node, URI_GEOM_PRED_ORIGIN, self._frame_origin(self._owned_uri(frame_name, quantity)))
+        )
+        self.graph.add((node, GEOM_EXT.normal if is_plane else GEOM_EXT.direction, vector_node))
 
     def _emit_path_quantity(
         self,

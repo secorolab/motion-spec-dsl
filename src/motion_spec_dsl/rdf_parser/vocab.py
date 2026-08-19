@@ -132,6 +132,7 @@ class EL(DefinedNamespace):
 
 class GEOM_ENT(DefinedNamespace):
     Point: URIRef
+    UnitVector: URIRef
     Frame: URIRef
     KinematicTree: URIRef
     SimplicialComplex: URIRef
@@ -302,6 +303,16 @@ class GEOM_REL_EXT(DefinedNamespace):
     PoseDifference: URIRef
 
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-relations#")
+
+
+class GEOM_EXT(DefinedNamespace):
+    Line: URIRef
+    Plane: URIRef
+
+    direction: URIRef
+    normal: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/geometry/structural-entities#")
 
 
 class GEOM_OP_EXT(DefinedNamespace):

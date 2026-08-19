@@ -35,6 +35,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-relations-extension.shacl.ttl",
+        "https://secorolab.github.io/metamodels/geometry/structural-entities-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/execution-context.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-handler-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/task/constraint-extension.shacl.ttl",

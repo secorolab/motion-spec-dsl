@@ -468,6 +468,40 @@ def validate_alignment_views(model: Model) -> None:
         _alignment_target(spec)
 
 
+_PRIMITIVE_DIRECTION_KEY = {
+    QuantityType.Plane: GeometricPropKey.Normal,
+    QuantityType.Line: GeometricPropKey.Along,
+}
+
+
+def validate_line_plane_primitives(model: Model) -> None:
+    """A line or plane composes a frame origin with a declared unit direction: both roles are
+    required, and the direction role must name a `direction` quantity, not an arbitrary one.
+    """
+    for item in get_children_of_type(ContextQuantity, model):
+        quantity = _resolved_context_quantity(item)
+        direction_key = _PRIMITIVE_DIRECTION_KEY.get(quantity.type)
+        if direction_key is None:
+            continue
+        keys = [pair.key for pair in quantity.props.pairs]
+        allowed = {GeometricPropKey.Of, direction_key}
+        for key in keys:
+            if key not in allowed:
+                raise semantic_error(
+                    f"'{quantity.name}' is a {quantity.type} and takes only "
+                    f"'of' and '{direction_key}'; '{key}' is not one of them.",
+                    quantity,
+                )
+        for key in sorted(allowed):
+            if keys.count(key) != 1:
+                raise semantic_error(
+                    f"'{quantity.name}' is a {quantity.type} and needs exactly one '{key}'.",
+                    quantity,
+                )
+        referent = next(pair.value for pair in quantity.props.pairs if pair.key == direction_key)
+        _alignment_operand(referent, f"'{quantity.name}' {direction_key}", quantity)
+
+
 def validate_tolerance_defaults(model: Model) -> None:
     """A model-wide band applies to every constraint of its kind, so it has to be stated in
     that kind's units and stated once. Neither is decidable in the grammar: the value rule is
