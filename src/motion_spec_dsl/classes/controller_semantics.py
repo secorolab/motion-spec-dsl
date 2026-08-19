@@ -77,12 +77,13 @@ class ControllerCommandRecord:
     def is_moment_command(self) -> bool:
         """Whether this commands a Cartesian moment (a couple about an axis), not a joint torque.
 
-        An alignment view names two directions rather than a world quantity, so it has none to
-        classify by; its command is a couple about the axes it drives.
+        An `angle between` view (versor-versor, versor-plane, or plane-plane) names its operands
+        rather than a world quantity, so it has none to classify by; its command is a couple
+        about the axis/axes it drives.
         """
         if self.command_type != QuantityType.Torque:
             return False
-        if self.view_subspace == "alignment":
+        if self.view_subspace in ("alignment", "incident-angle", "plane-angle"):
             return True
         return self.quantity is not None and self.quantity.type != WorldQuantityType.JointPosition
 
@@ -90,7 +91,15 @@ class ControllerCommandRecord:
 # Resolved view subspaces whose command is a moment, not a force. A whole `.orientation` view
 # keeps its raw token; only the per-axis form aliases to "rotation".
 ANGULAR_SUBSPACES = frozenset(
-    {"orientation", "rotation", "angular", "angular-velocity", "alignment"}
+    {
+        "orientation",
+        "rotation",
+        "angular",
+        "angular-velocity",
+        "alignment",
+        "incident-angle",
+        "plane-angle",
+    }
 )
 
 LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
@@ -176,6 +185,12 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
         getattr(view, "angle_from", None) is not None
         and getattr(view, "angle_to", None) is not None
     ):
+        from_is_plane = _resolved_context_quantity(view.angle_from).type == QuantityType.Plane
+        to_is_plane = _resolved_context_quantity(view.angle_to).type == QuantityType.Plane
+        if from_is_plane and to_is_plane:
+            return "plane-angle"
+        if to_is_plane:
+            return "incident-angle"
         return "alignment"
 
     if (

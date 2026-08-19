@@ -320,6 +320,8 @@ class GEOM_OP_EXT(DefinedNamespace):
     PoseDiffEvaluator: URIRef
     PoseToAngularDistance: URIRef
     RotationVectorFromDirections: URIRef
+    AngleGradientFromDirections: URIRef
+    IncidentAngle: URIRef
     PathProjection: URIRef
     PathEvaluator: URIRef
     PathTangentFrame: URIRef
@@ -336,6 +338,7 @@ class GEOM_OP_EXT(DefinedNamespace):
     path: URIRef
     tangent: URIRef
     linear: URIRef
+    gradient: URIRef
 
     _extras = [
         "angular-distance",

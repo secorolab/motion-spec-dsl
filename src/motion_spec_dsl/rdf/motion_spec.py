@@ -182,6 +182,8 @@ from motion_spec_dsl.rdf.common import (
     _is_alignment_view,
     _is_distance_view,
     _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_plane_angle_view,
     _is_projection_view,
     _node_name,
     _ns_term,
@@ -1063,6 +1065,10 @@ class MotionSpecDatasetBuilder:
             return self._alignment_plan(spec, world_qtys).target
         if _is_geometric_distance_view(spec) or _is_projection_view(spec):
             return self._geometric_distance_plan(spec, world_qtys).target
+        if _is_incident_angle_view(spec):
+            return self._incident_angle_plan(spec, world_qtys).target
+        if _is_plane_angle_view(spec):
+            return self._plane_angle_plan(spec, world_qtys).target
         return self._resolve_qty(spec.view.quantity, world_qtys)
 
     def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
@@ -1135,25 +1141,25 @@ class MotionSpecDatasetBuilder:
         self._distance_plans[spec] = plan
         return plan
 
-    def _alignment_plan(
+    def _direction_pair_plan(
         self,
-        spec: ConstraintSpecification,
+        moving: ContextQuantity,
+        reference: ContextQuantity,
+        context: str,
         world_qtys: dict[str, WorldQuantity],
     ) -> _AlignmentPlan:
-        """Resolve an authored `angle between` view's direction operands and the already
-        computed pose (moving frame wrt reference frame) the rotated-direction op reads.
+        """Resolve two direction operands of an `angle between` view and the already computed
+        pose (moving frame wrt reference frame) the rotated-direction op reads.
+
+        Shared by all three Table IIb forms: versor-versor compares its two authored directions
+        directly; versor-plane and plane-plane resolve their plane operand(s) to a normal
+        direction first (see `_incident_angle_plan` / `_plane_angle_plan`) and pass it through
+        here unchanged.
 
         Unlike a distance's endpoints, this pose's *value* is read at runtime, so it must be an
         existing solver-computed `world` quantity -- there is no operator to derive a fresh
         relative pose from two bare frame names.
         """
-        cached = self._alignment_plans.get(spec)
-        if cached is not None:
-            return cached
-
-        moving = spec.view.angle_from
-        reference = spec.view.angle_to
-        context = f"Alignment constraint '{spec.name}'"
         moving_frame = _geo_prop(moving.props, "as-seen-by") or _geo_prop(moving.props, "wrt")
         reference_frame = _geo_prop(reference.props, "as-seen-by") or _geo_prop(
             reference.props, "wrt"
@@ -1184,7 +1190,67 @@ class MotionSpecDatasetBuilder:
                 f"{context} needs '{target.name}' seen by '{reference_frame}', the frame its "
                 "reference direction is stated in."
             )
-        plan = _AlignmentPlan(moving, reference, target)
+        return _AlignmentPlan(moving, reference, target)
+
+    def _alignment_plan(
+        self,
+        spec: ConstraintSpecification,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> _AlignmentPlan:
+        """Resolve a versor-versor `angle between` view's direction operands (plan cached by
+        spec, shared with the incident-angle and plane-angle forms below)."""
+        cached = self._alignment_plans.get(spec)
+        if cached is not None:
+            return cached
+        plan = self._direction_pair_plan(
+            spec.view.angle_from,
+            spec.view.angle_to,
+            f"Alignment constraint '{spec.name}'",
+            world_qtys,
+        )
+        self._alignment_plans[spec] = plan
+        return plan
+
+    def _plane_normal(self, plane: ContextQuantity) -> ContextQuantity:
+        """The resolved `direction` quantity a `plane`'s `normal:` role names. `_geo_prop`
+        would give its URI string (the frame-lookup helper); this needs the object itself,
+        the same way `validate_line_plane_primitives` reads it during validation.
+        """
+        return _resolved_context_quantity(_geo_prop_value(plane.props, GeometricPropKey.Normal))
+
+    def _incident_angle_plan(
+        self,
+        spec: ConstraintSpecification,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> _AlignmentPlan:
+        """Resolve a versor-plane `angle between` view: the versor operand against the plane
+        operand's normal direction."""
+        cached = self._alignment_plans.get(spec)
+        if cached is not None:
+            return cached
+        moving = _resolved_context_quantity(spec.view.angle_from)
+        reference = self._plane_normal(_resolved_context_quantity(spec.view.angle_to))
+        plan = self._direction_pair_plan(
+            moving, reference, f"Incident-angle constraint '{spec.name}'", world_qtys
+        )
+        self._alignment_plans[spec] = plan
+        return plan
+
+    def _plane_angle_plan(
+        self,
+        spec: ConstraintSpecification,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> _AlignmentPlan:
+        """Resolve a plane-plane `angle between` view: the first-named plane's normal (moving)
+        against the second's (reference) -- see plan 09 Sec.1, only the first operand moves."""
+        cached = self._alignment_plans.get(spec)
+        if cached is not None:
+            return cached
+        moving = self._plane_normal(_resolved_context_quantity(spec.view.angle_from))
+        reference = self._plane_normal(_resolved_context_quantity(spec.view.angle_to))
+        plan = self._direction_pair_plan(
+            moving, reference, f"Plane-angle constraint '{spec.name}'", world_qtys
+        )
         self._alignment_plans[spec] = plan
         return plan
 
@@ -3890,7 +3956,11 @@ class MotionSpecDatasetBuilder:
                 else:
                     sid = (
                         _alignment_id(qty, spec)
-                        if _is_alignment_view(spec)
+                        if (
+                            _is_alignment_view(spec)
+                            or _is_incident_angle_view(spec)
+                            or _is_plane_angle_view(spec)
+                        )
                         else _scalar_id(qty, subspace, axis)
                     )
                     qty_node = self._owned_uri(sid, motion)
@@ -4697,6 +4767,80 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((op_node, GEOM_OP.pose, URIRef(plan.pose)))
             self.graph.add((op_node, GEOM_OP.distance, distance_node))
             self.graph.add((op_node, GEOM_OP_EXT.gradient, gradient_node))
+
+        for spec in constraints:
+            if not _is_incident_angle_view(spec):
+                continue
+            qty = self._resolve_constraint_quantity(spec, world_qtys)
+            alignment_id = _alignment_id(qty, spec)
+            if alignment_id in seen_alignment_ops:
+                continue
+            seen_alignment_ops.add(alignment_id)
+
+            plan = self._incident_angle_plan(spec, world_qtys)
+            reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
+
+            rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
+            self._emit_direction_coordinate(rotated_node, reference_frame)
+            rotate_op = self._owned_uri(f"compute-{alignment_id}-rotated", motion)
+            self.graph.add((rotate_op, RDF.type, GEOM_OP.RotateDirectionDistalToProximalWithPose))
+            self.graph.add((rotate_op, GEOM_OP.pose, URIRef(plan.target.uri)))
+            self.graph.add((rotate_op, GEOM_OP["from"], URIRef(plan.moving.uri)))
+            self.graph.add((rotate_op, GEOM_OP.to, rotated_node))
+
+            theta_node = self._owned_uri(alignment_id, motion)
+            self._add_quantity(theta_node, QuantityType.Angle)
+            self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+
+            gradient_node = self._owned_uri(f"{alignment_id}-gradient", motion)
+            self._emit_direction_coordinate(gradient_node, reference_frame)
+
+            angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
+            self.graph.add((angle_op, RDF.type, GEOM_OP_EXT.IncidentAngle))
+            self.graph.add((angle_op, GEOM_OP.in1, rotated_node))
+            self.graph.add((angle_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+            self.graph.add((angle_op, GEOM_OP.angle, theta_node))
+            self.graph.add((angle_op, GEOM_OP_EXT.gradient, gradient_node))
+
+        for spec in constraints:
+            if not _is_plane_angle_view(spec):
+                continue
+            qty = self._resolve_constraint_quantity(spec, world_qtys)
+            alignment_id = _alignment_id(qty, spec)
+            if alignment_id in seen_alignment_ops:
+                continue
+            seen_alignment_ops.add(alignment_id)
+
+            plan = self._plane_angle_plan(spec, world_qtys)
+            reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
+
+            rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
+            self._emit_direction_coordinate(rotated_node, reference_frame)
+            rotate_op = self._owned_uri(f"compute-{alignment_id}-rotated", motion)
+            self.graph.add((rotate_op, RDF.type, GEOM_OP.RotateDirectionDistalToProximalWithPose))
+            self.graph.add((rotate_op, GEOM_OP.pose, URIRef(plan.target.uri)))
+            self.graph.add((rotate_op, GEOM_OP["from"], URIRef(plan.moving.uri)))
+            self.graph.add((rotate_op, GEOM_OP.to, rotated_node))
+
+            theta_node = self._owned_uri(alignment_id, motion)
+            self._add_quantity(theta_node, QuantityType.Angle)
+            self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
+            self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
+            self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
+            self.graph.add((angle_op, GEOM_OP["from-directions"], URIRef(plan.reference.uri)))
+            self.graph.add((angle_op, GEOM_OP.angle, theta_node))
+
+            # from-directions is multi-valued/unordered on angle_op; the scalar above is
+            # symmetric so that is safe, but gradient normalize(n2 x n1) is not -- it needs
+            # AngleGradientFromDirections' ordered in1/in2, never riding on angle_op.
+            gradient_node = self._owned_uri(f"{alignment_id}-gradient", motion)
+            self._emit_direction_coordinate(gradient_node, reference_frame)
+            grad_op = self._owned_uri(f"compute-{alignment_id}-gradient", motion)
+            self.graph.add((grad_op, RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
+            self.graph.add((grad_op, GEOM_OP.in1, rotated_node))
+            self.graph.add((grad_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+            self.graph.add((grad_op, GEOM_OP_EXT.gradient, gradient_node))
 
     def _emit_controller_base(
         self, ctrl_node: URIRef, ctrl: ControllerEntry, command: Any = None
