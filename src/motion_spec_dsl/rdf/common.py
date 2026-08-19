@@ -96,12 +96,44 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     )
 
 
-def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is an `angle between A and B` form."""
+def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is any `angle between A and B` form."""
     return (
         getattr(constraint.view, "angle_from", None) is not None
         and getattr(constraint.view, "angle_to", None) is not None
     )
+
+
+def _is_plane_operand(operand: ContextQuantity) -> bool:
+    """Whether an `angle between` operand is a plane rather than a versor direction."""
+    return _resolved_context_quantity(operand).type == QuantityType.Plane
+
+
+def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the versor-versor `angle between A and B` form. Any new
+    call site must decide explicitly whether it wants this (versor-versor only) or the broader
+    `_is_angle_between_view`.
+    """
+    if not _is_angle_between_view(constraint):
+        return False
+    view = constraint.view
+    return not _is_plane_operand(view.angle_from) and not _is_plane_operand(view.angle_to)
+
+
+def _is_incident_angle_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the versor-plane `angle between A and B` form."""
+    if not _is_angle_between_view(constraint):
+        return False
+    view = constraint.view
+    return not _is_plane_operand(view.angle_from) and _is_plane_operand(view.angle_to)
+
+
+def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the plane-plane `angle between A and B` form."""
+    if not _is_angle_between_view(constraint):
+        return False
+    view = constraint.view
+    return _is_plane_operand(view.angle_from) and _is_plane_operand(view.angle_to)
 
 
 def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
@@ -174,7 +206,7 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
             return QuantityType.Distance
         if subspace == "rotation":
             return QuantityType.PlaneAngle
-        if subspace == "alignment":
+        if subspace in ("alignment", "incident-angle", "plane-angle"):
             return QuantityType.Angle
     spec = WORLD_SPECS.get(quantity.type)
     if spec is None:

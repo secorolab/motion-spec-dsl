@@ -447,8 +447,11 @@ def _alignment_target(spec) -> None:
 
 
 def validate_alignment_views(model: Model) -> None:
-    """Check `angle between <a> and <b>` views: both operands are authored directions, the
-    reference is a signed frame axis, and the target is zero or a band opening at zero.
+    """Check `angle between <a> and <b>` views, dispatched on operand type (Borghesan Table IIb):
+    versor-versor keeps the existing signed-unit-frame-axis rule on its reference operand, since
+    it drives the 2-axis rotation-vector row that rule exists for; versor-plane and plane-plane
+    place no frame-axis requirement on their plane operand(s), since their rows are runtime
+    gradients. All three share the zero/band target rule.
     """
     for spec in get_children_of_type(ConstraintSpecification, model):
         view = spec.view
@@ -456,15 +459,26 @@ def validate_alignment_views(model: Model) -> None:
         angle_to = getattr(view, "angle_to", None)
         if angle_from is None or angle_to is None:
             continue
-        _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
-        reference = _alignment_operand(angle_to, f"'{spec.name}' reference operand", spec)
-        nonzero = [v for v in reference if abs(v) > 1e-9]
-        if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
+        from_is_plane = _resolved_context_quantity(angle_from).type == QuantityType.Plane
+        to_is_plane = _resolved_context_quantity(angle_to).type == QuantityType.Plane
+        if from_is_plane and not to_is_plane:
             raise semantic_error(
-                f"'{spec.name}' reference operand must be a signed unit frame axis "
-                "(exactly one component, +-1).",
+                f"'{spec.name}' does not support `angle between <plane> and <direction>`; "
+                "author it as `angle between <direction> and <plane>`.",
                 spec,
             )
+        if not to_is_plane:
+            _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
+            reference = _alignment_operand(angle_to, f"'{spec.name}' reference operand", spec)
+            nonzero = [v for v in reference if abs(v) > 1e-9]
+            if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
+                raise semantic_error(
+                    f"'{spec.name}' reference operand must be a signed unit frame axis "
+                    "(exactly one component, +-1).",
+                    spec,
+                )
+        elif not from_is_plane:
+            _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
         _alignment_target(spec)
 
 
