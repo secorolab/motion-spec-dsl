@@ -22,18 +22,22 @@ GeometricProps:
 // pose/twist/wrench slots, a joint for joint-space quantities, an FT sensor
 // for measured wrenches.
 GeoPropPair:
-      key="of"         ":" "<" frame=[scene.Frame|FQN] ">"
-    | key="wrt"        ":" "<" frame=[scene.Frame|FQN] ">"
-    | key="ref-point"  ":" "<" frame=[scene.Frame|FQN] ">"
-    | key="as-seen-by" ":" "<" frame=[scene.Frame|FQN] ">"
+      key=FrameProp ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
     // Re-take the tare on each of these: the load below the sensor changes when the robot picks
     // something up, and the startup bias then reports that payload as an external push.
     | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
     | key="normalization" ":" normalization=AngleRange
-    | key="normal"     ":" "<" quantity=[ContextQuantity|ScopedName] ">"
-    | key="along"      ":" "<" quantity=[ContextQuantity|ScopedName] ">"
+    | key=PrimitiveDirectionProp ":" "<" quantity=[ContextQuantity|ScopedName] ">"
+;
+
+FrameProp:
+    "of" | "wrt" | "ref-point" | "as-seen-by"
+;
+
+PrimitiveDirectionProp:
+    "normal" | "along"
 ;
 
 AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
@@ -101,19 +105,7 @@ ToleranceQuantityType:
 ;
 
 View:
-    (
-        "distance" "between"
-        "<" distance_from=[DistancePoseOperand|FQN] ">"
-        "and"
-        "<" distance_to=[DistancePoseOperand|FQN] ">"
-    )
-    |
-    (
-        "angle" "between"
-        "<" angle_from=[AlignDirectionOperand|FQN] ">"
-        "and"
-        "<" angle_to=[AlignDirectionOperand|FQN] ">"
-    )
+    binary=BinaryView
     |
     elapsed=ElapsedTime
     |
@@ -126,32 +118,50 @@ View:
     "(" expr=QExpr ")"
     |
     (
-        "distance" "of"
-        "<" distance_of=[GeometricDistanceOperand|FQN] ">"
-        "from"
-        "<" distance_from_primitive=[GeometricDistanceOperand|FQN] ">"
-    )
-    |
-    (
-        "projection" "of"
-        "<" projection_of=[GeometricDistanceOperand|FQN] ">"
-        "on"
-        "<" projection_on=[ContextQuantity|FQN] ">"
-    )
-    |
-    (
         "<" quantity=[ConstraintViewQuantity|FQN] ">"
         selector=SelectorTail?
     )
 ;
 
-ConstraintViewQuantity: WorldQuantity | ContextQuantity ;
+BinaryView:
+    DistanceBetweenView | AngleBetweenView | DistanceFromView | ProjectionOnView
+;
 
-DistancePoseOperand: WorldQuantity | ContextQuantity ;
+DistanceBetweenView:
+    "distance" "between"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "and"
+    "<" right=[ConstraintViewQuantity|FQN] ">"
+;
+
+AngleBetweenView:
+    "angle" "between"
+    "<" left=[AlignDirectionOperand|FQN] ">"
+    "and"
+    "<" right=[AlignDirectionOperand|FQN] ">"
+;
+
+DistanceFromView:
+    "distance" "of"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "from"
+    "<" right=[ConstraintViewQuantity|FQN] ">"
+;
+
+ProjectionOnView:
+    "projection" "of"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "on"
+    "<" right=[ContextQuantity|FQN] ">"
+;
+
+ConstraintViewQuantity: WorldQuantity | ContextQuantity ;
 
 AlignDirectionOperand: ContextQuantity ;
 
-GeometricDistanceOperand: WorldQuantity | ContextQuantity ;
+GeometricPrimitiveType:
+    "plane" | "line"
+;
 
 ElapsedTime:
     marker?="elapsed"
@@ -250,8 +260,7 @@ DirectionCosineXYZ:
 ContextQuantity:
       type="velocity-profile" name=IRI_TRUNK value=ProfileSpec
     | type="admittance" name=IRI_TRUNK value=AdmittanceSpec
-    | type="plane" name=IRI_TRUNK "{" props=GeometricProps "}"
-    | type="line"  name=IRI_TRUNK "{" props=GeometricProps "}"
+    | type=GeometricPrimitiveType name=IRI_TRUNK "{" props=GeometricProps "}"
     | type=ContextQuantityWithGeometryType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=PlainContextQuantityValue?
     | type=ScalarContextQuantityType name=IRI_TRUNK value=PlainContextQuantityValue?
 ;

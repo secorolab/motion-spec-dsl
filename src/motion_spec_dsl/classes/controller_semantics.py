@@ -113,7 +113,8 @@ def _alignment_controlled_axes(
     """The angular axes an alignment drives: every axis but the reference direction's own, whose
     rotation-vector component is identically zero -- that zero is the free spin about the axis.
     """
-    reference = getattr(constraint.view, "angle_to", None)
+    binary = getattr(constraint.view, "binary", None)
+    reference = binary.right if type(binary).__name__ == "AngleBetweenView" else None
     if reference is None:
         return ANGULAR_AXES
     coords = getattr(getattr(_resolved_context_quantity(reference), "value", None), "coords", None)
@@ -180,38 +181,30 @@ def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
 def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
     """The constraint's canonical distance, joint-position, or pose subspace."""
     view = constraint.view
+    binary = getattr(view, "binary", None)
+    kind = type(binary).__name__ if binary is not None else None
 
-    if (
-        getattr(view, "angle_from", None) is not None
-        and getattr(view, "angle_to", None) is not None
-    ):
-        from_is_plane = _resolved_context_quantity(view.angle_from).type == QuantityType.Plane
-        to_is_plane = _resolved_context_quantity(view.angle_to).type == QuantityType.Plane
+    if kind == "AngleBetweenView":
+        from_is_plane = _resolved_context_quantity(binary.left).type == QuantityType.Plane
+        to_is_plane = _resolved_context_quantity(binary.right).type == QuantityType.Plane
         if from_is_plane and to_is_plane:
             return "plane-angle"
         if to_is_plane:
             return "incident-angle"
         return "alignment"
 
-    if (
-        getattr(view, "distance_from", None) is not None
-        and getattr(view, "distance_to", None) is not None
-    ):
+    if kind == "DistanceBetweenView":
         return "distance"
 
-    distance_of = getattr(view, "distance_of", None)
-    distance_from_primitive = getattr(view, "distance_from_primitive", None)
-    if distance_of is not None and distance_from_primitive is not None:
+    if kind == "DistanceFromView":
         op_type = GEOMETRIC_DISTANCE_OPS.get(
-            (_geometric_operand_kind(distance_of), _geometric_operand_kind(distance_from_primitive))
+            (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
         )
         return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
 
-    projection_of = getattr(view, "projection_of", None)
-    projection_on = getattr(view, "projection_on", None)
-    if projection_of is not None and projection_on is not None:
+    if kind == "ProjectionOnView":
         op_type = GEOMETRIC_PROJECTION_OPS.get(
-            (_geometric_operand_kind(projection_of), _geometric_operand_kind(projection_on))
+            (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
         )
         return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
 

@@ -913,22 +913,17 @@ class MotionSpecDatasetBuilder:
                 qtys.setdefault(quantity.name, quantity)
 
     def _add_view_world_quantities(self, qtys: dict[str, WorldQuantity], view: Any) -> None:
-        """Collect the WorldQuantities a view references (quantity, distance_from/to, and the
-        Table IIa distance/projection operands, when the operand in question is a pose) into
-        `qtys`. A line/plane operand resolves to a ContextQuantity and is a no-op here.
+        """Collect the WorldQuantities a view references (quantity, and the binary view's
+        left/right operands, when the operand in question is a pose) into `qtys`. An
+        angle-between or line/plane operand resolves to a ContextQuantity and is a no-op here.
         """
         if view is None:
             return
-        for attr in (
-            "quantity",
-            "distance_from",
-            "distance_to",
-            "distance_of",
-            "distance_from_primitive",
-            "projection_of",
-            "projection_on",
-        ):
-            self._add_world_quantity(qtys, getattr(view, attr, None))
+        self._add_world_quantity(qtys, getattr(view, "quantity", None))
+        binary = getattr(view, "binary", None)
+        if binary is not None:
+            self._add_world_quantity(qtys, getattr(binary, "left", None))
+            self._add_world_quantity(qtys, getattr(binary, "right", None))
 
     def _add_value_world_quantities(self, qtys: dict[str, WorldQuantity], value: Any) -> None:
         """Collect WorldQuantities referenced by a context value's source (snapshot/profile/admittance)."""
@@ -1113,8 +1108,8 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
 
-        start = self._distance_operand(spec.view.distance_from, world_qtys)
-        end = self._distance_operand(spec.view.distance_to, world_qtys)
+        start = self._distance_operand(spec.view.binary.left, world_qtys)
+        end = self._distance_operand(spec.view.binary.right, world_qtys)
         if start is None or end is None:
             raise ValueError(f"Distance constraint '{spec.name}' references an unknown pose.")
         context = f"Distance constraint '{spec.name}'"
@@ -1203,8 +1198,8 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
         plan = self._direction_pair_plan(
-            spec.view.angle_from,
-            spec.view.angle_to,
+            spec.view.binary.left,
+            spec.view.binary.right,
             f"Alignment constraint '{spec.name}'",
             world_qtys,
         )
@@ -1228,8 +1223,8 @@ class MotionSpecDatasetBuilder:
         cached = self._alignment_plans.get(spec)
         if cached is not None:
             return cached
-        moving = _resolved_context_quantity(spec.view.angle_from)
-        reference = self._plane_normal(_resolved_context_quantity(spec.view.angle_to))
+        moving = _resolved_context_quantity(spec.view.binary.left)
+        reference = self._plane_normal(_resolved_context_quantity(spec.view.binary.right))
         plan = self._direction_pair_plan(
             moving, reference, f"Incident-angle constraint '{spec.name}'", world_qtys
         )
@@ -1246,8 +1241,8 @@ class MotionSpecDatasetBuilder:
         cached = self._alignment_plans.get(spec)
         if cached is not None:
             return cached
-        moving = self._plane_normal(_resolved_context_quantity(spec.view.angle_from))
-        reference = self._plane_normal(_resolved_context_quantity(spec.view.angle_to))
+        moving = self._plane_normal(_resolved_context_quantity(spec.view.binary.left))
+        reference = self._plane_normal(_resolved_context_quantity(spec.view.binary.right))
         plan = self._direction_pair_plan(
             moving, reference, f"Plane-angle constraint '{spec.name}'", world_qtys
         )
@@ -1327,13 +1322,13 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
 
-        view = spec.view
-        if _is_geometric_distance_view(spec):
-            a_ref, b_ref = view.distance_of, view.distance_from_primitive
-            table = GEOMETRIC_DISTANCE_OPS
-        else:
-            a_ref, b_ref = view.projection_of, view.projection_on
-            table = GEOMETRIC_PROJECTION_OPS
+        binary = spec.view.binary
+        a_ref, b_ref = binary.left, binary.right
+        table = (
+            GEOMETRIC_DISTANCE_OPS
+            if _is_geometric_distance_view(spec)
+            else GEOMETRIC_PROJECTION_OPS
+        )
         op_type = table[(_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref))]
         context = f"Constraint '{spec.name}'"
         motion = getattr(getattr(spec, "parent", None), "parent", None)
@@ -1983,12 +1978,10 @@ class MotionSpecDatasetBuilder:
 
     def _view_node(self, view: Any, owner: Any) -> URIRef:
         """Resolve a constraint/controller view to its RDF value node."""
-        if (
-            getattr(view, "distance_from", None) is not None
-            and getattr(view, "distance_to", None) is not None
-        ):
+        binary = getattr(view, "binary", None)
+        if binary is not None and type(binary).__name__ == "DistanceBetweenView":
             return self._owned_uri(
-                f"distance-{_node_name(view.distance_from)}-{_node_name(view.distance_to)}",
+                f"distance-{_node_name(binary.left)}-{_node_name(binary.right)}",
                 owner,
             )
 

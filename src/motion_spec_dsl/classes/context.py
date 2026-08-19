@@ -541,14 +541,7 @@ class View:
     subspace: SubSpace | None = None
     axis: Axis | None = None
     selector: SelectorTail | None = None
-    distance_from: WorldQuantity | None = None
-    distance_to: WorldQuantity | None = None
-    angle_from: ContextQuantity | None = None
-    angle_to: ContextQuantity | None = None
-    distance_of: WorldQuantity | ContextQuantity | None = None
-    distance_from_primitive: WorldQuantity | ContextQuantity | None = None
-    projection_of: WorldQuantity | ContextQuantity | None = None
-    projection_on: WorldQuantity | ContextQuantity | None = None
+    binary: object | None = None
     elapsed: ElapsedTime | None = None
     progress: ProgressAlong | None = None
     moving: MovingAlong | None = None

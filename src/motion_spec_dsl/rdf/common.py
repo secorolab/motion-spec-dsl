@@ -89,36 +89,35 @@ def _geo_prop_value(props: GeometricProps | None, key: str):
     return None
 
 
+def _binary_view(constraint: ConstraintSpecification):
+    """The constraint's view as its `BinaryView` instance (any of the 4 binary forms), or None."""
+    return getattr(constraint.view, "binary", None)
+
+
+def _binary_view_kind(constraint: ConstraintSpecification) -> str | None:
+    """The grammar rule name of the constraint's binary view, or None."""
+    binary = _binary_view(constraint)
+    return type(binary).__name__ if binary is not None else None
+
+
 def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `distance between A and B` form."""
-    return (
-        getattr(constraint.view, "distance_from", None) is not None
-        and getattr(constraint.view, "distance_to", None) is not None
-    )
+    return _binary_view_kind(constraint) == "DistanceBetweenView"
 
 
 def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is any `angle between A and B` form."""
-    return (
-        getattr(constraint.view, "angle_from", None) is not None
-        and getattr(constraint.view, "angle_to", None) is not None
-    )
+    return _binary_view_kind(constraint) == "AngleBetweenView"
 
 
 def _is_geometric_distance_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `distance of A from B` (Table IIa) form."""
-    return (
-        getattr(constraint.view, "distance_of", None) is not None
-        and getattr(constraint.view, "distance_from_primitive", None) is not None
-    )
+    return _binary_view_kind(constraint) == "DistanceFromView"
 
 
 def _is_projection_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `projection of A on B` (Table IIa) form."""
-    return (
-        getattr(constraint.view, "projection_of", None) is not None
-        and getattr(constraint.view, "projection_on", None) is not None
-    )
+    return _binary_view_kind(constraint) == "ProjectionOnView"
 
 
 def _is_plane_operand(operand: ContextQuantity) -> bool:
@@ -133,32 +132,33 @@ def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
     """
     if not _is_angle_between_view(constraint):
         return False
-    view = constraint.view
-    return not _is_plane_operand(view.angle_from) and not _is_plane_operand(view.angle_to)
+    binary = _binary_view(constraint)
+    return not _is_plane_operand(binary.left) and not _is_plane_operand(binary.right)
 
 
 def _is_incident_angle_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is the versor-plane `angle between A and B` form."""
     if not _is_angle_between_view(constraint):
         return False
-    view = constraint.view
-    return not _is_plane_operand(view.angle_from) and _is_plane_operand(view.angle_to)
+    binary = _binary_view(constraint)
+    return not _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
 
 
 def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is the plane-plane `angle between A and B` form."""
     if not _is_angle_between_view(constraint):
         return False
-    view = constraint.view
-    return _is_plane_operand(view.angle_from) and _is_plane_operand(view.angle_to)
+    binary = _binary_view(constraint)
+    return _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
 
 
 def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
     """Scalar id of an `angle between` view: the carrier pose and both direction operands. The
     operands belong in it because two alignments can share one pose and mean different angles.
     """
-    moving = _resolved_context_quantity(constraint.view.angle_from).name
-    reference = _resolved_context_quantity(constraint.view.angle_to).name
+    binary = _binary_view(constraint)
+    moving = _resolved_context_quantity(binary.left).name
+    reference = _resolved_context_quantity(binary.right).name
     stem = f"alignment-{moving}-{reference}"
     # The tolerated cone is part of what the angle is computed for, so two motions that tolerate
     # different cones get their own op chain rather than one that can only answer for one of them.

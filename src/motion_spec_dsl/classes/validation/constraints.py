@@ -50,7 +50,13 @@ from motion_spec_dsl.classes.validation.common import (
     motion_specs,
     semantic_error,
 )
-from motion_spec_dsl.rdf.common import _is_distance_view
+from motion_spec_dsl.rdf.common import (
+    _binary_view,
+    _is_angle_between_view,
+    _is_distance_view,
+    _is_geometric_distance_view,
+    _is_projection_view,
+)
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
@@ -360,7 +366,7 @@ def validate_scalar_order_relations(model: Model) -> None:
             view = spec.view
             if (
                 getattr(view, "is_elapsed", False)
-                or getattr(view, "distance_from", None) is not None
+                or _is_distance_view(spec)
                 or getattr(view, "progress", None) is not None
                 or getattr(view, "moving", None) is not None
                 or getattr(view, "on", None) is not None
@@ -459,13 +465,12 @@ def validate_alignment_views(model: Model) -> None:
     gradients. All three share the zero/band target rule.
     """
     for spec in get_children_of_type(ConstraintSpecification, model):
-        view = spec.view
-        angle_from = getattr(view, "angle_from", None)
-        angle_to = getattr(view, "angle_to", None)
-        if angle_from is None or angle_to is None:
+        if not _is_angle_between_view(spec):
             continue
-        from_is_plane = _resolved_context_quantity(angle_from).type == QuantityType.Plane
-        to_is_plane = _resolved_context_quantity(angle_to).type == QuantityType.Plane
+        binary = _binary_view(spec)
+        left, right = binary.left, binary.right
+        from_is_plane = _resolved_context_quantity(left).type == QuantityType.Plane
+        to_is_plane = _resolved_context_quantity(right).type == QuantityType.Plane
         if from_is_plane and not to_is_plane:
             raise semantic_error(
                 f"'{spec.name}' does not support `angle between <plane> and <direction>`; "
@@ -473,8 +478,8 @@ def validate_alignment_views(model: Model) -> None:
                 spec,
             )
         if not to_is_plane:
-            _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
-            reference = _alignment_operand(angle_to, f"'{spec.name}' reference operand", spec)
+            _alignment_operand(left, f"'{spec.name}' first operand", spec)
+            reference = _alignment_operand(right, f"'{spec.name}' reference operand", spec)
             nonzero = [v for v in reference if abs(v) > 1e-9]
             if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
                 raise semantic_error(
@@ -483,7 +488,7 @@ def validate_alignment_views(model: Model) -> None:
                     spec,
                 )
         elif not from_is_plane:
-            _alignment_operand(angle_from, f"'{spec.name}' first operand", spec)
+            _alignment_operand(left, f"'{spec.name}' first operand", spec)
         _alignment_target(spec)
 
 
@@ -554,16 +559,14 @@ def validate_geometric_distance_views(model: Model) -> None:
     `distance between`, since its scalar is the same kind of unsigned magnitude.
     """
     for spec in get_children_of_type(ConstraintSpecification, model):
-        view = spec.view
         if _is_distance_view(spec):
             _reject_unsigned_distance_to_zero(spec)
             continue
 
-        distance_of = getattr(view, "distance_of", None)
-        distance_from_primitive = getattr(view, "distance_from_primitive", None)
-        if distance_of is not None and distance_from_primitive is not None:
-            a_kind = _geometric_operand_kind(distance_of)
-            b_kind = _geometric_operand_kind(distance_from_primitive)
+        if _is_geometric_distance_view(spec):
+            binary = _binary_view(spec)
+            a_kind = _geometric_operand_kind(binary.left)
+            b_kind = _geometric_operand_kind(binary.right)
             op_type = GEOMETRIC_DISTANCE_OPS.get((a_kind, b_kind))
             if op_type is None:
                 if a_kind != b_kind and GEOMETRIC_DISTANCE_OPS.get((b_kind, a_kind)):
@@ -582,11 +585,10 @@ def validate_geometric_distance_views(model: Model) -> None:
                 _reject_unsigned_distance_to_zero(spec)
             continue
 
-        projection_of = getattr(view, "projection_of", None)
-        projection_on = getattr(view, "projection_on", None)
-        if projection_of is not None and projection_on is not None:
-            a_kind = _geometric_operand_kind(projection_of)
-            b_kind = _geometric_operand_kind(projection_on)
+        if _is_projection_view(spec):
+            binary = _binary_view(spec)
+            a_kind = _geometric_operand_kind(binary.left)
+            b_kind = _geometric_operand_kind(binary.right)
             if b_kind != "line":
                 raise semantic_error(
                     f"'{spec.name}' projects onto a line; got {b_kind or 'unknown'}.", spec
