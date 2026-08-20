@@ -131,7 +131,7 @@ def _graph(parse_source, base_source: str, while_with: str, ctrl_with: str):
 def test_incident_angle_emits_one_operator_with_gradient(parse_source, base_source) -> None:
     graph = _graph(parse_source, base_source, WHILE_WITH_INCIDENT, CTRL_WITH_INCIDENT)
 
-    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.IncidentAngle))
+    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance))
     assert len(ops) == 1
 
     theta = graph.value(ops[0], GEOM_OP.angle)
@@ -147,7 +147,7 @@ def test_incident_angle_emits_one_operator_with_gradient(parse_source, base_sour
 def test_plane_angle_reuses_planar_angle_and_gradient_ops(parse_source, base_source) -> None:
     graph = _graph(parse_source, base_source, WHILE_WITH_PLANE_ANGLE, CTRL_WITH_PLANE_ANGLE)
 
-    assert list(graph.subjects(RDF.type, GEOM_OP_EXT.IncidentAngle)) == []
+    assert list(graph.subjects(RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance)) == []
     angle_ops = list(graph.subjects(RDF.type, GEOM_OP.PlanarAngleFromDirections))
     grad_ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
     assert len(angle_ops) == 1
@@ -172,7 +172,7 @@ def test_versor_alignment_is_unchanged(parse_source, base_source) -> None:
     assert len(rotate_ops) == 1
     assert len(angle_ops) == 1
     assert len(vector_ops) == 1
-    assert list(graph.subjects(RDF.type, GEOM_OP_EXT.IncidentAngle)) == []
+    assert list(graph.subjects(RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance)) == []
     assert list(graph.subjects(RDF.type, GEOM_OP_EXT.AngleGradientFromDirections)) == []
 
 

@@ -18,6 +18,7 @@ from motion_spec_dsl.classes.constraints import (
     LessThanConstraint,
     OutsideConstraint,
 )
+from motion_spec_dsl.classes.controller_semantics import _alignment_is_pointwise
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_PROJECTION_OPS,
@@ -413,56 +414,111 @@ def _alignment_operand(
     return vector
 
 
-def _alignment_target(spec) -> None:
-    """An alignment either drives the angle to zero or tolerates a cone around it: equality to a
-    bare zero, or a band starting at zero. A band starting anywhere else asks the directions to
-    hold an angle apart, which is a different constraint than aligning them.
+def _validate_cone_bound(ref: ContextRef, spec, *, positive_required: bool) -> None:
+    """A cone-width bound: a bare Measure (positive, when `positive_required`), or a named
+    quantity resolving to `QuantityType.Angle`. Shared by the bilateral upper bound and the
+    `less than` threshold -- the same cone, stated two ways.
+    """
+    bare = ref.bare
+    if bare is not None:
+        if positive_required and bare.value <= 0.0:
+            raise semantic_error(f"'{spec.name}' needs a positive upper bound on its band.", spec)
+        return
+    quantity = _resolved_ref_quantity(ref)
+    if quantity is None or quantity.type != QuantityType.Angle:
+        raise semantic_error(
+            f"'{spec.name}' needs its band's upper bound stated as an angle.", spec
+        )
+
+
+def _alignment_bound_radians(ref: ContextRef, spec, what: str) -> float | None:
+    """Radian value of a cone-target bound if statically known; raises unless `ref` resolves to
+    an angle. Returns None for a named quantity with no literal value -- its range cannot be
+    checked at authoring time, but its type already was.
+    """
+    measure = _static_scalar(ref)
+    if measure is not None:
+        if measure.unit not in ("rad", "deg", ""):
+            raise semantic_error(f"'{spec.name}' needs {what} stated as an angle.", spec)
+        scale = math.pi / 180.0 if measure.unit == "deg" else 1.0
+        return measure.value * scale
+    quantity = _resolved_ref_quantity(ref)
+    if quantity is None or quantity.type != QuantityType.Angle:
+        raise semantic_error(f"'{spec.name}' needs {what} stated as an angle.", spec)
+    return None
+
+
+def _require_angle_in_range(ref: ContextRef, spec, what: str) -> None:
+    """A cone target's bound must be an angle in [0, pi] -- the angle between two directions
+    cannot exceed pi, so anything past it is unsatisfiable and gets rejected at authoring time.
+    """
+    value = _alignment_bound_radians(ref, spec, what)
+    if value is not None and not (0.0 <= value <= math.pi):
+        raise semantic_error(
+            f"'{spec.name}' targets {value} rad; the angle between two directions lies in [0, pi].",
+            spec,
+        )
+
+
+def _cone_alignment_target(spec) -> None:
+    """A cone target -- 1 rotational DOF: `equal to <nonzero>`, `greater than`, a band not
+    opening at zero, or `outside`. Every bound must be a statically-in-range angle, and a band's
+    lower bound must sit below its upper.
     """
     expr = spec.expr
     if isinstance(expr, EqualityConstraint):
-        measure = expr.reference.bare
-        if measure is None or measure.value != 0.0:
-            raise semantic_error(
-                f"'{spec.name}' must align to a bare zero angle -- nonzero alignment targets "
-                "are not supported.",
-                spec,
-            )
+        _require_angle_in_range(expr.reference, spec, "its target")
         return
-    if isinstance(expr, BilateralConstraint):
-        lower = expr.lower.bare
-        if lower is None or lower.value != 0.0:
-            raise semantic_error(
-                f"'{spec.name}' must open its band at zero -- a band that starts elsewhere holds "
-                "the directions apart rather than aligning them.",
-                spec,
-            )
-        upper = expr.upper.bare
-        if upper is not None:
-            if upper.value <= 0.0:
-                raise semantic_error(
-                    f"'{spec.name}' needs a positive upper bound on its band.", spec
-                )
-            return
-        # A declared bound says how wide the tolerated cone is, so it has to be an angle.
-        quantity = _resolved_ref_quantity(expr.upper)
-        if quantity is None or quantity.type != QuantityType.Angle:
-            raise semantic_error(
-                f"'{spec.name}' needs its band's upper bound stated as an angle.", spec
-            )
+    if isinstance(expr, GreaterThanConstraint):
+        _require_angle_in_range(expr.threshold, spec, "its threshold")
+        return
+    if isinstance(expr, (BilateralConstraint, OutsideConstraint)):
+        _require_angle_in_range(expr.lower, spec, "its lower bound")
+        _require_angle_in_range(expr.upper, spec, "its upper bound")
+        lower_v = _alignment_bound_radians(expr.lower, spec, "its lower bound")
+        upper_v = _alignment_bound_radians(expr.upper, spec, "its upper bound")
+        if lower_v is not None and upper_v is not None and not lower_v < upper_v:
+            raise semantic_error(f"'{spec.name}' needs a lower bound below its upper bound.", spec)
         return
     raise semantic_error(
-        f"'{spec.name}' aligns two directions, which supports equality to zero or a band "
-        "from zero.",
+        f"'{spec.name}' aligns two directions, which supports equality, an inequality, or a "
+        "band on the angle between them.",
         spec,
     )
 
 
+def _alignment_target(spec) -> None:
+    """An alignment either drives the angle to a point on the sphere (2 DOF) or tolerates/targets
+    a cone around it (1 DOF); see `_alignment_is_pointwise`. The point-target checks are the
+    original zero-target rule, plus `less than` validated exactly like the bilateral upper bound
+    it is the same cone as. The cone-target checks are new: every bound is a statically-in-range
+    angle, and a band's lower sits below its upper.
+    """
+    expr = spec.expr
+    if not _alignment_is_pointwise(spec):
+        _cone_alignment_target(spec)
+        return
+    if isinstance(expr, EqualityConstraint):
+        # _alignment_is_pointwise already confirmed a bare zero.
+        return
+    if isinstance(expr, LessThanConstraint):
+        _validate_cone_bound(expr.threshold, spec, positive_required=True)
+        return
+    # BilateralConstraint with a lower bound of zero.
+    upper = expr.upper.bare
+    if upper is not None:
+        if upper.value <= 0.0:
+            raise semantic_error(f"'{spec.name}' needs a positive upper bound on its band.", spec)
+        return
+    _validate_cone_bound(expr.upper, spec, positive_required=False)
+
+
 def validate_alignment_views(model: Model) -> None:
     """Check `angle between <a> and <b>` views, dispatched on operand type (Borghesan Table IIb):
-    versor-versor keeps the existing signed-unit-frame-axis rule on its reference operand, since
-    it drives the 2-axis rotation-vector row that rule exists for; versor-plane and plane-plane
-    place no frame-axis requirement on their plane operand(s), since their rows are runtime
-    gradients. All three share the zero/band target rule.
+    versor-versor keeps the signed-unit-frame-axis rule on its reference operand for a point
+    target only, since that is the only case still driving the 2-axis rotation-vector row;
+    versor-plane and plane-plane place no frame-axis requirement on their plane operand(s), since
+    their rows are always runtime gradients. All three share the point/cone target rule.
     """
     for spec in get_children_of_type(ConstraintSpecification, model):
         if not _is_angle_between_view(spec):
@@ -480,13 +536,17 @@ def validate_alignment_views(model: Model) -> None:
         if not to_is_plane:
             _alignment_operand(left, f"'{spec.name}' first operand", spec)
             reference = _alignment_operand(right, f"'{spec.name}' reference operand", spec)
-            nonzero = [v for v in reference if abs(v) > 1e-9]
-            if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
-                raise semantic_error(
-                    f"'{spec.name}' reference operand must be a signed unit frame axis "
-                    "(exactly one component, +-1).",
-                    spec,
-                )
+            # The signed-unit-frame-axis requirement only exists for the 2-axis rotation-vector
+            # row: a cone target's row is a runtime gradient and cares nothing about the
+            # reference's orientation.
+            if _alignment_is_pointwise(spec):
+                nonzero = [v for v in reference if abs(v) > 1e-9]
+                if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
+                    raise semantic_error(
+                        f"'{spec.name}' reference operand must be a signed unit frame axis "
+                        "(exactly one component, +-1).",
+                        spec,
+                    )
         elif not from_is_plane:
             _alignment_operand(left, f"'{spec.name}' first operand", spec)
         _alignment_target(spec)

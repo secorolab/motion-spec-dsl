@@ -205,6 +205,7 @@ class QUDT_QKIND(DefinedNamespace):
 
 class GEOM_REL(DefinedNamespace):
     LinearDistance: URIRef
+    PointToPointDistance: URIRef
     Orientation: URIRef
     Pose: URIRef
     Position: URIRef
@@ -302,6 +303,15 @@ class GEOM_OP(DefinedNamespace):
 class GEOM_REL_EXT(DefinedNamespace):
     PoseDifference: URIRef
 
+    PointPlaneDistance: URIRef
+    PointLineDistance: URIRef
+    LineLineDistance: URIRef
+
+    AngularDistance: URIRef
+    DirectionDirectionAngularDistance: URIRef
+    DirectionPlaneAngularDistance: URIRef
+    PlanePlaneAngularDistance: URIRef
+
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-relations#")
 
 
@@ -321,7 +331,7 @@ class GEOM_OP_EXT(DefinedNamespace):
     PoseToAngularDistance: URIRef
     RotationVectorFromDirections: URIRef
     AngleGradientFromDirections: URIRef
-    IncidentAngle: URIRef
+    DirectionPlaneToAngularDistance: URIRef
     PathProjection: URIRef
     PathEvaluator: URIRef
     PathTangentFrame: URIRef
@@ -329,11 +339,11 @@ class GEOM_OP_EXT(DefinedNamespace):
     # Table IIa (plan 08): in1/in2 are pose coordinates for the point-primitive ops below, but
     # direction coordinates for the line-line pair -- same asymmetric reuse of in1/in2 the
     # AngleGradientFromDirections/RotationVectorFromDirections ops already establish.
-    PointPlaneDistance: URIRef
-    PointLineDistance: URIRef
+    PointPlaneToLinearDistance: URIRef
+    PointLineToLinearDistance: URIRef
     PointOnLineProjection: URIRef
-    LineLineDistance: URIRef
-    LineLineProjection: URIRef
+    LineLineToLinearDistance: URIRef
+    LineOnLineProjection: URIRef
     gradient: URIRef
     path: URIRef
     tangent: URIRef

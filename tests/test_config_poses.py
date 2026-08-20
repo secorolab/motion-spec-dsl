@@ -5,9 +5,17 @@ coordinate subobjects a constraint compares against -- it has no values, but it 
 from __future__ import annotations
 
 import pytest
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from rdf_utils.constraints import ConstraintViolation
-from motion_spec_dsl.rdf_parser.vocab import EXEC
+from rdf_utils.models.vocab import (
+    URI_GEOM_PRED_OF,
+    URI_GEOM_PRED_OF_POSE,
+    URI_GEOM_PRED_OF_POSITION,
+    URI_GEOM_PRED_WRT,
+)
+from rdflib import URIRef
+
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import EXEC, MAP
 
 _POSE = """        linear-velocity zero-linvel = 0.0 m/s,
         pose look-at-table = [config.poses.table] for <shared.world.pose-ee-base>
@@ -54,36 +62,60 @@ def test_no_coordinate_carries_a_value(base_source, parse_source) -> None:
 
 def test_a_constraint_compares_against_the_poses_own_coordinate(base_source, parse_source) -> None:
     """Not against a node nothing emits: a config pose owns its position/orientation subobjects
-    the way a literal pose does, and a constraint must land on them."""
+    the way a literal pose does, and a constraint must land on them -- on the view that pins this
+    pose's position, never on the Position relation, which since plan 11 phase B pools by frame
+    pair and is the very one `pose-ee-base`'s own position samples too."""
     graph = _graph(base_source, parse_source)
-    subjects = {str(s) for s in graph.subjects()}
-    pose = next(uri for uri in subjects if uri.endswith("/spec/look-at-table"))
+    pose = next(s for s in graph.subjects() if str(s).endswith("/spec/look-at-table"))
+    pose_ee_base = next(s for s in graph.subjects() if str(s).endswith("/world/pose-ee-base"))
+
+    position_relation = graph.value(URIRef(f"{pose}.position"), URI_GEOM_PRED_OF_POSITION)
+    assert position_relation is not None
+    assert position_relation == graph.value(pose_ee_base, URI_GEOM_PRED_OF_POSITION)
+
     references = [
         str(o)
         for _s, predicate, o in graph
         if str(predicate).endswith("constraint#reference-value") and "look-at-table" in str(o)
     ]
+    assert references == [f"{pose}-position-view"]
 
-    assert references == [f"{pose}.position-position-rel"]
+    view = URIRef(f"{pose}-position-view")
+    assert graph.value(view, MAP.superobject) == pose
+    assert graph.value(view, MAP.subobject) == position_relation
 
 
 def test_the_frames_come_from_the_quantity_it_is_stated_for(base_source, parse_source) -> None:
     """It contributes no number, only the frames the target is expressed in -- so the config pose
-    stands in exactly the geometry of the pose it is compared against, without restating it."""
-    graph = _graph(base_source, parse_source)
-    frames = {
-        suffix: {
-            (str(predicate), str(o))
-            for predicate, o in graph.predicate_objects(subject)
-            if str(predicate).endswith(("#of", "#with-respect-to", "#as-seen-by"))
-        }
-        for suffix in ("look-at-table-pose-rel", "pose-ee-base-pose-rel")
-        for subject in graph.subjects()
-        if str(subject).endswith(suffix)
-    }
+    stands in exactly the geometry of the pose it is compared against, without restating it.
 
-    assert frames["look-at-table-pose-rel"] == frames["pose-ee-base-pose-rel"]
-    assert frames["pose-ee-base-pose-rel"]
+    After plan 11 phase B a relation pools every coordinate over the same frame pair, so the
+    config pose and the pose it is stated `for` do not just carry matching frame triples -- they
+    share the one Pose relation node.
+    """
+    graph = _graph(base_source, parse_source)
+    look_at_table = next(s for s in graph.subjects() if str(s).endswith("/spec/look-at-table"))
+    pose_ee_base = next(s for s in graph.subjects() if str(s).endswith("/world/pose-ee-base"))
+
+    look_relation = graph.value(look_at_table, URI_GEOM_PRED_OF_POSE)
+    ee_relation = graph.value(pose_ee_base, URI_GEOM_PRED_OF_POSE)
+
+    assert look_relation == ee_relation
+
+    def _frames(subject):
+        return {
+            (predicate, o)
+            for predicate, o in graph.predicate_objects(subject)
+            if predicate in (URI_GEOM_PRED_OF, URI_GEOM_PRED_WRT)
+        }
+
+    # The frames live once, on the shared relation, stated as `pose-ee-base` declared them;
+    # neither coordinate restates any of its own.
+    relation_frames = {str(o) for _p, o in _frames(look_relation)}
+    assert any(uri.endswith("/g_pinch") for uri in relation_frames)
+    assert any(uri.endswith("/base_link_origin") for uri in relation_frames)
+    assert not _frames(look_at_table)
+    assert not _frames(pose_ee_base)
 
 
 def test_a_pose_read_from_a_config_no_exec_context_declares_is_rejected(

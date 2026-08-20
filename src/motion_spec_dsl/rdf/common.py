@@ -27,7 +27,10 @@ from motion_spec_dsl.classes.context import (
     WorldQuantityType,
     _resolved_context_quantity,
 )
-from motion_spec_dsl.classes.controller_semantics import constraint_view_subspace
+from motion_spec_dsl.classes.controller_semantics import (
+    _alignment_is_pointwise,
+    constraint_view_subspace,
+)
 from motion_spec_dsl.classes.coordinates import const_value
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
 from motion_spec_dsl.classes.units import (
@@ -152,6 +155,18 @@ def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
     return _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
 
 
+def _alignment_bound_token(ref: Any) -> str | None:
+    """Id fragment for one target/bound ref of an alignment's relation, or None for a literal
+    zero -- every zero-target alignment means the same geometry, so a zero must not fragment the
+    shared op chain (plan 10 STOP 1).
+    """
+    bare = getattr(ref, "bare", None)
+    if bare is not None:
+        return None if bare.value == 0.0 else f"{bare.value}{bare.unit}"
+    quantity = _context_quantity(ref)
+    return _resolved_context_quantity(quantity).name if quantity is not None else None
+
+
 def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
     """Scalar id of an `angle between` view: the carrier pose and both direction operands. The
     operands belong in it because two alignments can share one pose and mean different angles.
@@ -160,12 +175,22 @@ def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) 
     moving = _resolved_context_quantity(binary.left).name
     reference = _resolved_context_quantity(binary.right).name
     stem = f"alignment-{moving}-{reference}"
-    # The tolerated cone is part of what the angle is computed for, so two motions that tolerate
-    # different cones get their own op chain rather than one that can only answer for one of them.
-    upper = getattr(constraint.expr, "upper", None)
-    band = _resolved_context_quantity(_context_quantity(upper)) if upper is not None else None
-    if band is not None:
-        stem = f"{stem}-{band.name}"
+    # A tolerated cone or a nonzero target is part of what the angle is computed for, so two
+    # motions that differ in either get their own op chain rather than one that can only answer
+    # for one of them (the 2-DOF row's `_bind_alignment_band` raises on exactly this collision;
+    # the 1-DOF row has no such guard, so the id has to do the separating itself).
+    for attr in ("reference", "threshold", "lower", "upper"):
+        bound = getattr(constraint.expr, attr, None)
+        if bound is None:
+            continue
+        token = _alignment_bound_token(bound)
+        if token is not None:
+            stem = f"{stem}-{token}"
+    # A bound and a target at one value fold to the same token, but they drive different rows --
+    # `less than 0.5` is the 2-DOF cone bound, `equal to 0.5` the 1-DOF cone target. Without this
+    # the emission loop dedupes them onto one chain and the second constraint loses its row.
+    if not _alignment_is_pointwise(constraint):
+        stem = f"{stem}-cone"
     return _scalar_id(quantity, stem, None)
 
 
@@ -185,6 +210,25 @@ def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
     if axis is None:
         return f"{quantity.name}.{subspace}"
     return f"{quantity.name}.{subspace}.{axis}"
+
+
+def _gradient_scalar_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str | None:
+    """Id of the runtime gradient `DirectionCoordinate` `_emit_map_operations` publishes for
+    `constraint`'s view, or None when the view has no gradient: axis-based, point-point
+    `distance between` (runtime `PoseToDirection`, not a gradient), or a pointwise alignment
+    (rotation-vector error, not a 1-DOF gradient row).
+    """
+    if _is_alignment_view(constraint):
+        if _alignment_is_pointwise(constraint):
+            return None
+        base = _alignment_id(quantity, constraint)
+    elif _is_geometric_distance_view(constraint) or _is_projection_view(constraint):
+        base = _scalar_id(quantity, _view_subspace(constraint), None)
+    elif _is_incident_angle_view(constraint) or _is_plane_angle_view(constraint):
+        base = _alignment_id(quantity, constraint)
+    else:
+        return None
+    return f"{base}-gradient"
 
 
 def _axis_vector(axis: str) -> tuple[float, float, float]:
@@ -278,20 +322,34 @@ def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecific
 
 @dataclass(frozen=True)
 class _DistancePlan:
-    """Resolved endpoints and scalar-view carrier for an authored distance relation."""
+    """Resolved endpoints and scalar-view carrier for an authored distance relation.
+
+    `relation_a`/`relation_b` are the endpoints' origin **Point** entities -- not the pose
+    coordinates themselves -- so `between-entities` names entities, matching
+    `_GeometricDistancePlan`.
+    """
 
     start: WorldQuantity
     end: WorldQuantity
     target: WorldQuantity
+    relation_a: str
+    relation_b: str
 
 
 @dataclass(frozen=True)
 class _AlignmentPlan:
-    """Resolved direction operands and pose carrier for an authored `angle between` view."""
+    """Resolved direction operands and pose carrier for an authored `angle between` view.
+
+    `relation_a`/`relation_b` are the between-entities pair: the two versors themselves for
+    versor-versor, a versor and the *plane* (not its normal direction) for versor-plane, the
+    two planes (not their normals) for plane-plane.
+    """
 
     moving: ContextQuantity
     reference: ContextQuantity
     target: WorldQuantity
+    relation_a: str
+    relation_b: str
 
 
 @dataclass(frozen=True)
@@ -312,6 +370,8 @@ class _GeometricDistancePlan:
     pose: str | None
     diff_in1: str | None
     diff_in2: str | None
+    # The between-entities pair: the point operand's origin Point entity (not its pose
+    # coordinate) for ops 1-3, the two Line entities themselves for ops 4-5.
     relation_a: str
     relation_b: str
     # The frame the gradient's DirectionCoordinate is stated in: the point operand's own

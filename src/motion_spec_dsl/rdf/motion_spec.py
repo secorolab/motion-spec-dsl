@@ -22,6 +22,8 @@ from urllib.parse import urlsplit
 
 from rdf_utils.collection import add_literal_list_pred
 from rdf_utils.constraints import ConstraintViolation
+from rdf_utils.models.geom_coord import record_coord_selection
+from rdf_utils.models.geom_rel import PoseModel
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,
     URI_GEOM_PRED_AXES_SEQ,
@@ -32,6 +34,7 @@ from rdf_utils.models.vocab import (
     URI_GEOM_PRED_GAMMA,
     URI_GEOM_PRED_OF,
     URI_GEOM_PRED_OF_ORIENT,
+    URI_GEOM_PRED_OF_POSE,
     URI_GEOM_PRED_OF_POSITION,
     URI_GEOM_PRED_ORIGIN,
     URI_GEOM_PRED_SEEN_BY,
@@ -93,6 +96,7 @@ from motion_spec_dsl.classes.constraints import (
 )
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_OPS,
+    GEOMETRIC_DISTANCE_RELATION,
     GEOMETRIC_PROJECTION_OPS,
     ConfigValue,
     ContextQuantity,
@@ -116,6 +120,7 @@ from motion_spec_dsl.classes.context import (
 from motion_spec_dsl.classes.controller_semantics import (
     ANGULAR_SUBSPACES,
     SUBSPACE_ALIAS,
+    _alignment_is_pointwise,
     controller_command_record,
     controller_solver,
 )
@@ -179,6 +184,7 @@ from motion_spec_dsl.rdf.common import (
     _geo_prop_events,
     _geo_prop_value,
     _GeometricDistancePlan,
+    _gradient_scalar_id,
     _is_alignment_view,
     _is_distance_view,
     _is_geometric_distance_view,
@@ -221,6 +227,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     GEOM_OP_EXT,
     GEOM_PATH,
     GEOM_REL,
+    GEOM_REL_EXT,
     KC_STAT,
     MAP,
     MAP_EXT,
@@ -288,6 +295,17 @@ def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
     if of_frame is None or wrt_frame is None:
         return None
     return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
+
+
+def _orientation_angle_unit(orientation) -> str:
+    """The angle unit a pose's rotation is authored in; radians when it states none (a quaternion
+    or a direction-cosine matrix carries angles all the same, just not as an authored number)."""
+    for attr in ("euler", "angle_axis", "rotation"):
+        spec = getattr(orientation, attr, None)
+        unit = getattr(spec, "unit", None) if spec is not None else None
+        if unit:
+            return unit
+    return getattr(orientation, "unit", None) or "rad"
 
 
 def _qudt_kind(quantity_type: Any) -> URIRef:
@@ -445,6 +463,16 @@ class MotionSpecDatasetBuilder:
         self._alignment_plans: dict[ConstraintSpecification, _AlignmentPlan] = {}
         self._geometric_distance_plans: dict[ConstraintSpecification, _GeometricDistancePlan] = {}
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
+        # coord_node, domain -> the relation `_emit_geom_relation` named for it. hasQuantityKind
+        # lives on the relation, not the (possibly domain-combined) coordinate, and position/
+        # orientation relations now pool by frame pair, so neither is derivable from coord_node's
+        # own URI any more; every reader looks the relation up here instead of reconstructing
+        # the pre-pooling `f"{coord_node}-{domain}-rel"` string.
+        self._component_relation_index: dict[tuple[URIRef, str], URIRef] = {}
+        # coord_node, domain -> the view that pins that component of that coordinate. A pooled
+        # relation is shared by every coordinate over the frame pair, so only the view can say
+        # which operand a constraint edge means.
+        self._component_view_index: dict[tuple[URIRef, str], URIRef] = {}
         self._config_resource: URIRef | None = None
         self._reference_value_index: dict[URIRef, URIRef] = {}
         self._controller_by_spec: dict[ConstraintSpecification, ControllerEntry] = {}
@@ -464,6 +492,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_alignment_ops: set[str] = set()
         self._emitted_geometric_distance_ops: set[str] = set()
         self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
+        self._angular_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
         self._emitted_position_coords: set[URIRef] = set()
         self._emitted_orientation_coords: set[URIRef] = set()
@@ -848,9 +877,18 @@ class MotionSpecDatasetBuilder:
         `hasQuantityKind`); `coord_node` becomes the coordinate, typed
         `<Domain>Reference` + `<Domain>Coordinate` and linked back by `of-<domain>`,
         carrying only `as-seen-by`, `unit` and the literal values.
+
+        A relation is a fact about a frame pair, not a coordinate: every coordinate over the
+        same (domain, of, wrt) shares one relation node, named from the pair rather than from
+        whichever coordinate happened to emit it first. A quantity missing `of` or `wrt` cannot
+        be pooled this way and keeps a node of its own.
         """
         ref_type, coord_type, of_pred, rel_type = GEOM_DOMAIN_SPLIT[domain]
-        rel_node = URIRef(f"{coord_node}-{domain}-rel")
+        rel_node = (
+            URIRef(f"{of_node}-{wrt_node}-{domain}-rel")
+            if of_node is not None and wrt_node is not None
+            else URIRef(f"{coord_node}-{domain}-rel")
+        )
         self.graph.add((rel_node, RDF.type, rel_type))
         self.graph.add((rel_node, RDF.type, QUDT_SCHEMA.Quantity))
         if of_node is not None:
@@ -864,7 +902,31 @@ class MotionSpecDatasetBuilder:
         self.graph.add((coord_node, of_pred, rel_node))
         if as_seen_by is not None:
             self.graph.add((coord_node, URI_GEOM_PRED_SEEN_BY, as_seen_by))
+        self._component_relation_index[(coord_node, domain)] = rel_node
         return rel_node
+
+    def _component_relation(self, coord_node: URIRef, domain: str) -> URIRef:
+        """The relation `_emit_geom_relation` named for `coord_node`'s `domain` component --
+        see `_component_relation_index`."""
+        return self._component_relation_index[(coord_node, domain)]
+
+    def _register_component_view(self, coord_node: URIRef, domain: str, view_node: URIRef) -> None:
+        """Record the view a constraint operand names for this coordinate's component. First
+        emitter wins: several motions may each view the same coordinate, all equivalently."""
+        self._component_view_index.setdefault((coord_node, domain), view_node)
+
+    def _component_view(self, coord_node: URIRef, domain: str) -> URIRef:
+        """The view pinning `coord_node`'s `domain` component: `map:superobject` the coordinate,
+        `map:subobject` the pooled relation. A constraint operand names this, never the relation
+        -- that one is shared by every coordinate over the same frame pair."""
+        view_node = self._component_view_index.get((coord_node, domain))
+        if view_node is None:
+            raise ConstraintViolation(
+                "geometry",
+                f"Coordinate '{coord_node}' has no {domain} view, so nothing can name it as a "
+                "constraint operand.",
+            )
+        return view_node
 
     def _frame_origin(self, frame: URIRef) -> URIRef:
         """Return the frame's origin Point, materializing the established fallback URI."""
@@ -1132,9 +1194,72 @@ class MotionSpecDatasetBuilder:
             type=WorldQuantityType.Pose,
             props=props,
         )
-        plan = _DistancePlan(start, end, target)
+        relation_a = str(self._distance_endpoint_point(start))
+        relation_b = str(self._distance_endpoint_point(end))
+        plan = _DistancePlan(start, end, target, relation_a, relation_b)
         self._distance_plans[spec] = plan
         return plan
+
+    def _distance_endpoint_point(self, operand: WorldQuantity | ContextQuantity) -> URIRef:
+        """The Point a `distance between` operand's pose value measures: its `of` frame's
+        origin (`_frame_origin` already materializes one per frame -- no minted stand-in).
+
+        Frame-scoped, not operand-scoped: a live pose and a snapshot of that same pose share a
+        frame, and now share this Point too. What still tells the two apart -- which pose
+        coordinate each endpoint names -- is carried separately, as a coord_policy selection
+        recorded as PROV (`_emit_distance_operand_selection`), not by tagging the Point.
+        """
+        of_frame = self._distance_endpoint_frame(operand, f"Distance operand '{operand.name}'")
+        return self._frame_origin(self._owned_uri(of_frame, operand))
+
+    def _record_pose_component(self, pose_node: URIRef, component: str, coordinate: URIRef) -> None:
+        """Record which position/orientation coordinate a pose coordinate is built from.
+
+        A pooled Position/Orientation relation is shared by every pose over the same frames, so
+        the relation alone cannot say which coordinate belongs to this pose. The model does --
+        the DSL emits both -- so it is recorded here rather than re-derived downstream by name.
+        """
+        relation = self.graph.value(coordinate, GEOM_COORD[f"of-{component}"])
+        if relation is None:
+            return
+        candidates = sorted(self.graph.subjects(GEOM_COORD[f"of-{component}"], relation), key=str)
+        record_coord_selection(
+            self.graph,
+            URIRef(f"{pose_node}-{component}-selection"),
+            relation,
+            candidates,
+            coordinate,
+            self._owned_uri("coord-policy/pose-component", None),
+            "authored pose component",
+        )
+
+    def _emit_distance_operand_selection(self, distance_node: URIRef, plan: _DistancePlan) -> None:
+        """Record, as PROV, which pose coordinate each distance endpoint names.
+
+        `between-entities` only carries the two frame-origin Points, and a live pose and its
+        own snapshot collapse onto one when they share a frame (the `table-moved` drift check),
+        so the Point alone cannot tell `operations.py` which coordinate to read. The DSL already
+        knows the answer -- `plan.start`/`plan.end` -- so it runs a trivial coord_policy (the
+        authored choice) and records the pick; `operations.py` reads it back by the same
+        deterministic activity name instead of reversing an entity edge.
+        """
+        policy = self._owned_uri("coord-policy/distance-operand", None)
+        for role, operand in (("start", plan.start), ("end", plan.end)):
+            chosen = URIRef(operand.uri)
+            relation = self.graph.value(chosen, URI_GEOM_PRED_OF_POSE)
+            if relation is None:
+                continue
+            candidates = PoseModel(relation, self.graph).coordinate_ids
+            activity = URIRef(f"{distance_node}-{role}-selection")
+            record_coord_selection(
+                self.graph,
+                activity,
+                relation,
+                candidates,
+                chosen,
+                policy,
+                "distance operand: the coordinate the constraint names",
+            )
 
     def _direction_pair_plan(
         self,
@@ -1142,6 +1267,8 @@ class MotionSpecDatasetBuilder:
         reference: ContextQuantity,
         context: str,
         world_qtys: dict[str, WorldQuantity],
+        relation_a: str | None = None,
+        relation_b: str | None = None,
     ) -> _AlignmentPlan:
         """Resolve two direction operands of an `angle between` view and the already computed
         pose (moving frame wrt reference frame) the rotated-direction op reads.
@@ -1149,7 +1276,8 @@ class MotionSpecDatasetBuilder:
         Shared by all three Table IIb forms: versor-versor compares its two authored directions
         directly; versor-plane and plane-plane resolve their plane operand(s) to a normal
         direction first (see `_incident_angle_plan` / `_plane_angle_plan`) and pass it through
-        here unchanged.
+        here unchanged. `relation_a`/`relation_b` default to the direction operands themselves
+        (versor-versor); the plane forms pass the plane entity instead of its normal.
 
         Unlike a distance's endpoints, this pose's *value* is read at runtime, so it must be an
         existing solver-computed `world` quantity -- there is no operator to derive a fresh
@@ -1185,7 +1313,13 @@ class MotionSpecDatasetBuilder:
                 f"{context} needs '{target.name}' seen by '{reference_frame}', the frame its "
                 "reference direction is stated in."
             )
-        return _AlignmentPlan(moving, reference, target)
+        return _AlignmentPlan(
+            moving,
+            reference,
+            target,
+            relation_a if relation_a is not None else str(moving.uri),
+            relation_b if relation_b is not None else str(reference.uri),
+        )
 
     def _alignment_plan(
         self,
@@ -1224,9 +1358,15 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
         moving = _resolved_context_quantity(spec.view.binary.left)
-        reference = self._plane_normal(_resolved_context_quantity(spec.view.binary.right))
+        plane = _resolved_context_quantity(spec.view.binary.right)
+        reference = self._plane_normal(plane)
         plan = self._direction_pair_plan(
-            moving, reference, f"Incident-angle constraint '{spec.name}'", world_qtys
+            moving,
+            reference,
+            f"Incident-angle constraint '{spec.name}'",
+            world_qtys,
+            relation_a=str(moving.uri),
+            relation_b=str(plane.uri),
         )
         self._alignment_plans[spec] = plan
         return plan
@@ -1241,10 +1381,17 @@ class MotionSpecDatasetBuilder:
         cached = self._alignment_plans.get(spec)
         if cached is not None:
             return cached
-        moving = self._plane_normal(_resolved_context_quantity(spec.view.binary.left))
-        reference = self._plane_normal(_resolved_context_quantity(spec.view.binary.right))
+        plane_a = _resolved_context_quantity(spec.view.binary.left)
+        plane_b = _resolved_context_quantity(spec.view.binary.right)
+        moving = self._plane_normal(plane_a)
+        reference = self._plane_normal(plane_b)
         plan = self._direction_pair_plan(
-            moving, reference, f"Plane-angle constraint '{spec.name}'", world_qtys
+            moving,
+            reference,
+            f"Plane-angle constraint '{spec.name}'",
+            world_qtys,
+            relation_a=str(plane_a.uri),
+            relation_b=str(plane_b.uri),
         )
         self._alignment_plans[spec] = plan
         return plan
@@ -1334,7 +1481,7 @@ class MotionSpecDatasetBuilder:
         motion = getattr(getattr(spec, "parent", None), "parent", None)
         stem = f"geo-distance-{getattr(motion, 'name', '')}-{spec.name}"
 
-        if op_type in ("LineLineDistance", "LineLineProjection"):
+        if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
             line_a = _resolved_context_quantity(a_ref)
             line_b = _resolved_context_quantity(b_ref)
             dir_a = self._primitive_direction(line_a, context)
@@ -1391,7 +1538,7 @@ class MotionSpecDatasetBuilder:
             point_frames = _pose_frame_names(point_qty)
             if point_frames is None:
                 raise ValueError(f"{context} needs an explicit-frame pose operand.")
-            _, point_wrt, _ = point_frames
+            point_of, point_wrt, _ = point_frames
             if direction_frame is None or direction_frame != point_wrt:
                 role = "normal" if primitive.type == QuantityType.Plane else "direction"
                 raise ValueError(
@@ -1417,7 +1564,7 @@ class MotionSpecDatasetBuilder:
                 pose=None,
                 diff_in1=None,
                 diff_in2=None,
-                relation_a=str(point_qty.uri),
+                relation_a=str(self._frame_origin(self._owned_uri(point_of, motion))),
                 relation_b=str(primitive.uri),
                 gradient_frame=point_wrt,
                 target=target,
@@ -1426,12 +1573,16 @@ class MotionSpecDatasetBuilder:
         self._geometric_distance_plans[spec] = plan
         return plan
 
-    def _linear_distance_relation(self, start_uri: str, end_uri: str) -> URIRef:
-        """The LinearDistance two pose endpoints stand in, minted once per endpoint pair.
+    def _linear_distance_relation(
+        self, start_uri: str, end_uri: str, relation_type: URIRef
+    ) -> URIRef:
+        """The linear-distance relation two entities stand in, minted once per entity pair.
 
         The relation is the geometric fact; a constraint's coordinate is one motion's sampling
-        of it. Motions measuring the same two poses share the relation and differ only in the
-        coordinate, so the endpoint pair -- not the constraint's name -- is its identity.
+        of it. Motions measuring the same two entities share the relation and differ only in
+        the coordinate, so the entity pair -- not the constraint's name -- is its identity.
+        `relation_type` is the specific `geom-rel:PointToPointDistance` /
+        `geom-rel-ext:PointPlaneDistance` / etc. the operand kinds dispatch to.
         """
         key = (str(start_uri), str(end_uri))
         node = self._linear_distance_relations.get(key)
@@ -1441,22 +1592,47 @@ class MotionSpecDatasetBuilder:
             ["linear-distance", self._model_local_path(start_uri), self._model_local_path(end_uri)]
         )
         node = self._owned_uri(name, None)
-        self.graph.add((node, RDF.type, GEOM_REL.LinearDistance))
+        self.graph.add((node, RDF.type, relation_type))
         self.graph.add((node, GEOM_REL["between-entities"], URIRef(start_uri)))
         self.graph.add((node, GEOM_REL["between-entities"], URIRef(end_uri)))
         self._linear_distance_relations[key] = node
+        return node
+
+    def _angular_distance_relation(self, a_uri: str, b_uri: str, relation_type: URIRef) -> URIRef:
+        """The angular-distance relation two entities stand in, minted once per entity pair.
+
+        Mirrors `_linear_distance_relation`: the relation is the geometric fact, a constraint's
+        angle coordinate is one motion's sampling of it, and two motions measuring the same
+        entity pair share the relation.
+        """
+        key = (str(a_uri), str(b_uri))
+        node = self._angular_distance_relations.get(key)
+        if node is not None:
+            return node
+        name = "-".join(
+            ["angular-distance", self._model_local_path(a_uri), self._model_local_path(b_uri)]
+        )
+        node = self._owned_uri(name, None)
+        self.graph.add((node, RDF.type, relation_type))
+        self.graph.add((node, GEOM_REL["between-entities"], URIRef(a_uri)))
+        self.graph.add((node, GEOM_REL["between-entities"], URIRef(b_uri)))
+        self._angular_distance_relations[key] = node
         return node
 
     def _model_local_path(self, uri: str) -> str:
         """A URI's path below the model namespace, flattened into one name segment.
 
         The whole path, not the last segment: two motions declare the same `start-pose`, and
-        only the path above it tells them apart.
+        only the path above it tells them apart. A relation entity can come from outside the
+        model too -- a scene-imported frame's origin Point, say -- so a URI the model namespace
+        does not own instead flattens its own scheme-stripped path, keeping it readable and
+        unique without assuming it is model-local.
         """
         namespace = str(self._namespace_owner(None).ns.uri)
-        if not str(uri).startswith(namespace):
-            raise ValueError(f"'{uri}' is not owned by the model namespace '{namespace}'.")
-        return str(uri).removeprefix(namespace).replace("/", "-")
+        if str(uri).startswith(namespace):
+            return str(uri).removeprefix(namespace).replace("/", "-")
+        _, _, rest = str(uri).partition("://")
+        return rest.replace("/", "-")
 
     def _frame_coords(self, node: URIRef) -> tuple[URIRef, URIRef, URIRef] | None:
         """Resolved (of, wrt, as-seen-by) frame nodes recorded when `node`'s pose
@@ -1720,12 +1896,15 @@ class MotionSpecDatasetBuilder:
             and axis is None
         ):
             self._emit_pose_to_direction(direction_node, qty, as_seen_by_node, motion, ctrl.name)
+        elif axis is not None:
+            self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
         else:
-            if axis is None:
+            gradient_id = _gradient_scalar_id(qty, spec)
+            if gradient_id is None:
                 raise ValueError(
                     f"Force controller '{ctrl.name}' needs an axis or a distance pose."
                 )
-            self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
+            direction_node = self._owned_uri(gradient_id, motion)
 
         point_node = self._declared_uri(f"point-force-{ctrl.name}", ctrl)
         position_node = self._declared_uri(f"position-force-{ctrl.name}", ctrl)
@@ -1750,13 +1929,16 @@ class MotionSpecDatasetBuilder:
     def _emit_moment_command_wrench(
         self,
         ctrl: ControllerEntry,
+        spec: ConstraintSpecification,
         qty: WorldQuantity,
         command: Any,
         handler: ConstraintHandler,
         motion: GuardedMotion,
     ) -> URIRef:
         """Emit the op chain building a moment controller's command wrench: one
-        WrenchFromDirectionAndMoment per commanded angular axis, folded with AddWrench.
+        WrenchFromDirectionAndMoment per commanded angular axis, folded with AddWrench --
+        or, when the view is a geometric expression with no named axis, a single
+        WrenchFromDirectionAndMoment wired to that expression's runtime gradient direction.
         A couple is reference-point independent, so no position enters the ops.
         """
         apply_at = getattr(ctrl, "apply_at", None)
@@ -1772,15 +1954,29 @@ class MotionSpecDatasetBuilder:
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
         axes = [axis for _, axis in command.controlled_axes if axis is not None]
-        if not axes:
-            raise ValueError(f"Moment controller '{ctrl.name}' commands no angular axis.")
-        multi = len(axes) > 1
 
         # The wrench coordinate still needs a well-formed reference point; the op ignores it.
         point_node = self._declared_uri(f"point-moment-{ctrl.name}", ctrl)
         position_node = self._declared_uri(f"position-moment-{ctrl.name}", ctrl)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
 
+        if not axes:
+            gradient_id = _gradient_scalar_id(qty, spec)
+            if gradient_id is None:
+                raise ValueError(f"Moment controller '{ctrl.name}' commands no angular axis.")
+            direction_node = self._owned_uri(gradient_id, motion)
+            magnitude_node = self._moment_control_signal_node(ctrl, handler, None)
+            wrench_node = self._declared_uri(f"wrench-moment-{ctrl.name}", ctrl)
+            self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
+
+            op_node = self._declared_uri(f"compute-wrench-moment-{ctrl.name}", ctrl)
+            self.graph.add((op_node, RDF.type, RBDYN_OP_EXT.WrenchFromDirectionAndMoment))
+            self.graph.add((op_node, RBDYN_OP_EXT.moment, magnitude_node))
+            self.graph.add((op_node, RBDYN_OP.direction, direction_node))
+            self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
+            return wrench_node
+
+        multi = len(axes) > 1
         wrench_nodes: list[URIRef] = []
         for axis in axes:
             direction_node = self._declared_uri(f"direction-moment-{ctrl.name}-ang-{axis}", ctrl)
@@ -2039,9 +2235,9 @@ class MotionSpecDatasetBuilder:
                 self._register_wrench_vector_view(scalar_uri, quantity, mapped_subspace, owner)
             if quantity.type == WorldQuantityType.Pose and axis is None:
                 if mapped_subspace in {"distance", "position"}:
-                    return URIRef(f"{quantity.uri}-position-rel")
+                    return self._component_view(URIRef(quantity.uri), "position")
                 if mapped_subspace in {"orientation", "rotation"}:
-                    return URIRef(f"{quantity.uri}-orientation-rel")
+                    return self._component_view(URIRef(quantity.uri), "orientation")
             return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
@@ -2077,7 +2273,7 @@ class MotionSpecDatasetBuilder:
         if scalar_uri in self._emitted_position_coords:
             return
         self._emitted_position_coords.add(scalar_uri)
-        position_relation = URIRef(f"{quantity.uri}-position-rel")
+        position_relation = self._component_relation(URIRef(quantity.uri), "position")
 
         view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'position', None)}", owner)
         if view_uri not in self._emitted_views:
@@ -2087,6 +2283,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_uri, MAP.subobject, position_relation))
             self.graph.add((view_uri, MAP.subspace, MAP_EXT.position))
             # axis intentionally omitted: this view exposes the whole 3-vector.
+        self._register_component_view(URIRef(quantity.uri), "position", view_uri)
 
     def _register_pose_component_view(
         self,
@@ -2171,7 +2368,7 @@ class MotionSpecDatasetBuilder:
         if scalar_uri in self._emitted_orientation_coords:
             return
         self._emitted_orientation_coords.add(scalar_uri)
-        orientation_relation = URIRef(f"{quantity.uri}-orientation-rel")
+        orientation_relation = self._component_relation(URIRef(quantity.uri), "orientation")
 
         view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'orientation', None)}", owner)
         if view_uri not in self._emitted_views:
@@ -2180,6 +2377,7 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
             self.graph.add((view_uri, MAP.subobject, orientation_relation))
             self.graph.add((view_uri, MAP.subspace, MAP_EXT.orientation))
+        self._register_component_view(URIRef(quantity.uri), "orientation", view_uri)
 
     def _register_world_component_view(
         self,
@@ -2379,7 +2577,8 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
     ) -> URIRef:
         """Emit (once) the scalar/coordinate node and its map:View for a subspace of a context
-        pose/path reference, and return the value node.
+        pose/path reference. Returns the view for a whole position/orientation component -- it
+        is what names that operand -- and the scalar node for every other subspace.
         """
         view_spec = self._context_ref_view_spec(quantity, subspace_raw, axis)
         if view_spec is None:
@@ -2393,28 +2592,23 @@ class MotionSpecDatasetBuilder:
             else URIRef(quantity.uri)
         )
         view_target = node
+        component_coord: URIRef | None = None
         if (
             quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}
-            and subspace_raw == "position"
-        ):
-            if axis is None:
-                position_coord = (
-                    URIRef(f"{quantity.uri}.position")
-                    if _owns_pose_subobjects(quantity.value)
-                    else super_node
-                )
-                view_target = URIRef(f"{position_coord}-position-rel")
-        elif (
-            quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}
-            and subspace_raw == "orientation"
+            and subspace_raw in {"position", "orientation"}
             and axis is None
         ):
-            orientation_coord = (
-                URIRef(f"{quantity.uri}.orientation")
+            component_coord = (
+                URIRef(f"{quantity.uri}.{subspace_raw}")
                 if _owns_pose_subobjects(quantity.value)
                 else super_node
             )
-            view_target = URIRef(f"{orientation_coord}-orientation-rel")
+            emitted = self._component_view_index.get((component_coord, subspace_raw))
+            if emitted is not None:
+                # One view per (coordinate, component); a second one of the same shape would
+                # only re-create the ambiguity the pooled relation had.
+                return emitted
+            view_target = self._component_relation(component_coord, subspace_raw)
 
         if view_target == node:
             self._add_quantity(node, scalar_type)
@@ -2432,6 +2626,10 @@ class MotionSpecDatasetBuilder:
             self.graph.add((view_node, MAP.subspace, view_subspace))
             if axis is not None:
                 self.graph.add((view_node, MAP.axis, MAP[axis]))
+        if component_coord is not None:
+            # The operand is this view -- coordinate plus component -- not the pooled relation.
+            self._register_component_view(component_coord, subspace_raw, view_node)
+            return view_node
         return view_target
 
     def _emit_context_quantities(
@@ -2769,20 +2967,28 @@ class MotionSpecDatasetBuilder:
         orientation_relation = self._emit_geom_relation(
             orientation_node, "orientation", pose_of, pose_wrt, pose_asb or pose_wrt
         )
+        # The pooled Position/Orientation relation is shared by every pose over these frames, so
+        # which coordinate is *this* pose's is recorded here rather than guessed downstream.
+        self._record_pose_component(node, "position", position_node)
+        self._record_pose_component(node, "orientation", orientation_node)
         self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_POSITION_REF))
         self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_ORIENT_REF))
         self.graph.add((pose_relation, URI_GEOM_PRED_OF_POSITION, position_relation))
         self.graph.add((pose_relation, URI_GEOM_PRED_OF_ORIENT, orientation_relation))
-        for subobject, subspace in (
-            (position_relation, MAP_EXT.position),
-            (orientation_relation, MAP_EXT.orientation),
+        for coord, subobject, subspace, label in (
+            (position_node, position_relation, MAP_EXT.position, "position"),
+            (orientation_node, orientation_relation, MAP_EXT.orientation, "orientation"),
         ):
-            view_node = URIRef(f"{subobject}-view")
+            # Named from `node` (this quantity), not `subobject`: the relation pools by frame
+            # pair since plan 11 phase B, so several quantities can share one, and each still
+            # needs its own view -- one map:superobject per view (map-ext:PoseCoordinateView).
+            view_node = URIRef(f"{node}-{label}-view")
             self._emit_view(view_node)
             self.graph.add((view_node, RDF.type, MAP_EXT.PoseCoordinateView))
             self.graph.add((view_node, MAP.superobject, node))
             self.graph.add((view_node, MAP.subobject, subobject))
             self.graph.add((view_node, MAP.subspace, subspace))
+            self._register_component_view(coord, label, view_node)
 
     def _emit_pose_value_quantity(
         self,
@@ -2797,8 +3003,12 @@ class MotionSpecDatasetBuilder:
         assert isinstance(quantity.value, PoseCoordinate)
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
-        self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
+        # A pose coordinate carries both of its units: the length its translation is in, and the
+        # angle its rotation is in. `UNITLESS` said neither.
         self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.position.unit or "m")))
+        self.graph.add(
+            (node, QUDT_SCHEMA.unit, _dsl_unit(_orientation_angle_unit(quantity.value.orientation)))
+        )
         pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
         if pose_relation is None:
             path_quantity = next(
@@ -2924,21 +3134,28 @@ class MotionSpecDatasetBuilder:
         orientation_relation = self._emit_geom_relation(
             orientation_node, "orientation", pose_of, pose_wrt, pose_asb or pose_wrt
         )
+        # The pooled Position/Orientation relation is shared by every pose over these frames, so
+        # which coordinate is *this* pose's is recorded here rather than guessed downstream.
+        self._record_pose_component(node, "position", position_node)
+        self._record_pose_component(node, "orientation", orientation_node)
         if pose_relation is not None:
             self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_POSITION_REF))
             self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_ORIENT_REF))
             self.graph.add((pose_relation, URI_GEOM_PRED_OF_POSITION, position_relation))
             self.graph.add((pose_relation, URI_GEOM_PRED_OF_ORIENT, orientation_relation))
-        for subobject, subspace in (
-            (position_relation, MAP_EXT.position),
-            (orientation_relation, MAP_EXT.orientation),
+        for coord, subobject, subspace, label in (
+            (position_node, position_relation, MAP_EXT.position, "position"),
+            (orientation_node, orientation_relation, MAP_EXT.orientation, "orientation"),
         ):
-            view_node = URIRef(f"{subobject}-view")
+            # See `_emit_config_pose_quantity`'s identical note: named from `node`, not the
+            # (now possibly pooled) relation.
+            view_node = URIRef(f"{node}-{label}-view")
             self._emit_view(view_node)
             self.graph.add((view_node, RDF.type, MAP_EXT.PoseCoordinateView))
             self.graph.add((view_node, MAP.superobject, node))
             self.graph.add((view_node, MAP.subobject, subobject))
             self.graph.add((view_node, MAP.subspace, subspace))
+            self._register_component_view(coord, label, view_node)
 
         if position.ref is not None:
             ref_node = self._emit_context_ref_node(position.ref, quantity, "position")
@@ -3275,6 +3492,9 @@ class MotionSpecDatasetBuilder:
                 f"Direction quantity '{quantity.name}' value must be a Vector literal."
             )
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        # An authored direction is itself the structural unit-vector entity (same node doubling
+        # as line/plane's own along/normal direction does in `_emit_structural_primitive`).
+        self.graph.add((node, RDF.type, GEOM_ENT.UnitVector))
         self._emit_direction_coordinate(node, as_seen_by_node, vector)
 
     def _emit_structural_primitive(
@@ -3786,29 +4006,21 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
         scalar_t: Any = None,
     ) -> URIRef:
-        """The node a constraint compares against, promoted to a position/orientation coordinate
-        for a whole-subspace (axis-less) pose/path reference.
+        """The node a constraint compares against, promoted to the position/orientation
+        component view for a whole-subspace (axis-less) pose/path reference.
         """
         ref_node = self._emit_context_ref_node(ref, owner, suffix, scalar_t)
         quantity = _context_quantity(ref)
         if not isinstance(quantity, ContextQuantity) or axis is not None:
             return ref_node
         quantity = _resolved_context_quantity(quantity)
-        if quantity.type == QuantityType.Pose:
-            component_prefix = (
-                f"{quantity.uri}.{{component}}"
-                if _owns_pose_subobjects(quantity.value)
-                else quantity.uri
-            )
-            if subspace == "position":
-                return URIRef(f"{component_prefix.format(component='position')}-position-rel")
-            if subspace == "orientation":
-                return URIRef(f"{component_prefix.format(component='orientation')}-orientation-rel")
-        if quantity.type == ReferenceGeneratorType.Path:
-            if subspace == "position":
-                return URIRef(f"{ref_node}-position-rel")
-            elif subspace == "orientation":
-                return URIRef(f"{ref_node}-orientation-rel")
+        if quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path} and subspace in {
+            "position",
+            "orientation",
+        }:
+            # The reference operand is that coordinate's component view: the pooled relation is
+            # the target's too, and naming it would state measured == reference.
+            return self._emit_context_ref_view_node(quantity, subspace, None)
         return ref_node
 
     def _constraint_context_quantity(self, spec: ConstraintSpecification) -> ContextQuantity | None:
@@ -3930,7 +4142,10 @@ class MotionSpecDatasetBuilder:
                         "distance",
                     }
                 ):
-                    qty_node = URIRef(f"{qty.uri}-position-rel")
+                    # `_view_node` emits the pose's component view and returns it: the operand
+                    # is coordinate + component, not the relation every pose over these frames
+                    # shares.
+                    qty_node = self._view_node(spec.view, motion)
                 elif (
                     qty.type == WorldQuantityType.Pose
                     and axis is None
@@ -3940,7 +4155,7 @@ class MotionSpecDatasetBuilder:
                         "rotation",
                     }
                 ):
-                    qty_node = URIRef(f"{qty.uri}-orientation-rel")
+                    qty_node = self._view_node(spec.view, motion)
                 elif axis is None and (
                     (subspace == "pose" and qty.type == WorldQuantityType.Pose)
                     or qty.type == WorldQuantityType.JointPosition
@@ -4673,9 +4888,12 @@ class MotionSpecDatasetBuilder:
                 (
                     distance_node,
                     GEOM_COORD.of,
-                    self._linear_distance_relation(plan.start.uri, plan.end.uri),
+                    self._linear_distance_relation(
+                        plan.relation_a, plan.relation_b, GEOM_REL.PointToPointDistance
+                    ),
                 )
             )
+            self._emit_distance_operand_selection(distance_node, plan)
 
         seen_alignment_ops = self._emitted_alignment_ops
         for spec in constraints:
@@ -4702,23 +4920,47 @@ class MotionSpecDatasetBuilder:
             self._add_quantity(theta_node, QuantityType.Angle)
             # Base-alignment (fixed-axis solver rows) is decided from this frame downstream.
             self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            self.graph.add(
+                (
+                    theta_node,
+                    GEOM_COORD.of,
+                    self._angular_distance_relation(
+                        plan.relation_a,
+                        plan.relation_b,
+                        GEOM_REL_EXT.DirectionDirectionAngularDistance,
+                    ),
+                )
+            )
             angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
             self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
             self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
             self.graph.add((angle_op, GEOM_OP["from-directions"], URIRef(plan.reference.uri)))
             self.graph.add((angle_op, GEOM_OP.angle, theta_node))
 
-            vector_node = self._owned_uri(f"{alignment_id}-error", motion)
-            self._add_quantity(vector_node, QuantityType.FreeVector)
-            self.graph.add((vector_node, RDF.type, GEOM_COORD.VectorXYZ))
-            self.graph.remove((vector_node, QUDT_SCHEMA.unit, None))
-            self.graph.add((vector_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
-            self.graph.add((vector_node, GEOM_COORD["as-seen-by"], reference_frame))
-            vector_op = self._owned_uri(f"compute-{alignment_id}-error", motion)
-            self.graph.add((vector_op, RDF.type, GEOM_OP_EXT.RotationVectorFromDirections))
-            self.graph.add((vector_op, GEOM_OP.in1, rotated_node))
-            self.graph.add((vector_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
-            self.graph.add((vector_op, GEOM_OP.out, vector_node))
+            if _alignment_is_pointwise(spec):
+                # Point target (2 DOF): the exact cross-product error, unchanged from before
+                # this plan.
+                vector_node = self._owned_uri(f"{alignment_id}-error", motion)
+                self._add_quantity(vector_node, QuantityType.FreeVector)
+                self.graph.add((vector_node, RDF.type, GEOM_COORD.VectorXYZ))
+                self.graph.remove((vector_node, QUDT_SCHEMA.unit, None))
+                self.graph.add((vector_node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
+                self.graph.add((vector_node, GEOM_COORD["as-seen-by"], reference_frame))
+                vector_op = self._owned_uri(f"compute-{alignment_id}-error", motion)
+                self.graph.add((vector_op, RDF.type, GEOM_OP_EXT.RotationVectorFromDirections))
+                self.graph.add((vector_op, GEOM_OP.in1, rotated_node))
+                self.graph.add((vector_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+                self.graph.add((vector_op, GEOM_OP.out, vector_node))
+            else:
+                # Cone target (1 DOF): the row is theta's runtime gradient, not a rotation
+                # vector -- same shared theta_node/rotated_node, no second scalar minted.
+                gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
+                self._emit_direction_coordinate(gradient_node, reference_frame)
+                grad_op = self._owned_uri(f"compute-{alignment_id}-gradient", motion)
+                self.graph.add((grad_op, RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
+                self.graph.add((grad_op, GEOM_OP.in1, rotated_node))
+                self.graph.add((grad_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+                self.graph.add((grad_op, GEOM_OP_EXT.gradient, gradient_node))
 
         # Table IIa (plan 08): point-plane/point-line/point-on-line distance, and line-line
         # distance/projection. One operator node per expression, wired to its already-resolved
@@ -4741,11 +4983,15 @@ class MotionSpecDatasetBuilder:
                 (
                     distance_node,
                     GEOM_COORD.of,
-                    self._linear_distance_relation(plan.relation_a, plan.relation_b),
+                    self._linear_distance_relation(
+                        plan.relation_a,
+                        plan.relation_b,
+                        GEOM_REL_EXT[GEOMETRIC_DISTANCE_RELATION[plan.op_type]],
+                    ),
                 )
             )
 
-            gradient_node = self._owned_uri(f"{distance_id}-gradient", motion)
+            gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
             self._emit_direction_coordinate(
                 gradient_node, self._owned_uri(plan.gradient_frame, motion)
             )
@@ -4784,12 +5030,21 @@ class MotionSpecDatasetBuilder:
             theta_node = self._owned_uri(alignment_id, motion)
             self._add_quantity(theta_node, QuantityType.Angle)
             self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            self.graph.add(
+                (
+                    theta_node,
+                    GEOM_COORD.of,
+                    self._angular_distance_relation(
+                        plan.relation_a, plan.relation_b, GEOM_REL_EXT.DirectionPlaneAngularDistance
+                    ),
+                )
+            )
 
-            gradient_node = self._owned_uri(f"{alignment_id}-gradient", motion)
+            gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
             self._emit_direction_coordinate(gradient_node, reference_frame)
 
             angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
-            self.graph.add((angle_op, RDF.type, GEOM_OP_EXT.IncidentAngle))
+            self.graph.add((angle_op, RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance))
             self.graph.add((angle_op, GEOM_OP.in1, rotated_node))
             self.graph.add((angle_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
             self.graph.add((angle_op, GEOM_OP.angle, theta_node))
@@ -4818,6 +5073,15 @@ class MotionSpecDatasetBuilder:
             theta_node = self._owned_uri(alignment_id, motion)
             self._add_quantity(theta_node, QuantityType.Angle)
             self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            self.graph.add(
+                (
+                    theta_node,
+                    GEOM_COORD.of,
+                    self._angular_distance_relation(
+                        plan.relation_a, plan.relation_b, GEOM_REL_EXT.PlanePlaneAngularDistance
+                    ),
+                )
+            )
             angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
             self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
             self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
@@ -4827,7 +5091,7 @@ class MotionSpecDatasetBuilder:
             # from-directions is multi-valued/unordered on angle_op; the scalar above is
             # symmetric so that is safe, but gradient normalize(n2 x n1) is not -- it needs
             # AngleGradientFromDirections' ordered in1/in2, never riding on angle_op.
-            gradient_node = self._owned_uri(f"{alignment_id}-gradient", motion)
+            gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
             self._emit_direction_coordinate(gradient_node, reference_frame)
             grad_op = self._owned_uri(f"compute-{alignment_id}-gradient", motion)
             self.graph.add((grad_op, RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
@@ -5742,7 +6006,9 @@ class MotionSpecDatasetBuilder:
                 )
                 self._emit_cartesian_force_spec(ctrl, wrench_node, handler, driver_node)
             elif command.is_moment_command:
-                wrench_node = self._emit_moment_command_wrench(ctrl, qty, command, handler, motion)
+                wrench_node = self._emit_moment_command_wrench(
+                    ctrl, spec, qty, command, handler, motion
+                )
                 self._emit_cartesian_force_spec(ctrl, wrench_node, handler, driver_node)
 
             # Both serial-chain algorithms consume a joint force: ACHD takes it as its

@@ -1,0 +1,151 @@
+import "geometric_expressions.fsm"
+import "../admittance_arc_single/admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/geometric-expressions/"
+ns gex = "https://secorolab.github.io/models/geometric-expressions/fsm/"
+
+exec-context (ns=app) geometric-expressions-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose tcp {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-table-top {
+            of:         <table.table_top>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-forearm-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-shoulder-base {
+            of:         <kinova.shoulder_link.shoulder_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-forearm-shoulder {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.shoulder_link.shoulder_link_origin>,
+            as-seen-by: <kinova.shoulder_link.shoulder_link_origin>
+        }
+    },
+    spec {
+        torque arm-torque-limit = 35.0 Nm,
+        direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
+        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        direction shoulder-up { as-seen-by: <kinova.shoulder_link.shoulder_link_origin> } = (0, 0, -1),
+        angle align-cone = 0.05 rad,
+        angle align-band = 0.05 rad,
+        torque align-moment-max = 30.0 Nm,
+        plane table { of: <table.table_top>, normal: <shared.spec.base-up> },
+        direction tool-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
+        angle tool-incline-target = 0.5236 rad,
+        angle tool-incline-band = 0.05 rad,
+        length lift-target = 0.66 m,
+        length lift-band = 0.3 m
+    }
+}
+
+tolerances {
+    position:    0.05 m,
+    orientation: 0.05 rad
+}
+
+guarded-motion (ns=app) tilt {
+    description: "Tilt the tool to a commanded angle against the table; the tip stays put."
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.tcp>
+        }
+    }
+    when {}
+    while {
+        hold-position: keeping <shared.world.tcp>.position equal to <spec.start-pose>.position,
+        hold-roll: keeping <shared.world.tcp>.orientation.x equal to <spec.start-pose>.orientation.x,
+        hold-yaw: keeping <shared.world.tcp>.orientation.z equal to <spec.start-pose>.orientation.z,
+        tool-incline: keeping angle between <shared.spec.tool-axis> and <shared.spec.table> equal to <shared.spec.tool-incline-target> within <shared.spec.tool-incline-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
+    }
+    until {
+        tilt-settled: elapsed greater than 5.0 s
+    }
+}
+
+guarded-motion (ns=app) lift {
+    description: "Lift the tool away from the table plane, holding the attitude the tilt left it in."
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.tcp> on event <gex.E_LIFT_ENTERED>
+        }
+    }
+    when {}
+    while {
+        hold-position-x: keeping <shared.world.tcp>.position.x equal to <spec.start-pose>.position.x,
+        hold-position-y: keeping <shared.world.tcp>.position.y equal to <spec.start-pose>.position.y,
+        hold-orientation: keeping <shared.world.tcp>.orientation equal to <spec.start-pose>.orientation,
+        table-clearance: keeping distance of <shared.world.tcp> from <shared.spec.table> equal to <shared.spec.lift-target> within <shared.spec.lift-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
+    }
+    until {
+        lift-settled: elapsed greater than 5.0 s
+    }
+}
+
+constraint-handler (ns=app) handler-tilt {
+    handles: <tilt>
+    runs-in: <gex.S_TILT>
+    monitors {
+        mon-tilt-done: monitor <tilt.until> {
+            satisfied { trigger: event <gex.E_TILT_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-tilt-position { constraint: <tilt.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-tilt-roll { constraint: <tilt.hold-roll>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-tilt-yaw { constraint: <tilt.hold-yaw>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-tool-incline { constraint: <tilt.tool-incline>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
+        impedance ctrl-tilt-align-forearm { constraint: <tilt.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 } apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-lift {
+    handles: <lift>
+    runs-in: <gex.S_LIFT>
+    monitors {
+        mon-lift-done: monitor <lift.until> {
+            satisfied { trigger: event <gex.E_LIFT_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-lift-position-x { constraint: <lift.hold-position-x>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-lift-position-y { constraint: <lift.hold-position-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-lift-orientation { constraint: <lift.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-table-clearance { constraint: <lift.table-clearance>, Kp: 60, Ki: 0, Kd: 40, decay: 0 },
+        impedance ctrl-lift-align-forearm { constraint: <lift.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 } apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}

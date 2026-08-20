@@ -1,0 +1,30 @@
+ns gex = "https://secorolab.github.io/models/geometric-expressions/fsm/"
+
+evt loop (ns=gex) geometric_expressions_events {
+    evt E_STEP,
+    evt E_TILT_DONE,
+    evt E_LIFT_ENTERED,
+    evt E_LIFT_DONE
+}
+
+fsm (ns=gex) geometric_expressions_fsm {
+    description: "Tilt the tool to a commanded angle against the table, then lift it away from that same plane, each driven by the gradient of its own geometric expression."
+    states { S_START, S_TILT, S_LIFT, S_DONE }
+    evt loop: <geometric_expressions_events>
+    start: <S_START>
+    end: <S_DONE>
+    transitions {
+        T_START_TILT { from: <S_START>, to: <S_TILT> },
+        T_TILT_LIFT  { from: <S_TILT>,  to: <S_LIFT> },
+        T_LIFT_DONE  { from: <S_LIFT>,  to: <S_DONE> }
+    }
+    reactions {
+        R_START { when: <geometric_expressions_events.E_STEP>, do: <T_START_TILT> },
+        R_TILT_DONE {
+            when: <geometric_expressions_events.E_TILT_DONE>,
+            do:   <T_TILT_LIFT>,
+            fires { <geometric_expressions_events.E_LIFT_ENTERED> }
+        },
+        R_LIFT_DONE { when: <geometric_expressions_events.E_LIFT_DONE>, do: <T_LIFT_DONE> }
+    }
+}

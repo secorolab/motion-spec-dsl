@@ -11,7 +11,16 @@ from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
-from motion_spec_dsl.rdf_parser.vocab import GEOM_COORD, GEOM_OP, GEOM_OP_EXT, GEOM_REL, QUDT_SCHEMA
+from motion_spec_dsl.rdf_parser.vocab import (
+    GEOM_COORD,
+    GEOM_ENT,
+    GEOM_EXT,
+    GEOM_OP,
+    GEOM_OP_EXT,
+    GEOM_REL,
+    GEOM_REL_EXT,
+    QUDT_SCHEMA,
+)
 
 SPEC_ANCHOR = "        linear-velocity zero-linvel = 0.0 m/s"
 WHILE_ANCHOR = (
@@ -78,7 +87,7 @@ def test_point_plane_distance_emits_operator_with_gradient(parse_source, base_so
     )
     graph = _graph(parse_source, source)
 
-    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.PointPlaneDistance))
+    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.PointPlaneToLinearDistance))
     assert len(ops) == 1
     op = ops[0]
 
@@ -103,7 +112,7 @@ def test_line_line_projection_preserves_operand_order(parse_source, base_source)
     )
     graph = _graph(parse_source, source)
 
-    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.LineLineProjection))
+    ops = list(graph.subjects(RDF.type, GEOM_OP_EXT.LineOnLineProjection))
     assert len(ops) == 1
     op = ops[0]
 
@@ -143,10 +152,19 @@ def test_distance_relation_is_shared_by_operand_pair(parse_source, base_source) 
     )
     graph = _graph(parse_source, source)
 
-    relations = list(graph.subjects(RDF.type, GEOM_REL.LinearDistance))
+    # A point-plane operand pair mints geom-rel-ext:PointPlaneDistance, never the bare
+    # geom-rel:LinearDistance base -- the relation must say *which* kind of pair this is.
+    assert list(graph.subjects(RDF.type, GEOM_REL.LinearDistance)) == []
+    relations = list(graph.subjects(RDF.type, GEOM_REL_EXT.PointPlaneDistance))
     assert len(relations) == 1
-    coordinates = list(graph.subjects(GEOM_COORD.of, relations[0]))
+    relation = relations[0]
+    coordinates = list(graph.subjects(GEOM_COORD.of, relation))
     assert len(coordinates) == 2
+
+    entities = list(graph.objects(relation, GEOM_REL["between-entities"]))
+    assert len(entities) == 2
+    assert sum(1 for e in entities if (e, RDF.type, GEOM_ENT.Point) in graph) == 1
+    assert sum(1 for e in entities if (e, RDF.type, GEOM_EXT.Plane) in graph) == 1
 
 
 def test_unsigned_distance_to_zero_is_rejected(parse_source, base_source) -> None:

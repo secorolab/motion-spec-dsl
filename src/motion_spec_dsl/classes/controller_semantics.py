@@ -18,8 +18,10 @@ from motion_spec_dsl.classes.constraint_handler import (
     _resolved_solver,
 )
 from motion_spec_dsl.classes.constraints import (
+    BilateralConstraint,
     ConstraintSpecification,
     EqualityConstraint,
+    LessThanConstraint,
 )
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_OPS,
@@ -105,6 +107,25 @@ ANGULAR_SUBSPACES = frozenset(
 LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
 ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
 POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
+
+
+def _alignment_is_pointwise(constraint: ConstraintSpecification) -> bool:
+    """Whether an `angle between` constraint's target names the aligned direction itself (a point
+    on the sphere) rather than a cone around it: equality to a bare zero, a band opening at zero,
+    or `less than` (the same cone stated as a bound). A point target removes two rotational DOF;
+    a cone removes one. Shared by validation and RDF emission so the two never disagree on which
+    row a target drives -- see plan 10.
+    """
+    expr = constraint.expr
+    if isinstance(expr, EqualityConstraint):
+        measure = expr.reference.bare
+        return measure is not None and measure.value == 0.0
+    if isinstance(expr, LessThanConstraint):
+        return True
+    if isinstance(expr, BilateralConstraint):
+        lower = expr.lower.bare
+        return lower is not None and lower.value == 0.0
+    return False
 
 
 def _alignment_controlled_axes(

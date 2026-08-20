@@ -427,27 +427,38 @@ def _geometric_operand_kind(operand: object) -> str | None:
 
 # Table IIa distance/projection operators, keyed by (first operand kind, second operand kind).
 # Line-line operand order is not a dispatch key: both directions carry the same op, and which
-# line is `in1`/`in2` is what makes `LineLineProjection` compute s1 vs s2 (see plan 08 ruling 2).
+# line is `in1`/`in2` is what makes `LineOnLineProjection` compute s1 vs s2 (see plan 08 ruling 2).
 GEOMETRIC_DISTANCE_OPS: dict[tuple[str, str], str] = {
-    ("point", "plane"): "PointPlaneDistance",
-    ("point", "line"): "PointLineDistance",
-    ("line", "line"): "LineLineDistance",
+    ("point", "plane"): "PointPlaneToLinearDistance",
+    ("point", "line"): "PointLineToLinearDistance",
+    ("line", "line"): "LineLineToLinearDistance",
 }
 GEOMETRIC_PROJECTION_OPS: dict[tuple[str, str], str] = {
     ("point", "line"): "PointOnLineProjection",
-    ("line", "line"): "LineLineProjection",
+    ("line", "line"): "LineOnLineProjection",
 }
 # The one Table IIa expression whose scalar is an unsigned magnitude (no derivative at zero).
-UNSIGNED_GEOMETRIC_DISTANCE_OP = "PointLineDistance"
+UNSIGNED_GEOMETRIC_DISTANCE_OP = "PointLineToLinearDistance"
 
 # Constraint-view subspace token per Table IIa operator, matching the lowercase style
 # ("alignment", "distance") the rest of `constraint_view_subspace` already uses.
 GEOMETRIC_DISTANCE_SUBSPACE: dict[str, str] = {
-    "PointPlaneDistance": "point-plane-distance",
-    "PointLineDistance": "point-line-distance",
+    "PointPlaneToLinearDistance": "point-plane-distance",
+    "PointLineToLinearDistance": "point-line-distance",
     "PointOnLineProjection": "point-line-projection",
-    "LineLineDistance": "line-line-distance",
-    "LineLineProjection": "line-line-projection",
+    "LineLineToLinearDistance": "line-line-distance",
+    "LineOnLineProjection": "line-line-projection",
+}
+
+# geom-rel-ext relation (the entity pair) each Table IIa operator's coordinate is `of`. A
+# distance op and its projection sibling over the same pair share one relation -- see
+# `_linear_distance_relation`'s pair-keyed cache.
+GEOMETRIC_DISTANCE_RELATION: dict[str, str] = {
+    "PointPlaneToLinearDistance": "PointPlaneDistance",
+    "PointLineToLinearDistance": "PointLineDistance",
+    "PointOnLineProjection": "PointLineDistance",
+    "LineLineToLinearDistance": "LineLineDistance",
+    "LineOnLineProjection": "LineLineDistance",
 }
 
 

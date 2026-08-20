@@ -87,6 +87,9 @@ guarded-motion (ns=app) home {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
         align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        // Plan 10: a nonzero target over the same pair align-forearm already holds near zero,
+        // so it is satisfied throughout -- proves the 1-DOF gradient row generates end to end.
+        align-forearm-lean: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> equal to 0.03 rad within <shared.spec.align-band>,
         above-table: keeping distance of <shared.world.pose-ee-base> from <shared.spec.table> greater than 0.05 m
     }
 
