@@ -1,0 +1,43 @@
+ns tp = "https://secorolab.github.io/models/tableii-probe/fsm/"
+
+evt loop (ns=tp) tableii_probe_events {
+    evt E_STEP,
+    evt E_TILT_ENTERED,
+    evt E_TILT_DONE,
+    evt E_TRAVERSE_ENTERED,
+    evt E_TRAVERSE_DONE,
+    evt E_LINES_ENTERED,
+    evt E_LINES_DONE
+}
+
+fsm (ns=tp) tableii_probe_fsm {
+    description: "Three motions, each driven by a different family of Borghesan Table II operator: direction-direction and direction-plane angles, point-plane and point-line distances with a point-on-line projection, then the line-line pair."
+    states { S_START, S_TILT, S_TRAVERSE, S_LINES, S_DONE }
+    evt loop: <tableii_probe_events>
+    start: <S_START>
+    end: <S_DONE>
+    transitions {
+        T_START_TILT     { from: <S_START>,    to: <S_TILT> },
+        T_TILT_TRAVERSE  { from: <S_TILT>,     to: <S_TRAVERSE> },
+        T_TRAVERSE_LINES { from: <S_TRAVERSE>, to: <S_LINES> },
+        T_LINES_DONE     { from: <S_LINES>,    to: <S_DONE> }
+    }
+    reactions {
+        R_START {
+            when: <tableii_probe_events.E_STEP>,
+            do:   <T_START_TILT>,
+            fires { <tableii_probe_events.E_TILT_ENTERED> }
+        },
+        R_TILT_DONE {
+            when: <tableii_probe_events.E_TILT_DONE>,
+            do:   <T_TILT_TRAVERSE>,
+            fires { <tableii_probe_events.E_TRAVERSE_ENTERED> }
+        },
+        R_TRAVERSE_DONE {
+            when: <tableii_probe_events.E_TRAVERSE_DONE>,
+            do:   <T_TRAVERSE_LINES>,
+            fires { <tableii_probe_events.E_LINES_ENTERED> }
+        },
+        R_LINES_DONE { when: <tableii_probe_events.E_LINES_DONE>, do: <T_LINES_DONE> }
+    }
+}

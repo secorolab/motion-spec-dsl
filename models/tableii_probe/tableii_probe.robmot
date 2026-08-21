@@ -1,0 +1,206 @@
+import "tableii_probe.fsm"
+import "../admittance_arc_single/admittance_arc_single.scenex"
+ns app = "https://secorolab.github.io/models/tableii-probe/"
+ns tp = "https://secorolab.github.io/models/tableii-probe/fsm/"
+
+exec-context (ns=app) tableii-probe-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose tcp {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-table-top {
+            of:         <table.table_top>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-forearm-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-shoulder-base {
+            of:         <kinova.shoulder_link.shoulder_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-forearm-shoulder {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.shoulder_link.shoulder_link_origin>,
+            as-seen-by: <kinova.shoulder_link.shoulder_link_origin>
+        }
+    },
+    spec {
+        torque arm-torque-limit = 35.0 Nm,
+        direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
+        direction shoulder-up { as-seen-by: <kinova.shoulder_link.shoulder_link_origin> } = (0, 0, -1),
+        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        direction rail-x-axis { as-seen-by: <kinova.base_link.base_link_origin> } = (1, 0, 0),
+        direction probe-axis { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 1, 0),
+        direction tool-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
+        direction tool-side { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0),
+        plane table { of: <table.table_top>, normal: <shared.spec.base-up> },
+        line rail-x { of: <table.table_top>, along: <shared.spec.rail-x-axis> },
+        line rail-vert { of: <table.table_top>, along: <shared.spec.base-up> },
+        line probe-line { of: <gripper.g_base.g_pinch>, along: <shared.spec.probe-axis> },
+        angle align-cone = 0.05 rad,
+        angle align-band = 0.05 rad,
+        torque align-moment-max = 30.0 Nm,
+        angle tool-incline-target = 0.5236 rad,
+        angle tool-incline-band = 0.05 rad,
+        angle tool-side-level-target = 1.5708 rad,
+        angle tool-side-level-band = 0.05 rad,
+        length clearance-target = 0.55 m,
+        length clearance-band = 0.3 m,
+        length travel-target = 0.55 m,
+        length travel-band = 0.3 m,
+        length radial-floor = 0.15 m,
+        length line-gap-target = -0.50 m,
+        length line-gap-band = 0.3 m,
+        length line-travel-floor = 0.1 m
+    }
+}
+
+tolerances {
+    position:    0.05 m,
+    orientation: 0.05 rad
+}
+
+guarded-motion (ns=app) tilt {
+    description: "Two angle operators drive the attitude: the tool's incline against the table plane, and the angle its side axis makes with the base up-direction."
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_TILT_ENTERED>
+        }
+    }
+    when {}
+    while {
+        hold-position: keeping <shared.world.tcp>.position equal to <spec.start-pose>.position,
+        tool-incline: keeping angle between <shared.spec.tool-axis> and <shared.spec.table> equal to <shared.spec.tool-incline-target> within <shared.spec.tool-incline-band>,
+        tool-side-level: keeping angle between <shared.spec.tool-side> and <shared.spec.base-up> equal to <shared.spec.tool-side-level-target> within <shared.spec.tool-side-level-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
+    }
+    until {
+        tilt-settled: elapsed greater than 5.0 s
+    }
+}
+
+guarded-motion (ns=app) traverse {
+    description: "The point operators drive the tip: height above the table plane and travel along the rail, with the radius from the vertical rail watched but not driven."
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_TRAVERSE_ENTERED>
+        }
+    }
+    when {}
+    while {
+        hold-position-y: keeping <shared.world.tcp>.position.y equal to <spec.start-pose>.position.y,
+        hold-orientation: keeping <shared.world.tcp>.orientation equal to <spec.start-pose>.orientation,
+        table-clearance: keeping distance of <shared.world.tcp> from <shared.spec.table> equal to <shared.spec.clearance-target> within <shared.spec.clearance-band>,
+        rail-travel: keeping projection of <shared.world.tcp> on <shared.spec.rail-x> equal to <shared.spec.travel-target> within <shared.spec.travel-band>
+    }
+    until {
+        traverse-settled: elapsed greater than 5.0 s,
+        tcp-radius: distance of <shared.world.tcp> from <shared.spec.rail-vert> greater than <shared.spec.radial-floor>
+    }
+}
+
+guarded-motion (ns=app) lines {
+    description: "The line-line pair drives the tip: the gap along the common normal of a line carried by the gripper and the rail on the table, with that pair's projection watched but not driven."
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_LINES_ENTERED>
+        }
+    }
+    when {}
+    while {
+        hold-position-x: keeping <shared.world.tcp>.position.x equal to <spec.start-pose>.position.x,
+        hold-position-y: keeping <shared.world.tcp>.position.y equal to <spec.start-pose>.position.y,
+        hold-orientation: keeping <shared.world.tcp>.orientation equal to <spec.start-pose>.orientation,
+        line-gap: keeping distance of <shared.spec.probe-line> from <shared.spec.rail-x> equal to <shared.spec.line-gap-target> within <shared.spec.line-gap-band>
+    }
+    until {
+        lines-settled: elapsed greater than 5.0 s,
+        line-travel: projection of <shared.spec.probe-line> on <shared.spec.rail-x> greater than <shared.spec.line-travel-floor>
+    }
+}
+
+constraint-handler (ns=app) handler-tilt {
+    handles: <tilt>
+    runs-in: <tp.S_TILT>
+    monitors {
+        mon-tilt-done: monitor <tilt.until> {
+            satisfied { trigger: event <tp.E_TILT_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-tilt-position { constraint: <tilt.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-tool-incline { constraint: <tilt.tool-incline>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
+        pid ctrl-tool-side-level { constraint: <tilt.tool-side-level>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
+        impedance ctrl-tilt-align-forearm { constraint: <tilt.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 } apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-traverse {
+    handles: <traverse>
+    runs-in: <tp.S_TRAVERSE>
+    monitors {
+        mon-traverse-done: monitor <traverse.until> {
+            satisfied { trigger: event <tp.E_TRAVERSE_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-traverse-position-y { constraint: <traverse.hold-position-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-traverse-orientation { constraint: <traverse.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-table-clearance { constraint: <traverse.table-clearance>, Kp: 60, Ki: 0, Kd: 40, decay: 0 },
+        pid ctrl-rail-travel { constraint: <traverse.rail-travel>, Kp: 60, Ki: 0, Kd: 40, decay: 0 }
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-lines {
+    handles: <lines>
+    runs-in: <tp.S_LINES>
+    monitors {
+        mon-lines-done: monitor <lines.until> {
+            satisfied { trigger: event <tp.E_LINES_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-lines-position-x { constraint: <lines.hold-position-x>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-lines-position-y { constraint: <lines.hold-position-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-lines-orientation { constraint: <lines.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-line-gap { constraint: <lines.line-gap>, Kp: 60, Ki: 0, Kd: 40, decay: 0 }
+    }
+    solvers {
+        arm: serial-chain {
+            agent: <agents.kinova_ft_2f85>,
+            algorithm: achd,
+            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity: (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
