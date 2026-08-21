@@ -20,7 +20,7 @@ context (ns=app) shared {
     spec {
         length satisfied-band     = 0.01 m,
         angle satisfied-band-rot           = 0.01 rad,
-        pose home-pose = snapshot of <shared.world.pose-ee-base>,
+        pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>,
         velocity-twist platform-velocity {
             of: <kinova.base_link.base_link_origin>,
             wrt: <kinova.base_link.base_link_origin>

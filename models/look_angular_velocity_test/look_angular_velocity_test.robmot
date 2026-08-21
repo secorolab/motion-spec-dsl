@@ -49,9 +49,9 @@ context (ns=app) shared {
         angular-velocity zero-angular = 0.0 rad/s,
         length reach-band = 0.06 m,
         length negative-reach-band = -0.06 m,
-        pose home-pose = snapshot of <shared.world.tcp-base>,
+        pose home-pose = snapshot of <shared.world.tcp-base> on event <lav.E_HOME_ENTERED>,
         pose look-pose = [config.poses.look] for <shared.world.tcp-base>,
-        length elbow-z = snapshot of <shared.world.elbow-base>.position.z
+        length elbow-z = snapshot of <shared.world.elbow-base>.position.z on event <lav.E_LOOK_ENTERED>
     }
 }
 
@@ -121,7 +121,7 @@ guarded-motion (ns=app) reach {
             angle q6-target = 0.9599 rad,
             angle q7-target = 1.5708 rad,
             torque posture-limit = 8.0 Nm,
-            pose start = snapshot of <shared.world.tcp-base>,
+            pose start = snapshot of <shared.world.tcp-base> on event <lav.E_REACH_ENTERED>,
             velocity-profile approach-profile = profile {
                 max-velocity: 0.05 m/s,
                 max-acceleration: 0.01 m/s^2,
@@ -156,7 +156,7 @@ guarded-motion (ns=app) hold {
     description: "Settle the last millimetres onto the configured look pose and hold it"
     context {
         spec {
-            length elbow-z = snapshot of <shared.world.elbow-base>.position.z
+            length elbow-z = snapshot of <shared.world.elbow-base>.position.z on event <lav.E_HOLD_ENTERED>
         }
     }
     when { }

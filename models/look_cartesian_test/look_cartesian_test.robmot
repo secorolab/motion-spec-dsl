@@ -29,7 +29,7 @@ context (ns=app) shared {
         }
     },
     spec {
-        pose home-pose = snapshot of <shared.world.tcp>,
+        pose home-pose = snapshot of <shared.world.tcp> on event <lct.E_HOME_ENTERED>,
         pose look-pose = [config.poses.look] for <shared.world.tcp>,
         angle orientation-band = 0.15 rad,
         linear-velocity zero-linear = 0.0 m/s,
@@ -77,7 +77,7 @@ guarded-motion (ns=app) look {
     context {
         <shared.spec>,
         spec {
-            pose start = snapshot of <shared.world.tcp>,
+            pose start = snapshot of <shared.world.tcp> on event <lct.E_LOOK_ENTERED>,
             velocity-profile speed-profile = profile {
                 max-velocity: 0.05 m/s,
                 max-acceleration: 0.01 m/s^2,

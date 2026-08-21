@@ -70,7 +70,9 @@ def test_an_inline_expression_view_mints_a_gensym_root_and_op_chain(
 def test_a_whole_pose_context_quantity_view_is_rejected_clearly(parse_source, base_source) -> None:
     """An order relation on a whole pose is already rejected at validation (pre-existing);
     an equality relation reaches RDF emission, where plan 05's own guard rejects it."""
-    addition = "pose some-pose = snapshot of <shared.world.pose-ee-base>"
+    addition = (
+        "pose some-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+    )
     with pytest.raises(ValueError, match="whole pose"):
         _build(
             parse_source,

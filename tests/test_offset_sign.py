@@ -14,7 +14,7 @@ from rdflib.namespace import RDF
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.rdf_parser.vocab import ALGO_EXT
 
-SAMPLE = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+SAMPLE = "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
 
 
 def _graph(parse_source, base_source: str, sign: str):
@@ -23,7 +23,7 @@ def _graph(parse_source, base_source: str, sign: str):
         f"{SAMPLE},\n"
         "            length lift = 0.05 m,\n"
         "            length support-z = snapshot of <shared.world.pose-ee-base>.position.z "
-        f"{sign} <spec.lift>"
+        f"{sign} <spec.lift> on event <aas.E_HOME_ENTERED>"
     )
     model = parse_source(base_source.replace(SAMPLE, declarations))
     return MotionSpecDatasetBuilder(model).build()[0].default_graph

@@ -32,7 +32,8 @@ context (ns=app) shared {
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
-            ft-sensor:  <wrist_ft>
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <rdm.E_RUN_STARTED> }
         }
     },
     spec {
@@ -50,7 +51,7 @@ guarded-motion (ns=app) close-cycle {
 
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.pose-ee-base>
+            pose start-pose = snapshot of <shared.world.pose-ee-base> on event <rdm.E_CLOSE_ENTERED>
         }
     }
 
@@ -72,7 +73,7 @@ guarded-motion (ns=app) open-cycle {
 
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.pose-ee-base>
+            pose start-pose = snapshot of <shared.world.pose-ee-base> on event <rdm.E_OPEN_ENTERED>
         }
     }
 

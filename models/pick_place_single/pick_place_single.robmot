@@ -108,9 +108,9 @@ guarded-motion (ns=app) pick-above {
                 max-acceleration: 0.05 m/s^2,
                 shape: trapezoidal
             },
-            pose start-pose              = snapshot of <shared.world.pose-ee-base>,
-            length start-cube-x = snapshot of <shared.world.pose-cube-base>.position.x,
-            length start-cube-y = snapshot of <shared.world.pose-cube-base>.position.y,
+            pose start-pose              = snapshot of <shared.world.pose-ee-base> on event <pp.E_PICK_ABOVE_ENTERED>,
+            length start-cube-x = snapshot of <shared.world.pose-cube-base>.position.x on event <pp.E_PICK_ABOVE_ENTERED>,
+            length start-cube-y = snapshot of <shared.world.pose-cube-base>.position.y on event <pp.E_PICK_ABOVE_ENTERED>,
             pose goal-pose = {
                 position: (<spec.start-cube-x>, <spec.start-cube-y>, <spec.above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -142,8 +142,8 @@ guarded-motion (ns=app) pick {
 
     context {
         spec {
-            length grasp-x         = snapshot of <shared.world.pose-cube-base>.position.x,
-            length grasp-y         = snapshot of <shared.world.pose-cube-base>.position.y,
+            length grasp-x         = snapshot of <shared.world.pose-cube-base>.position.x on event <pp.E_PICK_ENTERED>,
+            length grasp-y         = snapshot of <shared.world.pose-cube-base>.position.y on event <pp.E_PICK_ENTERED>,
             length grasp-z         = 0.015 m,
             pose pick-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
@@ -172,7 +172,7 @@ guarded-motion (ns=app) grasp-hold {
 
     context {
         spec {
-            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>,
+            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base> on event <pp.E_GRASP_ENTERED>,
             length grasp-reach  = 0.015 m
         }
     }
@@ -200,8 +200,8 @@ guarded-motion (ns=app) lift {
         spec {
             length lift-z       = 0.32 m,
             angle grasp-threshold        = 0.15 rad,
-            length lift-start-x = snapshot of <shared.world.pose-ee-base>.position.x,
-            length lift-start-y = snapshot of <shared.world.pose-ee-base>.position.y,
+            length lift-start-x = snapshot of <shared.world.pose-ee-base>.position.x on event <pp.E_LIFT_ENTERED>,
+            length lift-start-y = snapshot of <shared.world.pose-ee-base>.position.y on event <pp.E_LIFT_ENTERED>,
             pose lift-ori-pose = {
                 position: (0.0, 0.0, 0.0) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
@@ -300,7 +300,7 @@ guarded-motion (ns=app) open-grasp-hold {
 
     context {
         spec {
-            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>,
+            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base> on event <pp.E_OPEN_ENTERED>,
             length release-z    = 0.04 m
         }
     }
@@ -361,7 +361,7 @@ guarded-motion (ns=app) recover {
 
     context {
         spec {
-            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base>
+            pose hold-orientation-pose   = snapshot of <shared.world.pose-ee-base> on event <pp.E_RECOVER_ENTERED>
         }
     }
 

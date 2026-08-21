@@ -2,6 +2,7 @@ ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 
 evt loop (ns=aas) admittance_arc_single_fsm_events {
     evt E_STEP,
+    evt E_RUN_STARTED,
     evt E_HOME_SETTLED,
     evt E_CONTACT,
     evt E_FORWARD_DONE,
@@ -9,6 +10,9 @@ evt loop (ns=aas) admittance_arc_single_fsm_events {
     evt E_FORCE_GONE,
     evt E_ARC_CONTACT,
     evt E_TABLE_CONTACT,
+    evt E_HOME_ENTERED,
+    evt E_TOUCHDOWN_ENTERED,
+    evt E_FORWARD_ENTERED,
     evt E_ARC_ENTERED,
     evt E_ADMITTANCE_ENTERED
 }
@@ -43,9 +47,21 @@ fsm (ns=aas) admittance_arc_single_fsm {
     }
 
     reactions {
-        R_STEP_START { when: <admittance_arc_single_fsm_events.E_STEP>, do: <T_START_HOME> },
-        R_HOME_SETTLED { when: <admittance_arc_single_fsm_events.E_HOME_SETTLED>, do: <T_HOME_TOUCHDOWN> },
-        R_CONTACT { when: <admittance_arc_single_fsm_events.E_CONTACT>, do: <T_TOUCHDOWN_FORWARD> },
+        R_STEP_START {
+            when: <admittance_arc_single_fsm_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <admittance_arc_single_fsm_events.E_RUN_STARTED>, <admittance_arc_single_fsm_events.E_HOME_ENTERED> }
+        },
+        R_HOME_SETTLED {
+            when: <admittance_arc_single_fsm_events.E_HOME_SETTLED>,
+            do:   <T_HOME_TOUCHDOWN>,
+            fires { <admittance_arc_single_fsm_events.E_TOUCHDOWN_ENTERED> }
+        },
+        R_CONTACT {
+            when: <admittance_arc_single_fsm_events.E_CONTACT>,
+            do:   <T_TOUCHDOWN_FORWARD>,
+            fires { <admittance_arc_single_fsm_events.E_FORWARD_ENTERED> }
+        },
         R_FORWARD_DONE {
             when: <admittance_arc_single_fsm_events.E_FORWARD_DONE>,
             do:   <T_FORWARD_ARC>,

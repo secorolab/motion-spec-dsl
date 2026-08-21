@@ -46,7 +46,8 @@ context (ns=app) shared {
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
-            ft-sensor:  <wrist_ft>
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <aas.E_RUN_STARTED> }
         },
         wrench press-wrench {
             of:         <gripper.g_base.g_pinch>,
@@ -93,7 +94,7 @@ guarded-motion (ns=app) home {
 
     context {
         spec {
-            pose home-pose = snapshot of <shared.world.pose-ee-base>
+            pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>
         }
     }
 
@@ -117,7 +118,7 @@ guarded-motion (ns=app) touchdown {
 
     context {
         spec {
-            pose start-pose       = snapshot of <shared.world.pose-ee-base>
+            pose start-pose       = snapshot of <shared.world.pose-ee-base> on event <aas.E_TOUCHDOWN_ENTERED>
         }
     }
 
@@ -141,7 +142,7 @@ guarded-motion (ns=app) forward {
 
     context {
         spec {
-            pose start-pose          = snapshot of <shared.world.pose-ee-base>,
+            pose start-pose          = snapshot of <shared.world.pose-ee-base> on event <aas.E_FORWARD_ENTERED>,
             length target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>,
             velocity-profile forward-profile = profile {
                 max-velocity: 0.05 m/s,
@@ -186,7 +187,7 @@ guarded-motion (ns=app) arc-motion {
             length chord-y-hi = 0.33 m,
             length chord-z    = 0.0 m,
             distance arc-height = 0.18 m,
-            pose initial-pose          = snapshot of <shared.world.pose-ee-base>,
+            pose initial-pose          = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
             pose start-pose            = snapshot of <shared.world.pose-ee-base> on event <aas.E_ARC_ENTERED>,
             length end-x      = <spec.initial-pose>.position.x + <spec.chord-x>,
             length end-y      = <spec.initial-pose>.position.y + <spec.chord-y>,

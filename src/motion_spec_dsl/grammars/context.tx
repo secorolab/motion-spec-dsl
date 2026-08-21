@@ -322,7 +322,7 @@ VelocityProfileShape: "trapezoidal" | "s-curve" ;
 
 SnapshotValue:
     "=" "snapshot" "of" source=View tail*=QAddTail
-    ("on" "event" trigger=EventName)?
+    "on" "event" trigger=EventName
 ;
 
 ConfigValue:

@@ -34,7 +34,7 @@ guarded-motion (ns=app) home {
 
     context {
         spec {
-            pose home-pose = snapshot of <shared.world.pose-ee-base>
+            pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>
         }
     }
 

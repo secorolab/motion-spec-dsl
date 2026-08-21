@@ -4,7 +4,11 @@ evt loop (ns=lav) look_angular_velocity_test_events {
     evt E_STEP,
     evt E_HOME_SETTLED,
     evt E_LOOK_DONE,
-    evt E_REACH_DONE
+    evt E_REACH_DONE,
+    evt E_HOME_ENTERED,
+    evt E_LOOK_ENTERED,
+    evt E_REACH_ENTERED,
+    evt E_HOLD_ENTERED
 }
 
 fsm (ns=lav) look_angular_velocity_test_fsm {
@@ -23,9 +27,25 @@ fsm (ns=lav) look_angular_velocity_test_fsm {
     }
 
     reactions {
-        R_START { when: <look_angular_velocity_test_events.E_STEP>, do: <T_START_HOME> },
-        R_HOME  { when: <look_angular_velocity_test_events.E_HOME_SETTLED>, do: <T_HOME_LOOK> },
-        R_LOOK_DONE { when: <look_angular_velocity_test_events.E_LOOK_DONE>, do: <T_LOOK_REACH> },
-        R_REACH_DONE { when: <look_angular_velocity_test_events.E_REACH_DONE>, do: <T_REACH_HOLD> }
+        R_START {
+            when: <look_angular_velocity_test_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <look_angular_velocity_test_events.E_HOME_ENTERED> }
+        },
+        R_HOME {
+            when: <look_angular_velocity_test_events.E_HOME_SETTLED>,
+            do:   <T_HOME_LOOK>,
+            fires { <look_angular_velocity_test_events.E_LOOK_ENTERED> }
+        },
+        R_LOOK_DONE {
+            when: <look_angular_velocity_test_events.E_LOOK_DONE>,
+            do:   <T_LOOK_REACH>,
+            fires { <look_angular_velocity_test_events.E_REACH_ENTERED> }
+        },
+        R_REACH_DONE {
+            when: <look_angular_velocity_test_events.E_REACH_DONE>,
+            do:   <T_REACH_HOLD>,
+            fires { <look_angular_velocity_test_events.E_HOLD_ENTERED> }
+        }
     }
 }

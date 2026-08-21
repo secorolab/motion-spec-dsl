@@ -369,13 +369,13 @@ class ReferenceValue:
 
 @dataclass
 class SnapshotValue:
-    """A quantity view sampled with an optional trailing expression. Sampled once when its
-    owning motion starts, or re-sampled on every occurrence of `trigger` when one is given.
+    """A quantity view sampled with an optional trailing expression, re-sampled on every
+    occurrence of `trigger` -- the coordinator event that names when this quantity is captured.
     """
 
     source: View
+    trigger: object
     tail: list = field(default_factory=list)
-    trigger: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def as_op_tree(self):

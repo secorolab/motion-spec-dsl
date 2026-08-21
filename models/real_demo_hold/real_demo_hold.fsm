@@ -2,6 +2,7 @@ ns rdh = "https://secorolab.github.io/models/real-demo-hold/fsm/"
 
 evt loop (ns=rdh) real_demo_hold_fsm_events {
     evt E_STEP,
+    evt E_RUN_STARTED,
     evt E_GRIPPER_CLOSED,
     evt E_GRIPPER_OPENED
 }
@@ -28,7 +29,11 @@ fsm (ns=rdh) real_demo_hold_fsm {
     }
 
     reactions {
-        R_STEP_START     { when: <real_demo_hold_fsm_events.E_STEP>,           do: <T_START_CLOSE> },
+        R_STEP_START     {
+            when: <real_demo_hold_fsm_events.E_STEP>,
+            do:   <T_START_CLOSE>,
+            fires { <real_demo_hold_fsm_events.E_RUN_STARTED> }
+        },
         R_GRIPPER_CLOSED { when: <real_demo_hold_fsm_events.E_GRIPPER_CLOSED>, do: <T_CLOSE_OPEN> },
         R_GRIPPER_OPENED { when: <real_demo_hold_fsm_events.E_GRIPPER_OPENED>, do: <T_OPEN_CLOSE> }
     }

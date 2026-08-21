@@ -33,17 +33,18 @@ context (ns=app) shared {
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
-            ft-sensor:  <wrist_ft>
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <rdh.E_RUN_STARTED> }
         }
     },
     spec {
         // Shared, not per motion: the two states alternate, and a target re-captured on each
         // entry would follow the standing error and walk the hold away from where it began.
-        pose start-pose       = snapshot of <shared.world.pose-ee-base>,
+        pose start-pose       = snapshot of <shared.world.pose-ee-base> on event <rdh.E_RUN_STARTED>,
         // Six constraints leave the 7th joint free, so the elbow can sink under gravity with
         // the end-effector still on target. This is the actuator-4 bend the arm folds over --
         // everything beyond it hangs off this point. Held where it started, like the pose above.
-        length support-z = snapshot of <shared.world.pose-elbow-base>.position.z,
+        length support-z = snapshot of <shared.world.pose-elbow-base>.position.z on event <rdh.E_RUN_STARTED>,
         angle gripper-closed  = 0.8 rad,
         angle gripper-open    = 0.0 rad,
         angle grasp-threshold = 0.65 rad

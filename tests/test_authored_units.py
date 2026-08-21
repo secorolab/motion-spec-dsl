@@ -51,7 +51,7 @@ def test_a_quantity_keeps_the_unit_it_was_written_in(
     assert graph.value(node, QUDT_SCHEMA.unit) == QUDT_UNIT[unit]
 
 
-POSE_ANCHOR = "            pose home-pose = snapshot of <shared.world.pose-ee-base>"
+POSE_ANCHOR = "            pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
 
 
 def _pose_spec(position: str) -> str:

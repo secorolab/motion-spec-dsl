@@ -4,7 +4,9 @@ evt loop (ns=lct) look_cartesian_test_events {
     evt E_STEP,
     evt E_HOME_SETTLED,
     evt E_LOOK_DONE,
-    evt E_HOLD_DONE
+    evt E_HOLD_DONE,
+    evt E_HOME_ENTERED,
+    evt E_LOOK_ENTERED
 }
 
 fsm (ns=lct) look_cartesian_test_fsm {
@@ -20,8 +22,16 @@ fsm (ns=lct) look_cartesian_test_fsm {
         T_HOLD_DONE  { from: <S_HOLD>,  to: <S_DONE> }
     }
     reactions {
-        R_START { when: <look_cartesian_test_events.E_STEP>, do: <T_START_HOME> },
-        R_HOME_SETTLED { when: <look_cartesian_test_events.E_HOME_SETTLED>, do: <T_HOME_LOOK> },
+        R_START {
+            when: <look_cartesian_test_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <look_cartesian_test_events.E_HOME_ENTERED> }
+        },
+        R_HOME_SETTLED {
+            when: <look_cartesian_test_events.E_HOME_SETTLED>,
+            do:   <T_HOME_LOOK>,
+            fires { <look_cartesian_test_events.E_LOOK_ENTERED> }
+        },
         R_LOOK_DONE { when: <look_cartesian_test_events.E_LOOK_DONE>, do: <T_LOOK_HOLD> },
         R_HOLD_DONE { when: <look_cartesian_test_events.E_HOLD_DONE>, do: <T_HOLD_DONE> }
     }

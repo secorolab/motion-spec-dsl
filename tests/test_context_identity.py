@@ -30,8 +30,9 @@ def _graph(parse_source, source: str):
 def _with_trajectory(base_source: str) -> str:
     """The base model, with `home` driving a path it declares."""
     source = base_source.replace(
-        "pose home-pose = snapshot of <shared.world.pose-ee-base>",
-        "pose home-pose = snapshot of <shared.world.pose-ee-base>" + TRAJECTORY,
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>",
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+        + TRAJECTORY,
     )
     return source.replace(
         "hold-position: keeping <shared.world.pose-ee-base>.position equal to "

@@ -57,6 +57,10 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_VECTOR_XYZ,
     URI_QUDT_QK_LENGTH,
     URI_QUDT_QK_MASS,
+    URI_TIME_PRED_AFTER_EVT,
+    URI_TIME_PRED_OF_CONSTRAINT,
+    URI_TIME_TYPE_AFTER_EVT,
+    URI_TIME_TYPE_TC,
 )
 from rdf_utils.namespace import (
     NS_MM_GEOM_REL,
@@ -2103,17 +2107,13 @@ class MotionSpecDatasetBuilder:
                         f"Wrench '{qty.name}' names re-tare-on events but no ft-sensor to tare.",
                     )
                 # The tare is a sampling of what the sensor reads unloaded: once at startup, and
-                # again on each named occurrence. Same sampling/trigger pair a snapshot states.
-                if ft_ref:
-                    self.graph.add(
-                        (
-                            node,
-                            _ns_term(ALGO_EXT, "sampling"),
-                            _ns_term(
-                                ALGO_EXT,
-                                "event-triggered-sampling" if retare_events else "initial-sampling",
-                            ),
-                        )
+                # again on each named occurrence. There is no implicit "once at startup" left --
+                # an author who wants that names their model's own run-start event explicitly.
+                if ft_ref and not retare_events:
+                    raise ConstraintViolation(
+                        "dynamics",
+                        f"Wrench '{qty.name}' has an ft-sensor but names no re-tare-on events; "
+                        "name the model's run-start event to tare once at startup.",
                     )
                 for event in retare_events:
                     if event.event is None:
@@ -2122,7 +2122,11 @@ class MotionSpecDatasetBuilder:
                             f"Wrench '{qty.name}' re-tare-on '{event.name}' carries no namespace, "
                             "so it resolves to no declared event; write it as ns.EVENT.",
                         )
-                    self.graph.add((node, _ns_term(ALGO_EXT, "trigger"), URIRef(event.uri)))
+                    schedule_node = URIRef(f"{node}-retare-{event.name}-schedule")
+                    self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_AFTER_EVT))
+                    self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_TC))
+                    self.graph.add((schedule_node, URI_TIME_PRED_OF_CONSTRAINT, node))
+                    self.graph.add((schedule_node, URI_TIME_PRED_AFTER_EVT, URIRef(event.uri)))
                 continue
             rdf_types, qkinds, units, _ = spec
             node = URIRef(qty.uri)
@@ -2245,7 +2249,7 @@ class MotionSpecDatasetBuilder:
     def _register_wrench_vector_view(
         self,
         scalar_uri: URIRef,
-        quantity: "WorldQuantity",
+        quantity: WorldQuantity,
         mapped_subspace: str,
         owner: Any,
     ) -> None:
@@ -2266,7 +2270,7 @@ class MotionSpecDatasetBuilder:
     def _register_pose_position_view(
         self,
         scalar_uri: URIRef,
-        quantity: "WorldQuantity",
+        quantity: WorldQuantity,
         owner: Any,
     ) -> None:
         """Promote `<pose>.position` and register its whole-vector coordinate view."""
@@ -2287,8 +2291,8 @@ class MotionSpecDatasetBuilder:
 
     def _register_pose_component_view(
         self,
-        scalar_uri: "URIRef",
-        quantity: "WorldQuantity",
+        scalar_uri: URIRef,
+        quantity: WorldQuantity,
         mapped_subspace: str,
         axis: str,
         owner: Any,
@@ -2361,7 +2365,7 @@ class MotionSpecDatasetBuilder:
     def _register_pose_orientation_view(
         self,
         scalar_uri: URIRef,
-        quantity: "WorldQuantity",
+        quantity: WorldQuantity,
         owner: Any,
     ) -> None:
         """Promote `<pose>.orientation` and register its coordinate view."""
@@ -2720,8 +2724,8 @@ class MotionSpecDatasetBuilder:
                     self.graph.add((node, CSTR["reference-value"], source_node))
                 continue
             if isinstance(quantity.value, SnapshotValue):
-                snapshot_node = URIRef(f"{node}-snapshot")
-                self.graph.add((snapshot_node, RDF.type, ALGO_EXT.Snapshot))
+                # A snapshot derives from another quantity (prov:wasDerivedFrom); it is not a
+                # sosa:Observation -- only a sensor act is, and the shape demands madeBySensor.
                 view_node = self._view_node(quantity.value.source, quantity)
                 snap_tree = quantity.value.as_op_tree()
                 if isinstance(snap_tree, QOpNode):
@@ -2754,23 +2758,14 @@ class MotionSpecDatasetBuilder:
                     snap_source = out_node
                 else:
                     snap_source = view_node
-                self.graph.add((snapshot_node, _ns_term(ALGO_EXT, "in"), snap_source))
-                self.graph.add((snapshot_node, ALGO_EXT.out, node))
-                trigger = quantity.value.trigger
+                self.graph.add((node, PROV.wasDerivedFrom, snap_source))
+                schedule_node = URIRef(f"{node}-schedule")
+                self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_AFTER_EVT))
+                self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_TC))
+                self.graph.add((schedule_node, URI_TIME_PRED_OF_CONSTRAINT, node))
                 self.graph.add(
-                    (
-                        snapshot_node,
-                        _ns_term(ALGO_EXT, "sampling"),
-                        _ns_term(
-                            ALGO_EXT,
-                            "event-triggered-sampling" if trigger else "initial-sampling",
-                        ),
-                    )
+                    (schedule_node, URI_TIME_PRED_AFTER_EVT, URIRef(quantity.value.trigger.uri))
                 )
-                if trigger is not None:
-                    self.graph.add(
-                        (snapshot_node, _ns_term(ALGO_EXT, "trigger"), URIRef(trigger.uri))
-                    )
                 self.graph.add(
                     (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
                 )

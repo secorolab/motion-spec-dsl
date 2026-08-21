@@ -64,7 +64,7 @@ guarded-motion (ns=app) tilt {
     description: "Tilt the tool to a commanded angle against the table; the tip stays put."
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.tcp>
+            pose start-pose = snapshot of <shared.world.tcp> on event <gex.E_TILT_ENTERED>
         }
     }
     when {}

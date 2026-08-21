@@ -2,10 +2,13 @@ ns rdm = "https://secorolab.github.io/models/real-demo-monitor/fsm/"
 
 evt loop (ns=rdm) real_demo_monitor_fsm_events {
     evt E_STEP,
+    evt E_RUN_STARTED,
     evt E_GRIPPER_CLOSED,
     evt E_GRIPPER_OPENED,
     evt E_PINCH_MOVED,
-    evt E_FT_CONTACT
+    evt E_FT_CONTACT,
+    evt E_CLOSE_ENTERED,
+    evt E_OPEN_ENTERED
 }
 
 fsm (ns=rdm) real_demo_monitor_fsm {
@@ -30,8 +33,20 @@ fsm (ns=rdm) real_demo_monitor_fsm {
     }
 
     reactions {
-        R_STEP_START     { when: <real_demo_monitor_fsm_events.E_STEP>,           do: <T_START_CLOSE> },
-        R_GRIPPER_CLOSED { when: <real_demo_monitor_fsm_events.E_GRIPPER_CLOSED>, do: <T_CLOSE_OPEN> },
-        R_GRIPPER_OPENED { when: <real_demo_monitor_fsm_events.E_GRIPPER_OPENED>, do: <T_OPEN_CLOSE> }
+        R_STEP_START     {
+            when: <real_demo_monitor_fsm_events.E_STEP>,
+            do:   <T_START_CLOSE>,
+            fires { <real_demo_monitor_fsm_events.E_RUN_STARTED>, <real_demo_monitor_fsm_events.E_CLOSE_ENTERED> }
+        },
+        R_GRIPPER_CLOSED {
+            when: <real_demo_monitor_fsm_events.E_GRIPPER_CLOSED>,
+            do:   <T_CLOSE_OPEN>,
+            fires { <real_demo_monitor_fsm_events.E_OPEN_ENTERED> }
+        },
+        R_GRIPPER_OPENED {
+            when: <real_demo_monitor_fsm_events.E_GRIPPER_OPENED>,
+            do:   <T_OPEN_CLOSE>,
+            fires { <real_demo_monitor_fsm_events.E_CLOSE_ENTERED> }
+        }
     }
 }

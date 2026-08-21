@@ -2,6 +2,7 @@ ns gex = "https://secorolab.github.io/models/geometric-expressions/fsm/"
 
 evt loop (ns=gex) geometric_expressions_events {
     evt E_STEP,
+    evt E_TILT_ENTERED,
     evt E_TILT_DONE,
     evt E_LIFT_ENTERED,
     evt E_LIFT_DONE
@@ -19,7 +20,11 @@ fsm (ns=gex) geometric_expressions_fsm {
         T_LIFT_DONE  { from: <S_LIFT>,  to: <S_DONE> }
     }
     reactions {
-        R_START { when: <geometric_expressions_events.E_STEP>, do: <T_START_TILT> },
+        R_START {
+            when: <geometric_expressions_events.E_STEP>,
+            do:   <T_START_TILT>,
+            fires { <geometric_expressions_events.E_TILT_ENTERED> }
+        },
         R_TILT_DONE {
             when: <geometric_expressions_events.E_TILT_DONE>,
             do:   <T_TILT_LIFT>,

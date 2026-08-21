@@ -454,7 +454,6 @@ class ALGO_EXT(DefinedNamespace):
     Addition: URIRef
     Subtraction: URIRef
     VelocityProfile: URIRef
-    Snapshot: URIRef
     Admittance: URIRef
     limits: URIRef
     out: URIRef
@@ -462,8 +461,6 @@ class ALGO_EXT(DefinedNamespace):
     mass: URIRef
     damping: URIRef
     stiffness: URIRef
-    sampling: URIRef
-    trigger: URIRef
     shape: URIRef
     trapezoidal: URIRef
     parameter: URIRef
@@ -481,8 +478,6 @@ class ALGO_EXT(DefinedNamespace):
         "maximum-acceleration",
         "maximum-jerk",
         "s-curve",
-        "initial-sampling",
-        "event-triggered-sampling",
     ]
 
     _NS = Namespace(f"{URI_SECORO_MM}/algorithm#")

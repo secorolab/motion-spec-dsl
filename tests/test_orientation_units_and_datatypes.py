@@ -60,7 +60,7 @@ OLD_SYNTAX_REJECTIONS = [
         id="linear_jerk_old_unit_spelling",
     ),
     pytest.param(
-        "pose home-pose = snapshot of <shared.world.pose-ee-base>",
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>",
         "pose home-pose = { position: { x: 0.1 m, y: 0.2 m, z: 0.3 m },"
         " orientation: euler { axes: xyz extrinsic, roll: 0.0 rad, pitch: 0.0 rad, yaw: 0.0 rad } }",
         id="position_and_orientation_per_axis_form",
@@ -82,7 +82,7 @@ def test_old_syntax_no_longer_parses(parse_mutated, old, new) -> None:
 def test_unit_of_wrong_kind_is_a_parse_error(parse_mutated) -> None:
     with pytest.raises(TextXSyntaxError):
         parse_mutated(
-            "pose home-pose = snapshot of <shared.world.pose-ee-base>",
+            "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>",
             "pose home-pose = { position: (0.1, 0.2, 0.3) rad,"
             " orientation: euler { axes: xyz extrinsic, angles: (0.0, 0.0, 0.0) rad } }",
         )
@@ -138,9 +138,7 @@ def _build(parse_mutated, orientation_block: str):
 
 
 def test_euler_orientation_emits_euler_type(parse_mutated) -> None:
-    graph = _build(
-        parse_mutated, "euler { axes: xyz extrinsic, angles: (0.1, 0.2, 0.3) rad }"
-    )
+    graph = _build(parse_mutated, "euler { axes: xyz extrinsic, angles: (0.1, 0.2, 0.3) rad }")
     euler_subjects = set(graph.subjects(RDF.type, URI_GEOM_TYPE_EULER_ANGLES))
     assert euler_subjects
     for s in euler_subjects:
@@ -177,7 +175,9 @@ def test_direction_cosine_orientation_emits_dcm_type(parse_mutated) -> None:
 
 
 def test_whole_value_reference_position_and_orientation(parse_mutated) -> None:
-    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    anchor = (
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+    )
     model = parse_mutated(
         anchor,
         f"{anchor},\n            pose ref-pose = "
@@ -370,9 +370,7 @@ def test_euler_axes_matches_scene_dsl() -> None:
     assert scene_match is not None
     scene_sequences = re.findall(r"'(\w+)'", scene_match.group(1))
 
-    context_tx = (
-        files("motion_spec_dsl.grammars") / "context.tx"
-    ).read_text()
+    context_tx = (files("motion_spec_dsl.grammars") / "context.tx").read_text()
     motion_match = re.search(r"EulerAxes:\s*(.+?);", context_tx, re.DOTALL)
     assert motion_match is not None
     motion_sequences = re.findall(r"'(\w+)'", motion_match.group(1))
@@ -437,10 +435,10 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
         " linear-velocity: (0.0, 0.0, -0.05) m/s },\n"
         "        acceleration-twist at = { angular-acceleration: (0.0, 0.0, 0.0) rad/s^2,"
         " linear-acceleration: (0.0, 0.0, 0.0) m/s^2 },\n"
-            "        wrench w { ref-point: <ft_tree.wrist_ft_body.wrist_ft_site>,"
-            " as-seen-by: <kinova.base_link.base_link_origin>,"
-            " of: <gripper.g_base.g_pinch> } ="
-            " { torque: (0.0, 0.0, 0.0) Nm, force: (0.0, 0.0, 10.0) N }",
+        "        wrench w { ref-point: <ft_tree.wrist_ft_body.wrist_ft_site>,"
+        " as-seen-by: <kinova.base_link.base_link_origin>,"
+        " of: <gripper.g_base.g_pinch> } ="
+        " { torque: (0.0, 0.0, 0.0) Nm, force: (0.0, 0.0, 10.0) N }",
     )
     graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
     assert set(graph.subjects(RDF.type, GEOM_COORD.VelocityTwistCoordinate))
@@ -452,6 +450,7 @@ def test_velocity_twist_and_wrench_two_subspace_literals(parse_mutated) -> None:
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+
 def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> None:
     """A base orientation turned by a delta must never be decomposed into angles.
 
@@ -459,7 +458,9 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     from Euler angles; the two disagree by over a radian for a general pose, so the
     composition has to reach the graph as base + delta, not as three scalars.
     """
-    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    anchor = (
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+    )
     model = parse_mutated(
         anchor,
         f"{anchor},\n            pose turned-pose = "
@@ -530,13 +531,15 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
 
 
 def test_relative_orientation_requires_an_explicit_basis_for_quaternions(parse_mutated) -> None:
-    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    anchor = (
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+    )
     model = parse_mutated(
-            anchor,
-            f"{anchor},\n            pose turned-pose = "
-            "{ position: (0.1, 0.2, 0.3) m,"
-            " orientation: <spec.home-pose>.orientation rotated by"
-            " quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
+        anchor,
+        f"{anchor},\n            pose turned-pose = "
+        "{ position: (0.1, 0.2, 0.3) m,"
+        " orientation: <spec.home-pose>.orientation rotated by"
+        " quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
     )
     with pytest.raises(ValueError, match="explicit basis frame"):
         MotionSpecDatasetBuilder(model).build()
@@ -545,7 +548,9 @@ def test_relative_orientation_requires_an_explicit_basis_for_quaternions(parse_m
 def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:
     """A delta that turns in neither the base's body frame nor its own basis needs a change
     of basis to compose, which is not supported."""
-    anchor = "pose home-pose = snapshot of <shared.world.pose-ee-base>"
+    anchor = (
+        "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
+    )
     model = parse_mutated(
         anchor,
         f"{anchor},\n            pose turned-pose = "

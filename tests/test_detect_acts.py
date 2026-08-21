@@ -19,7 +19,9 @@ ACTIONS = """ros (ns=app) {
 
 exec-context (ns=app) base-exec {"""
 
-DETECT = "    find-ee: detect <gripper.g_base.g_pinch> using <ros.action-clients.locate>\n\n    when {}"
+DETECT = (
+    "    find-ee: detect <gripper.g_base.g_pinch> using <ros.action-clients.locate>\n\n    when {}"
+)
 
 UNTIL = """until all {
         settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
@@ -92,7 +94,7 @@ _SECOND_MOTION = """
 guarded-motion (ns=app) probe {
     context {
         spec {
-            pose probe-pose = snapshot of <shared.world.pose-ee-base>
+            pose probe-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>
         }
     }
 
