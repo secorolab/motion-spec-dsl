@@ -191,12 +191,12 @@ def test_until_groups_are_monitored_independently(interaction_ir: dict) -> None:
 def test_arc_reentry_rebuilds_from_current_pose_to_the_fixed_target(
     interaction_ir: dict,
 ) -> None:
-    """Arc re-entry re-samples only its start; the initial pose still anchors its target."""
+    """Arc re-entry re-samples only its start; the initial pose is sampled on the event only
+    the first arc entry fires, so it still anchors the target across re-entries."""
     arc = _motion(interaction_ir, "motion_arc_motion")
-    triggered = [s for s in arc.snapshots if s.trigger_event]
-    assert {s.trigger_event for s in triggered} == {"E_ARC_ENTERED"}
-    assert all(s.fsm_namespace for s in triggered)
+    assert {s.trigger_event for s in arc.snapshots} == {"E_ARC_ENTERED", "E_ARC_STARTED"}
+    assert all(s.fsm_namespace for s in arc.snapshots)
     assert any(
-        s.trigger_event is None and s.target_id.endswith("initial_pose")
+        s.trigger_event == "E_ARC_STARTED" and s.target_id.endswith("initial_pose")
         for s in arc.snapshots
     )

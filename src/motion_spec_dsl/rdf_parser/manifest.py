@@ -23,7 +23,7 @@ def metamodels_root() -> Path | None:
     for start in (PACKAGE_ROOT, Path.cwd()):
         roots.extend([start, *start.parents])
     for root in roots:
-        for candidate in (root / "src" / "metamodels", root / "metamodels"):
+        for candidate in (root, root / "src" / "metamodels", root / "metamodels"):
             if (candidate / "prov.json").exists():
                 return candidate
     return None

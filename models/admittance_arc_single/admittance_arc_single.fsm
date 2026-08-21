@@ -13,6 +13,7 @@ evt loop (ns=aas) admittance_arc_single_fsm_events {
     evt E_HOME_ENTERED,
     evt E_TOUCHDOWN_ENTERED,
     evt E_FORWARD_ENTERED,
+    evt E_ARC_STARTED,
     evt E_ARC_ENTERED,
     evt E_ADMITTANCE_ENTERED
 }
@@ -65,7 +66,7 @@ fsm (ns=aas) admittance_arc_single_fsm {
         R_FORWARD_DONE {
             when: <admittance_arc_single_fsm_events.E_FORWARD_DONE>,
             do:   <T_FORWARD_ARC>,
-            fires { <admittance_arc_single_fsm_events.E_ARC_ENTERED> }
+            fires { <admittance_arc_single_fsm_events.E_ARC_STARTED>, <admittance_arc_single_fsm_events.E_ARC_ENTERED> }
         },
         R_FORCE_DETECTED {
             when: <admittance_arc_single_fsm_events.E_FORCE_DETECTED>,
