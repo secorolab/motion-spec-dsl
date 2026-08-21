@@ -22,7 +22,6 @@ from urllib.parse import urlsplit
 
 from rdf_utils.collection import add_literal_list_pred
 from rdf_utils.constraints import ConstraintViolation
-from rdf_utils.models.geom_coord import record_coord_selection
 from rdf_utils.models.geom_rel import PoseModel
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,
@@ -71,7 +70,7 @@ from rdf_utils.namespace import (
 )
 from rdflib.graph import Dataset
 from rdflib.namespace import PROV, RDF, RDFS, SDO, XSD, Namespace
-from rdflib.term import Literal, URIRef
+from rdflib.term import BNode, Literal, URIRef
 from textx import get_model
 from textx.scoping import get_included_models
 
@@ -1227,8 +1226,7 @@ class MotionSpecDatasetBuilder:
         if relation is None:
             return
         candidates = sorted(self.graph.subjects(GEOM_COORD[f"of-{component}"], relation), key=str)
-        record_coord_selection(
-            self.graph,
+        self._record_coord_selection(
             URIRef(f"{pose_node}-{component}-selection"),
             relation,
             candidates,
@@ -1236,6 +1234,46 @@ class MotionSpecDatasetBuilder:
             self._owned_uri("coord-policy/pose-component", None),
             "authored pose component",
         )
+
+    def _record_coord_selection(
+        self,
+        activity: URIRef,
+        relation: URIRef,
+        candidates,
+        chosen: URIRef,
+        policy: URIRef,
+        policy_label: str,
+    ) -> None:
+        """Record a coordinate choice as PROV: ``activity`` used ``relation`` and every
+        candidate, ran as the ``policy`` agent, and the candidate it settled on is its
+        qualified usage. Nothing is ``prov:wasGeneratedBy`` -- a selection creates no
+        coordinate. Idempotent: re-recording the same selection leaves the graph as it was.
+        Lives here until rdf-utils grows a provenance home for it (see the tracking issue).
+        """
+        graph = self.graph
+        graph.add((activity, RDF.type, PROV.Activity))
+        graph.add((relation, RDF.type, PROV.Entity))
+        graph.add((activity, PROV.used, relation))
+        for candidate in candidates:
+            graph.add((candidate, RDF.type, PROV.Entity))
+            graph.add((activity, PROV.used, candidate))
+        graph.add((activity, PROV.wasAssociatedWith, policy))
+        graph.add((policy, RDF.type, PROV.SoftwareAgent))
+        graph.add((policy, RDF.type, PROV.Agent))
+        graph.add((policy, RDFS.label, Literal(policy_label)))
+        usage = next(
+            (
+                node
+                for node in graph.objects(activity, PROV.qualifiedUsage)
+                if (node, PROV.entity, chosen) in graph
+            ),
+            None,
+        )
+        if usage is None:
+            usage = BNode()
+            graph.add((activity, PROV.qualifiedUsage, usage))
+            graph.add((usage, RDF.type, PROV.Usage))
+            graph.add((usage, PROV.entity, chosen))
 
     def _emit_distance_operand_selection(self, distance_node: URIRef, plan: _DistancePlan) -> None:
         """Record, as PROV, which pose coordinate each distance endpoint names.
@@ -1255,8 +1293,7 @@ class MotionSpecDatasetBuilder:
                 continue
             candidates = PoseModel(relation, self.graph).coordinate_ids
             activity = URIRef(f"{distance_node}-{role}-selection")
-            record_coord_selection(
-                self.graph,
+            self._record_coord_selection(
                 activity,
                 relation,
                 candidates,
