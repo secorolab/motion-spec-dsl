@@ -43,6 +43,15 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        pose pose-forearm-shoulder {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.shoulder_link.shoulder_link_origin>,
+            as-seen-by: <kinova.shoulder_link.shoulder_link_origin>
+        },
+        joint-position elbow-angle {
+            joint: <kinova.joint_3>,
+            normalization: (-pi, pi) rad
+        },
         wrench ext-force {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
@@ -60,11 +69,13 @@ context (ns=app) shared {
         // The forearm's own up axis: its z runs along the elbow hinge, so y is the one that
         // stands up when the arm is upright.
         direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
-        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        // Shoulder z points down (joint_1 anchor is rolled 180 deg), so up is -z there.
+        direction shoulder-up { as-seen-by: <kinova.shoulder_link.shoulder_link_origin> } = (0, 0, -1),
         angle align-band = 0.05 rad,
+        angle elbow-angle-target = pi rad,
+        torque elbow-torque-limit = 10.0 Nm,
         angle align-cone = 0.35 rad,
         angle align-cone-hold = 0.05 rad,
-        torque align-moment-max = 30.0 Nm,
         angle satisfied-band-rot           = 0.01 rad,
         linear-velocity satisfied-band-vel = 0.01 m/s,
         linear-velocity zero-linvel          = 0.0 m/s,
@@ -103,7 +114,8 @@ guarded-motion (ns=app) home {
     while {
         hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until all {
@@ -129,7 +141,8 @@ guarded-motion (ns=app) touchdown {
         hold-y:   keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
         lower-z:  keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel> within <shared.spec.satisfied-band-vel>,
         hold-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until {
@@ -160,7 +173,8 @@ guarded-motion (ns=app) forward {
         hold-y:       keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
         hold-ori:     keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
         press-down:   keeping <shared.world.press-wrench>.force.z equal to <shared.spec.press-force> within <shared.spec.press-band>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until {
@@ -213,10 +227,11 @@ guarded-motion (ns=app) arc-motion {
         follow-tangent: moving <shared.world.pose-ee-base> along <spec.arc-path> with <spec.arc-profile>,
         follow-position: keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
         advance: progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
         force-x: <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
-        force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+        force-y: <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until all {
@@ -262,7 +277,8 @@ guarded-motion (ns=app) compliance {
         comply-y:   keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y> within <shared.spec.satisfied-band-vel>,
         comply-z:   keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z> within <shared.spec.satisfied-band-vel>,
         comply-ori: keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>,
-        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
+        align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until {
@@ -288,8 +304,10 @@ constraint-handler (ns=app) handler-home {
     controllers {
         pid ctrl-hold-position { constraint: <home.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-home-align-forearm { constraint: <home.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
-            apply at <kinova.forearm_link>
+        pid ctrl-home-elbow {
+            constraint: <home.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers {
         arm-solver: serial-chain {
@@ -312,8 +330,10 @@ constraint-handler (ns=app) handler-touchdown {
         pid ctrl-touchdown-y { constraint: <touchdown.hold-y>, Kp: 80, Ki: 20, Kd: 25, decay: 0 },
         pid ctrl-touchdown-z { constraint: <touchdown.lower-z>, Kp: 200, Ki: 0, Kd: 0, decay: 0 },
         pid ctrl-touchdown-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        impedance ctrl-td-align-forearm { constraint: <touchdown.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
-            apply at <kinova.forearm_link>
+        pid ctrl-td-elbow {
+            constraint: <touchdown.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers { <handler-home.arm-solver> }
 }
@@ -336,8 +356,10 @@ constraint-handler (ns=app) handler-forward {
         feed-forward ctrl-press-down { constraint: <forward.press-down> }
             as force
             apply at <gripper.g_base>,
-        impedance ctrl-fwd-align-forearm { constraint: <forward.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 }
-            apply at <kinova.forearm_link>
+        pid ctrl-fwd-elbow {
+            constraint: <forward.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers { <handler-home.arm-solver> }
 }
@@ -382,8 +404,10 @@ constraint-handler (ns=app) handler-arc {
             Kd: 160,
             decay: 0
         },
-        impedance ctrl-arc-align-forearm { constraint: <arc-motion.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 40, damping: 8 }
-            apply at <kinova.forearm_link>
+        pid ctrl-arc-elbow {
+            constraint: <arc-motion.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers {
         rne-arm-solver: serial-chain {
@@ -428,8 +452,10 @@ constraint-handler (ns=app) handler-admittance {
             Kd: 160,
             decay: 0
         },
-        impedance ctrl-comply-align-forearm { constraint: <compliance.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 40, damping: 8 }
-            apply at <kinova.forearm_link>
+        pid ctrl-comply-elbow {
+            constraint: <compliance.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers { <handler-arc.rne-arm-solver> }
 }
