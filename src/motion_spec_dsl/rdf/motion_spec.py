@@ -6073,6 +6073,7 @@ class MotionSpecDatasetBuilder:
 
                 spec_node = self._declared_uri(f"jf-spec-{ctrl.name}", ctrl)
                 self.graph.add((spec_node, RDF.type, SLV.JointForceSpecification))
+                self.graph.add((spec_node, PROV.wasDerivedFrom, URIRef(ctrl.uri)))
                 self.graph.add((spec_node, SLV.force, torque_node))
                 self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                 self.graph.add((spec_node, SLV["attached-to"], joint_node))
@@ -6089,6 +6090,7 @@ class MotionSpecDatasetBuilder:
         Cartesian force specification."""
         spec_node = self._declared_uri(f"spec-{ctrl.name}", ctrl)
         self.graph.add((spec_node, RDF.type, SLV.CartesianForceSpecification))
+        self.graph.add((spec_node, PROV.wasDerivedFrom, URIRef(ctrl.uri)))
         self.graph.add((spec_node, SLV.force, wrench_node))
         apply_at = getattr(ctrl, "apply_at", None)
         if apply_at is not None and hasattr(apply_at, "uri"):
