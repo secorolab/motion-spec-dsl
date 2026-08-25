@@ -5300,6 +5300,60 @@ class MotionSpecDatasetBuilder:
                 controller,
             )
 
+    def _constraint_error_node(
+        self,
+        spec: ConstraintSpecification,
+        motion: GuardedMotion,
+        world_qtys: dict[str, WorldQuantity],
+        seen_error_ids: set[str],
+        error_id_by_constraint: dict[str, str],
+        owner: str,
+    ) -> URIRef:
+        """The error signal one constraint writes, minting its quantity the first time.
+
+        Raises:
+            ValueError: the constraint's view resolves to nothing measurable.
+        """
+        if isinstance(spec, GoalStatusConstraint):
+            return URIRef(spec.act.status_uri)
+        if getattr(spec.view, "is_elapsed", False):
+            return self._elapsed_quantity_node(spec, motion)
+        along_path = self._along_path_scalar(spec)
+        qty = self._resolve_constraint_quantity(spec, world_qtys)
+        derived_t = (
+            self._quantityless_scalar_type(spec) if qty is None and along_path is None else None
+        )
+        if qty is None and along_path is None and derived_t is None:
+            raise ValueError(f"{owner} constraint '{spec.name}' does not resolve to a quantity.")
+        scalar_t = (
+            along_path[1]
+            if along_path
+            else derived_t
+            if derived_t is not None
+            else _scalar_type(qty, _view_subspace(spec), semantic_axis_label(spec.view.axis))
+        )
+        error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
+        error_node = self._owned_uri(error_id, spec.parent)
+        if error_id in seen_error_ids:
+            return error_node
+        seen_error_ids.add(error_id)
+        self._add_quantity(error_node, scalar_t)
+        if (
+            scalar_t == QuantityType.Pose
+            and qty is not None
+            and isinstance(qty.props, GeometricProps)
+        ):
+            of_v = _geo_prop(qty.props, "of")
+            wrt_v = _geo_prop(qty.props, "wrt")
+            if of_v and wrt_v:
+                self.graph.add((error_node, GEOM_REL.of, self._owned_uri(of_v, qty)))
+                self.graph.add(
+                    (error_node, GEOM_REL["with-respect-to"], self._owned_uri(wrt_v, qty))
+                )
+                self.graph.add((error_node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty)))
+
+        return error_node
+
     def _emit_error_evaluator(
         self,
         handler_node: URIRef,
@@ -5433,6 +5487,10 @@ class MotionSpecDatasetBuilder:
         # A constraint has one error signal. A monitor on a constraint a controller already drives
         # must read that signal: minting a second quantity leaves it with nothing writing it.
         error_id_by_constraint: dict[str, str] = {}
+        # Constraints a controller drives or a monitor watches. The sweep at the end of this
+        # method evaluates the ones neither claims: a pose command claims its constraint without
+        # an evaluator of its own, since the pose-difference machinery produces its error.
+        claimed_constraints: set[str] = set()
 
         for controller_order, ctrl_item in enumerate(getattr(handler, "controllers", [])):
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
@@ -5442,6 +5500,7 @@ class MotionSpecDatasetBuilder:
                 continue
             if spec.disabled:
                 continue
+            claimed_constraints.add(spec.uri)
 
             along_path = self._along_path_scalar(spec)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
@@ -5630,6 +5689,7 @@ class MotionSpecDatasetBuilder:
                         else [URIRef(spec.uri) for spec in section_specs]
                     )
                 component_error_nodes: list[URIRef] = []
+                claimed_constraints.update(spec.uri for spec in section_specs)
                 for spec in section_specs:
                     if isinstance(spec, GoalStatusConstraint):
                         error_node = URIRef(spec.act.status_uri)
@@ -5750,56 +5810,16 @@ class MotionSpecDatasetBuilder:
                 continue
             if spec.disabled:
                 continue
+            claimed_constraints.add(spec.uri)
 
-            if isinstance(spec, GoalStatusConstraint):
-                error_node = URIRef(spec.act.status_uri)
-            elif getattr(spec.view, "is_elapsed", False):
-                error_node = self._elapsed_quantity_node(spec, cref.motion)
-            else:
-                along_path = self._along_path_scalar(spec)
-                qty = self._resolve_constraint_quantity(spec, world_qtys)
-                derived_t = (
-                    self._quantityless_scalar_type(spec)
-                    if qty is None and along_path is None
-                    else None
-                )
-                if qty is None and along_path is None and derived_t is None:
-                    raise ValueError(
-                        f"Monitor '{mon.name}' constraint '{spec.name}' does not resolve to a world quantity."
-                    )
-                axis_raw = spec.view.axis
-                axis = semantic_axis_label(axis_raw)
-                scalar_t = (
-                    along_path[1]
-                    if along_path
-                    else derived_t
-                    if derived_t is not None
-                    else _scalar_type(qty, _view_subspace(spec), axis)
-                )
-                error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
-                error_node = self._owned_uri(error_id, spec.parent)
-                if error_id not in seen_error_ids:
-                    seen_error_ids.add(error_id)
-                    self._add_quantity(error_node, scalar_t)
-                    if (
-                        scalar_t == QuantityType.Pose
-                        and qty is not None
-                        and isinstance(qty.props, GeometricProps)
-                    ):
-                        of_v = _geo_prop(qty.props, "of")
-                        wrt_v = _geo_prop(qty.props, "wrt")
-                        if of_v and wrt_v:
-                            self.graph.add((error_node, GEOM_REL.of, self._owned_uri(of_v, qty)))
-                            self.graph.add(
-                                (
-                                    error_node,
-                                    GEOM_REL["with-respect-to"],
-                                    self._owned_uri(wrt_v, qty),
-                                )
-                            )
-                            self.graph.add(
-                                (error_node, GEOM_COORD["as-seen-by"], self._owned_uri(wrt_v, qty))
-                            )
+            error_node = self._constraint_error_node(
+                spec,
+                cref.motion,
+                world_qtys,
+                seen_error_ids,
+                error_id_by_constraint,
+                f"Monitor '{mon.name}'",
+            )
 
             self._emit_error_evaluator(
                 handler_node,
@@ -5849,6 +5869,27 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((mon_node, RDF.type, CSTR_HDL.LevelTriggeredMonitor))
                 self.graph.add((mon_node, CSTR_HDL.flag, signal_node))
             self.graph.add((handler_node, CSTR_HDL.monitors, mon_node))
+
+        # A `while` constraint no controller drives and no monitor watches still states a bound.
+        # It gets the same evaluator every other constraint gets, so its threshold is compared and
+        # logged instead of reaching the program as a constant nothing reads.
+        for item in _flatten_constraint_items(motion.while_.constraints):
+            spec = _resolved_spec(item)
+            if spec.disabled or spec.uri in claimed_constraints:
+                continue
+            self._emit_error_evaluator(
+                handler_node,
+                spec,
+                self._constraint_error_node(
+                    spec,
+                    motion,
+                    world_qtys,
+                    seen_error_ids,
+                    error_id_by_constraint,
+                    f"Motion '{motion.name}'",
+                ),
+                seen_eval_ids,
+            )
 
     def _forwarded_command_signal(
         self,
