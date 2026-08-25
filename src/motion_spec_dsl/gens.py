@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,12 @@ from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
+# Agents and file entities are shared concepts: one IRI each, in the space motion-spec's
+# prov_uri already mints, so this document, coord-dsl's and motion-spec's describe one node per
+# tool and per file rather than three parallel ones. Only this document's own activity and
+# bundle instances stay under dslprov.
+MSPROV = Namespace("https://secorolab.github.io/motion-spec/provenance/")
+MS_PROV = Namespace("https://secorolab.github.io/metamodels/motion-spec/prov#")
 
 
 def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
@@ -86,24 +93,6 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
     }
 
 
-def _artifact_role(name: str) -> str:
-    if name.endswith("-app.ld.json"):
-        return "app_manifest"
-    if name == "provenance/dsl.ld.json":
-        return "provenance"
-    if name == "fsm_ir.json":
-        return "fsm_ir"
-    if name.endswith("_fsm.hpp"):
-        return "fsm_header"
-    if name.endswith(("_fsm.dot", "_fsm.svg")):
-        return "fsm_graphviz"
-    if name.endswith(".scenex.ld.json"):
-        return "scene_graph"
-    if name.endswith(".kdl.hpp"):
-        return "scene_kdl_header"
-    return "generated_graph"
-
-
 def _write_provenance_artifact(
     model: Model,
     artifact_names: list[str],
@@ -137,8 +126,8 @@ def _tool_activity(
     graph.append(
         {
             "@id": activity_id,
-            "@type": ["prov:Activity"],
-            "used": [f"dslprov:entity/source/{_slug(s.name)}" for s in sources],
+            "@type": ["prov:Activity", "ms-prov:SpecCompilation"],
+            "used": [_source_entity(s) for s in sources],
             "wasAssociatedWith": agent_id,
             "startedAtTime": generated_at,
             "endedAtTime": generated_at,
@@ -172,9 +161,9 @@ def _build_provenance_document(
         {"@id": "dslprov:bundle/dsl-provenance", "@type": "prov:Bundle"},
         {
             "@id": activity,
-            "@type": ["prov:Activity"],
-            "used": [f"dslprov:entity/source/{_slug(s.name)}" for s in sources],
-            "wasAssociatedWith": "dslprov:agent/motion_spec_dsl",
+            "@type": ["prov:Activity", "ms-prov:SpecCompilation"],
+            "used": [_source_entity(s) for s in sources],
+            "wasAssociatedWith": "msprov:agent/motion_spec_dsl",
             "startedAtTime": generated_at,
             "endedAtTime": generated_at,
         },
@@ -183,7 +172,7 @@ def _build_provenance_document(
         graph,
         fsm_tool_names,
         fsm_activity,
-        "dslprov:agent/coord_dsl",
+        "msprov:agent/coord_dsl",
         [s for s in sources if s.suffix == ".fsm"],
         generated_at,
     )
@@ -191,7 +180,7 @@ def _build_provenance_document(
         graph,
         scene_tool_names,
         scene_activity,
-        "dslprov:agent/scene_dsl",
+        "msprov:agent/scene_dsl",
         [s for s in sources if s.suffix == ".scenex"],
         generated_at,
     )
@@ -199,7 +188,7 @@ def _build_provenance_document(
     for source in sources:
         graph.append(
             {
-                "@id": f"dslprov:entity/source/{_slug(source.name)}",
+                "@id": _source_entity(source),
                 "@type": ["prov:Entity"],
                 "atLocation": source.resolve().as_uri(),
             }
@@ -213,7 +202,7 @@ def _build_provenance_document(
             generated_by = activity
         graph.append(
             {
-                "@id": f"dslprov:entity/{_artifact_role(name)}/{_slug(name)}",
+                "@id": _generated_entity(Path(name)),
                 "@type": ["prov:Entity"],
                 "atLocation": (output_dir / name).resolve().as_uri(),
                 "wasGeneratedBy": generated_by,
@@ -223,28 +212,38 @@ def _build_provenance_document(
     if fsm_tool_names and (output_dir / "provenance.ld.json").exists():
         graph.append(
             {
-                "@id": "dslprov:entity/provenance/coord_dsl",
+                "@id": _generated_entity(output_dir / "provenance.ld.json"),
                 "@type": ["prov:Entity"],
                 "atLocation": (output_dir / "provenance.ld.json").resolve().as_uri(),
-                "wasAttributedTo": "dslprov:agent/coord_dsl",
+                "wasAttributedTo": "msprov:agent/coord_dsl",
             }
         )
 
     graph.append(
-        {"@id": "dslprov:agent/motion_spec_dsl", "@type": ["prov:SoftwareAgent", "prov:Agent"]}
+        {"@id": "msprov:agent/motion_spec_dsl", "@type": ["prov:SoftwareAgent", "prov:Agent"]}
     )
     return {
         "schema_version": 1,
         "@context": [
             "https://secorolab.github.io/metamodels/prov.json",
-            {"dslprov": str(DSLPROV)},
+            {"dslprov": str(DSLPROV), "msprov": str(MSPROV), "ms-prov": str(MS_PROV)},
         ],
         "@graph": graph,
     }
 
 
 def _slug(value: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "_.-" else "_" for ch in value).strip("_") or "item"
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "item"
+
+
+def _source_entity(path: Path) -> str:
+    """The authored file's node. One IRI per file across every generation-time document, so
+    coord-dsl's view of the same .fsm and this one's are the same node."""
+    return f"msprov:entity/source/{_slug(Path(path).name)}"
+
+
+def _generated_entity(path: Path) -> str:
+    return f"msprov:entity/generated/{_slug(Path(path).name)}"
 
 
 def _validate_provenance_artifact(path: Path) -> None:
