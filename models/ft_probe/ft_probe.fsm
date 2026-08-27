@@ -1,0 +1,36 @@
+ns ftp = "https://secorolab.github.io/models/ft-probe/fsm/"
+
+evt loop (ns=ftp) ft_probe_fsm_events {
+    evt E_STEP,
+    evt E_RUN_STARTED,
+    evt E_FT_CONTACT
+}
+
+fsm (ns=ftp) ft_probe_fsm {
+    description: "Hold still until someone pushes on the force-torque sensor."
+
+    states {
+        S_START,
+        S_PROBE,
+        S_DONE
+    }
+
+    evt loop: <ft_probe_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_PROBE { from: <S_START>, to: <S_PROBE> },
+        T_PROBE_DONE  { from: <S_PROBE>, to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START {
+            when: <ft_probe_fsm_events.E_STEP>,
+            do:   <T_START_PROBE>,
+            fires { <ft_probe_fsm_events.E_RUN_STARTED> }
+        },
+        R_FT_CONTACT { when: <ft_probe_fsm_events.E_FT_CONTACT>, do: <T_PROBE_DONE> }
+    }
+}

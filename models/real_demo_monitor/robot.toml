@@ -24,8 +24,12 @@ gripper_speed_pct = 50
 [arm1.wrist_ft]
 port             = "/dev/ttyUSB0"
 baudrate         = 19200
-# A read waits this long for the next frame; the sensor streams one every 10 ms.
-timeout_ms       = 100.0
+# A read waits this long for the next frame; the sensor streams one every 10 ms, and the USB
+# converter's own latency timer adds up to 16 ms of it.
+timeout_ms       = 50.0
+# The driver reopens the port and restarts the stream by itself once a run of reads comes back
+# empty, which costs it about a second; this is the window the loop gives that before it stops.
+invalid_after_ms = 2000.0
 slave_address    = 0x09
 bias_samples     = 100
 poll_interval_ms = 10.0
