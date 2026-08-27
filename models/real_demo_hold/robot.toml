@@ -12,8 +12,6 @@ port_real_time        = 10001
 session_timeout_ms    = 60000
 connection_timeout_ms = 2000
 
-# A full path, unlike the FT sensor below: this driver opens the port it is given, where the
-# sensor's resolves the name under /dev/ itself.
 [agents.gripper1]
 port          = "/dev/ttyUSB1"
 baudrate      = 115200
@@ -22,9 +20,10 @@ gripper_force_pct = 100
 gripper_speed_pct = 50
 
 [arm1.wrist_ft]
-port          = "ttyUSB0"
+port          = "/dev/ttyUSB0"
 baudrate      = 19200
-timeout_ms    = 1.0
+# A read waits this long for the next frame; the sensor streams one every 10 ms.
+timeout_ms    = 100.0
 slave_address = 0x09
 bias_samples  = 100
 
