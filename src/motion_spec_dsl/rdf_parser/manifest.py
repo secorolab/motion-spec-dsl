@@ -5,6 +5,8 @@
 
 from pathlib import Path
 
+from rdf_utils.resolver import IriToFileResolver, install_resolver
+
 from motion_spec_dsl.rdf_parser.vocab import APP
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[3]
@@ -44,6 +46,17 @@ def metamodel_url_map():
     if comp_rob2b.exists():
         url_map[COMP_ROB2B_URL] = str(comp_rob2b)
     return url_map
+
+
+def install_metamodel_resolver(url_map=None):
+    """Install the offline metamodel resolver, extended with model-specific mappings."""
+    merged = {**metamodel_url_map(), **(url_map or {})}
+    install_resolver(
+        IriToFileResolver(
+            dict(sorted(merged.items(), key=lambda item: len(item[0]), reverse=True)),
+            download=False,
+        )
+    )
 
 
 def build_url_map(g, manifest_path):
