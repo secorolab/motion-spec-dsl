@@ -26,6 +26,7 @@ from motion_spec_dsl.classes.validation.constraints import (
     validate_unit_kinds,
 )
 from motion_spec_dsl.classes.validation.detects import (
+    validate_camera_providers,
     validate_detect_targets,
     validate_goal_status_acts,
     validate_subscription_targets,
@@ -74,6 +75,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_tolerance_defaults(model)
     validate_detect_targets(model)
     validate_subscription_targets(model)
+    validate_camera_providers(model)
     validate_goal_status_acts(model)
     validate_monitor_state_blocks(model)
     validate_handler_constraint_assembly(model)

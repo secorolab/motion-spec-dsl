@@ -588,16 +588,18 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, RDFS.member, URIRef(server.goal_event.uri)))
 
     def _emit_ros_subscription(self, subscription: RosSubscriptionDecl) -> None:
-        """A subscribed topic: the channel poses arrive on, the message it carries, and the
-        world poses it informs the model about. The features of interest are what make it
-        a channel the model reads rather than one it writes.
+        """A subscribed topic: the channel it arrives on, the message it carries, and what it
+        informs the model about -- world poses, or the camera whose images it carries. The
+        features of interest are what make it a channel the model reads rather than one it
+        writes; a field path says where in a detection a pose sits, so an image carries none.
         """
         node = URIRef(subscription.uri)
         self.graph.add((node, RDF.type, ROS.Topic))
         self.graph.add((node, ROS["channel-name"], Literal(subscription.channel_name)))
         self.graph.add((node, ROS["type-name"], Literal(subscription.type_name)))
-        self.graph.add((node, ROS["field-path"], Literal(subscription.pose_path)))
-        for target in subscription.targets:
+        if subscription.pose_path is not None:
+            self.graph.add((node, ROS["field-path"], Literal(subscription.pose_path)))
+        for target in (*subscription.targets, *subscription.cameras):
             self.graph.add(
                 (
                     node,

@@ -23,6 +23,14 @@ class WorldQuantityRef:
 
 
 @dataclass
+class CameraTargetRef:
+    """A reference to the camera whose images a subscription carries."""
+
+    parent: object
+    ref: object
+
+
+@dataclass
 class RosActionServerDecl(NamedNamespaceObject):
     """A served ROS action: the channel goals arrive on, and the event an accepted goal produces.
 
@@ -42,24 +50,30 @@ class RosActionServerDecl(NamedNamespaceObject):
 
 @dataclass(eq=False)
 class RosSubscriptionDecl(NamedNamespaceObject):
-    """A standing subscription: the channel poses arrive on, the world poses it writes, and where
-    in one detection each pose is found.
+    """A standing subscription: the channel it reads, and what it informs the model about.
+
+    A channel carrying detections states the world poses it writes and where in one detection
+    each pose is found. A channel carrying a camera's images states the camera and nothing more:
+    there is no pose in an image, and nothing in the control loop reads one.
     """
 
     parent: object
     name: str
     channel_name: str
     type_name: str
-    pose_field: str
-    pose_container: str
+    pose_field: str | None = None
+    pose_container: str | None = None
     targets: list = field(default_factory=list)
+    cameras: list = field(default_factory=list)
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
 
     @property
-    def pose_path(self) -> str:
-        """The dotted path from one detection to the pose it reports."""
+    def pose_path(self) -> str | None:
+        """The dotted path from one detection to the pose it reports, or None for a camera."""
+        if not self.pose_field or not self.pose_container:
+            return None
         return f"{self.pose_container}.{self.pose_field}"
 
 

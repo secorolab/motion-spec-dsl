@@ -1,0 +1,91 @@
+import "ft_probe.fsm"
+import "../real_demo_hold/real_demo_hold.scenex"
+ns app = "https://secorolab.github.io/models/ft-probe/"
+ns ftp = "https://secorolab.github.io/models/ft-probe/fsm/"
+
+// Only the sensor is under test, so only the sensor is bound: the arm is in the scene because
+// the sensor hangs off its chain and the solver needs one, but nothing here connects to it.
+exec-context (ns=app) ft-probe-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   real-world {
+                    <wrist_ft> realized by RobotiqFT300s
+                }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+tolerances {
+    position:         0.05 m,
+    orientation:      0.01 rad
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-elbow-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <ftp.E_RUN_STARTED> }
+        }
+    },
+    spec {
+        pose start-pose = snapshot of <shared.world.pose-ee-base> on event <ftp.E_RUN_STARTED>,
+        // Six constraints leave the 7th joint free, so the elbow is held where it started
+        // rather than sinking under gravity while the end-effector stays on target.
+        length support-z = snapshot of <shared.world.pose-elbow-base>.position.z on event <ftp.E_RUN_STARTED>,
+        // What counts as a push rather than the tool's own weight and the sensor's noise.
+        force force-threshold     = 10.0 N,
+        force neg-force-threshold = -10.0 N
+    }
+}
+
+guarded-motion (ns=app) probe-hold {
+    description: "Hold the starting pose until the sensor is pushed along z"
+
+    context { }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
+    }
+
+    until {
+        pushed: <shared.world.ext-force>.force.z outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>
+    }
+}
+
+constraint-handler (ns=app) handler-probe {
+    handles: <probe-hold>
+    runs-in: <ftp.S_PROBE>
+    monitors {
+        mon-pushed: monitor <probe-hold.until> {
+            satisfied for 0.3 s { trigger: event <ftp.E_FT_CONTACT> },
+        }
+    }
+    controllers {
+        pid ctrl-hold-position    { <probe-hold.hold-position>,    Kp: 550, Ki: 50, Kd: 47, decay: 0 },
+        pid ctrl-hold-orientation { <probe-hold.hold-orientation>, Kp: 250, Ki: 50, Kd: 32, decay: 0 },
+        impedance ctrl-support-z  { <probe-hold.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
+            apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <agents.arm1>,
+            algorithm: achd,
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        }
+    }
+}
