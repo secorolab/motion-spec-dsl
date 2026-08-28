@@ -1,0 +1,9 @@
+# Where each agent starts. Keyed by the name the execution context binds.
+
+[drawer_agents.arm1]
+# Joint configuration the simulator resets to, in the chain's joint order [rad]. Elbow up, the
+# half of the workspace the arm is conditioned in, with the wrist rolled to the grasp
+# orientation (jaws closing vertically): starting a quarter turn away puts the spin row at the
+# antiparallel singularity of its direction pair and the recovery swing shakes the whole arm.
+home = [0.0, 0.2618, 3.1416, -2.2689, 0.0, 0.9599, 0.0]
+

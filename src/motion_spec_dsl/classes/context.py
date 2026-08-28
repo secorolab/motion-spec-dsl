@@ -409,6 +409,29 @@ def _resolved_context_quantity(item: ContextQuantity | ContextQuantityAlias) -> 
     return item.ref if isinstance(item, ContextQuantityAlias) else item
 
 
+def is_body_line_distance(binary) -> bool:
+    """Whether a point-from-line view's line rides the frame the point is measured against:
+    the line's `of` frame equals the point pose's `wrt` frame, so the line moves with the
+    measurement frame and dispatch goes to `BODY_LINE_DISTANCE_OP`.
+    """
+    left, right = binary.left, binary.right
+    if _geometric_operand_kind(left) != "point" or _geometric_operand_kind(right) != "line":
+        return False
+
+    def prop(props, key):
+        for pair in getattr(props, "pairs", ()):
+            if isinstance(pair, GeoPropPair) and pair.key == key:
+                value = pair.frame or pair.joint or pair.sensor or pair.value
+                return str(getattr(value, "uri", value))
+        return None
+
+    point = _resolved_world_quantity(left)
+    line = _resolved_context_quantity(right)
+    wrt = prop(point.props, GeometricPropKey.Wrt)
+    of = prop(line.props, GeometricPropKey.Of)
+    return wrt is not None and wrt == of
+
+
 def _geometric_operand_kind(operand: object) -> str | None:
     """Table IIa operand kind ('point'/'line'/'plane') of a distance/projection operand, or
     None when `operand` is neither a pose, a line, nor a plane."""
@@ -437,14 +460,21 @@ GEOMETRIC_PROJECTION_OPS: dict[tuple[str, str], str] = {
     ("point", "line"): "PointOnLineProjection",
     ("line", "line"): "LineOnLineProjection",
 }
-# The one Table IIa expression whose scalar is an unsigned magnitude (no derivative at zero).
-UNSIGNED_GEOMETRIC_DISTANCE_OP = "PointLineToLinearDistance"
+# The Table IIa expressions whose scalar is an unsigned magnitude (no derivative at zero).
+UNSIGNED_GEOMETRIC_DISTANCE_OPS = {"PointLineToLinearDistance", "PointBodyLineToLinearDistance"}
+
+# The point-from-line case where the line rides the frame the point is measured in (Borghesan's
+# line-point distance from the grasping axis): the line's origin IS that frame, so the operator
+# takes no origin pose, and its gradient carries an angular half -- tilting the axis sweeps it
+# across the point.
+BODY_LINE_DISTANCE_OP = "PointBodyLineToLinearDistance"
 
 # Constraint-view subspace token per Table IIa operator, matching the lowercase style
 # ("alignment", "distance") the rest of `constraint_view_subspace` already uses.
 GEOMETRIC_DISTANCE_SUBSPACE: dict[str, str] = {
     "PointPlaneToLinearDistance": "point-plane-distance",
     "PointLineToLinearDistance": "point-line-distance",
+    "PointBodyLineToLinearDistance": "point-body-line-distance",
     "PointOnLineProjection": "point-line-projection",
     "LineLineToLinearDistance": "line-line-distance",
     "LineOnLineProjection": "line-line-projection",
@@ -456,6 +486,9 @@ GEOMETRIC_DISTANCE_SUBSPACE: dict[str, str] = {
 GEOMETRIC_DISTANCE_RELATION: dict[str, str] = {
     "PointPlaneToLinearDistance": "PointPlaneDistance",
     "PointLineToLinearDistance": "PointLineDistance",
+    # The body-line case is the paper's collinearity constraint, and comp-rob2b already
+    # declares the relation for it -- the coordinate samples that relation's distance.
+    "PointBodyLineToLinearDistance": "PointLineCollinearity",
     "PointOnLineProjection": "PointLineDistance",
     "LineLineToLinearDistance": "LineLineDistance",
     "LineOnLineProjection": "LineLineDistance",

@@ -1,0 +1,379 @@
+// Opening a drawer, written after Borghesan et al. 2016 (sec. VII), whose worked example is
+// this exact task: approach the handle, grasp it, pull the drawer open. The frames it names are
+// kept -- {o1a} the handle, {o1b} the chest, {o2} the grasp frame -- and its geometric
+// primitives are the spec entries below.
+import "drawer_open.fsm"
+import "drawer_open.scenex"
+ns app = "https://secorolab.github.io/models/drawer-open/"
+ns dro = "https://secorolab.github.io/models/drawer-open/fsm/"
+
+exec-context (ns=app) drawer-open-exec {
+    runs-scene: <drawer_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+tolerances {
+    position:    0.01 m,
+    orientation: 0.05 rad
+}
+
+context (ns=app) shared {
+    world {
+        // gp: the grasp position, the origin of {o2}.
+        pose pose-grasp {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        // hp: the handle position, the origin of {o1a}. The projections are measured against
+        // lines through it, so the pose has to be one the run already computes.
+        pose pose-handle {
+            of:         <drawer_graph.cabinet.handle3>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        // The handle as the tool sees it: the operand the paper's (a) measures against the
+        // grasping axis, a line riding the tool.
+        pose pose-handle-in-tool {
+            of:         <drawer_graph.cabinet.handle3>,
+            wrt:        <gripper.g_base.g_pinch>,
+            as-seen-by: <gripper.g_base.g_pinch>
+        },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
+        // The arm has one more joint than the task rows constrain, so the spare turn is pinned
+        // in joint space rather than left to drift -- otherwise the forearm sags onto the table
+        // while the tip still satisfies every expression. Borghesan carries a joint Position
+        // Limit constraint in every state for the same reason.
+        joint-position elbow-angle {
+            joint: <kinova.joint_3>,
+            normalization: (-pi, pi) rad
+        }
+    },
+    spec {
+        // gn: the grasp normal, the tool's x -- the axis the pads close along (the 2f85 pads
+        // face each other on x). Read in the tool's own frame so it turns with it.
+        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0),
+        // ga: the grasping axis, the tool's z -- the direction it approaches along.
+        direction approach-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
+        direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
+        // Where the approach axis is driven TO: into the drawer face, the negative of the
+        // opening axis. A pointwise target, so the tool has one attractor instead of the
+        // discrete flips a set of perpendicularity rows leaves open.
+        direction drawer-inward { as-seen-by: <kinova.base_link.base_link_origin> } = (1, 0, 0),
+
+        // The handle's three axes, in the base frame. They have to be: a solver reaches only
+        // frames on the arm's chain, so nothing off it -- the handle included -- can be a frame
+        // a pose or a versor is read in. The cabinet stands still, so these are constants: a
+        // half turn about z for the cabinet, a quarter turn about x for the handle.
+        //
+        // hz is handle_axis_direction, along the bar. hx is the cabinet's own pull-out
+        // direction, so it doubles as Borghesan's opening_axis: the projection on it reads zero
+        // at the handle and grows as the drawer comes out.
+        direction handle-x-base { as-seen-by: <kinova.base_link.base_link_origin> } = (-1, 0, 0),
+        direction handle-y-base { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, -1),
+        direction handle-z-base { as-seen-by: <kinova.base_link.base_link_origin> } = (0, -1, 0),
+
+        // ga as a line: the grasping axis through the pinch point, riding the tool -- the
+        // line the paper's (a) measures the handle's distance from.
+        line grasp-axis { of: <gripper.g_base.g_pinch>, along: <shared.spec.approach-axis> },
+        length grasp-axis-band = 0.02 m,
+
+        line handle-hx { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-x-base> },
+        line handle-hy { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-y-base> },
+        line handle-hz { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-z-base> },
+
+        length at-handle    = 0.0 m,
+        // Held back along the opening axis: the fingertips reach 27 mm past the pinch frame,
+        // which is exactly the bar-to-drawer-face distance -- pinch ON the bar presses the
+        // tips into the face. 10 mm back, the bar still sits mid-pad and the tips clear.
+        length grasp-standoff = 0.01 m,
+        length reach-band   = 0.01 m,
+        length grasp-reach  = 0.02 m,
+        // Gate for starting the grasp: the fingers close in ~0.3 s, so the bar cams out of
+        // pads that close even a few mm off-center -- a 3 mm gate was tried and the grasp
+        // missed. Sub-2mm is reached in free air; the approach rows carry the integral to
+        // get there quickly.
+        length center-band  = 0.002 m,
+        // The staging point: this far out along the opening axis, straight in front of the
+        // bar, so the final approach is a horizontal slide with the bar between the open jaws.
+        length pre-dist     = 0.08 m,
+        length pre-band     = 0.01 m,
+        // How far the drawer is pulled out: the projection along the opening axis, driven up.
+        length pull-out     = 0.10 m,
+        length pull-band    = 0.02 m,
+
+        // Square to the bar: the jaws straddle it, closing across the bar rather than along it.
+        angle aligned    = 1.5708 rad,
+        angle align-band = 0.05 rad,
+        // Caps for the two orientation rows: the wrist starts a quarter turn from the grasp
+        // roll, and an uncapped Kp on that step slams the wrist (~220 rad/s^2) and shakes the
+        // whole arm; the integral cap keeps the clipped phase from winding up.
+        angular-acceleration ori-acc-limit      = 50.0 rad/s^2,
+        angular-acceleration ori-integral-limit = 10.0 rad/s^2,
+        // Windup cap for the approach position rows: the 7 cm slide-in otherwise winds the
+        // integral up until it cancels the P term at arrival, and the last millimetres bleed
+        // out on the integrator's timescale instead of the loop's.
+        linear-acceleration pos-integral-limit = 0.5 m/s^2,
+
+        angle gripper-closed  = 0.8 rad,
+        angle gripper-band    = 0.05 rad,
+        // Carried through staging and approach: the top bar sits 37 mm under the cabinet's
+        // top shelf, and a fully open upper finger sweeps 42 mm above the pinch line -- it
+        // hits the shelf edge before the pads reach the bar. Half-closed jaws clear the
+        // shelf and still leave 11 mm around the bar.
+        angle gripper-preclose = 0.45 rad,
+        // Where the driver stops with the 18 mm bar between the fingers. Closing on air runs
+        // past the upper bound, so the band separates a caught bar from a missed one.
+        angle grip-on-bar-lo  = 0.2 rad,
+        angle grip-on-bar-hi  = 0.72 rad,
+
+        angle elbow-angle-target  = pi rad,
+        torque elbow-torque-limit = 10.0 Nm
+    }
+}
+
+// S.0 -- stage in front of the handle. The same six rows as the approach, with the projection
+// on the opening axis held out at pre-dist instead of zero: the tool comes level to bar height
+// in clear air, never dragging down the cabinet face.
+guarded-motion (ns=app) pre-approach {
+    description: "Bring the grasp frame to a staging point straight in front of the handle"
+
+    context { }
+
+    when {}
+
+    while {
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-pre-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pre-dist> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        preclose-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>,
+
+        // Watched: at the staging point the handle sits pre-dist away, straight out.
+        at-pre: keeping distance between <shared.world.pose-grasp> and <shared.world.pose-handle> equal to <shared.spec.pre-dist> within <shared.spec.pre-band>
+    }
+
+    until {}
+}
+
+// S.1 -- approach the handle.
+//
+// The paper lists three expressions; here they become the six task rows a 7-DOF arm needs
+// (plus the elbow pin): the three line-point projections stand in for a point-point distance
+// whose derivative is ill-defined where it is driven to, and the tool's three turns are pinned
+// by driving the approach axis onto drawer-inward (a 2-DOF pointwise row with one attractor)
+// plus the grasp normal square to the bar (the remaining spin). Perpendicularity rows alone
+// were tried first and pin orientation only up to discrete flips.
+guarded-motion (ns=app) approach-handle {
+    description: "Bring the grasp frame onto the handle, aligned with the handle axis"
+
+    context { }
+
+    when {}
+
+    while {
+
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+
+        // b) the grasp normal square to the handle axis, and the approach axis driven onto
+        // the drawer-inward direction -- together they pin all three of the tool's turns.
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+
+        // c) the three projections of the grasp point on the handle's own axes.
+        at-handle-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        preclose-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>,
+
+        // What the paper watches rather than drives: the distance between the two origins. No
+        // controller reads it, so it costs the solver nothing.
+        reached: keeping distance between <shared.world.pose-grasp> and <shared.world.pose-handle> equal to <shared.spec.at-handle> within <shared.spec.grasp-reach>,
+
+        // The paper's (a): the handle stays near the grasping axis -- a line riding the tool.
+        // Watched as an inequality; its unsigned magnitude has no derivative at zero.
+        on-grasp-axis: keeping distance of <shared.world.pose-handle-in-tool> from <shared.spec.grasp-axis> less than <shared.spec.grasp-axis-band>
+    }
+
+    // The grasp may only start centered: all three projections inside the tight band, or the
+    // closing pads push the bar out instead of wrapping it.
+    until all {
+        centered-x: projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.center-band>,
+        centered-y: projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.center-band>,
+        centered-z: projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.center-band>
+    }
+}
+
+// S.2 -- grasp the handle. The positioning constraints are held while the gripper closes.
+guarded-motion (ns=app) grasp-handle {
+    description: "Hold the grasp frame on the handle while the fingers close on the bar"
+
+    context { }
+
+    when {}
+
+    while {
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-handle-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>
+    }
+
+    // The driver settles inside the band only with the bar between the fingers; a missed
+    // grasp closes past it and the transition never fires.
+    until {
+        grasped-on-bar: <shared.world.gripper-pos> between <shared.spec.grip-on-bar-lo> and <shared.spec.grip-on-bar-hi>
+    }
+}
+
+// S.3 -- open the drawer. The one expression that changes is the projection along the opening
+// axis: it is commanded away from zero, which draws the drawer out. Everything else holds.
+guarded-motion (ns=app) pull-drawer {
+    description: "Draw the handle out along the cabinet's opening axis, gripper closed"
+
+    context { }
+
+    when {}
+
+    while {
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        pull-open: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pull-out> within <shared.spec.pull-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>
+    }
+
+    until {}
+}
+
+constraint-handler (ns=app) handler-approach {
+    handles: <approach-handle>
+    runs-in: <dro.S_APPROACH>
+    monitors {
+        mon-reached: monitor <approach-handle.until> {
+            satisfied for 0.3 s {
+                trigger: event <dro.E_AT_HANDLE>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-a-elbow {
+            constraint: <approach-handle.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        pid ctrl-normal-to-handle { constraint: <approach-handle.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-a-align { constraint: <approach-handle.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        // x and z carry no gravity load: an integral there only winds up on the slide-in and
+        // bleeds back out as a seconds-long tail (the PI zero at Kp/Ki), so they run P-D.
+        // The vertical row keeps the integral for the gravity bias, fast and windup-capped.
+        pid ctrl-at-handle-x { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 },
+        pid ctrl-at-handle-y { constraint: <approach-handle.at-handle-y>, integral-saturation: saturation { max: <shared.spec.pos-integral-limit> }, Kp: 80, Ki: 80, Kd: 24, decay: 0 },
+        pid ctrl-at-handle-z { constraint: <approach-handle.at-handle-z>, Kp: 80, Ki: 0, Kd: 24, decay: 0 },
+        feed-forward ctrl-a-preclose { constraint: <approach-handle.preclose-gripper> }
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <drawer_agents.arm1>,
+            algorithm: achd,
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper-command-solver: command-forwarding {
+            agent: <drawer_agents.gripper1>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-pre {
+    handles: <pre-approach>
+    runs-in: <dro.S_PREGRASP>
+    monitors {
+        mon-at-pre: monitor <pre-approach.at-pre> {
+            satisfied for 0.5 s {
+                trigger: event <dro.E_AT_PRE>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-pre-elbow {
+            constraint: <pre-approach.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        pid ctrl-pre-normal { constraint: <pre-approach.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-pre-align { constraint: <pre-approach.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-pre-x { constraint: <pre-approach.at-pre-x>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        pid ctrl-pre-y { constraint: <pre-approach.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        pid ctrl-pre-z { constraint: <pre-approach.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        feed-forward ctrl-pre-preclose { constraint: <pre-approach.preclose-gripper> }
+    }
+    solvers {
+        <handler-approach.arm-solver>,
+        <handler-approach.gripper-command-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-grasp {
+    handles: <grasp-handle>
+    runs-in: <dro.S_GRASP>
+    monitors {
+        mon-grasped: monitor <grasp-handle.until> {
+            satisfied for 0.5 s {
+                trigger: event <dro.E_GRASPED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-g-elbow {
+            constraint: <grasp-handle.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        pid ctrl-g-normal { constraint: <grasp-handle.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-g-align { constraint: <grasp-handle.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-g-x { constraint: <grasp-handle.at-handle-x>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        pid ctrl-g-y { constraint: <grasp-handle.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        pid ctrl-g-z { constraint: <grasp-handle.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        feed-forward ctrl-g-close { constraint: <grasp-handle.close-gripper> }
+    }
+    solvers {
+        <handler-approach.arm-solver>,
+        <handler-approach.gripper-command-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-pull {
+    handles: <pull-drawer>
+    runs-in: <dro.S_PULL>
+    monitors {
+        mon-opened: monitor <pull-drawer.pull-open> {
+            satisfied for 0.5 s {
+                trigger: event <dro.E_OPENED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-p-elbow {
+            constraint: <pull-drawer.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        pid ctrl-p-normal { constraint: <pull-drawer.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-p-align { constraint: <pull-drawer.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-p-pull { constraint: <pull-drawer.pull-open>, Kp: 120, Ki: 20, Kd: 30, decay: 0 },
+        pid ctrl-p-y { constraint: <pull-drawer.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        pid ctrl-p-z { constraint: <pull-drawer.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
+        feed-forward ctrl-p-close { constraint: <pull-drawer.close-gripper> }
+    }
+    solvers {
+        <handler-approach.arm-solver>,
+        <handler-approach.gripper-command-solver>
+    }
+}

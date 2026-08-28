@@ -22,7 +22,7 @@ from motion_spec_dsl.classes.controller_semantics import _alignment_is_pointwise
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_PROJECTION_OPS,
-    UNSIGNED_GEOMETRIC_DISTANCE_OP,
+    UNSIGNED_GEOMETRIC_DISTANCE_OPS,
     ContextQuantity,
     ContextRef,
     GeometricPropKey,
@@ -641,7 +641,7 @@ def validate_geometric_distance_views(model: Model) -> None:
                     f"or a line from a line; got {a_kind or 'unknown'} from {b_kind or 'unknown'}.",
                     spec,
                 )
-            if op_type == UNSIGNED_GEOMETRIC_DISTANCE_OP:
+            if op_type in UNSIGNED_GEOMETRIC_DISTANCE_OPS:
                 _reject_unsigned_distance_to_zero(spec)
             continue
 

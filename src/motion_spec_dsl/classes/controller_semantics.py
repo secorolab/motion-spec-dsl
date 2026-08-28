@@ -24,6 +24,7 @@ from motion_spec_dsl.classes.constraints import (
     LessThanConstraint,
 )
 from motion_spec_dsl.classes.context import (
+    BODY_LINE_DISTANCE_OP,
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_DISTANCE_SUBSPACE,
     GEOMETRIC_PROJECTION_OPS,
@@ -34,6 +35,7 @@ from motion_spec_dsl.classes.context import (
     _geometric_operand_kind,
     _resolved_context_quantity,
     _resolved_world_quantity,
+    is_body_line_distance,
 )
 
 SUBSPACE_ALIAS: dict[str, str] = {
@@ -221,6 +223,8 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
         op_type = GEOMETRIC_DISTANCE_OPS.get(
             (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
         )
+        if op_type == "PointLineToLinearDistance" and is_body_line_distance(binary):
+            op_type = BODY_LINE_DISTANCE_OP
         return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
 
     if kind == "ProjectionOnView":

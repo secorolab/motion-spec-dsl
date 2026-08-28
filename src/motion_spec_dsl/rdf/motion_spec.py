@@ -1589,6 +1589,30 @@ class MotionSpecDatasetBuilder:
                     f"'{point_wrt}', the point operand's own reference frame."
                 )
             primitive_frame = _geo_prop(primitive.props, "of")
+            if op_type == "PointLineToLinearDistance" and primitive_frame == point_wrt:
+                # The line rides the frame the point is measured against (Borghesan's
+                # line-point distance from the grasping axis): its origin is that frame's own
+                # origin, so no origin pose exists to read, and the operator carries an
+                # angular gradient half besides the linear one.
+                op_type = "PointBodyLineToLinearDistance"
+                target = WorldQuantity(
+                    parent=motion, name=stem, type=WorldQuantityType.Pose, props=point_qty.props
+                )
+                plan = _GeometricDistancePlan(
+                    op_type=op_type,
+                    in1=str(point_qty.uri),
+                    in2=str(point_qty.uri),
+                    direction=str(direction_qty.uri),
+                    pose=None,
+                    diff_in1=None,
+                    diff_in2=None,
+                    relation_a=str(self._frame_origin(self._owned_uri(point_of, motion))),
+                    relation_b=str(primitive.uri),
+                    gradient_frame=point_wrt,
+                    target=target,
+                )
+                self._geometric_distance_plans[spec] = plan
+                return plan
             origin = self._existing_world_pose(world_qtys, primitive_frame, point_wrt)
             if origin is None:
                 raise ValueError(
@@ -5013,15 +5037,19 @@ class MotionSpecDatasetBuilder:
             plan = self._geometric_distance_plan(spec, world_qtys)
             distance_node = self._owned_uri(distance_id, motion)
             self._add_quantity(distance_node, QuantityType.Distance)
+            relation_name = GEOMETRIC_DISTANCE_RELATION[plan.op_type]
+            # The body-line case is comp-rob2b's own PointLineCollinearity relation; the rest
+            # are geom-rel-ext distance relations.
+            relation_type = (
+                NS_MM_GEOM_REL[relation_name]
+                if plan.op_type == "PointBodyLineToLinearDistance"
+                else GEOM_REL_EXT[relation_name]
+            )
             self.graph.add(
                 (
                     distance_node,
                     GEOM_COORD.of,
-                    self._linear_distance_relation(
-                        plan.relation_a,
-                        plan.relation_b,
-                        GEOM_REL_EXT[GEOMETRIC_DISTANCE_RELATION[plan.op_type]],
-                    ),
+                    self._linear_distance_relation(plan.relation_a, plan.relation_b, relation_type),
                 )
             )
 
@@ -5040,6 +5068,14 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((op_node, GEOM_OP.pose, URIRef(plan.pose)))
             self.graph.add((op_node, GEOM_OP.distance, distance_node))
             self.graph.add((op_node, GEOM_OP_EXT.gradient, gradient_node))
+            if plan.op_type == "PointBodyLineToLinearDistance":
+                # Tilting a body-fixed line sweeps it across the point: the distance rate has
+                # an angular term besides the linear one, carried as its own direction.
+                moment_node = self._owned_uri(f"{_gradient_scalar_id(qty, spec)}-moment", motion)
+                self._emit_direction_coordinate(
+                    moment_node, self._owned_uri(plan.gradient_frame, motion)
+                )
+                self.graph.add((op_node, GEOM_OP_EXT["gradient-moment"], moment_node))
 
         for spec in constraints:
             if not _is_incident_angle_view(spec):
@@ -5559,11 +5595,20 @@ class MotionSpecDatasetBuilder:
             if qty is not None or along_path is not None or derived_t is not None:
                 # A constraint on a context quantity or an expression names no scalar view, so
                 # its error is named after the evaluator, which is already motion-qualified.
+                #
+                # An alignment is named by `_alignment_id`, not by the scalar view: the view is
+                # only the carrier pose and the word `alignment`, so two `angle between` rows on
+                # one pose in one motion would answer to the same error and the second would
+                # overwrite the first -- both controllers then driving one number. The operands
+                # and the cone are what tell the two angles apart, and that is what that id
+                # carries.
                 sid = (
                     along_path[0]
                     if along_path
                     else _evaluator_id(spec)
                     if qty is None
+                    else _alignment_id(qty, spec)
+                    if subspace == "alignment"
                     else _scalar_id(qty, subspace, axis)
                 )
                 candidate_error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
