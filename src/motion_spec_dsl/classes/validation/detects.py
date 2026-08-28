@@ -75,6 +75,37 @@ def validate_subscription_targets(model: Model) -> None:
             observed.add(id(target.ref))
 
 
+def validate_camera_providers(model: Model) -> None:
+    """A camera's channel carries one camera, an rgb one, and is the only channel carrying it.
+
+    The grammar already keeps images and detections apart -- a detection states where in the
+    message its pose sits and an image has no pose to place -- so what is left is how many.
+    """
+    provided: set[int] = set()
+    for sub in get_children_of_type(RosSubscriptionDecl, model):
+        if len(sub.cameras) > 1:
+            raise semantic_error(
+                f"Subscription '{sub.name}' carries {len(sub.cameras)} cameras; a channel "
+                "carries one, or nothing tells the images apart.",
+                sub,
+            )
+        for target in sub.cameras:
+            camera = target.ref
+            if camera.cam_type != "rgb":
+                raise semantic_error(
+                    f"Subscription '{sub.name}' carries '{camera.name}', which is a "
+                    f"{camera.cam_type} camera; only rgb is read.",
+                    sub,
+                )
+            if id(camera) in provided:
+                raise semantic_error(
+                    f"'{camera.name}' is carried by more than one channel; a camera has one "
+                    "provider.",
+                    sub,
+                )
+            provided.add(id(camera))
+
+
 def validate_goal_status_acts(model: Model) -> None:
     """A goal status is the outcome of an act this motion sends; another motion's act is not
     running while this one is."""

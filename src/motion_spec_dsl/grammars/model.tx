@@ -58,14 +58,20 @@ RosMeasurementAssign:
     path+=ID['.'] ":" "<" quantity=[WorldQuantity|FQN] ">" selector=SelectorTail
 ;
 
+// A channel carries detections or it carries a camera's images. The `from` clause tells them
+// apart: a detection says where in the message its pose sits, an image has no pose to place.
+// Each alternative resolves its own class, which is what keeps a camera's `resolution` -- a
+// child carrying the camera's own name -- from answering to the camera's name.
 RosSubscriptionDecl:
     name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING "{"
-        "observes" "{" targets+=WorldQuantityRef[","] ","? "}"
-        pose_field=ID "from" pose_container=ID ","?
+        ( "observes" "{" targets+=WorldQuantityRef[","] ","? "}"
+          pose_field=ID "from" pose_container=ID ","?
+        | "observes" "{" cameras+=CameraTargetRef[","] ","? "}" )
     "}"
 ;
 
 WorldQuantityRef: "<" ref=[WorldQuantity|FQN] ">" ;
+CameraTargetRef:  "<" ref=[scene.CameraSensorSpec|FQN] ">" ;
 
 // Model-wide satisfaction bands, one per quantity kind. A constraint that authors no
 // `within` takes the band declared for the kind its error carries, so the band a model is
