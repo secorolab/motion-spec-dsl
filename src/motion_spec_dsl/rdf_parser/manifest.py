@@ -32,18 +32,49 @@ def metamodels_root() -> Path | None:
 def metamodel_url_map():
     """Map the metamodel IRI prefixes to their local checkouts for the resolver.
 
-    This is the single source of truth for offline metamodel/ontology resolution;
-    callers merge it with a model's own ``build_url_map`` before parsing so that
-    neither the metamodel nor the model imports ever hit the network.
+    The checkout mapping is a dev workflow; without a checkout (an installed
+    deployment) this returns rdf-utils' own default map, so resolution reads and
+    populates the shared ``~/.cache/rdf-utils`` exactly like plain rdf-utils.
     """
     root = metamodels_root()
     if root is None:
-        return {}
+        from os.path import join
+
+        from rdf_utils.namespace import URL_COMP_ROB2B, URL_SECORO
+        from rdf_utils.resolver import PKG_CACHE_ROOT
+
+        return {
+            URL_SECORO: join(PKG_CACHE_ROOT, "secoro"),
+            URL_COMP_ROB2B: join(PKG_CACHE_ROOT, "comp-rob2b"),
+        }
     url_map = {METAMODELS_URL: str(root)}
     comp_rob2b = root.parent / "comp-rob2b" / "metamodels"
     if comp_rob2b.exists():
         url_map[COMP_ROB2B_URL] = str(comp_rob2b)
     return url_map
+
+
+_resolver = None
+
+
+def install_metamodel_resolver(extra_map: dict | None = None) -> None:
+    """Point the process-wide resolver at the metamodels plus a model's own iri-map.
+
+    Longest prefix wins. Dev checkouts never download; the cache fallback
+    downloads a file on its first miss, exactly like rdf-utils' default resolver.
+    The one urllib opener lives here: callers only swap the model-specific part
+    of its map, they never build resolvers of their own.
+    """
+    global _resolver
+    from rdf_utils.resolver import IriToFileResolver, install_resolver
+
+    url_map = {**metamodel_url_map(), **(extra_map or {})}
+    ordered = dict(sorted(url_map.items(), key=lambda item: len(item[0]), reverse=True))
+    if _resolver is None:
+        _resolver = IriToFileResolver(ordered, download=metamodels_root() is None)
+    else:
+        _resolver.url_map = ordered
+    install_resolver(_resolver)
 
 
 def build_url_map(g, manifest_path):

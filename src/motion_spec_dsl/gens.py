@@ -14,7 +14,6 @@ from typing import Any
 
 import pyshacl
 from rdf_utils.naming import get_valid_var_name
-from rdf_utils.resolver import IriToFileResolver, install_resolver
 from rdflib import Dataset, URIRef
 from rdflib.namespace import Namespace
 from textx import get_model
@@ -25,8 +24,8 @@ from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 # Agents and file entities are shared concepts: one IRI each, in the space motion-spec's
 # prov_uri already mints, so this document, coord-dsl's and motion-spec's describe one node per
-# tool and per file rather than three parallel ones. Only this document's own activity and
-# bundle instances stay under dslprov.
+# tool and per file rather than three parallel ones. Only this document's own activity
+# instances stay under dslprov.
 MSPROV = Namespace("https://secorolab.github.io/motion-spec/provenance/")
 MS_PROV = Namespace("https://secorolab.github.io/metamodels/motion-spec/prov#")
 
@@ -55,7 +54,8 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
     # The manifest's iri-map only declares where *this model's* imported graphs live
     # (relative to the manifest). Metamodel/ontology prefixes are deliberately NOT
     # baked in here: they resolve through rdf-utils' IriToFileResolver against the
-    # local metamodels checkout (rdf_parser.manifest.metamodel_url_map), so the
+    # local metamodels checkout, or the rdf-utils cache when there is none
+    # (rdf_parser.manifest.metamodel_url_map), so the
     # generated manifest stays free of machine-specific absolute paths and is
     # portable into run archives.
     iri_map = {
@@ -158,7 +158,6 @@ def _build_provenance_document(
     generated_at = datetime.now(timezone.utc).isoformat()
 
     graph = [
-        {"@id": "dslprov:bundle/dsl-provenance", "@type": "prov:Bundle"},
         {
             "@id": activity,
             "@type": ["prov:Activity", "ms-prov:SpecCompilation"],
@@ -247,6 +246,8 @@ def _generated_entity(path: Path) -> str:
 
 
 def _validate_provenance_artifact(path: Path) -> None:
+    from motion_spec_dsl.rdf_parser.manifest import install_metamodel_resolver
+
     base = "https://secorolab.github.io/metamodels/"
     override = os.environ.get("METAMODELS_PATH")
     shape: str | Path = f"{base}prov.shacl.ttl"
@@ -254,8 +255,8 @@ def _validate_provenance_artifact(path: Path) -> None:
         metamodels = Path(override)
         if not (metamodels / "prov.shacl.ttl").is_file():
             raise RuntimeError(f"METAMODELS_PATH={override} does not contain prov.shacl.ttl")
-        install_resolver(IriToFileResolver({base: str(metamodels)}, download=False))
         shape = metamodels / "prov.shacl.ttl"
+    install_metamodel_resolver()
     conforms, _graph, report = pyshacl.validate(
         data_graph=str(path),
         data_graph_format="json-ld",

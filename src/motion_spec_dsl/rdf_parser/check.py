@@ -9,9 +9,8 @@ from pathlib import Path
 
 import pyshacl
 import rdflib
-from rdf_utils.resolver import IriToFileResolver, install_resolver
 
-from motion_spec_dsl.rdf_parser.manifest import build_url_map, metamodel_url_map
+from motion_spec_dsl.rdf_parser.manifest import build_url_map, install_metamodel_resolver
 from motion_spec_dsl.rdf_parser.vocab import APP
 
 
@@ -23,16 +22,9 @@ def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tup
     g = rdflib.Dataset()
     g.parse(app_model, format="json-ld")
 
-    # Metamodel/ontology prefixes resolve through the shared local checkout; the
-    # model's own iri-map only declares where its imported graphs live. Merge both
-    # (longest prefix first) so neither metamodels nor imports reach the network.
-    url_map = {**metamodel_url_map(), **build_url_map(g, app_model_path)}
-    install_resolver(
-        IriToFileResolver(
-            dict(sorted(url_map.items(), key=lambda x: len(x[0]), reverse=True)),
-            download=False,
-        )
-    )
+    # Metamodel/ontology prefixes resolve through the dev checkout or the rdf-utils
+    # cache; the model's own iri-map only declares where its imported graphs live.
+    install_metamodel_resolver(build_url_map(g, app_model_path))
 
     # Load/import the referenced models
     models = list({o for _, _, o, _ in g.quads((None, APP["import"], None, None))})
