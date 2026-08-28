@@ -5,6 +5,8 @@
 
 from pathlib import Path
 
+from rdf_utils.resolver import IriToFileResolver, install_resolver
+
 from motion_spec_dsl.rdf_parser.vocab import APP
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[3]
@@ -66,7 +68,6 @@ def install_metamodel_resolver(extra_map: dict | None = None) -> None:
     of its map, they never build resolvers of their own.
     """
     global _resolver
-    from rdf_utils.resolver import IriToFileResolver, install_resolver
 
     url_map = {**metamodel_url_map(), **(extra_map or {})}
     ordered = dict(sorted(url_map.items(), key=lambda item: len(item[0]), reverse=True))
