@@ -1,0 +1,33 @@
+{
+  "description": "Natural faults: authoring mistakes that actually occurred (and were fixed) during the drawer_open construction session, re-injected verbatim as text replacements. element_uri names the specification element a perfect diagnosis should point at.",
+  "faults": [
+    {
+      "name": "n01_grasp_normal_axis_typo",
+      "note": "The grasp normal was first authored as the tool y axis; the pads close along x. Fingers clamped the drawer panel and the grasp jammed.",
+      "find": "direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0)",
+      "replace": "direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (0, 1, 0)",
+      "element_uri": "https://secorolab.github.io/models/drawer-open/shared/spec/grasp-normal"
+    },
+    {
+      "name": "n02_center_gate_too_wide",
+      "note": "The centered-grasp gate was tried at 3 mm; the bar cams out of pads that close a few mm off-center. 2 mm is the working value.",
+      "find": "length center-band  = 0.002 m",
+      "replace": "length center-band  = 0.003 m",
+      "element_uri": "https://secorolab.github.io/models/drawer-open/shared/spec/center-band"
+    },
+    {
+      "name": "n03_no_grasp_standoff",
+      "note": "The grasp was first authored directly on the bar plane with no standoff; fingertips dragged the drawer face during the close.",
+      "find": "length grasp-standoff = 0.01 m",
+      "replace": "length grasp-standoff = 0.0 m",
+      "element_uri": "https://secorolab.github.io/models/drawer-open/shared/spec/grasp-standoff"
+    },
+    {
+      "name": "n04_approach_integral_hangover",
+      "note": "The approach x controller was first authored with the same Ki as the gravity axis; the wound-up integral dragged the approach into a long stall.",
+      "find": "pid ctrl-at-handle-x { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 },",
+      "replace": "pid ctrl-at-handle-x { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 80, Kd: 24, decay: 0 },",
+      "element_uri": "https://secorolab.github.io/models/drawer-open/approach-handle/while/at-handle-x"
+    }
+  ]
+}

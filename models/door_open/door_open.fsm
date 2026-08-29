@@ -11,7 +11,20 @@ evt loop (ns=dor) door_open_fsm_events {
     evt E_UNLATCH_ENTERED,
     evt E_UNLATCHED,
     evt E_SWING_ENTERED,
-    evt E_OPENED
+    evt E_OPENED,
+    evt E_SWING_FULL_ENTERED,
+    evt E_FULL_OPEN,
+    evt E_RELEASE_ENTERED,
+    evt E_DOOR_RELEASED,
+    evt E_RETREAT_ENTERED,
+    evt E_RETREATED,
+    evt E_GRASP_LOST,
+    evt E_STEADY_ENTERED,
+    evt E_STEADIED,
+    evt E_REGRASP_ENTERED,
+    evt E_REGRASP_CENTERED,
+    evt E_REGRIP_MISSED,
+    evt E_REGRASPED
 }
 
 // Stage in front of the lever, slide onto the bar, grasp it, rotate the lever until the
@@ -27,6 +40,12 @@ fsm (ns=dor) door_open_fsm {
         S_GRASP,
         S_UNLATCH,
         S_SWING,
+        S_SWING_FULL,
+        S_STEADY,
+        S_REGRASP,
+        S_REGRIP,
+        S_RELEASE,
+        S_RETREAT,
         S_DONE
     }
 
@@ -41,7 +60,15 @@ fsm (ns=dor) door_open_fsm {
         T_APPROACH_GRASP { from: <S_APPROACH>, to: <S_GRASP> },
         T_GRASP_UNLATCH  { from: <S_GRASP>,    to: <S_UNLATCH> },
         T_UNLATCH_SWING  { from: <S_UNLATCH>,  to: <S_SWING> },
-        T_SWING_DONE     { from: <S_SWING>,    to: <S_DONE> }
+        T_SWING_FULL     { from: <S_SWING>,    to: <S_SWING_FULL> },
+        T_FULL_RELEASE   { from: <S_SWING_FULL>, to: <S_RELEASE> },
+        T_LOST_STEADY    { from: <S_SWING_FULL>, to: <S_STEADY> },
+        T_STEADY_REGRASP { from: <S_STEADY>,   to: <S_REGRASP> },
+        T_REGRASP_REGRIP { from: <S_REGRASP>,  to: <S_REGRIP> },
+        T_REGRIP_RETRY   { from: <S_REGRIP>,   to: <S_REGRASP> },
+        T_REGRIP_SWING   { from: <S_REGRIP>,   to: <S_SWING_FULL> },
+        T_RELEASE_RETREAT { from: <S_RELEASE>, to: <S_RETREAT> },
+        T_RETREAT_DONE   { from: <S_RETREAT>,  to: <S_DONE> }
     }
 
     reactions {
@@ -50,6 +77,14 @@ fsm (ns=dor) door_open_fsm {
         R_AT_HANDLE  { when: <door_open_fsm_events.E_AT_HANDLE>, do: <T_APPROACH_GRASP>, fires { <door_open_fsm_events.E_GRASP_ENTERED> } },
         R_GRASPED    { when: <door_open_fsm_events.E_GRASPED>,   do: <T_GRASP_UNLATCH>,  fires { <door_open_fsm_events.E_UNLATCH_ENTERED> } },
         R_UNLATCHED  { when: <door_open_fsm_events.E_UNLATCHED>, do: <T_UNLATCH_SWING>,  fires { <door_open_fsm_events.E_SWING_ENTERED> } },
-        R_OPENED     { when: <door_open_fsm_events.E_OPENED>,    do: <T_SWING_DONE> }
+        R_OPENED     { when: <door_open_fsm_events.E_OPENED>,    do: <T_SWING_FULL>,     fires { <door_open_fsm_events.E_SWING_FULL_ENTERED> } },
+        R_FULL_OPEN  { when: <door_open_fsm_events.E_FULL_OPEN>, do: <T_FULL_RELEASE>,   fires { <door_open_fsm_events.E_RELEASE_ENTERED> } },
+        R_GRASP_LOST { when: <door_open_fsm_events.E_GRASP_LOST>, do: <T_LOST_STEADY>, fires { <door_open_fsm_events.E_STEADY_ENTERED> } },
+        R_STEADIED   { when: <door_open_fsm_events.E_STEADIED>, do: <T_STEADY_REGRASP>, fires { <door_open_fsm_events.E_REGRASP_ENTERED> } },
+        R_RECENTERED { when: <door_open_fsm_events.E_REGRASP_CENTERED>, do: <T_REGRASP_REGRIP> },
+        R_REGRIP_MISSED { when: <door_open_fsm_events.E_REGRIP_MISSED>, do: <T_REGRIP_RETRY> },
+        R_REGRASPED  { when: <door_open_fsm_events.E_REGRASPED>, do: <T_REGRIP_SWING>,   fires { <door_open_fsm_events.E_SWING_FULL_ENTERED> } },
+        R_RELEASED   { when: <door_open_fsm_events.E_DOOR_RELEASED>, do: <T_RELEASE_RETREAT>, fires { <door_open_fsm_events.E_RETREAT_ENTERED> } },
+        R_RETREATED  { when: <door_open_fsm_events.E_RETREATED>, do: <T_RETREAT_DONE> }
     }
 }
