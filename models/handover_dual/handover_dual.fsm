@@ -1,0 +1,138 @@
+ns ho = "https://secorolab.github.io/models/handover-dual/fsm/"
+
+evt loop (ns=ho) handover_dual_fsm_events {
+    evt E_STEP,
+    evt E_PICK_ABOVE_READY,
+    evt E_PICK_READY,
+    evt E_GRASP1_READY,
+    evt E_LIFT_READY,
+    evt E_PRESENT_READY,
+    evt E_MEET_READY,
+    evt E_GRASP2_READY,
+    evt E_RELEASE1_READY,
+    evt E_TRANSPORT_READY,
+    evt E_PLACE_READY,
+    evt E_RELEASE2_READY,
+    evt E_DONE_READY,
+    evt E_HOME_ENTERED,
+    evt E_PICK_ABOVE_ENTERED,
+    evt E_PICK_ENTERED,
+    evt E_GRASP1_ENTERED,
+    evt E_LIFT_ENTERED,
+    evt E_PRESENT_ENTERED,
+    evt E_MEET_ENTERED,
+    evt E_GRASP2_ENTERED,
+    evt E_RELEASE1_ENTERED,
+    evt E_TRANSPORT_ENTERED,
+    evt E_PLACE_ENTERED,
+    evt E_RELEASE2_ENTERED
+}
+
+fsm (ns=ho) handover_dual_fsm {
+    description: "Arm1 picks a cube, lifts it and presents it horizontally at a mid-air meet point; arm2 approaches head-on with its pads a quarter turn off arm1's, grasps the free faces, arm1 releases and retreats while arm2 carries the cube to its side and places it."
+
+    states {
+        S_START,
+        S_HOME,
+        S_PICK_ABOVE,
+        S_PICK,
+        S_GRASP1,
+        S_LIFT,
+        S_PRESENT,
+        S_MEET,
+        S_GRASP2,
+        S_RELEASE1,
+        S_TRANSPORT,
+        S_PLACE,
+        S_RELEASE2,
+        S_DONE
+    }
+
+    evt loop: <handover_dual_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_HOME        { from: <S_START>,      to: <S_HOME> },
+        T_HOME_PICK_ABOVE   { from: <S_HOME>,       to: <S_PICK_ABOVE> },
+        T_PICK_ABOVE_PICK   { from: <S_PICK_ABOVE>, to: <S_PICK> },
+        T_PICK_GRASP1       { from: <S_PICK>,       to: <S_GRASP1> },
+        T_GRASP1_LIFT       { from: <S_GRASP1>,     to: <S_LIFT> },
+        T_LIFT_PRESENT      { from: <S_LIFT>,       to: <S_PRESENT> },
+        T_PRESENT_MEET      { from: <S_PRESENT>,    to: <S_MEET> },
+        T_MEET_GRASP2       { from: <S_MEET>,       to: <S_GRASP2> },
+        T_GRASP2_RELEASE1   { from: <S_GRASP2>,     to: <S_RELEASE1> },
+        T_RELEASE1_TRANSPORT { from: <S_RELEASE1>,  to: <S_TRANSPORT> },
+        T_TRANSPORT_PLACE   { from: <S_TRANSPORT>,  to: <S_PLACE> },
+        T_PLACE_RELEASE2    { from: <S_PLACE>,      to: <S_RELEASE2> },
+        T_RELEASE2_DONE     { from: <S_RELEASE2>,   to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START {
+            when: <handover_dual_fsm_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <handover_dual_fsm_events.E_HOME_ENTERED> }
+        },
+        R_PICK_ABOVE_READY {
+            when: <handover_dual_fsm_events.E_PICK_ABOVE_READY>,
+            do:   <T_HOME_PICK_ABOVE>,
+            fires { <handover_dual_fsm_events.E_PICK_ABOVE_ENTERED> }
+        },
+        R_PICK_READY {
+            when: <handover_dual_fsm_events.E_PICK_READY>,
+            do:   <T_PICK_ABOVE_PICK>,
+            fires { <handover_dual_fsm_events.E_PICK_ENTERED> }
+        },
+        R_GRASP1_READY {
+            when: <handover_dual_fsm_events.E_GRASP1_READY>,
+            do:   <T_PICK_GRASP1>,
+            fires { <handover_dual_fsm_events.E_GRASP1_ENTERED> }
+        },
+        R_LIFT_READY {
+            when: <handover_dual_fsm_events.E_LIFT_READY>,
+            do:   <T_GRASP1_LIFT>,
+            fires { <handover_dual_fsm_events.E_LIFT_ENTERED> }
+        },
+        R_PRESENT_READY {
+            when: <handover_dual_fsm_events.E_PRESENT_READY>,
+            do:   <T_LIFT_PRESENT>,
+            fires { <handover_dual_fsm_events.E_PRESENT_ENTERED> }
+        },
+        R_MEET_READY {
+            when: <handover_dual_fsm_events.E_MEET_READY>,
+            do:   <T_PRESENT_MEET>,
+            fires { <handover_dual_fsm_events.E_MEET_ENTERED> }
+        },
+        R_GRASP2_READY {
+            when: <handover_dual_fsm_events.E_GRASP2_READY>,
+            do:   <T_MEET_GRASP2>,
+            fires { <handover_dual_fsm_events.E_GRASP2_ENTERED> }
+        },
+        R_RELEASE1_READY {
+            when: <handover_dual_fsm_events.E_RELEASE1_READY>,
+            do:   <T_GRASP2_RELEASE1>,
+            fires { <handover_dual_fsm_events.E_RELEASE1_ENTERED> }
+        },
+        R_TRANSPORT_READY {
+            when: <handover_dual_fsm_events.E_TRANSPORT_READY>,
+            do:   <T_RELEASE1_TRANSPORT>,
+            fires { <handover_dual_fsm_events.E_TRANSPORT_ENTERED> }
+        },
+        R_PLACE_READY {
+            when: <handover_dual_fsm_events.E_PLACE_READY>,
+            do:   <T_TRANSPORT_PLACE>,
+            fires { <handover_dual_fsm_events.E_PLACE_ENTERED> }
+        },
+        R_RELEASE2_READY {
+            when: <handover_dual_fsm_events.E_RELEASE2_READY>,
+            do:   <T_PLACE_RELEASE2>,
+            fires { <handover_dual_fsm_events.E_RELEASE2_ENTERED> }
+        },
+        R_DONE_READY {
+            when: <handover_dual_fsm_events.E_DONE_READY>,
+            do:   <T_RELEASE2_DONE>
+        }
+    }
+}

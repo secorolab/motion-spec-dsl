@@ -1,0 +1,30 @@
+ns hod_env = "https://secorolab.github.io/models/environments/handover-dual/"
+ns hod_agn = "https://secorolab.github.io/models/agents/handover-dual/"
+ns hod_scene = "https://secorolab.github.io/models/scenes/handover-dual/"
+
+obj set (ns=hod_env) handover_objects {
+    object cube
+}
+
+obj set (ns=hod_env) ws_objects {
+    object table
+}
+
+ws set (ns=hod_env) handover_workspaces {
+    workspace table_ws
+}
+
+agn set (ns=hod_agn) handover_agents {
+    agent arm1,
+    agent arm2
+}
+
+comp (ns=hod_env) comp_table_handover of ws <handover_workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=hod_scene) handover_scene {
+    obj set <handover_objects>
+    ws comp <comp_table_handover>
+    agn set <handover_agents>
+}
