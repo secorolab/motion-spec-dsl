@@ -34,6 +34,13 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        // The lever grip riding the door leaf, measured live off the scene: what the
+        // re-grasp aims at and verifies against.
+        pose pose-door-grip {
+            of:         <door_graph.door_leaf.door_grip>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
         joint-position gripper-pos {
             joint: <gripper.g_left_driver_joint>
         },
@@ -62,12 +69,11 @@ context (ns=app) shared {
         line handle-hy { of: <door_graph.cupboard.lever_grip>, along: <shared.spec.handle-y-base> },
         line handle-hz { of: <door_graph.cupboard.lever_grip>, along: <shared.spec.handle-z-base> },
 
-        // Where the grip stands after an early-swing slip: the damped hinge holds the door
-        // near the crack angle (13 deg), whose grip point these constants place on the
-        // static lever lines. Driving against the live door frame is rejected by the
-        // toolchain (off-chain reference), so recovery is authored at this known pose.
-        length regrip-out = 0.065 m,
-        length regrip-lat = 0.018 m,
+        // Recovery lines ride the LIVE grip: their origin is the door-mounted frame the
+        // scene measures, so they stay true wherever the slip left the door.
+        line grip-lx { of: <door_graph.door_leaf.door_grip>, along: <shared.spec.handle-x-base> },
+        line grip-ly { of: <door_graph.door_leaf.door_grip>, along: <shared.spec.handle-y-base> },
+        line grip-lz { of: <door_graph.door_leaf.door_grip>, along: <shared.spec.handle-z-base> },
 
         length at-handle    = 0.0 m,
         // Fingertips reach 27 mm past the pinch frame; the bar stands 42 mm proud of the
@@ -330,19 +336,9 @@ guarded-motion (ns=app) steady {
 }
 
 guarded-motion (ns=app) regrasp {
-    description: "Re-approach the bar where the pads last held it"
+    description: "Re-approach the lever grip where the door actually is"
 
-    context {
-        spec {
-            // The pads were ON the bar until it escaped: the pinch position at the moment
-            // the loss was detected is the best observable estimate of where the bar is
-            // (the damped hinge holds the door there, and the live door frame cannot be
-            // driven against).
-            length bar-x = snapshot of <shared.world.pose-grasp>.position.x on event <dor.E_STEADY_ENTERED>,
-            length bar-y = snapshot of <shared.world.pose-grasp>.position.y on event <dor.E_STEADY_ENTERED>,
-            length bar-z = snapshot of <shared.world.pose-grasp>.position.z on event <dor.E_STEADY_ENTERED>
-        }
-    }
+    context { }
 
     when {}
 
@@ -350,16 +346,16 @@ guarded-motion (ns=app) regrasp {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
         normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.follow-band>,
         align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
-        at-grip-x: keeping <shared.world.pose-grasp>.position.x equal to <spec.bar-x> within <shared.spec.reach-band>,
-        at-grip-y: keeping <shared.world.pose-grasp>.position.y equal to <spec.bar-y> within <shared.spec.reach-band>,
-        at-grip-z: keeping <shared.world.pose-grasp>.position.z equal to <spec.bar-z> within <shared.spec.reach-band>,
+        at-grip-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-lx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-grip-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-ly> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-grip-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-lz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
         preclose-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>
     }
 
+    // The gate reads the live grip distance: the door cannot be somewhere else than
+    // where the centering happened.
     until all {
-        recentered-x: <shared.world.pose-grasp>.position.x equal to <spec.bar-x> within <shared.spec.crack-band>,
-        recentered-y: <shared.world.pose-grasp>.position.y equal to <spec.bar-y> within <shared.spec.crack-band>,
-        recentered-z: <shared.world.pose-grasp>.position.z equal to <spec.bar-z> within <shared.spec.crack-band>
+        recentered: distance between <shared.world.pose-grasp> and <shared.world.pose-door-grip> less than <shared.spec.grasp-reach>
     }
 }
 
@@ -375,9 +371,9 @@ guarded-motion (ns=app) regrip {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
         normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.follow-band>,
         align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
-        at-grip-x: keeping <shared.world.pose-grasp>.position.x equal to <regrasp.spec.bar-x> within <shared.spec.reach-band>,
-        at-grip-y: keeping <shared.world.pose-grasp>.position.y equal to <regrasp.spec.bar-y> within <shared.spec.reach-band>,
-        at-grip-z: keeping <shared.world.pose-grasp>.position.z equal to <regrasp.spec.bar-z> within <shared.spec.reach-band>,
+        at-grip-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-lx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-grip-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-ly> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-grip-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.grip-lz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
         close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>,
         // Watched: satisfied only when the driver has run past every bar width -- the
         // close caught air and the approach must be retried.
