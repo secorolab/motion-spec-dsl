@@ -1,0 +1,55 @@
+ns dd = "https://secorolab.github.io/models/drawer-dual/fsm/"
+
+evt loop (ns=dd) drawer_dual_fsm_events {
+    evt E_STEP,
+    evt E_STAGE_ENTERED,
+    evt E_STAGED,
+    evt E_PRESS_ENTERED,
+    evt E_PRESSED,
+    evt E_APPROACH_ENTERED,
+    evt E_AT_HANDLE,
+    evt E_GRASP_ENTERED,
+    evt E_GRASPED,
+    evt E_PULL_ENTERED,
+    evt E_OPENED
+}
+
+// The stabilizer arm hovers, then presses the cabinet top with its bare flange; only then
+// does the tool arm slide onto the bar, grasp, and pull. The press is held through every
+// drawer state.
+fsm (ns=dd) drawer_dual_fsm {
+    description: "One arm presses the cabinet top steady while the other opens the drawer."
+
+    states {
+        S_START,
+        S_STAGE,
+        S_PRESS,
+        S_APPROACH,
+        S_GRASP,
+        S_PULL,
+        S_DONE
+    }
+
+    evt loop: <drawer_dual_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_STAGE    { from: <S_START>,    to: <S_STAGE> },
+        T_STAGE_PRESS    { from: <S_STAGE>,    to: <S_PRESS> },
+        T_PRESS_APPROACH { from: <S_PRESS>,    to: <S_APPROACH> },
+        T_APPROACH_GRASP { from: <S_APPROACH>, to: <S_GRASP> },
+        T_GRASP_PULL     { from: <S_GRASP>,    to: <S_PULL> },
+        T_PULL_DONE      { from: <S_PULL>,     to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START { when: <drawer_dual_fsm_events.E_STEP>,      do: <T_START_STAGE>,    fires { <drawer_dual_fsm_events.E_STAGE_ENTERED> } },
+        R_STAGED     { when: <drawer_dual_fsm_events.E_STAGED>,    do: <T_STAGE_PRESS>,    fires { <drawer_dual_fsm_events.E_PRESS_ENTERED> } },
+        R_PRESSED    { when: <drawer_dual_fsm_events.E_PRESSED>,   do: <T_PRESS_APPROACH>, fires { <drawer_dual_fsm_events.E_APPROACH_ENTERED> } },
+        R_AT_HANDLE  { when: <drawer_dual_fsm_events.E_AT_HANDLE>, do: <T_APPROACH_GRASP>, fires { <drawer_dual_fsm_events.E_GRASP_ENTERED> } },
+        R_GRASPED    { when: <drawer_dual_fsm_events.E_GRASPED>,   do: <T_GRASP_PULL>,     fires { <drawer_dual_fsm_events.E_PULL_ENTERED> } },
+        R_OPENED     { when: <drawer_dual_fsm_events.E_OPENED>,    do: <T_PULL_DONE> }
+    }
+}

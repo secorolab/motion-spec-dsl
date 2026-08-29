@@ -1,0 +1,259 @@
+import "drawer_dual.scene"
+import "../kinova_gen3_7dof.ktree"
+import "../robotiq_2f85.ktree"
+
+ns ddu_mjc = "https://secorolab.github.io/models/scenes/drawer-dual-mjc/"
+
+ktree inst (ns=ddu_mjc) kinova1 of <kinova_tree>
+ktree inst (ns=ddu_mjc) kinova2 of <kinova_tree>
+ktree inst (ns=ddu_mjc) gripper2 of <gripper_tree>
+
+// The stabilizer arm carries no tool: its chain ends at the bracelet's mating face, and
+// that face is what presses the cabinet top. A ktree must root a declared body, so the
+// bare arm gets a massless marker body at the face rather than a wrapper of nothing.
+ktree (ns=ddu_mjc) arm1_tree {
+    root: <kinova1.base_link.base_link_origin>
+    tree <kinova1>
+
+    body press_pad {
+        frame press_pad_origin { }
+        inertia {
+            frame: <press_pad_origin>
+            mass: 0.001 kg
+            inertia-matrix: (
+                (1.0e-7, 0.0, 0.0),
+                (0.0, 1.0e-7, 0.0),
+                (0.0, 0.0, 1.0e-7)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed pad_on_flange {
+            parent: <kinova1.bracelet_link.pinch_site>
+            child: <press_pad.press_pad_origin>
+        }
+        serial {
+            root: <kinova1.base_link.base_link_origin>
+            tip: <press_pad.press_pad_origin>
+        }
+    }
+}
+
+ktree (ns=ddu_mjc) ft2_tree {
+    root: <wrist_ft_body.wrist_ft_body_origin>
+    body wrist_ft_body {
+        frame wrist_ft_body_origin { }
+        frame wrist_ft_site {
+            pose wrist_ft_site_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.0325) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
+        frame wrist_ft_mount {
+            pose wrist_ft_mount_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.065) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
+        inertia {
+            frame: <wrist_ft_site>
+            mass: 0.133396 kg
+            inertia-matrix: (
+                (9.386e-5, 0.0, 0.0),
+                (0.0, 9.386e-5, 0.0),
+                (0.0, 0.0, 9.379e-5)
+            ) kg*m^2
+        }
+    }
+    joints { }
+}
+
+ktree (ns=ddu_mjc) arm2_tree {
+    root: <kinova2.base_link.base_link_origin>
+    tree <kinova2>
+    tree <ft2_tree>
+    tree <gripper2>
+
+    joints {
+        fixed ft_on_pinch_site {
+            parent: <kinova2.bracelet_link.pinch_site>
+            child: <ft2_tree.wrist_ft_body.wrist_ft_body_origin>
+        }
+        fixed gripper_on_ft {
+            parent: <ft2_tree.wrist_ft_body.wrist_ft_mount>
+            child: <gripper2.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova2.base_link.base_link_origin>
+            tip: <gripper2.g_base.g_pinch>
+        }
+    }
+}
+
+ktree (ns=ddu_mjc) world_tree {
+    root: <world_body.world>
+    tree <arm1_tree>
+    tree <arm2_tree>
+
+    body world_body {
+        frame world { }
+    }
+
+    body table {
+        frame table_top {
+            pose table_top_in_world {
+                wrt: <world_body.world>
+                xyz: (0.0, 0.0, 0.72) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+            }
+        }
+        // The tool arm stands where drawer_open puts it, so every drawer number carries over.
+        frame kinova2_mount {
+            pose arm2_on_table {
+                wrt: <table.table_top>
+                xyz: (-0.22, 0.0, 0.0) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+            }
+        }
+        // The stabilizer stands beside the cabinet, turned to face it across the table.
+        frame kinova1_mount {
+            pose arm1_on_table {
+                wrt: <table.table_top>
+                xyz: (0.58, 0.60, 0.0) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, -90) unit: deg }
+            }
+        }
+        frame close_cam_mount {
+            pose close_cam_mount_in_table_top {
+                wrt: <table.table_top>
+                xyz: (0.10, -1.15, 0.45) m
+                orientation: euler { axes: xyz extrinsic angles: (80.14, 0.0, -2.49) unit: deg }
+            }
+        }
+        frame table_com {
+            pose table_com_in_table_top {
+                wrt: <table.table_top>
+                xyz: (0.0, 0.0, -0.05100416904566816) m
+                orientation: quat {
+                    xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                }
+            }
+        }
+        inertia {
+            frame: <table_com>
+            mass: 84.26442414492935 kg
+            inertia-matrix: (
+                (32.454207471081375, 0.0, 0.0),
+                (0.0, 21.92592723136972, 0.0),
+                (0.0, 0.0, 12.75746156052865)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed table_on_world {
+            parent: <world_body.world>
+            child: <table.table_top>
+        }
+        fixed arm1_on_table {
+            parent: <table.kinova1_mount>
+            child: <kinova1.base_link.base_link_origin>
+        }
+        fixed arm2_on_table {
+            parent: <table.kinova2_mount>
+            child: <kinova2.base_link.base_link_origin>
+        }
+    }
+}
+
+scene inst (ns=ddu_mjc) dual_scene_mjc {
+    scene: <dual_scene>
+
+    kgraph (ns=ddu_mjc) drawer_graph {
+        anchor: <world_tree.world_body.world>
+        tree <world_tree>
+
+        // Free-standing: no joint attaches the cabinet, so it sits on the table by weight
+        // and friction alone -- which is what the stabilizing press is for.
+        body cabinet {
+            frame cabinet_origin {
+                pose cabinet_in_world {
+                    wrt: <world_tree.world_body.world>
+                    xyz: (0.58, 0.0, 0.72) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 180) unit: deg }
+                }
+            }
+            frame handle3 {
+                pose handle3_in_cabinet {
+                    wrt: <cabinet.cabinet_origin>
+                    xyz: (0.08129, 0.0, 0.247503) m
+                    orientation: euler { axes: xyz extrinsic angles: (-90, 0, 0) unit: deg }
+                }
+            }
+            // Where the flange presses: on the top shelf, near its front edge and a little
+            // off the drawer's centreline so the two wrists keep clear of each other.
+            frame press_point {
+                pose press_point_in_cabinet {
+                    wrt: <cabinet.cabinet_origin>
+                    xyz: (0.05, -0.05, 0.297) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
+                }
+            }
+        }
+    }
+
+    obj <ws_objects.table> {
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <world_tree.table> to "table"
+        }
+    }
+
+    obj <ws_objects.cabinet> {
+        model cabinet-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cabinet/cabinet.xml'
+            map body <drawer_graph.cabinet> to "root"
+        }
+    }
+
+    agn <dual_agents.arm1> {
+        model arm1-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            map tree <kinova1> to "base_link"
+        }
+    }
+
+    agn <dual_agents.arm2> {
+        model arm2-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            map tree <kinova2> to "base_link"
+        }
+
+        model ft2-mjc as mjcf {
+            sys path = 'src/motion-spec-dsl/models/ft_mount.xml'
+            map tree <ft2_tree> to "wrist_ft_body"
+        }
+
+        force-torque wrist_ft {
+            frame: <ft2_tree.wrist_ft_body.wrist_ft_site>
+            observes: force torque
+            update-rate: 1000.0 Hz
+        }
+
+        camera close {
+            frame: <world_tree.table.close_cam_mount>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 55.0 deg
+            update-rate: 30.0 Hz
+        }
+    }
+
+    agn <dual_agents.gripper2> {
+        model gripper2-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+            map tree <gripper2> to "base_mount"
+        }
+    }
+}

@@ -1,0 +1,30 @@
+ns ddu_env = "https://secorolab.github.io/models/environments/drawer-dual/"
+ns ddu_agn = "https://secorolab.github.io/models/agents/drawer-dual/"
+ns ddu_scene = "https://secorolab.github.io/models/scenes/drawer-dual/"
+ns ddu_mjc = "https://secorolab.github.io/models/scenes/drawer-dual-mjc/"
+
+// The workspace: the table both arms stand on, and the free-standing cabinet between them.
+obj set (ns=ddu_env) ws_objects {
+    object table,
+    object cabinet
+}
+
+ws set (ns=ddu_env) dual_workspaces {
+    workspace table_ws
+}
+
+agn set (ns=ddu_agn) dual_agents {
+    agent arm1,
+    agent arm2,
+    agent gripper2
+}
+
+comp (ns=ddu_env) comp_table_dual of ws <dual_workspaces.table_ws> {
+    obj <ws_objects.table>
+    obj <ws_objects.cabinet>
+}
+
+scene (ns=ddu_scene) dual_scene {
+    ws comp <comp_table_dual>
+    agn set <dual_agents>
+}

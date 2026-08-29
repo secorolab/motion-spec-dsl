@@ -1,0 +1,497 @@
+// Dual-arm drawer opening: arm1 (bare flange, no gripper) presses the free-standing cabinet
+// down on its top so drawer friction cannot drag it, while arm2 runs the proven drawer_open
+// sequence. The press is held through every drawer state, and the cabinet's stillness during
+// the pull is a watched fact, snapshotted at pull entry.
+import "drawer_dual.fsm"
+import "drawer_dual.scenex"
+ns app = "https://secorolab.github.io/models/drawer-dual/"
+ns dd = "https://secorolab.github.io/models/drawer-dual/fsm/"
+
+exec-context (ns=app) drawer-dual-exec {
+    runs-scene: <dual_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+tolerances {
+    position:    0.01 m,
+    orientation: 0.05 rad
+}
+
+context (ns=app) shared {
+    world {
+        // Arm1, the stabilizer: its chain tip is the bracelet's bare mating face.
+        pose pose-flange1 {
+            of:         <arm1_tree.press_pad.press_pad_origin>,
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
+        },
+        // Where to press, as arm1 sees it while the cabinet still stands where it started.
+        pose pose-press {
+            of:         <drawer_graph.cabinet.press_point>,
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
+        },
+        joint-position elbow1-angle {
+            joint: <kinova1.joint_3>,
+            normalization: (-pi, pi) rad
+        },
+
+        // Arm2, the tool arm: drawer_open's quantities against its own base.
+        pose pose-grasp {
+            of:         <gripper2.g_base.g_pinch>,
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
+        },
+        pose pose-handle {
+            of:         <drawer_graph.cabinet.handle3>,
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
+        },
+        // The cabinet body itself, for the stillness watch during the pull.
+        pose pose-cabinet {
+            of:         <drawer_graph.cabinet.cabinet_origin>,
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
+        },
+        joint-position gripper2-pos {
+            joint: <gripper2.g_left_driver_joint>
+        },
+        joint-position elbow2-angle {
+            joint: <kinova2.joint_3>,
+            normalization: (-pi, pi) rad
+        }
+    },
+    spec {
+        // Arm1's tool axes, read on the bare flange.
+        direction flange1-axis { as-seen-by: <arm1_tree.press_pad.press_pad_origin> } = (0, 0, 1),
+        direction flange1-x { as-seen-by: <arm1_tree.press_pad.press_pad_origin> } = (1, 0, 0),
+        direction down1 { as-seen-by: <kinova1.base_link.base_link_origin> } = (0, 0, -1),
+        direction base1-y { as-seen-by: <kinova1.base_link.base_link_origin> } = (0, 1, 0),
+
+        // Arm2's grasp axes: drawer_open verbatim against base2.
+        direction grasp-normal { as-seen-by: <gripper2.g_base.g_pinch> } = (1, 0, 0),
+        direction approach-axis { as-seen-by: <gripper2.g_base.g_pinch> } = (0, 0, 1),
+        direction drawer-inward { as-seen-by: <kinova2.base_link.base_link_origin> } = (1, 0, 0),
+        direction handle-x-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (-1, 0, 0),
+        direction handle-y-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (0, 0, -1),
+        direction handle-z-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (0, -1, 0),
+
+        line handle-hx { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-x-base> },
+        line handle-hy { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-y-base> },
+        line handle-hz { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-z-base> },
+
+        length at-handle    = 0.0 m,
+        length grasp-standoff = 0.01 m,
+        length reach-band   = 0.01 m,
+        length grasp-reach  = 0.02 m,
+        length pre-dist     = 0.08 m,
+        length pre-band     = 0.01 m,
+        length center-band  = 0.002 m,
+        length pull-out     = 0.10 m,
+        length pull-band    = 0.02 m,
+
+        // The press: hover above the top shelf, then settle onto it with ~1 mm of commanded
+        // interference. The flange rests at 0.3007 in base1 (measured); on a FREE cabinet a
+        // deep target plus stiff gains shoves the whole body (measured: 18 cm slide), so the
+        // press is shallow and soft and the integral carries the force.
+        length hover-z      = 0.360 m,
+        length press-z      = 0.2995 m,
+        length press-gate-z = 0.3050 m,
+        length hold-band    = 0.01 m,
+        // The cabinet must not move while the drawer is pulled: watched, not driven.
+        length still-band   = 0.005 m,
+
+        angle aligned    = 1.5708 rad,
+        angle align-band = 0.05 rad,
+        angular-acceleration ori-acc-limit      = 50.0 rad/s^2,
+        angular-acceleration ori-integral-limit = 10.0 rad/s^2,
+        linear-acceleration pos-integral-limit = 0.5 m/s^2,
+        linear-acceleration press-integral-limit = 4.0 m/s^2,
+
+        angle gripper-closed  = 0.8 rad,
+        angle gripper-band    = 0.05 rad,
+        angle gripper-preclose = 0.45 rad,
+        angle grip-on-bar-lo  = 0.2 rad,
+        angle grip-on-bar-hi  = 0.72 rad,
+
+        angle elbow-angle-target  = pi rad,
+        torque elbow-torque-limit = 10.0 Nm
+    }
+}
+
+// S.1 -- arm1 comes to hover above the press point; arm2 stages in front of the bar.
+guarded-motion (ns=app) stage-both {
+    description: "Stabilizer hovers over the cabinet top while the tool arm stages at the bar"
+
+    context {
+        spec {
+            length press-x = snapshot of <shared.world.pose-press>.position.x on event <dd.E_STAGE_ENTERED>,
+            length press-y = snapshot of <shared.world.pose-press>.position.y on event <dd.E_STAGE_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        align1-down: keeping angle between <shared.spec.flange1-axis> and <shared.spec.down1> equal to 0 rad,
+        spin1: keeping angle between <shared.spec.flange1-x> and <shared.spec.base1-y> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        hold1-x: keeping <shared.world.pose-flange1>.position.x equal to <spec.press-x> within <shared.spec.hold-band>,
+        hold1-y: keeping <shared.world.pose-flange1>.position.y equal to <spec.press-y> within <shared.spec.hold-band>,
+        hold1-z: keeping <shared.world.pose-flange1>.position.z equal to <shared.spec.hover-z> within <shared.spec.hold-band>,
+
+        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-pre-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pre-dist> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        preclose-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>
+    }
+
+    // Both arms in place before anything touches the cabinet.
+    until all {
+        staged1-x: <shared.world.pose-flange1>.position.x equal to <spec.press-x> within <shared.spec.hold-band>,
+        staged1-z: <shared.world.pose-flange1>.position.z equal to <shared.spec.hover-z> within <shared.spec.hold-band>,
+        staged2: distance between <shared.world.pose-grasp> and <shared.world.pose-handle> equal to <shared.spec.pre-dist> within <shared.spec.pre-band>
+    }
+}
+
+// S.2 -- arm1 descends onto the top shelf and loads it; arm2 holds at the staging point.
+guarded-motion (ns=app) press-both {
+    description: "Stabilizer presses the cabinet top; tool arm holds at the staging point"
+
+    context { }
+
+    when {}
+
+    while {
+        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        align1-down: keeping angle between <shared.spec.flange1-axis> and <shared.spec.down1> equal to 0 rad,
+        spin1: keeping angle between <shared.spec.flange1-x> and <shared.spec.base1-y> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        hold1-x: keeping <shared.world.pose-flange1>.position.x equal to <stage-both.spec.press-x> within <shared.spec.hold-band>,
+        hold1-y: keeping <shared.world.pose-flange1>.position.y equal to <stage-both.spec.press-y> within <shared.spec.hold-band>,
+        press1-z: keeping <shared.world.pose-flange1>.position.z equal to <shared.spec.press-z> within <shared.spec.hold-band>,
+
+        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-pre-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pre-dist> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        preclose-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>
+    }
+
+    // Contact reached: the flange sits at the shelf surface, force building.
+    until {
+        pressed: <shared.world.pose-flange1>.position.z less than <shared.spec.press-gate-z>
+    }
+}
+
+// S.3 -- arm2 slides onto the bar; arm1 keeps pressing.
+guarded-motion (ns=app) approach-handle {
+    description: "Tool arm slides level onto the bar under the held press"
+
+    context { }
+
+    when {}
+
+    while {
+        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        align1-down: keeping angle between <shared.spec.flange1-axis> and <shared.spec.down1> equal to 0 rad,
+        spin1: keeping angle between <shared.spec.flange1-x> and <shared.spec.base1-y> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        hold1-x: keeping <shared.world.pose-flange1>.position.x equal to <stage-both.spec.press-x> within <shared.spec.hold-band>,
+        hold1-y: keeping <shared.world.pose-flange1>.position.y equal to <stage-both.spec.press-y> within <shared.spec.hold-band>,
+        press1-z: keeping <shared.world.pose-flange1>.position.z equal to <shared.spec.press-z> within <shared.spec.hold-band>,
+
+        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-handle-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        preclose-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-preclose> within <shared.spec.gripper-band>
+    }
+
+    until all {
+        centered-x: projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.center-band>,
+        centered-y: projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.center-band>,
+        centered-z: projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.center-band>
+    }
+}
+
+// S.4 -- arm2 closes on the bar; arm1 keeps pressing.
+guarded-motion (ns=app) grasp-handle {
+    description: "Tool arm closes on the bar under the held press"
+
+    context { }
+
+    when {}
+
+    while {
+        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        align1-down: keeping angle between <shared.spec.flange1-axis> and <shared.spec.down1> equal to 0 rad,
+        spin1: keeping angle between <shared.spec.flange1-x> and <shared.spec.base1-y> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        hold1-x: keeping <shared.world.pose-flange1>.position.x equal to <stage-both.spec.press-x> within <shared.spec.hold-band>,
+        hold1-y: keeping <shared.world.pose-flange1>.position.y equal to <stage-both.spec.press-y> within <shared.spec.hold-band>,
+        press1-z: keeping <shared.world.pose-flange1>.position.z equal to <shared.spec.press-z> within <shared.spec.hold-band>,
+
+        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        at-handle-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.reach-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        close-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>
+    }
+
+    until {
+        grasped-on-bar: <shared.world.gripper2-pos> between <shared.spec.grip-on-bar-lo> and <shared.spec.grip-on-bar-hi>
+    }
+}
+
+// S.5 -- arm2 pulls the drawer out; arm1 keeps pressing; the cabinet must not move.
+guarded-motion (ns=app) pull-drawer {
+    description: "Tool arm draws the drawer out while the press holds the cabinet still"
+
+    context {
+        spec {
+            length cab-x0 = snapshot of <shared.world.pose-cabinet>.position.x on event <dd.E_PULL_ENTERED>,
+            length cab-y0 = snapshot of <shared.world.pose-cabinet>.position.y on event <dd.E_PULL_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        align1-down: keeping angle between <shared.spec.flange1-axis> and <shared.spec.down1> equal to 0 rad,
+        spin1: keeping angle between <shared.spec.flange1-x> and <shared.spec.base1-y> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        hold1-x: keeping <shared.world.pose-flange1>.position.x equal to <stage-both.spec.press-x> within <shared.spec.hold-band>,
+        hold1-y: keeping <shared.world.pose-flange1>.position.y equal to <stage-both.spec.press-y> within <shared.spec.hold-band>,
+        press1-z: keeping <shared.world.pose-flange1>.position.z equal to <shared.spec.press-z> within <shared.spec.hold-band>,
+
+        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
+        pull-open: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pull-out> within <shared.spec.pull-band>,
+        at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
+        close-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>,
+
+        // Watched, not driven: the whole point of the second arm.
+        cabinet-still-x: keeping <shared.world.pose-cabinet>.position.x equal to <spec.cab-x0> within <shared.spec.still-band>,
+        cabinet-still-y: keeping <shared.world.pose-cabinet>.position.y equal to <spec.cab-y0> within <shared.spec.still-band>
+    }
+
+    until {}
+}
+
+// ------------------ constraint handlers ------------------
+
+constraint-handler (ns=app) handler-stage {
+    handles: <stage-both>
+    runs-in: <dd.S_STAGE>
+    monitors {
+        mon-staged: monitor <stage-both.until> {
+            satisfied for 0.3 s {
+                trigger: event <dd.E_STAGED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-st-elbow1 {
+            constraint: <stage-both.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm1-solver>,
+        pid ctrl-st-align1 { constraint: <stage-both.align1-down>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-st-spin1 { constraint: <stage-both.spin1>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-st-x1 { constraint: <stage-both.hold1-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 } via <arm1-solver>,
+        pid ctrl-st-y1 { constraint: <stage-both.hold1-y>, integral-saturation: saturation { max: <shared.spec.pos-integral-limit> }, Kp: 80, Ki: 40, Kd: 24, decay: 0 } via <arm1-solver>,
+        pid ctrl-st-z1 { constraint: <stage-both.hold1-z>, integral-saturation: saturation { max: <shared.spec.pos-integral-limit> }, Kp: 80, Ki: 40, Kd: 24, decay: 0 } via <arm1-solver>,
+
+        pid ctrl-st-elbow2 {
+            constraint: <stage-both.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm2-solver>,
+        pid ctrl-st-normal2 { constraint: <stage-both.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-st-align2 { constraint: <stage-both.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-st-x2 { constraint: <stage-both.at-pre-x>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-st-y2 { constraint: <stage-both.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-st-z2 { constraint: <stage-both.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        feed-forward ctrl-st-preclose { constraint: <stage-both.preclose-gripper> } via <gripper2-command-solver>
+    }
+    solvers {
+        arm1-solver: serial-chain {
+            agent:     <dual_agents.arm1>,
+            algorithm: achd,
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        arm2-solver: serial-chain {
+            agent:     <dual_agents.arm2>,
+            algorithm: achd,
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper2-command-solver: command-forwarding {
+            agent: <dual_agents.gripper2>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-press {
+    handles: <press-both>
+    runs-in: <dd.S_PRESS>
+    monitors {
+        mon-pressed: monitor <press-both.until> {
+            satisfied for 0.5 s {
+                trigger: event <dd.E_PRESSED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-pr-elbow1 {
+            constraint: <press-both.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm1-solver>,
+        pid ctrl-pr-align1 { constraint: <press-both.align1-down>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-pr-spin1 { constraint: <press-both.spin1>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-pr-x1 { constraint: <press-both.hold1-x>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-pr-y1 { constraint: <press-both.hold1-y>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-pr-z1 { constraint: <press-both.press1-z>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 60, Ki: 30, Kd: 20, decay: 0 } via <arm1-solver>,
+
+        pid ctrl-pr-elbow2 {
+            constraint: <press-both.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm2-solver>,
+        pid ctrl-pr-normal2 { constraint: <press-both.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-pr-align2 { constraint: <press-both.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-pr-x2 { constraint: <press-both.at-pre-x>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-pr-y2 { constraint: <press-both.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-pr-z2 { constraint: <press-both.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        feed-forward ctrl-pr-preclose { constraint: <press-both.preclose-gripper> } via <gripper2-command-solver>
+    }
+    solvers {
+        <handler-stage.arm1-solver>,
+        <handler-stage.arm2-solver>,
+        <handler-stage.gripper2-command-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-approach {
+    handles: <approach-handle>
+    runs-in: <dd.S_APPROACH>
+    monitors {
+        mon-reached: monitor <approach-handle.until> {
+            satisfied for 0.3 s {
+                trigger: event <dd.E_AT_HANDLE>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-a-elbow1 {
+            constraint: <approach-handle.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm1-solver>,
+        pid ctrl-a-align1 { constraint: <approach-handle.align1-down>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-a-spin1 { constraint: <approach-handle.spin1>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-a-x1 { constraint: <approach-handle.hold1-x>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-a-y1 { constraint: <approach-handle.hold1-y>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-a-z1 { constraint: <approach-handle.press1-z>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 60, Ki: 30, Kd: 20, decay: 0 } via <arm1-solver>,
+
+        pid ctrl-a-elbow2 {
+            constraint: <approach-handle.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm2-solver>,
+        pid ctrl-a-normal2 { constraint: <approach-handle.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-a-align2 { constraint: <approach-handle.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-a-x2 { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-a-y2 { constraint: <approach-handle.at-handle-y>, integral-saturation: saturation { max: <shared.spec.pos-integral-limit> }, Kp: 80, Ki: 80, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-a-z2 { constraint: <approach-handle.at-handle-z>, Kp: 80, Ki: 0, Kd: 24, decay: 0 } via <arm2-solver>,
+        feed-forward ctrl-a-preclose { constraint: <approach-handle.preclose-gripper> } via <gripper2-command-solver>
+    }
+    solvers {
+        <handler-stage.arm1-solver>,
+        <handler-stage.arm2-solver>,
+        <handler-stage.gripper2-command-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-grasp {
+    handles: <grasp-handle>
+    runs-in: <dd.S_GRASP>
+    monitors {
+        mon-grasped: monitor <grasp-handle.until> {
+            satisfied for 0.5 s {
+                trigger: event <dd.E_GRASPED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-g-elbow1 {
+            constraint: <grasp-handle.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm1-solver>,
+        pid ctrl-g-align1 { constraint: <grasp-handle.align1-down>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-g-spin1 { constraint: <grasp-handle.spin1>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-g-x1 { constraint: <grasp-handle.hold1-x>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-g-y1 { constraint: <grasp-handle.hold1-y>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-g-z1 { constraint: <grasp-handle.press1-z>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 60, Ki: 30, Kd: 20, decay: 0 } via <arm1-solver>,
+
+        pid ctrl-g-elbow2 {
+            constraint: <grasp-handle.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm2-solver>,
+        pid ctrl-g-normal2 { constraint: <grasp-handle.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-g-align2 { constraint: <grasp-handle.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-g-x2 { constraint: <grasp-handle.at-handle-x>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-g-y2 { constraint: <grasp-handle.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-g-z2 { constraint: <grasp-handle.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        feed-forward ctrl-g-close { constraint: <grasp-handle.close-gripper> } via <gripper2-command-solver>
+    }
+    solvers {
+        <handler-stage.arm1-solver>,
+        <handler-stage.arm2-solver>,
+        <handler-stage.gripper2-command-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-pull {
+    handles: <pull-drawer>
+    runs-in: <dd.S_PULL>
+    monitors {
+        mon-opened: monitor <pull-drawer.pull-open> {
+            satisfied for 0.5 s {
+                trigger: event <dd.E_OPENED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-p-elbow1 {
+            constraint: <pull-drawer.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm1-solver>,
+        pid ctrl-p-align1 { constraint: <pull-drawer.align1-down>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-p-spin1 { constraint: <pull-drawer.spin1>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm1-solver>,
+        pid ctrl-p-x1 { constraint: <pull-drawer.hold1-x>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-p-y1 { constraint: <pull-drawer.hold1-y>, Kp: 40, Ki: 0, Kd: 15, decay: 0 } via <arm1-solver>,
+        pid ctrl-p-z1 { constraint: <pull-drawer.press1-z>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 60, Ki: 30, Kd: 20, decay: 0 } via <arm1-solver>,
+
+        pid ctrl-p-elbow2 {
+            constraint: <pull-drawer.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque via <arm2-solver>,
+        pid ctrl-p-normal2 { constraint: <pull-drawer.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-p-align2 { constraint: <pull-drawer.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <arm2-solver>,
+        pid ctrl-p-pull2 { constraint: <pull-drawer.pull-open>, Kp: 120, Ki: 20, Kd: 30, decay: 0 } via <arm2-solver>,
+        pid ctrl-p-y2 { constraint: <pull-drawer.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        pid ctrl-p-z2 { constraint: <pull-drawer.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <arm2-solver>,
+        feed-forward ctrl-p-close { constraint: <pull-drawer.close-gripper> } via <gripper2-command-solver>
+    }
+    solvers {
+        <handler-stage.arm1-solver>,
+        <handler-stage.arm2-solver>,
+        <handler-stage.gripper2-command-solver>
+    }
+}
