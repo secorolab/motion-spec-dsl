@@ -1,0 +1,29 @@
+ns dor_env = "https://secorolab.github.io/models/environments/door-open/"
+ns dor_agn = "https://secorolab.github.io/models/agents/door-open/"
+ns dor_scene = "https://secorolab.github.io/models/scenes/door-open/"
+ns dor_mjc = "https://secorolab.github.io/models/scenes/door-open-mjc/"
+
+// The workspace: the table the arm stands on, and the latched cupboard standing on it.
+obj set (ns=dor_env) ws_objects {
+    object table,
+    object cupboard
+}
+
+ws set (ns=dor_env) door_workspaces {
+    workspace table_ws
+}
+
+agn set (ns=dor_agn) door_agents {
+    agent arm1,
+    agent gripper1
+}
+
+comp (ns=dor_env) comp_table_door of ws <door_workspaces.table_ws> {
+    obj <ws_objects.table>
+    obj <ws_objects.cupboard>
+}
+
+scene (ns=dor_scene) door_scene {
+    ws comp <comp_table_door>
+    agn set <door_agents>
+}

@@ -1,0 +1,55 @@
+ns dor = "https://secorolab.github.io/models/door-open/fsm/"
+
+evt loop (ns=dor) door_open_fsm_events {
+    evt E_STEP,
+    evt E_PREGRASP_ENTERED,
+    evt E_AT_PRE,
+    evt E_APPROACH_ENTERED,
+    evt E_AT_HANDLE,
+    evt E_GRASP_ENTERED,
+    evt E_GRASPED,
+    evt E_UNLATCH_ENTERED,
+    evt E_UNLATCHED,
+    evt E_SWING_ENTERED,
+    evt E_OPENED
+}
+
+// Stage in front of the lever, slide onto the bar, grasp it, rotate the lever until the
+// bolt clears the strike, then crack the door open. Each transition is raised by the
+// monitor of the state it leaves.
+fsm (ns=dor) door_open_fsm {
+    description: "Reach the cupboard lever, grasp it, unlatch, and crack the door open."
+
+    states {
+        S_START,
+        S_PREGRASP,
+        S_APPROACH,
+        S_GRASP,
+        S_UNLATCH,
+        S_SWING,
+        S_DONE
+    }
+
+    evt loop: <door_open_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_PRE      { from: <S_START>,    to: <S_PREGRASP> },
+        T_PRE_APPROACH   { from: <S_PREGRASP>, to: <S_APPROACH> },
+        T_APPROACH_GRASP { from: <S_APPROACH>, to: <S_GRASP> },
+        T_GRASP_UNLATCH  { from: <S_GRASP>,    to: <S_UNLATCH> },
+        T_UNLATCH_SWING  { from: <S_UNLATCH>,  to: <S_SWING> },
+        T_SWING_DONE     { from: <S_SWING>,    to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START { when: <door_open_fsm_events.E_STEP>,      do: <T_START_PRE>,      fires { <door_open_fsm_events.E_PREGRASP_ENTERED> } },
+        R_AT_PRE     { when: <door_open_fsm_events.E_AT_PRE>,    do: <T_PRE_APPROACH>,   fires { <door_open_fsm_events.E_APPROACH_ENTERED> } },
+        R_AT_HANDLE  { when: <door_open_fsm_events.E_AT_HANDLE>, do: <T_APPROACH_GRASP>, fires { <door_open_fsm_events.E_GRASP_ENTERED> } },
+        R_GRASPED    { when: <door_open_fsm_events.E_GRASPED>,   do: <T_GRASP_UNLATCH>,  fires { <door_open_fsm_events.E_UNLATCH_ENTERED> } },
+        R_UNLATCHED  { when: <door_open_fsm_events.E_UNLATCHED>, do: <T_UNLATCH_SWING>,  fires { <door_open_fsm_events.E_SWING_ENTERED> } },
+        R_OPENED     { when: <door_open_fsm_events.E_OPENED>,    do: <T_SWING_DONE> }
+    }
+}
