@@ -84,6 +84,11 @@ context (ns=app) shared {
         angle align-band = 0.05 rad,
         angular-acceleration ori-acc-limit      = 50.0 rad/s^2,
         angular-acceleration ori-integral-limit = 10.0 rad/s^2,
+        // In-contact states fight reaction torques at the pads: the free-space anti-slam cap
+        // starves them (measured: 0.40 rad orientation sag under press), so they carry their
+        // own authority.
+        angular-acceleration contact-ori-acc-limit      = 200.0 rad/s^2,
+        angular-acceleration contact-ori-integral-limit = 60.0 rad/s^2,
         linear-acceleration pos-integral-limit = 0.5 m/s^2,
         // The press row holds a sustained force against the lever spring, so its integral
         // carries the working load and needs the headroom the free-air rows must not have.
@@ -102,6 +107,12 @@ context (ns=app) shared {
         // the lever, pressing does (tried and measured: the roll variant froze at 5 deg).
         length unlatch-press      = 0.016 m,
         length unlatch-press-band = 0.005 m,
+        // The gripped bar rotates with the lever, so the tool's normal must follow: at full
+        // press the bar direction has turned 30 deg, and fighting that (fixed 90 deg target)
+        // stalls the press against the pads' slip. Commanded consistently instead: 60 deg
+        // during the press, back toward square as the lever springs up, both loosely banded.
+        angle unlatch-roll-follow = 1.0472 rad,
+        angle follow-band         = 0.6 rad,
 
         angle elbow-angle-target  = pi rad,
         torque elbow-torque-limit = 10.0 Nm
@@ -195,7 +206,7 @@ guarded-motion (ns=app) unlatch {
 
     while {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
-        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.unlatch-roll-follow> within <shared.spec.follow-band>,
         align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
         at-handle-x: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.grasp-standoff> within <shared.spec.grasp-reach>,
         press-down: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.unlatch-press> within <shared.spec.unlatch-press-band>,
@@ -216,7 +227,7 @@ guarded-motion (ns=app) swing-open {
 
     while {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
-        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
+        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.follow-band>,
         align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
         swing-pull: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.crack-out> within <shared.spec.crack-band>,
         press-down: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.unlatch-press> within <shared.spec.swing-lateral-band>,
@@ -334,8 +345,8 @@ constraint-handler (ns=app) handler-unlatch {
             constraint: <unlatch.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque,
-        pid ctrl-u-normal { constraint: <unlatch.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
-        pid ctrl-u-align { constraint: <unlatch.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-u-normal { constraint: <unlatch.normal-to-handle>, output-saturation: saturation { max: <shared.spec.contact-ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-u-align { constraint: <unlatch.align-approach>, output-saturation: saturation { max: <shared.spec.contact-ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
         pid ctrl-u-x { constraint: <unlatch.at-handle-x>, Kp: 40, Ki: 0, Kd: 15, decay: 0 },
         pid ctrl-u-press { constraint: <unlatch.press-down>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 120, Ki: 60, Kd: 30, decay: 0 },
         pid ctrl-u-z { constraint: <unlatch.at-handle-z>, Kp: 40, Ki: 0, Kd: 15, decay: 0 },
@@ -362,8 +373,8 @@ constraint-handler (ns=app) handler-swing {
             constraint: <swing-open.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque,
-        pid ctrl-s-normal { constraint: <swing-open.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
-        pid ctrl-s-align { constraint: <swing-open.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-s-normal { constraint: <swing-open.normal-to-handle>, output-saturation: saturation { max: <shared.spec.contact-ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-s-align { constraint: <swing-open.align-approach>, output-saturation: saturation { max: <shared.spec.contact-ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
         pid ctrl-s-pull { constraint: <swing-open.swing-pull>, Kp: 100, Ki: 15, Kd: 30, decay: 0 },
         pid ctrl-s-press { constraint: <swing-open.press-down>, integral-saturation: saturation { max: <shared.spec.press-integral-limit> }, Kp: 80, Ki: 40, Kd: 24, decay: 0 },
         pid ctrl-s-z { constraint: <swing-open.at-handle-z>, Kp: 40, Ki: 0, Kd: 15, decay: 0 },
