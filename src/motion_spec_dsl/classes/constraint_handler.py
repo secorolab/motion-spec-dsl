@@ -116,10 +116,52 @@ class ConstraintHandler(IHasNamespaceDeclare):
     solvers: list[SolverEntry | SolverAlias]
     monitors: list[MonitorEntry] = field(default_factory=list)
     controllers: list[ControllerEntry | ControllerAlias] = field(default_factory=list)
+    perturbations: list["PerturbationEntry"] = field(default_factory=list)
     runs_in: "StateName | None" = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+
+
+@dataclass(eq=False)
+class PerturbationEntry(NamedNamespaceObject):
+    """A disturbance wrench the simulator applies to a scene body while the handler's state is
+    active: magnitude and direction are named quantities, never inline numbers, so a richer
+    force pattern arrives as a new quantity form rather than as new handler syntax.
+
+    The window opens once per state activation, when the gate holds, and closes after
+    `duration`; with no gate it opens on state entry, with no duration it stays open until the
+    state exits.
+    """
+
+    parent: object
+    name: str
+    body: object
+    force: ContextRef | None = None
+    force_direction: ContextRef | None = None
+    moment: ContextRef | None = None
+    moment_direction: ContextRef | None = None
+    gate: object | None = None
+    duration: Measure | None = None
+
+    def __post_init__(self):
+        super().__init__(parent=self.parent, name=self.name)
+
+    @property
+    def conditions(self) -> list:
+        """The constraints the gate holds, in authored order; empty when there is no gate."""
+        return list(getattr(self.gate, "constraints", []) or [])
+
+    @property
+    def duration_seconds(self) -> float | None:
+        """The window length in seconds, or None when it lasts until the state exits."""
+        if self.duration is None:
+            return None
+        if self.duration.unit not in ("s", "ms"):
+            raise ValueError(
+                f"Perturbation '{self.name}' duration unit '{self.duration.unit}' must be 's' or 'ms'."
+            )
+        return float(self.duration.value)
 
 
 @dataclass

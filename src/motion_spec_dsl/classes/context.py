@@ -173,6 +173,7 @@ class ContextQuantity(NamedNamespaceObject):
         | AccelerationTwistCoordinate
         | WrenchCoordinate
         | ConfigValue
+        | DirectionBetween
         | None
     ) = None
     props: GeometricProps | None = field(default=None, kw_only=True)
@@ -398,6 +399,20 @@ class ConfigValue:
 
     key: str
     source: View
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
+class DirectionBetween:
+    """A direction recomputed every cycle from where two frames currently are: the unit vector
+    from `from_frame`'s origin to `to_frame`'s origin, read in the quantity's `as-seen-by` frame.
+
+    It carries no number of its own -- the pose relating the two frames does, and the runtime
+    normalizes that pose's translation.
+    """
+
+    from_frame: object
+    to_frame: object
     parent: object | None = field(default=None, repr=False, compare=False)
 
 

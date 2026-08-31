@@ -44,6 +44,7 @@ from motion_spec_dsl.classes.validation.handlers import (
 )
 from motion_spec_dsl.classes.validation.monitors import validate_monitor_state_blocks
 from motion_spec_dsl.classes.validation.names import validate_namespace_uris
+from motion_spec_dsl.classes.validation.perturbations import validate_perturbations
 from motion_spec_dsl.classes.validation.ros import validate_ros
 
 __all__ = [
@@ -84,4 +85,5 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_commanded_quantity_is_measured(model)
     validate_controlled_expressions(model)
     validate_mobile_platform_solver_quantity(model)
+    validate_perturbations(model)
     validate_ros(model)

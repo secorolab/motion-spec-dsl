@@ -27,6 +27,7 @@ from motion_spec_dsl.classes.constraint_handler import (
     MonitorAction,
     MonitorEntry,
     MonitorStateBlock,
+    PerturbationEntry,
     RosTopicDecl,
     SaturationSpec,
     SerialChainSolver,
@@ -53,6 +54,7 @@ from motion_spec_dsl.classes.constraints import (
 )
 from motion_spec_dsl.classes.context import (
     ContextRef,
+    DirectionBetween,
     ElapsedTime,
     ProgressAlong,
     MovingAlong,
@@ -191,6 +193,7 @@ LANGUAGE_CLASSES = [
     ReferenceValue,
     SnapshotValue,
     ConfigValue,
+    DirectionBetween,
     ConstraintAlias,
     ConstraintGroup,
     ConstraintSpecification,
@@ -213,6 +216,7 @@ LANGUAGE_CLASSES = [
     MonitorEntry,
     MonitorStateBlock,
     MonitorAction,
+    PerturbationEntry,
     Ros,
     RosPublishers,
     RosSubscribers,

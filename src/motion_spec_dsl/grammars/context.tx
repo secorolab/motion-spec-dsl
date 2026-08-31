@@ -270,8 +270,12 @@ ScalarContextQuantityType:
 ;
 
 PlainContextQuantityValue:
-    QuantityValue | SnapshotValue | PoseCoordinate | VelocityTwistCoordinate
+    QuantityValue | SnapshotValue | DirectionBetween | PoseCoordinate | VelocityTwistCoordinate
     | AccelerationTwistCoordinate | WrenchCoordinate | ConfigValue | ReferenceValue
+;
+
+DirectionBetween:
+    "=" "from" "<" from_frame=[scene.Frame|FQN] ">" "to" "<" to_frame=[scene.Frame|FQN] ">"
 ;
 
 VelocityTwistCoordinate:

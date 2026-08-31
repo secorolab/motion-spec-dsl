@@ -104,6 +104,7 @@ from motion_spec_dsl.classes.context import (
     ConfigValue,
     ContextQuantity,
     ContextRef,
+    DirectionBetween,
     GeometricPropKey,
     GeometricProps,
     GeoPropPair,
@@ -242,6 +243,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     RBDYN_OP,
     RBDYN_OP_EXT,
     SENSORS,
+    SIM,
     SLV,
     SLV_EXT,
     SOSA,
@@ -359,6 +361,21 @@ def _section_expression_type(logic, member_count: int):
     if logic == "all" and member_count > 1:
         return CSTR_EXT.ConstraintConjunction
     return None
+
+
+def _perturbation_conditions(handler: ConstraintHandler) -> list[ConstraintSpecification]:
+    """Enabled, alias-resolved constraints the handler's perturbation gates hold.
+
+    They are authored in the handler rather than in the motion, so every pass that walks a
+    motion's constraints has to be told about them or their views reach the graph unemitted.
+    """
+    out = []
+    for perturbation in getattr(handler, "perturbations", []) or []:
+        for item in _flatten_constraint_items(perturbation.conditions):
+            spec = _resolved_spec(item)
+            if not isinstance(spec, GoalStatusConstraint) and not spec.disabled:
+                out.append(spec)
+    return out
 
 
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
@@ -557,7 +574,7 @@ class MotionSpecDatasetBuilder:
 
             context_quantities = self._collect_context_quantities(motion, handler)
             world_qtys = self._collect_world_quantities(motion, handler, context_quantities)
-            constraints = _resolved_constraint_items(motion)
+            constraints = _resolved_constraint_items(motion) + _perturbation_conditions(handler)
 
             self._emit_world_quantities(world_qtys)
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
@@ -1030,7 +1047,7 @@ class MotionSpecDatasetBuilder:
             if isinstance(ctx, WorldContextDecl):
                 for item in ctx.declaration:
                     self._add_world_quantity(qtys, item)
-        for constraint in _resolved_constraint_items(motion):
+        for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
             self._add_view_world_quantities(qtys, constraint.view)
         for quantity in context_quantities.values():
             self._add_value_world_quantities(qtys, getattr(quantity, "value", None))
@@ -1078,7 +1095,7 @@ class MotionSpecDatasetBuilder:
                 for item in ctx.declaration:
                     if isinstance(item, ContextQuantity):
                         quantities.setdefault(item.name, item)
-        for constraint in _resolved_constraint_items(motion):
+        for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
             expr = constraint.expr
             refs: list[ContextRef] = []
             if isinstance(expr, EqualityConstraint):
@@ -2715,7 +2732,7 @@ class MotionSpecDatasetBuilder:
                 self._emit_path_quantity(quantity, constraints, world_qtys)
                 continue
             if quantity.type == QuantityType.Direction:
-                self._emit_direction_quantity(node, quantity)
+                self._emit_direction_quantity(node, quantity, world_qtys)
                 continue
             if quantity.type in (QuantityType.Line, QuantityType.Plane):
                 self._emit_structural_primitive(node, quantity)
@@ -3525,9 +3542,11 @@ class MotionSpecDatasetBuilder:
         self,
         node: URIRef,
         quantity: ContextQuantity,
+        world_qtys: dict[str, WorldQuantity] | None = None,
     ) -> None:
         """Emit a Direction quantity as a unit direction coordinate in its as-seen-by frame,
-        optionally initialized from a literal vector value.
+        optionally initialized from a literal vector value or recomputed every cycle from the
+        pose relating two frames.
         """
         as_seen_by_name = _geo_prop(quantity.props, "as-seen-by") or _geo_prop(
             quantity.props, "wrt"
@@ -3537,6 +3556,12 @@ class MotionSpecDatasetBuilder:
                 f"Direction quantity '{quantity.name}' needs an 'as-seen-by: <frame>' prop."
             )
         as_seen_by_node = self._owned_uri(as_seen_by_name, quantity)
+        if isinstance(quantity.value, DirectionBetween):
+            self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+            self.graph.add((node, RDF.type, GEOM_ENT.UnitVector))
+            self._emit_direction_coordinate(node, as_seen_by_node)
+            self._emit_direction_between(node, quantity, as_seen_by_name, world_qtys or {})
+            return
         vector: tuple[float, float, float] | None = None
         if isinstance(quantity.value, VectorXYZ):
             elements = quantity.value.coords.values
@@ -3554,6 +3579,41 @@ class MotionSpecDatasetBuilder:
         # as line/plane's own along/normal direction does in `_emit_structural_primitive`).
         self.graph.add((node, RDF.type, GEOM_ENT.UnitVector))
         self._emit_direction_coordinate(node, as_seen_by_node, vector)
+
+    def _emit_direction_between(
+        self,
+        node: URIRef,
+        quantity: ContextQuantity,
+        as_seen_by_name: str,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> None:
+        """Wire a `from <a> to <b>` direction to the pose that already relates the two frames:
+        normalizing that pose's translation is the direction, recomputed every cycle.
+
+        The pose is not minted here -- whichever chain relates the two frames is the world
+        model's to walk, so the model declares the pose and this reads it.
+        """
+        value = quantity.value
+        of_name = str(value.to_frame.uri)
+        wrt_name = str(value.from_frame.uri)
+        pose = self._existing_world_pose(world_qtys, of_name, wrt_name)
+        if pose is None:
+            raise ValueError(
+                f"Direction quantity '{quantity.name}' is computed from the pose of "
+                f"'{_authored_fqn(value.to_frame)}' with respect to "
+                f"'{_authored_fqn(value.from_frame)}', which no `world` block declares."
+            )
+        pose_seen_by = _geo_prop(pose.props, "as-seen-by") or _geo_prop(pose.props, "wrt")
+        if pose_seen_by != as_seen_by_name:
+            raise ValueError(
+                f"Direction quantity '{quantity.name}' is seen by a different frame than the "
+                f"pose '{pose.name}' it is computed from; normalizing that pose would answer "
+                "in the pose's frame, not this one."
+            )
+        op_node = self._declared_uri("compute-direction", quantity)
+        self.graph.add((op_node, RDF.type, GEOM_OP.PoseToDirection))
+        self.graph.add((op_node, GEOM_OP.pose, URIRef(pose.uri)))
+        self.graph.add((op_node, GEOM_OP.direction, node))
 
     def _emit_structural_primitive(
         self,
@@ -5937,6 +5997,183 @@ class MotionSpecDatasetBuilder:
                 ),
                 seen_eval_ids,
             )
+
+        for perturbation in getattr(handler, "perturbations", []) or []:
+            self._emit_perturbation(
+                perturbation,
+                handler,
+                handler_node,
+                motion,
+                world_qtys,
+                seen_error_ids,
+                error_id_by_constraint,
+                seen_eval_ids,
+            )
+
+    @staticmethod
+    def _perturbation_quantity(ref: ContextRef, perturbation: Any) -> ContextQuantity:
+        """The named quantity a perturbation's magnitude or direction slot points at.
+
+        Only a name is admitted: a force pattern richer than a constant arrives as a new kind of
+        quantity, and an inline number in the handler would leave nowhere for it to go.
+        """
+        quantity = _context_quantity(ref)
+        if not isinstance(quantity, ContextQuantity):
+            raise ValueError(
+                f"Perturbation '{perturbation.name}' must name a declared quantity for its "
+                "magnitude and its direction."
+            )
+        return _resolved_context_quantity(quantity)
+
+    def _perturbation_frame(self, perturbation: Any) -> tuple[URIRef, str]:
+        """The frame a perturbation's wrench is stated in: the one its direction is seen by."""
+        direction = self._perturbation_quantity(
+            perturbation.force_direction or perturbation.moment_direction, perturbation
+        )
+        frame_name = _geo_prop(direction.props, "as-seen-by") or _geo_prop(direction.props, "wrt")
+        if frame_name is None:
+            raise ValueError(
+                f"Perturbation '{perturbation.name}' direction '{direction.name}' needs an "
+                "'as-seen-by: <frame>' prop: it is the frame the applied wrench is stated in."
+            )
+        return self._owned_uri(frame_name, direction), frame_name
+
+    def _emit_perturbation_wrench(self, perturbation: Any) -> URIRef:
+        """The wrench a perturbation's named magnitudes and directions compose to, by the same
+        ops a force or moment command is built from."""
+        as_seen_by_node, _frame_name = self._perturbation_frame(perturbation)
+        point_node = self._declared_uri(f"point-{perturbation.name}", perturbation)
+        position_node = self._declared_uri(f"position-{perturbation.name}", perturbation)
+        self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
+
+        wrench_nodes: list[URIRef] = []
+        if perturbation.force is not None:
+            wrench_node = self._declared_uri(f"wrench-force-{perturbation.name}", perturbation)
+            self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
+            op_node = self._declared_uri(f"compute-wrench-force-{perturbation.name}", perturbation)
+            self.graph.add((op_node, RDF.type, RBDYN_OP.WrenchFromPositionDirectionAndMagnitude))
+            self.graph.add(
+                (
+                    op_node,
+                    RBDYN_OP.magnitude,
+                    URIRef(self._perturbation_quantity(perturbation.force, perturbation).uri),
+                )
+            )
+            self.graph.add(
+                (
+                    op_node,
+                    RBDYN_OP.direction,
+                    URIRef(
+                        self._perturbation_quantity(perturbation.force_direction, perturbation).uri
+                    ),
+                )
+            )
+            self.graph.add((op_node, RBDYN_OP.position, position_node))
+            self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
+            wrench_nodes.append(wrench_node)
+
+        if perturbation.moment is not None:
+            wrench_node = self._declared_uri(f"wrench-moment-{perturbation.name}", perturbation)
+            self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
+            op_node = self._declared_uri(f"compute-wrench-moment-{perturbation.name}", perturbation)
+            self.graph.add((op_node, RDF.type, RBDYN_OP_EXT.WrenchFromDirectionAndMoment))
+            self.graph.add(
+                (
+                    op_node,
+                    RBDYN_OP_EXT.moment,
+                    URIRef(self._perturbation_quantity(perturbation.moment, perturbation).uri),
+                )
+            )
+            self.graph.add(
+                (
+                    op_node,
+                    RBDYN_OP.direction,
+                    URIRef(
+                        self._perturbation_quantity(perturbation.moment_direction, perturbation).uri
+                    ),
+                )
+            )
+            self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
+            wrench_nodes.append(wrench_node)
+
+        if not wrench_nodes:
+            raise ValueError(
+                f"Perturbation '{perturbation.name}' applies neither a force nor a torque."
+            )
+        if len(wrench_nodes) == 1:
+            return wrench_nodes[0]
+
+        total_node = self._declared_uri(f"wrench-{perturbation.name}", perturbation)
+        self._emit_wrench_coordinate(total_node, point_node, as_seen_by_node)
+        add_node = self._declared_uri(f"add-wrench-{perturbation.name}", perturbation)
+        self.graph.add((add_node, RDF.type, RBDYN_OP.AddWrench))
+        self.graph.add((add_node, RBDYN_OP["in1"], wrench_nodes[0]))
+        self.graph.add((add_node, RBDYN_OP["in2"], wrench_nodes[1]))
+        self.graph.add((add_node, RBDYN_OP.out, total_node))
+        return total_node
+
+    def _emit_perturbation(
+        self,
+        perturbation: Any,
+        handler: ConstraintHandler,
+        handler_node: URIRef,
+        motion: GuardedMotion,
+        world_qtys: dict[str, WorldQuantity],
+        seen_error_ids: set[str],
+        error_id_by_constraint: dict[str, str],
+        seen_eval_ids: set[str],
+    ) -> None:
+        """Emit one perturbation: the wrench it applies, the body it acts on, the state that
+        arms it, the conditions that open its window and how long the window stays open.
+        """
+        node = URIRef(perturbation.uri)
+        self.graph.add((node, RDF.type, SIM.Perturbation))
+        self.graph.add((node, PROV.wasDerivedFrom, handler_node))
+        body_node = URIRef(str(perturbation.body.uri))
+        self.graph.add((body_node, RDF.type, GEOM_ENT.SimplicialComplex))
+        self.graph.add((node, SLV["attached-to"], body_node))
+        if handler.runs_in is not None:
+            self.graph.add((node, CSTR_HDL_EXT["runs-in-state"], URIRef(handler.runs_in.uri)))
+        self.graph.add((node, SLV.force, self._emit_perturbation_wrench(perturbation)))
+
+        if perturbation.duration is not None:
+            duration_node = self._declared_uri(f"duration-{perturbation.name}", perturbation)
+            self._emit_duration_measure(duration_node, perturbation.duration)
+            self.graph.add((node, TIME.hasDuration, duration_node))
+
+        members = [
+            spec
+            for spec in (
+                _resolved_spec(item) for item in _flatten_constraint_items(perturbation.conditions)
+            )
+            if not spec.disabled
+        ]
+        if not members:
+            return
+        for spec in members:
+            self._emit_error_evaluator(
+                handler_node,
+                spec,
+                self._constraint_error_node(
+                    spec,
+                    motion,
+                    world_qtys,
+                    seen_error_ids,
+                    error_id_by_constraint,
+                    f"Perturbation '{perturbation.name}'",
+                ),
+                seen_eval_ids,
+            )
+        node_type = _section_expression_type(
+            getattr(perturbation.gate, "logic", None), len(members)
+        )
+        holder = node
+        if node_type is not None:
+            holder = self._declared_uri(f"when-{perturbation.name}", perturbation)
+            self.graph.add((holder, RDF.type, node_type))
+            self.graph.add((node, CSTR_EXT["has-constraint"], holder))
+        for spec in members:
+            self.graph.add((holder, CSTR_EXT["has-constraint"], URIRef(spec.uri)))
 
     def _forwarded_command_signal(
         self,

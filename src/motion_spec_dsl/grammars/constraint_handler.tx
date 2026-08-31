@@ -24,7 +24,20 @@ ConstraintHandler:
         ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
         "controllers"  "{" controllers*=ControllerItem[","]? "}"
         "solvers"      "{" solvers+=SolverItem[","] "}"
+        ("perturbations" "{" perturbations*=PerturbationEntry[","] ","? "}")?
     "}"
+;
+
+PerturbationEntry:
+    name=IRI_TRUNK ":" "on" "<" body=[scene.RigidBody|FQN] ">" "apply"
+    (
+        "force" force=ContextRef "along" force_direction=ContextRef
+        ("torque" moment=ContextRef "about" moment_direction=ContextRef)?
+        |
+        "torque" moment=ContextRef "about" moment_direction=ContextRef
+    )
+    (gate=WhenSection)?
+    ("for" duration=Measure)?
 ;
 
 ControllerItem: ControllerAlias | ControllerEntry ;

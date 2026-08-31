@@ -684,6 +684,12 @@ class SLV(DefinedNamespace):
     _NS = Namespace(f"{URI_CR2B_MM}/task/solver-specification#")
 
 
+class SIM(DefinedNamespace):
+    Perturbation: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/simulation#")
+
+
 class SLV_EXT(DefinedNamespace):
     CommandForwardingSolver: URIRef
     VelocityDistributionSolver: URIRef
