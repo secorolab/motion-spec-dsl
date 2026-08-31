@@ -162,6 +162,7 @@ class ContextQuantity(NamedNamespaceObject):
     type: ContextDeclarationType
     value: (
         Measure
+        | SampledValue
         | VectorXYZ
         | ReferenceValue
         | SnapshotValue
@@ -228,6 +229,15 @@ class Measure:
 
     def __post_init__(self) -> None:
         self.value = const_value(self.value)
+
+
+@dataclass
+class SampledValue:
+    """A scalar drawn per generation from an imported scene distribution — `= sample <d> m`."""
+
+    parent: object | None = field(default=None, repr=False, compare=False)
+    distribution: object | None = None
+    unit: str = ""
 
 
 @dataclass
@@ -577,15 +587,19 @@ class OnPath:
 
 @dataclass
 class SelectorTail:
-    """The subspace/axis selector applied to a quantity in a view or reference."""
+    """The subspace/axis selector applied to a quantity in a view or reference.
 
-    subspace: SubSpace
+    A bare axis (`.x`) leaves `subspace` unset: it names one component of a quantity that is
+    itself a 3-vector, which has no subspace to name.
+    """
+
+    subspace: SubSpace | None = None
     axis: Axis | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self):
         if isinstance(self.subspace, str):
-            self.subspace = SubSpace(self.subspace)
+            self.subspace = SubSpace(self.subspace) if self.subspace else None
         if self.axis is not None and isinstance(self.axis, str):
             self.axis = Axis(self.axis)
 

@@ -111,6 +111,18 @@ _UNSUPPORTED_CONTEXT_TYPES = frozenset(
 # A subspace of these composite kinds resolves to the same scalar QuantityType whether or not
 # an axis is picked (an established quirk this plan does not change, e.g. `.force` and
 # `.force.x` both type Force) -- so a scalar selector has to be checked structurally.
+# A bare axis (`<q>.x`) names one component of a context quantity that is itself a 3-vector --
+# no subspace, because the whole quantity is the subspace. A direction's and a free vector's
+# components are unitless; every other vector's carry the scalar spelling of its own dimension.
+VECTOR_COMPONENT_TYPE: dict[QuantityType, QuantityType] = {
+    QuantityType.Direction: QuantityType.Dimensionless,
+    QuantityType.FreeVector: QuantityType.Dimensionless,
+    QuantityType.Position: QuantityType.Distance,
+    QuantityType.LinearVelocity: QuantityType.LinearVelocity,
+    QuantityType.Force: QuantityType.Force,
+    QuantityType.Torque: QuantityType.Torque,
+}
+
 _SUBSPACE_TYPE: dict[str, QuantityType] = {
     "linvel": QuantityType.LinearVelocity,
     "angvel": QuantityType.AngularVelocity,
@@ -163,6 +175,11 @@ def _world_leaf_type(world_type: WorldQuantityType, subspace, axis, leaf) -> Qua
 
 
 def _context_leaf_type(qty_type: QuantityType, subspace, axis, leaf) -> QuantityType:
+    if subspace is None and axis is not None:
+        component = VECTOR_COMPONENT_TYPE.get(qty_type)
+        if component is None:
+            raise DimensionError(f"a {qty_type} has no axis components.", leaf)
+        return component
     if qty_type == QuantityType.Pose:
         return _pose_subspace_type(subspace, axis, leaf)
     if qty_type in _UNSUPPORTED_CONTEXT_TYPES:

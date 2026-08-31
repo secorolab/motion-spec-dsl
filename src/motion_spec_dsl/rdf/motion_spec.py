@@ -71,6 +71,8 @@ from rdf_utils.namespace import (
 from rdflib.graph import Dataset
 from rdflib.namespace import PROV, RDF, RDFS, SDO, XSD, Namespace
 from rdflib.term import BNode, Literal, URIRef
+from scene_dsl.classes.distrib import DistributionRef
+from scene_dsl.rdf.distrib import add_sampled_quantity
 from textx import get_model
 from textx.scoping import get_included_models
 
@@ -113,6 +115,7 @@ from motion_spec_dsl.classes.context import (
     QuantityType,
     ReferenceGeneratorType,
     ReferenceValue,
+    SampledValue,
     SnapshotValue,
     VectorXYZ,
     WorldQuantity,
@@ -141,6 +144,7 @@ from motion_spec_dsl.classes.coordinates import (
 )
 from motion_spec_dsl.classes.dimensions import (
     DIMENSION_VECTOR,
+    VECTOR_COMPONENT_TYPE,
 )
 from motion_spec_dsl.classes.dimensions import (
     infer as _infer_expr_type,
@@ -2597,12 +2601,18 @@ class MotionSpecDatasetBuilder:
     def _context_ref_view_spec(
         self,
         quantity: ContextQuantity,
-        subspace_raw: str,
+        subspace_raw: str | None,
         axis: str | None,
     ) -> tuple[Any, Any, Any] | None:
         """The (scalar type, view type, view subspace) for a context pose/path reference's
         subspace+axis, or None when that subspace exposes no view.
+
+        A bare axis names a component of a quantity that is itself a 3-vector, so it has no
+        view type or subspace of its own -- only the axis link distinguishes it.
         """
+        if subspace_raw is None:
+            component_type = VECTOR_COMPONENT_TYPE.get(quantity.type)
+            return None if component_type is None else (component_type, None, None)
         if quantity.type in {QuantityType.Pose, ReferenceGeneratorType.Path}:
             if subspace_raw == "position":
                 return (
@@ -2657,7 +2667,7 @@ class MotionSpecDatasetBuilder:
     def _emit_context_ref_view_node(
         self,
         quantity: ContextQuantity,
-        subspace_raw: str,
+        subspace_raw: str | None,
         axis: str | None,
     ) -> URIRef:
         """Emit (once) the scalar/coordinate node and its map:View for a subspace of a context
@@ -2668,7 +2678,7 @@ class MotionSpecDatasetBuilder:
         if view_spec is None:
             return URIRef(quantity.uri)
         scalar_type, view_type, view_subspace = view_spec
-        suffix = f"{subspace_raw}" + (f".{axis}" if axis is not None else "")
+        suffix = ".".join(part for part in (subspace_raw, axis) if part is not None)
         node = URIRef(f"{quantity.uri}.{suffix}")
         super_node = (
             self._reference_output_node(quantity)
@@ -2700,14 +2710,19 @@ class MotionSpecDatasetBuilder:
         view_node = URIRef(f"{quantity.uri}.view-{suffix}")
         if view_node not in self._emitted_views:
             self._emit_view(view_node)
-            if axis is None or quantity.type not in {
-                QuantityType.Pose,
-                ReferenceGeneratorType.Path,
-            }:
+            if view_type is not None and (
+                axis is None
+                or quantity.type
+                not in {
+                    QuantityType.Pose,
+                    ReferenceGeneratorType.Path,
+                }
+            ):
                 self.graph.add((view_node, RDF.type, view_type))
             self.graph.add((view_node, MAP.superobject, super_node))
             self.graph.add((view_node, MAP.subobject, view_target))
-            self.graph.add((view_node, MAP.subspace, view_subspace))
+            if view_subspace is not None:
+                self.graph.add((view_node, MAP.subspace, view_subspace))
             if axis is not None:
                 self.graph.add((view_node, MAP.axis, MAP[axis]))
         if component_coord is not None:
@@ -2742,6 +2757,9 @@ class MotionSpecDatasetBuilder:
                 continue
             if quantity.type == ReferenceGeneratorType.Admittance:
                 self._emit_admittance_quantity(node, quantity)
+                continue
+            if isinstance(quantity.value, SampledValue):
+                self._emit_sampled_quantity(node, quantity)
                 continue
             if quantity.type == QuantityType.Duration and isinstance(quantity.value, Measure):
                 self._emit_duration_measure(node, quantity.value)
@@ -4008,10 +4026,13 @@ class MotionSpecDatasetBuilder:
 
         quantity = _resolved_context_quantity(quantity)
         subspace_raw = getattr(ref, "subspace", None)
+        axis = semantic_axis_label(getattr(ref, "axis", None))
         if subspace_raw is not None:
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
-            axis = semantic_axis_label(getattr(ref, "axis", None))
             return self._emit_context_ref_view_node(quantity, subspace, axis)
+        if axis is not None:
+            # A bare axis on a 3-vector quantity: the same component view, with no subspace to name.
+            return self._emit_context_ref_view_node(quantity, None, axis)
         if isinstance(quantity.value, ReferenceValue) and not isinstance(
             quantity.value.expr.as_op_tree(), QOpNode
         ):
@@ -4703,6 +4724,23 @@ class MotionSpecDatasetBuilder:
         """
         self.graph.add((node, RDF.type, TIME.Duration))
         self._emit_scalar_quantity(node, value.value, NS_MM_QUDT_QTY["Time"], _dsl_unit(value.unit))
+
+    def _emit_sampled_quantity(self, node: URIRef, quantity: ContextQuantity) -> None:
+        """Emit a `sample <distribution> <unit>` scalar: the typing, the kind, the unit and the
+        from-distribution link. The number itself is drawn per generation downstream, so no
+        `qudt:value` is written here.
+        """
+        if quantity.type == QuantityType.Duration:
+            self.graph.add((node, RDF.type, TIME.Duration))
+            qkind = NS_MM_QUDT_QTY["Time"]
+        else:
+            qkind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity.type) or QUDT_QKIND[quantity.type]
+        self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
+        self._emit_quantity_kind(node, qkind)
+        self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
+        add_sampled_quantity(
+            self.graph, node, DistributionRef(parent=None, distribution=quantity.value.distribution)
+        )
 
     def _section_expression(self, motion: GuardedMotion, phase: str):
         """A when/until section's expression node and the members it holds.
@@ -6137,9 +6175,15 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, SLV.force, self._emit_perturbation_wrench(perturbation)))
 
         if perturbation.duration is not None:
-            duration_node = self._declared_uri(f"duration-{perturbation.name}", perturbation)
-            self._emit_duration_measure(duration_node, perturbation.duration)
-            self.graph.add((node, TIME.hasDuration, duration_node))
+            self.graph.add(
+                (
+                    node,
+                    TIME.hasDuration,
+                    self._emit_duration_threshold_node(
+                        perturbation.duration, perturbation, f"duration-{perturbation.name}"
+                    ),
+                )
+            )
 
         members = [
             spec

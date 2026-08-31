@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ from textx import get_model
 
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.sampling import draw_samples
 
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 # Agents and file entities are shared concepts: one IRI each, in the space motion-spec's
@@ -302,7 +304,7 @@ def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
     return serialized
 
 
-def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
+def _gen_scenex(model, output_dir: Path, rng: random.Random) -> tuple[list[str], list[str]]:
     """Generate JSON-LD and KDL headers for directly imported executable scenes."""
     import scene_dsl
     from jinja2 import Environment, FileSystemLoader
@@ -321,6 +323,9 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
         jsonld_name = f"{Path(imp.importURI).stem}.scenex.ld.json"
         jsonld_path = output_dir / jsonld_name
         scene_graph = create_scenex_model_graph(loaded[0])
+        # Sampled quantities become plain values here: both the serializer below and the KDL
+        # walk resolve poses numerically, so neither may see a valueless quantity.
+        draw_samples(scene_graph, rng)
         serialized = scene_graph.serialize(format="json-ld", auto_compact=True, indent=2)
         serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
         jsonld_path.write_text(serialized)
@@ -414,10 +419,14 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     """textx generator: build the dataset for `model` and write its JSON-LD, app manifest
     and FSM outputs.
     """
-    del metamodel, overwrite, debug, kwargs
+    del metamodel, overwrite, debug
+    seed = kwargs.get("seed")
+    # One generator for the whole invocation, so a seed pins every graph's draws.
+    rng = random.Random(int(seed) if seed is not None else random.SystemRandom().randrange(2**32))
 
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
+    draw_samples(dataset.default_graph, rng)
 
     output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -432,7 +441,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     print(f"  wrote {graph_path}")
 
-    scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir)
+    scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir, rng)
 
     # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
     # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the

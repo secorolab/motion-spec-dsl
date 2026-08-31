@@ -27,9 +27,11 @@ from motion_spec_dsl.classes.context import (
     ContextRef,
     GeometricPropKey,
     Measure,
+    QuantityLeaf,
     QuantityType,
     ReferenceGeneratorType,
     VectorXYZ,
+    View,
     WorldQuantityType,
     _geometric_operand_kind,
     _resolved_context_quantity,
@@ -43,6 +45,7 @@ from motion_spec_dsl.classes.coordinates import (
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
+from motion_spec_dsl.classes.dimensions import VECTOR_COMPONENT_TYPE
 from motion_spec_dsl.classes.motion_spec import Model, ToleranceDefault
 from motion_spec_dsl.classes.path import PathValue, ProfileSpec
 from motion_spec_dsl.classes.validation.common import (
@@ -712,6 +715,33 @@ def validate_two_subspace_coordinates(model: Model) -> None:
         elif isinstance(quantity.value, WrenchCoordinate):
             _require_arity(quantity.value.torque, 3, "wrench 'torque' subspace", quantity)
             _require_arity(quantity.value.force, 3, "wrench 'force' subspace", quantity)
+
+
+def validate_bare_axis_selectors(model: Model) -> None:
+    """A bare `.x` names one component of a quantity that is itself a 3-vector. A world
+    quantity always names its subspace first, and a scalar has no components at all.
+    """
+    for holder in (View, ContextRef, QuantityLeaf):
+        for item in get_children_of_type(holder, model):
+            if item.axis is None or item.subspace is not None:
+                continue
+            quantity = getattr(item, "quantity", None)
+            if isinstance(quantity, ContextQuantity):
+                resolved = _resolved_context_quantity(quantity)
+                if resolved.type in VECTOR_COMPONENT_TYPE:
+                    continue
+                raise semantic_error(
+                    f"'{resolved.name}' is a {resolved.type}, which has no axis components; "
+                    f"a bare '.{item.axis}' selects one axis of a 3-vector context quantity "
+                    "(direction, free-vector, position, linear-velocity, force, torque).",
+                    item,
+                )
+            name = getattr(quantity, "name", None)
+            raise semantic_error(
+                f"'{name}' names its subspace before an axis, as in '.linvel.{item.axis}'; "
+                f"a bare '.{item.axis}' belongs only on a 3-vector context quantity.",
+                item,
+            )
 
 
 def validate_unique_constraint_names(model: Model) -> None:

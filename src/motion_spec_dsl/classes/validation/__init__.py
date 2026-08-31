@@ -12,6 +12,7 @@ from motion_spec_dsl.classes.validation.common import (
 )
 from motion_spec_dsl.classes.validation.constraints import (
     validate_alignment_views,
+    validate_bare_axis_selectors,
     validate_direction_cosine_components,
     validate_euler_components,
     validate_geometric_distance_views,
@@ -34,6 +35,7 @@ from motion_spec_dsl.classes.validation.detects import (
 from motion_spec_dsl.classes.validation.expressions import (
     validate_controlled_expressions,
     validate_expression_dimensions,
+    validate_sampled_quantities,
 )
 from motion_spec_dsl.classes.validation.handlers import (
     validate_commanded_quantity_is_measured,
@@ -68,6 +70,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_direction_cosine_components(model)
     validate_two_subspace_coordinates(model)
     validate_unit_kinds(model)
+    validate_bare_axis_selectors(model)
     validate_expression_dimensions(model)
     validate_scalar_order_relations(model)
     validate_alignment_views(model)
@@ -86,4 +89,5 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_controlled_expressions(model)
     validate_mobile_platform_solver_quantity(model)
     validate_perturbations(model)
+    validate_sampled_quantities(model)
     validate_ros(model)

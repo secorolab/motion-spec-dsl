@@ -4,6 +4,7 @@
 """textX entry-point descriptors for the motion-spec language."""
 
 from textx import GeneratorDesc, LanguageDesc
+from textx.registration import GeneratorParam
 
 from motion_spec_dsl.gens import _gen_graph
 from motion_spec_dsl.langs import motion_spec_metamodel
@@ -20,4 +21,11 @@ motion_spec_gen = GeneratorDesc(
     target="jsonld",
     description="Generate JSON-LD from a motion specification",
     generator=_gen_graph,
+    custom_args=[
+        GeneratorParam(
+            name="seed",
+            description="Seed for drawing sampled quantities; a fresh one when omitted",
+            mandatory=False,
+        )
+    ],
 )

@@ -6,6 +6,7 @@ emits, because both call `classes.dimensions.infer`.
 
 from __future__ import annotations
 
+from scene_dsl.classes.distrib import NormalDistribution, UniformDistribution
 from textx import get_children_of_type
 
 from motion_spec_dsl.classes.constraint_handler import _resolved_controller
@@ -14,6 +15,7 @@ from motion_spec_dsl.classes.context import (
     ContextRef,
     QOpNode,
     ReferenceValue,
+    SampledValue,
     SnapshotValue,
     View,
     WorldQuantity,
@@ -45,6 +47,23 @@ def validate_expression_dimensions(model: Model) -> None:
     for view in get_children_of_type(View, model):
         if view.expr is not None:
             _infer_or_raise(view.expr, view)
+
+
+def validate_sampled_quantities(model: Model) -> None:
+    """A `sample <distribution>` scalar must draw from a 1-D uniform or normal distribution."""
+    for quantity in get_children_of_type(ContextQuantity, model):
+        quantity = _resolved_context_quantity(quantity)
+        if not isinstance(quantity.value, SampledValue):
+            continue
+        spec = getattr(quantity.value.distribution, "spec", None)
+        if isinstance(spec, (UniformDistribution, NormalDistribution)) and spec.dimension == 1:
+            continue
+        raise semantic_error(
+            f"'{quantity.name}' samples a scalar quantity, which draws one number, so its "
+            "distribution must be a 1-D uniform or normal; a 3-D distribution belongs on a "
+            "scene pose.",
+            quantity,
+        )
 
 
 def validate_controlled_expressions(model: Model) -> None:

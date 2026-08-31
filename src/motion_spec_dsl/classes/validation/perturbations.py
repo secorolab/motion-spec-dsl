@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
+    Measure,
     QuantityType,
     _resolved_context_quantity,
 )
@@ -63,10 +64,16 @@ def validate_perturbations(model: Model) -> None:
                         f"({quantity.type}) as its {role}, which must be a {expected} quantity.",
                         perturbation,
                     )
-            unit = getattr(perturbation.duration, "unit", None)
-            if perturbation.duration is not None and unit not in ("s", "ms"):
+            if perturbation.duration is None:
+                continue
+            bare = getattr(perturbation.duration, "bare", None)
+            named = _named_quantity(perturbation.duration)
+            inline_ok = isinstance(bare, Measure) and bare.unit in ("s", "ms")
+            named_ok = named is not None and named.type == QuantityType.Duration
+            if not inline_ok and not named_ok:
                 raise semantic_error(
-                    f"Perturbation '{perturbation.name}' holds for '{unit}', which is not a "
-                    "duration; a window is stated in 's' or 'ms'.",
+                    f"Perturbation '{perturbation.name}' states a window that is not a duration; "
+                    "it holds for an inline 's' or 'ms' literal, or for a declared duration "
+                    "quantity.",
                     perturbation,
                 )

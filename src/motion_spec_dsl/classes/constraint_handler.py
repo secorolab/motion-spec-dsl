@@ -130,8 +130,8 @@ class PerturbationEntry(NamedNamespaceObject):
     force pattern arrives as a new quantity form rather than as new handler syntax.
 
     The window opens once per state activation, when the gate holds, and closes after
-    `duration`; with no gate it opens on state entry, with no duration it stays open until the
-    state exits.
+    `duration` — an inline literal or a declared duration quantity; with no gate it opens on
+    state entry, with no duration it stays open until the state exits.
     """
 
     parent: object
@@ -142,7 +142,7 @@ class PerturbationEntry(NamedNamespaceObject):
     moment: ContextRef | None = None
     moment_direction: ContextRef | None = None
     gate: object | None = None
-    duration: Measure | None = None
+    duration: ContextRef | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
@@ -151,17 +151,6 @@ class PerturbationEntry(NamedNamespaceObject):
     def conditions(self) -> list:
         """The constraints the gate holds, in authored order; empty when there is no gate."""
         return list(getattr(self.gate, "constraints", []) or [])
-
-    @property
-    def duration_seconds(self) -> float | None:
-        """The window length in seconds, or None when it lasts until the state exits."""
-        if self.duration is None:
-            return None
-        if self.duration.unit not in ("s", "ms"):
-            raise ValueError(
-                f"Perturbation '{self.name}' duration unit '{self.duration.unit}' must be 's' or 'ms'."
-            )
-        return float(self.duration.value)
 
 
 @dataclass

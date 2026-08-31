@@ -180,7 +180,7 @@ OnPath:
 ;
 
 SelectorTail:
-    "." subspace=SubSpace ("." axis=Axis)?
+    "." subspace=SubSpace ("." axis=Axis)? | "." axis=Axis
 ;
 
 SubSpace:
@@ -270,8 +270,13 @@ ScalarContextQuantityType:
 ;
 
 PlainContextQuantityValue:
-    QuantityValue | SnapshotValue | DirectionBetween | PoseCoordinate | VelocityTwistCoordinate
+    SampledValue | QuantityValue | SnapshotValue | DirectionBetween | PoseCoordinate
+    | VelocityTwistCoordinate
     | AccelerationTwistCoordinate | WrenchCoordinate | ConfigValue | ReferenceValue
+;
+
+SampledValue:
+    "=" "sample" "<" distribution=[scene.Distribution|FQN] ">" unit=Unit
 ;
 
 DirectionBetween:

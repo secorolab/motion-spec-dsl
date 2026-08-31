@@ -37,7 +37,7 @@ PerturbationEntry:
         "torque" moment=ContextRef "about" moment_direction=ContextRef
     )
     (gate=WhenSection)?
-    ("for" duration=Measure)?
+    ("for" duration=ContextRef)?
 ;
 
 ControllerItem: ControllerAlias | ControllerEntry ;
