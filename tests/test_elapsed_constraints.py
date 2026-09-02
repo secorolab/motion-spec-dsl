@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from rdflib.namespace import RDF
 
-from motion_spec_dsl.rdf_parser.vocab import CSTR, CSTR_EXT, QUDT_SCHEMA, TIME
+from motion_spec_dsl.rdf_parser.vocab import CSTR, CSTR_EXT, QUDT_SCHEMA, SOSA, TIME
 from rdf_utils.namespace import NS_MM_QUDT_QTY as QKIND, NS_MM_QUDT_UNIT as QUDT_UNIT
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.gens import _build_manifest
@@ -49,7 +49,7 @@ def test_elapsed_greater_than_emits_native_time_constraint(parse_mutated):
 
     interval = next(g.subjects(RDF.type, TIME.ProperInterval))
     assert (interval, RDF.type, TIME.ProperInterval) in g
-    assert g.value(interval, TIME.hasDuration) is None
+    assert g.value(cstr, TIME.hasTime) == interval
     beginning = g.value(interval, TIME.hasBeginning)
     end = g.value(interval, TIME.hasEnd)
     assert (beginning, RDF.type, TIME.Instant) in g
@@ -81,6 +81,32 @@ def test_elapsed_equality_emits_reference_and_tolerance(parse_mutated):
     tolerance = g.value(cstr, CSTR_EXT.tolerance)
     assert float(g.value(tolerance, QUDT_SCHEMA.value)) == pytest.approx(10.0)
     assert g.value(tolerance, QUDT_SCHEMA.unit) == QUDT_UNIT["MilliSEC"]
+
+
+def test_plain_elapsed_interval_begins_at_motion_entry(parse_mutated):
+    g = _build(parse_mutated, "wait5: elapsed greater than 5.0 s")
+
+    cstr = next(g.subjects(RDF.type, CSTR_EXT.TimeConstraint))
+    interval = g.value(cstr, TIME.hasTime)
+    assert (interval, RDF.type, TIME.ProperInterval) in g
+    assert str(g.value(interval, TIME.hasBeginning)).endswith("/motion-entry")
+
+
+def test_elapsed_since_observed_hangs_the_interval_on_the_quantitys_phenomenon_time(
+    parse_mutated,
+):
+    g = _build(
+        parse_mutated,
+        "seen: elapsed since <shared.world.pose-ee-base> observed less than 1.0 s",
+    )
+
+    cstr = next(g.subjects(RDF.type, CSTR_EXT.TimeConstraint))
+    interval = g.value(cstr, TIME.hasTime)
+    instant = g.value(interval, TIME.hasBeginning)
+    assert (instant, RDF.type, TIME.Instant) in g
+
+    pose = next(g.subjects(SOSA.phenomenonTime, instant))
+    assert str(pose).endswith("/shared/world/pose-ee-base")
 
 
 def test_manifest_includes_time_shacl_exactly_once():

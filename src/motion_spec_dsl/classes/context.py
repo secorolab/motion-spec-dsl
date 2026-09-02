@@ -539,7 +539,12 @@ class Axis(StrEnum):
 
 @dataclass
 class ElapsedTime:
+    """Time since motion entry, or -- when `observed` names a world quantity -- since the
+    last reading of that quantity landed.
+    """
+
     marker: bool = False
+    observed: object | None = None
     parent: object | None = field(default=None, repr=False, compare=False)
 
 
@@ -641,6 +646,10 @@ class View:
     @property
     def is_elapsed(self) -> bool:
         return self.elapsed is not None
+
+    @property
+    def is_observation_age(self) -> bool:
+        return self.elapsed is not None and self.elapsed.observed is not None
 
 
 @dataclass

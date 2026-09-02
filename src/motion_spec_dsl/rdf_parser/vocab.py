@@ -534,6 +534,7 @@ class TIME(DefinedNamespace):
     unitSecond: URIRef
 
     inTimePosition: URIRef
+    hasTime: URIRef
     hasTRS: URIRef
     numericPosition: URIRef
     hasBeginning: URIRef

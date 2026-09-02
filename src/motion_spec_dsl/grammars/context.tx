@@ -164,7 +164,7 @@ GeometricPrimitiveType:
 ;
 
 ElapsedTime:
-    marker?="elapsed"
+    marker?="elapsed" ("since" "<" observed=[WorldQuantity|FQN] ">" "observed")?
 ;
 
 ProgressAlong:

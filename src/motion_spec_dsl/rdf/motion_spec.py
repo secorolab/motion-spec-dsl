@@ -522,6 +522,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_orientation_coords: set[URIRef] = set()
         self._path_projections: set[URIRef] = set()
         self._motion_time_endpoints_index: dict[str, tuple[URIRef, URIRef]] = {}
+        self._observation_instant_index: dict[str, URIRef] = {}
 
     def build(self) -> tuple[Dataset, dict[str, Any]]:
         """Emit the full dataset and return it with its JSON-LD namespace context.
@@ -4637,13 +4638,28 @@ class MotionSpecDatasetBuilder:
         self._motion_time_endpoints_index[key] = endpoints
         return endpoints
 
+    def _observation_instant(self, quantity: Any) -> URIRef:
+        """The instant the quantity's latest reading applies to: SOSA's phenomenonTime on the
+        observed property, filled by the run."""
+        key = str(quantity.uri)
+        cached = self._observation_instant_index.get(key)
+        if cached is not None:
+            return cached
+        node = self._owned_uri(f"{quantity.name}-observed", quantity)
+        self.graph.add((node, RDF.type, TIME.Instant))
+        self.graph.add((URIRef(quantity.uri), SOSA.phenomenonTime, node))
+        self._observation_instant_index[key] = node
+        return node
+
     def _emit_elapsed_constraint(
         self, node: URIRef, spec: ConstraintSpecification, motion: GuardedMotion
     ) -> None:
         """A timing constraint: a cstr-ext:TimeConstraint over the time:ProperInterval
-        spanning motion entry to now, whose measured time:Duration (filled at runtime from
-        the world clock) is compared against an authored Duration threshold, reference, or
-        tolerance. No kinematics — codegen reads the clock directly."""
+        spanning motion entry -- or the quantity's last observation -- to now, whose measured
+        time:Duration (filled at runtime from the world clock) is compared against an authored
+        Duration threshold, reference, or tolerance. time:hasTime ties the constraint to that
+        interval, which is how a reader finds where the clock counts from. No kinematics —
+        codegen reads the clock directly."""
         expr = spec.expr
         self.graph.add((node, RDF.type, CSTR.Constraint))
         self.graph.add((node, RDF.type, CSTR_EXT.TimeConstraint))
@@ -4656,10 +4672,13 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, CSTR.quantity, qty_node))
 
         entry_node, current_node = self._motion_time_endpoints(motion)
+        observed = spec.view.elapsed.observed
+        begin_node = self._observation_instant(observed) if observed is not None else entry_node
         interval_node = self._owned_uri(f"{spec.name}-interval", motion)
         self.graph.add((interval_node, RDF.type, TIME.ProperInterval))
-        self.graph.add((interval_node, TIME.hasBeginning, entry_node))
+        self.graph.add((interval_node, TIME.hasBeginning, begin_node))
         self.graph.add((interval_node, TIME.hasEnd, current_node))
+        self.graph.add((node, TIME.hasTime, interval_node))
 
         if isinstance(expr, GreaterThanConstraint):
             self.graph.add((node, RDF.type, CSTR.UnilateralConstraint))
