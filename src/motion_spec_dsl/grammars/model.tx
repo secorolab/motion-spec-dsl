@@ -65,8 +65,17 @@ RosMeasurementAssign:
 RosSubscriptionDecl:
     name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING "{"
         ( "observes" "{" targets+=WorldQuantityRef[","] ","? "}"
-          pose_field=ID "from" pose_container=ID ","?
+          pose_field=ID "from" pose_container=ID (observed=ObservedPose)? ","?
         | "observes" "{" cameras+=CameraTargetRef[","] ","? "}" )
+    "}"
+;
+
+// What the reading is a pose of, and in whose frame it arrives. Stated when the publisher
+// reports something other than the observed quantity: the composition into that quantity is
+// the model's to make, not the publisher's.
+ObservedPose:
+    "{" "of" ":" "<" of=[scene.Frame|FQN] ">" ","
+        "wrt" ":" "<" wrt=[scene.Frame|FQN] ">" ","?
     "}"
 ;
 

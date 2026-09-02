@@ -621,6 +621,20 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, ROS["type-name"], Literal(subscription.type_name)))
         if subscription.pose_path is not None:
             self.graph.add((node, ROS["field-path"], Literal(subscription.pose_path)))
+        # What the reading itself is: a pose like any other, so the model states it with the
+        # geometric vocabulary rather than the channel implying it.
+        if subscription.observed is not None:
+            observed = URIRef(f"{subscription.uri}-observed-pose")
+            self.graph.add((observed, RDF.type, NS_MM_GEOM_REL["Pose"]))
+            self.graph.add((observed, GEOM_REL.of, URIRef(str(subscription.observed.of.uri))))
+            self.graph.add(
+                (
+                    observed,
+                    GEOM_REL["with-respect-to"],
+                    URIRef(str(subscription.observed.wrt.uri)),
+                )
+            )
+            self.graph.add((node, SOSA.observedProperty, observed))
         for target in (*subscription.targets, *subscription.cameras):
             self.graph.add(
                 (

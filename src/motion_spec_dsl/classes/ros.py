@@ -63,6 +63,7 @@ class RosSubscriptionDecl(NamedNamespaceObject):
     type_name: str
     pose_field: str | None = None
     pose_container: str | None = None
+    observed: object | None = None
     targets: list = field(default_factory=list)
     cameras: list = field(default_factory=list)
 
