@@ -4086,14 +4086,15 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
         scalar_t: Any,
     ) -> None:
-        """Link a constraint's satisfaction band: its own `within`, else the model-wide
-        default for the unit its error is measured in -- `position` for a metre error,
-        whether one axis or three, `orientation` for a radian one.
+        """Link a constraint's satisfaction band: its own `within`, else -- for an equality
+        only -- the model-wide default for the unit its error is measured in, `position` for
+        a metre error, whether one axis or three, `orientation` for a radian one.
 
         An equality has to end up with one -- `equal to <x>` names a single point and `on
         <path>` a single curve, and neither is ever met exactly. A gate need not: its
         admissible region has an interior, so the band only says how close to the boundary
-        counts as arrived, and a model that states none asks for the boundary itself.
+        counts as arrived, and a model that states none asks for the boundary itself. The
+        default is an equality's band, so a gate never inherits it and never trips a band early.
 
         A band carries the kind and unit of the value it bounds, so a whole pose -- a position
         and an orientation in one error -- cannot state one: metres and radians would share a
@@ -4102,7 +4103,12 @@ class MotionSpecDatasetBuilder:
         band = spec.tolerance
         owner, suffix = motion, f"{spec.name}-tolerance"
         default_kind = _TOLERANCE_DEFAULT_KIND.get(scalar_t, scalar_t)
-        if band is None:
+        is_equality = (
+            isinstance(spec.expr, EqualityConstraint)
+            or spec.view.on is not None
+            or spec.view.moving is not None
+        )
+        if band is None and is_equality:
             # One node per kind: the model states the default once, so the graph shows every
             # constraint that takes it pointing at the same band.
             band = self._tolerance_defaults.get(default_kind)
@@ -4115,11 +4121,7 @@ class MotionSpecDatasetBuilder:
                 "'.orientation' separately, each in its own unit."
             )
         if band is None:
-            if (
-                isinstance(spec.expr, EqualityConstraint)
-                or spec.view.on is not None
-                or spec.view.moving is not None
-            ):
+            if is_equality:
                 raise ValueError(
                     f"Equality constraint '{spec.name}' states no band. An equality is only ever "
                     "satisfied within one, so it must say which: '... within <band>', or "
