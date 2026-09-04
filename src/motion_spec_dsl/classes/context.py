@@ -30,10 +30,16 @@ class WorldQuantityType(StrEnum):
     VelocityTwist = "VelocityTwist"
     Wrench = "Wrench"
     JointPosition = "JointPosition"
+    JointCurrent = "JointCurrent"
+
+
+# DSL keywords whose established enum spelling is not their kebab-case form.
+_AUTHORED_KEYWORD_ALIASES = {"current": "ElectricCurrent"}
 
 
 def _authored_enum(enum_type: type[_EnumT], keyword: str) -> _EnumT:
     """Translate a kebab-case DSL keyword to its established enum member."""
+    keyword = _AUTHORED_KEYWORD_ALIASES.get(keyword, keyword)
     normalized = keyword.replace("-", "").casefold()
     for member in enum_type:
         if member.value.replace("-", "").casefold() == normalized:
@@ -138,6 +144,7 @@ class QuantityType(StrEnum):
     Force = "Force"
     Torque = "Torque"
     Mass = "Mass"
+    ElectricCurrent = "ElectricCurrent"
     FreeVector = "FreeVector"
     Dimensionless = "Dimensionless"
     Duration = "Duration"
@@ -591,6 +598,16 @@ class OnPath:
 
 
 @dataclass
+class NormView:
+    """The Euclidean norm of a 3-vector view, optionally of its component across a direction."""
+
+    quantity: object
+    selector: "SelectorTail | None" = None
+    across: object | None = None
+    parent: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass
 class SelectorTail:
     """The subspace/axis selector applied to a quantity in a view or reference.
 
@@ -624,6 +641,7 @@ class View:
     progress: ProgressAlong | None = None
     moving: MovingAlong | None = None
     on: OnPath | None = None
+    norm: NormView | None = None
 
     def __post_init__(self):
         # An on-path view still selects a subspace of a world quantity, so it fills the same
@@ -631,6 +649,9 @@ class View:
         if self.on is not None:
             self.quantity = self.on.moved
             self.selector = self.on.selector
+        if self.norm is not None:
+            self.quantity = self.norm.quantity
+            self.selector = self.norm.selector
         # Driving along a path and guarding progress along it both act on the one speed
         # measured along the tangent, so they command in the linear-velocity subspace.
         if self.moving is not None or self.progress is not None:

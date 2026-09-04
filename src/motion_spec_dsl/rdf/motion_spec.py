@@ -184,6 +184,8 @@ from motion_spec_dsl.rdf.common import (
     _angle_bound,
     _angle_unit,
     _axis_vector,
+    _constraint_scalar_id,
+    _constraint_scalar_type,
     _context_quantity,
     _DistancePlan,
     _dsl_unit,
@@ -197,10 +199,14 @@ from motion_spec_dsl.rdf.common import (
     _is_distance_view,
     _is_geometric_distance_view,
     _is_incident_angle_view,
+    _is_norm_view,
     _is_plane_angle_view,
     _is_projection_view,
     _node_name,
+    _norm_id,
+    _norm_scalar_type,
     _ns_term,
+    _quantity_axis_frame,
     _resolved_constraint_items,
     _scalar_id,
     _scalar_type,
@@ -515,6 +521,7 @@ class MotionSpecDatasetBuilder:
         self._emitted_distance_ops: set[str] = set()
         self._emitted_alignment_ops: set[str] = set()
         self._emitted_geometric_distance_ops: set[str] = set()
+        self._emitted_norm_ops: set[URIRef] = set()
         self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._angular_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
@@ -2242,10 +2249,12 @@ class MotionSpecDatasetBuilder:
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by")
 
-            if qty.type == WorldQuantityType.JointPosition:
+            if qty.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent):
                 joint = _geo_prop(props, "joint")
                 if joint:
                     self.graph.add((node, KC_STAT["of-joint"], self._owned_uri(joint, qty)))
+
+            if qty.type == WorldQuantityType.JointPosition:
                 normalization = _geo_prop_value(props, "normalization")
                 if normalization is not None:
                     self._emit_angle_normalization(node, normalization, qty, f"norm-{qty.name}")
@@ -2284,6 +2293,9 @@ class MotionSpecDatasetBuilder:
                 owner,
             )
 
+        if getattr(view, "norm", None) is not None:
+            return self._norm_view_node(view, owner)
+
         quantity = getattr(view, "quantity", None)
         if isinstance(quantity, WorldQuantity):
             subspace_raw = getattr(view, "subspace", None)
@@ -2293,6 +2305,7 @@ class MotionSpecDatasetBuilder:
                 WorldQuantityType.VelocityTwist,
                 WorldQuantityType.Wrench,
                 WorldQuantityType.JointPosition,
+                WorldQuantityType.JointCurrent,
             }:
                 return URIRef(quantity.uri)
             subspace = str(getattr(subspace_raw, "value", subspace_raw))
@@ -2365,6 +2378,84 @@ class MotionSpecDatasetBuilder:
         self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
         self.graph.add((view_uri, MAP.subobject, scalar_uri))
         self.graph.add((view_uri, MAP.subspace, MAP[mapped_subspace]))
+
+    def _norm_view_node(self, view: Any, owner: Any) -> URIRef:
+        """The scalar a `norm of <q>.<subspace> [across <d>]` view names, emitting the vector
+        view it reads, the direction check, and the VectorNorm operator that fills it."""
+        quantity = view.quantity
+        if (
+            not isinstance(quantity, WorldQuantity)
+            or view.subspace is None
+            or view.axis is not None
+        ):
+            raise ValueError(f"norm of '{_node_name(quantity)}' is not a 3-vector view")
+        raw = str(getattr(view.subspace, "value", view.subspace))
+        mapped = (
+            raw
+            if quantity.type == WorldQuantityType.Pose and raw == "position"
+            else SUBSPACE_ALIAS.get(raw, raw)
+        )
+        scalar_t = _norm_scalar_type(quantity, mapped)
+
+        vector_uri = self._owned_uri(_scalar_id(quantity, mapped, None), owner)
+        if quantity.type == WorldQuantityType.Pose:
+            self._register_pose_position_view(vector_uri, quantity, owner)
+            in_node = self._component_view(URIRef(quantity.uri), "position")
+        elif quantity.type == WorldQuantityType.Wrench:
+            self._register_wrench_vector_view(vector_uri, quantity, mapped, owner)
+            in_node = vector_uri
+        else:
+            self._register_twist_vector_view(vector_uri, quantity, mapped, owner)
+            in_node = vector_uri
+
+        direction_qty = None
+        across_ref = view.norm.across
+        if across_ref is not None:
+            direction_qty = _resolved_context_quantity(_context_quantity(across_ref))
+            if direction_qty is None or direction_qty.type != QuantityType.Direction:
+                raise ValueError(
+                    f"norm of '{quantity.name}.{raw}' across "
+                    f"'{getattr(direction_qty, 'name', across_ref)}': not a direction"
+                )
+            vector_frame = _quantity_axis_frame(quantity)
+            direction_frame = _geo_prop(direction_qty.props, "as-seen-by")
+            if vector_frame != direction_frame:
+                raise ValueError(
+                    f"norm of '{quantity.name}.{raw}' across '{direction_qty.name}': direction is "
+                    f"seen by '{direction_frame}', the vector by '{vector_frame}'"
+                )
+
+        norm_id = _norm_id(quantity, mapped, getattr(direction_qty, "name", None))
+        norm_uri = self._owned_uri(norm_id, owner)
+        self._add_quantity(norm_uri, scalar_t)
+        op_node = self._owned_uri(f"compute-{norm_id}", owner)
+        if op_node not in self._emitted_norm_ops:
+            self._emitted_norm_ops.add(op_node)
+            self.graph.add((op_node, RDF.type, GEOM_OP_EXT.VectorNorm))
+            self.graph.add((op_node, GEOM_OP["in"], in_node))
+            if direction_qty is not None:
+                self.graph.add((op_node, GEOM_OP.direction, URIRef(direction_qty.uri)))
+            self.graph.add((op_node, GEOM_OP_EXT.norm, norm_uri))
+        return norm_uri
+
+    def _register_twist_vector_view(
+        self,
+        scalar_uri: URIRef,
+        quantity: WorldQuantity,
+        mapped_subspace: str,
+        owner: Any,
+    ) -> None:
+        """Register a velocity-twist view exposing its whole linear/angular 3-vector."""
+        prop = WORLD_SPECS[quantity.type][3][mapped_subspace]
+        self._add_quantity(scalar_uri, prop[3])
+        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, None)}", owner)
+        if view_uri in self._emitted_views:
+            return
+        self._emit_view(view_uri)
+        self.graph.add((view_uri, RDF.type, prop[4]))
+        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
+        self.graph.add((view_uri, MAP.subobject, scalar_uri))
+        self.graph.add((view_uri, MAP.subspace, MAP[prop[0]]))
 
     def _register_pose_position_view(
         self,
@@ -4314,7 +4405,7 @@ class MotionSpecDatasetBuilder:
                     qty_node = self._view_node(spec.view, motion)
                 elif axis is None and (
                     (subspace == "pose" and qty.type == WorldQuantityType.Pose)
-                    or qty.type == WorldQuantityType.JointPosition
+                    or qty.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent)
                 ):
                     qty_node = URIRef(qty.uri)
                 else:
@@ -4325,10 +4416,10 @@ class MotionSpecDatasetBuilder:
                             or _is_incident_angle_view(spec)
                             or _is_plane_angle_view(spec)
                         )
-                        else _scalar_id(qty, subspace, axis)
+                        else _constraint_scalar_id(qty, spec)
                     )
                     qty_node = self._owned_uri(sid, motion)
-                scalar_t = _scalar_type(qty, subspace, axis)
+                scalar_t = _constraint_scalar_type(qty, spec)
 
             self.graph.add((node, RDF.type, CSTR.Constraint))
             self.graph.add((node, RDF.type, _constraint_type_iri(scalar_t)))
@@ -4904,6 +4995,15 @@ class MotionSpecDatasetBuilder:
             subspace = _view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
+
+            # A norm names no per-axis component, so the axis-keyed sweep below would skip it and
+            # its operator would never be emitted.
+            if _is_norm_view(spec):
+                key = (_constraint_scalar_id(qty, spec),)
+                if key not in seen:
+                    seen.add(key)
+                    self._view_node(spec.view, motion)
+                continue
 
             ws_spec = WORLD_SPECS.get(qty.type)
             if ws_spec is None:
@@ -5501,7 +5601,7 @@ class MotionSpecDatasetBuilder:
             if along_path
             else derived_t
             if derived_t is not None
-            else _scalar_type(qty, _view_subspace(spec), semantic_axis_label(spec.view.axis))
+            else _constraint_scalar_type(qty, spec)
         )
         error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
         error_node = self._owned_uri(error_id, spec.parent)
@@ -5675,6 +5775,10 @@ class MotionSpecDatasetBuilder:
 
             along_path = self._along_path_scalar(spec)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
+            if _is_norm_view(spec):
+                raise ValueError(
+                    f"controller '{ctrl.name}' constrains a norm view, which nothing can command"
+                )
             derived_t = (
                 self._quantityless_scalar_type(spec) if qty is None and along_path is None else None
             )
@@ -5691,7 +5795,7 @@ class MotionSpecDatasetBuilder:
                 if along_path
                 else derived_t
                 if derived_t is not None
-                else (_scalar_type(qty, subspace, axis) if qty else subspace)
+                else (_constraint_scalar_type(qty, spec) if qty else subspace)
             )
             command = controller_command_record(ctrl)
             _validate_command_subspace(ctrl, spec, command)
@@ -5742,7 +5846,7 @@ class MotionSpecDatasetBuilder:
                     if qty is None
                     else _alignment_id(qty, spec)
                     if subspace == "alignment"
-                    else _scalar_id(qty, subspace, axis)
+                    else _constraint_scalar_id(qty, spec)
                 )
                 candidate_error_id = (sid + "-err") if shared else f"{sid}-err-{motion.name}"
                 if ctrl.type != ControllerType.FeedForward:
@@ -5894,9 +5998,7 @@ class MotionSpecDatasetBuilder:
                         )
                     axis_raw = spec.view.axis
                     axis = semantic_axis_label(axis_raw)
-                    scalar_t = (
-                        derived_t if qty is None else _scalar_type(qty, _view_subspace(spec), axis)
-                    )
+                    scalar_t = derived_t if qty is None else _constraint_scalar_type(qty, spec)
                     error_id = error_id_by_constraint.get(spec.uri, f"{_evaluator_id(spec)}-err")
 
                     if error_id not in seen_error_ids:

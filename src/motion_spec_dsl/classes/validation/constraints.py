@@ -374,6 +374,8 @@ def validate_scalar_order_relations(model: Model) -> None:
                 or getattr(view, "progress", None) is not None
                 or getattr(view, "moving", None) is not None
                 or getattr(view, "on", None) is not None
+                # A norm collapses the 3-vector it reads to one number, so it orders.
+                or getattr(view, "norm", None) is not None
                 or getattr(view, "axis", None) is not None
             ):
                 continue

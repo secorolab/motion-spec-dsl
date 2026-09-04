@@ -29,6 +29,7 @@ from motion_spec_dsl.classes.context import (
 )
 from motion_spec_dsl.classes.controller_semantics import (
     _alignment_is_pointwise,
+    axis_label as semantic_axis_label,
     constraint_view_subspace,
 )
 from motion_spec_dsl.classes.coordinates import const_value
@@ -106,6 +107,11 @@ def _binary_view_kind(constraint: ConstraintSpecification) -> str | None:
 def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `distance between A and B` form."""
     return _binary_view_kind(constraint) == "DistanceBetweenView"
+
+
+def _is_norm_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `norm of <q>.<subspace> [across <d>]` form."""
+    return getattr(constraint.view, "norm", None) is not None
 
 
 def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
@@ -205,11 +211,28 @@ def _view_subspace(constraint: ConstraintSpecification) -> str:
 def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
     """Id stem for a scalar view of `quantity`: `<name>.<subspace>[.<axis>]`
     (bare `<name>` for joint positions)."""
-    if quantity.type == WorldQuantityType.JointPosition:
+    if quantity.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent):
         return quantity.name
     if axis is None:
         return f"{quantity.name}.{subspace}"
     return f"{quantity.name}.{subspace}.{axis}"
+
+
+def _norm_id(quantity: WorldQuantity, subspace: str, across: str | None) -> str:
+    """Id of the norm scalar of a `quantity.subspace` vector view, qualified by the direction
+    it is taken across when there is one."""
+    stem = f"{_scalar_id(quantity, subspace, None)}.norm"
+    return stem if across is None else f"{stem}-across-{across}"
+
+
+def _constraint_scalar_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
+    """The scalar id a plain or norm view resolves to; alignment/angle views are the caller's."""
+    subspace = _view_subspace(constraint)
+    if _is_norm_view(constraint):
+        # Resolve through an alias so this id matches the one the emitter builds.
+        across = _resolved_context_quantity(_context_quantity(constraint.view.norm.across))
+        return _norm_id(quantity, subspace, getattr(across, "name", None))
+    return _scalar_id(quantity, subspace, semantic_axis_label(constraint.view.axis))
 
 
 def _gradient_scalar_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str | None:
@@ -269,6 +292,8 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
     (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
+    if quantity.type == WorldQuantityType.JointCurrent:
+        return QuantityType.ElectricCurrent
     if quantity.type == WorldQuantityType.Pose:
         if subspace == "pose":
             return QuantityType.Pose
@@ -287,6 +312,33 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
         return subspace
     prop = spec[3].get(subspace)
     return prop[3] if prop else subspace
+
+
+# Vector views a norm applies to, and the scalar kind their length has.
+_NORM_SCALAR_TYPES = {
+    QuantityType.Position: QuantityType.Distance,
+    QuantityType.LinearVelocity: QuantityType.LinearVelocity,
+    QuantityType.AngularVelocity: QuantityType.AngularVelocity,
+    QuantityType.Force: QuantityType.Force,
+    QuantityType.Torque: QuantityType.Torque,
+}
+
+
+def _norm_scalar_type(quantity: WorldQuantity, subspace: str) -> Any:
+    """QuantityType of `norm of quantity.subspace`; rejects anything that is not a 3-vector."""
+    vector_t = _scalar_type(quantity, subspace, None)
+    scalar_t = _NORM_SCALAR_TYPES.get(vector_t)
+    if scalar_t is None:
+        raise ValueError(f"norm of '{quantity.name}.{subspace}' is not a 3-vector view")
+    return scalar_t
+
+
+def _constraint_scalar_type(quantity: WorldQuantity, constraint: ConstraintSpecification) -> Any:
+    """The scalar kind a plain or norm view resolves to."""
+    subspace = _view_subspace(constraint)
+    if _is_norm_view(constraint):
+        return _norm_scalar_type(quantity, subspace)
+    return _scalar_type(quantity, subspace, semantic_axis_label(constraint.view.axis))
 
 
 def _evaluator_id(spec: ConstraintSpecification) -> str:

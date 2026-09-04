@@ -11,7 +11,7 @@ WorldQuantity:
 ;
 
 NonGravityWorldQuantityType:
-    "velocity-twist" | "wrench" | "pose" | "joint-position"
+    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-current"
 ;
 
 GeometricProps:
@@ -98,6 +98,7 @@ ContextQuantityWithGeometryType:
 
 ScalarQuantityType:
     "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter" | "mass"
+    | "current"
 ;
 
 ToleranceQuantityType:
@@ -114,6 +115,8 @@ View:
     moving=MovingAlong
     |
     on=OnPath
+    |
+    norm=NormView
     |
     "(" expr=QExpr ")"
     |
@@ -179,6 +182,10 @@ OnPath:
     "<" moved=[WorldQuantity|FQN] ">" selector=SelectorTail? "on" path=ContextRef
 ;
 
+NormView:
+    "norm" "of" "<" quantity=[ConstraintViewQuantity|FQN] ">" selector=SelectorTail? ("across" across=ContextRef)?
+;
+
 SelectorTail:
     "." subspace=SubSpace ("." axis=Axis)? | "." axis=Axis
 ;
@@ -213,12 +220,13 @@ TimeUnit: 's' | 'ms' ;
 FrequencyUnit: 'Hz' ;
 DimensionlessUnit: '1' ;
 MassUnit: 'kg' ;
+CurrentUnit: 'A' ;
 
 Unit:
     LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
     AngularAccelerationUnit | AngularVelocityUnit |
     LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | FrequencyUnit |
-    DimensionlessUnit | MassUnit
+    DimensionlessUnit | MassUnit | CurrentUnit
 ;
 
 // Context quantities: values, poses, snapshots, and references.

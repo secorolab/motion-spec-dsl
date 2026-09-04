@@ -19,28 +19,29 @@ from motion_spec_dsl.classes.context import (
     _resolved_context_quantity,
 )
 
-Vector = tuple[int, int, int, int]  # (mass, length, time, angle)
+Vector = tuple[int, int, int, int, int]  # (mass, length, time, angle, current)
 
 # The table this plan's semantic contract states (§1): every scalar quantity kind an
-# expression can produce, as its (mass, length, time, angle) exponents.
+# expression can produce, as its (mass, length, time, angle, current) exponents.
 DIMENSION_VECTOR: dict[QuantityType, Vector] = {
-    QuantityType.Dimensionless: (0, 0, 0, 0),
-    QuantityType.PathParameter: (0, 0, 0, 0),
-    QuantityType.Duration: (0, 0, 1, 0),
-    QuantityType.Length: (0, 1, 0, 0),
-    QuantityType.Distance: (0, 1, 0, 0),
-    QuantityType.Position: (0, 1, 0, 0),
-    QuantityType.Angle: (0, 0, 0, 1),
-    QuantityType.PlaneAngle: (0, 0, 0, 1),
-    QuantityType.Orientation: (0, 0, 0, 1),
-    QuantityType.LinearVelocity: (0, 1, -1, 0),
-    QuantityType.AngularVelocity: (0, 0, -1, 1),
-    QuantityType.LinearAcceleration: (0, 1, -2, 0),
-    QuantityType.AngularAcceleration: (0, 0, -2, 1),
-    QuantityType.LinearJerk: (0, 1, -3, 0),
-    QuantityType.Force: (1, 1, -2, 0),
-    QuantityType.Torque: (1, 2, -2, 0),
-    QuantityType.Mass: (1, 0, 0, 0),
+    QuantityType.Dimensionless: (0, 0, 0, 0, 0),
+    QuantityType.PathParameter: (0, 0, 0, 0, 0),
+    QuantityType.Duration: (0, 0, 1, 0, 0),
+    QuantityType.Length: (0, 1, 0, 0, 0),
+    QuantityType.Distance: (0, 1, 0, 0, 0),
+    QuantityType.Position: (0, 1, 0, 0, 0),
+    QuantityType.Angle: (0, 0, 0, 1, 0),
+    QuantityType.PlaneAngle: (0, 0, 0, 1, 0),
+    QuantityType.Orientation: (0, 0, 0, 1, 0),
+    QuantityType.LinearVelocity: (0, 1, -1, 0, 0),
+    QuantityType.AngularVelocity: (0, 0, -1, 1, 0),
+    QuantityType.LinearAcceleration: (0, 1, -2, 0, 0),
+    QuantityType.AngularAcceleration: (0, 0, -2, 1, 0),
+    QuantityType.LinearJerk: (0, 1, -3, 0, 0),
+    QuantityType.Force: (1, 1, -2, 0, 0),
+    QuantityType.Torque: (1, 2, -2, 0, 0),
+    QuantityType.Mass: (1, 0, 0, 0, 0),
+    QuantityType.ElectricCurrent: (0, 0, 0, 0, 1),
 }
 
 # Reverse lookup for a `*`/`/` result's derived vector. Several kinds share a vector; later
@@ -63,6 +64,7 @@ _VECTOR_PRIORITY = (
     QuantityType.Force,
     QuantityType.Torque,
     QuantityType.Mass,
+    QuantityType.ElectricCurrent,
 )
 VECTOR_QUANTITY_TYPE: dict[Vector, QuantityType] = {
     DIMENSION_VECTOR[qty_type]: qty_type for qty_type in _VECTOR_PRIORITY
@@ -71,25 +73,26 @@ VECTOR_QUANTITY_TYPE: dict[Vector, QuantityType] = {
 # A bare measure's authored unit, by dimension -- the DSL token set from `classes/units.py`.
 # `Hz` is left out: no QuantityType names a frequency, so it was never a valid quantity value.
 _UNIT_VECTOR: dict[str, Vector] = {
-    "m": (0, 1, 0, 0),
-    "cm": (0, 1, 0, 0),
-    "mm": (0, 1, 0, 0),
-    "rad": (0, 0, 0, 1),
-    "deg": (0, 0, 0, 1),
-    "m/s": (0, 1, -1, 0),
-    "cm/s": (0, 1, -1, 0),
-    "rad/s": (0, 0, -1, 1),
-    "deg/s": (0, 0, -1, 1),
-    "m/s^2": (0, 1, -2, 0),
-    "rad/s^2": (0, 0, -2, 1),
-    "deg/s^2": (0, 0, -2, 1),
-    "m/s^3": (0, 1, -3, 0),
-    "N": (1, 1, -2, 0),
-    "Nm": (1, 2, -2, 0),
-    "s": (0, 0, 1, 0),
-    "ms": (0, 0, 1, 0),
-    "1": (0, 0, 0, 0),
-    "kg": (1, 0, 0, 0),
+    "m": (0, 1, 0, 0, 0),
+    "cm": (0, 1, 0, 0, 0),
+    "mm": (0, 1, 0, 0, 0),
+    "rad": (0, 0, 0, 1, 0),
+    "deg": (0, 0, 0, 1, 0),
+    "m/s": (0, 1, -1, 0, 0),
+    "cm/s": (0, 1, -1, 0, 0),
+    "rad/s": (0, 0, -1, 1, 0),
+    "deg/s": (0, 0, -1, 1, 0),
+    "m/s^2": (0, 1, -2, 0, 0),
+    "rad/s^2": (0, 0, -2, 1, 0),
+    "deg/s^2": (0, 0, -2, 1, 0),
+    "m/s^3": (0, 1, -3, 0, 0),
+    "N": (1, 1, -2, 0, 0),
+    "Nm": (1, 2, -2, 0, 0),
+    "s": (0, 0, 1, 0, 0),
+    "ms": (0, 0, 1, 0, 0),
+    "1": (0, 0, 0, 0, 0),
+    "kg": (1, 0, 0, 0, 0),
+    "A": (0, 0, 0, 0, 1),
 }
 
 # Position/Pose/Orientation are points and rotations, not scalars: `+`/`-` between two of the
@@ -169,6 +172,8 @@ def _selected_subspace_type(subspace, axis, leaf, *, whole_label: str) -> Quanti
 def _world_leaf_type(world_type: WorldQuantityType, subspace, axis, leaf) -> QuantityType:
     if world_type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
+    if world_type == WorldQuantityType.JointCurrent:
+        return QuantityType.ElectricCurrent
     if world_type == WorldQuantityType.Pose:
         return _pose_subspace_type(subspace, axis, leaf)
     return _selected_subspace_type(subspace, axis, leaf, whole_label=str(world_type))
@@ -222,12 +227,24 @@ def resolve_leaf(leaf) -> QuantityType:
 
 def _combine(op: str, vectors: list[Vector]) -> Vector:
     if op == "multiply":
-        result = (0, 0, 0, 0)
+        result: Vector = (0, 0, 0, 0, 0)
         for vector in vectors:
-            result = tuple(a + b for a, b in zip(result, vector))
+            result = (
+                result[0] + vector[0],
+                result[1] + vector[1],
+                result[2] + vector[2],
+                result[3] + vector[3],
+                result[4] + vector[4],
+            )
         return result
     dividend, divisor = vectors
-    return tuple(a - b for a, b in zip(dividend, divisor))
+    return (
+        dividend[0] - divisor[0],
+        dividend[1] - divisor[1],
+        dividend[2] - divisor[2],
+        dividend[3] - divisor[3],
+        dividend[4] - divisor[4],
+    )
 
 
 def _infer_add_subtract(node: QOpNode, operand_types: list[QuantityType]) -> QuantityType:

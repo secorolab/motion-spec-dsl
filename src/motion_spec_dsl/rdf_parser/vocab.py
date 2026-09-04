@@ -39,6 +39,12 @@ class SENSORS(DefinedNamespace):
     _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
 
 
+class ACT(DefinedNamespace):
+    JointCurrent: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/robot/actuation#")
+
+
 class APP(DefinedNamespace):
     path: URIRef
 
@@ -199,6 +205,7 @@ class QUDT_QKIND(DefinedNamespace):
     Torque: URIRef
     Force: URIRef
     Mass: URIRef
+    ElectricCurrent: URIRef
 
     _NS = NS_MM_QUDT_QTY
 

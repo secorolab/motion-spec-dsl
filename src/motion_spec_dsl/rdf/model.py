@@ -27,6 +27,7 @@ from rdf_utils.models.vocab import (
 from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
 
 from motion_spec_dsl.rdf_parser.vocab import (
+    ACT,
     ALGO_EXT,
     AGN,
     APP,
@@ -171,6 +172,12 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_UNIT.RAD,),
         {},
     ),
+    WorldQuantityType.JointCurrent: (
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, ACT.JointCurrent),
+        (QUDT_QKIND.ElectricCurrent,),
+        (QUDT_UNIT.A,),
+        {},
+    ),
 }
 
 SCALAR_UNIT: dict[Any, Any] = {
@@ -192,6 +199,7 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.PathParameter: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
     QuantityType.Mass: QUDT_UNIT["KiloGM"],
+    QuantityType.ElectricCurrent: QUDT_UNIT.A,
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
@@ -226,6 +234,7 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
     QuantityType.LinearJerk: QKIND_EXT.LinearJerk,
     QuantityType.Mass: QUDT_QKIND.Mass,
+    QuantityType.ElectricCurrent: QUDT_QKIND.ElectricCurrent,
 }
 
 # Quantity kinds are individuals, not classes; these namespaces distinguish them
@@ -239,6 +248,7 @@ CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
+    ("act", ACT),
     ("algo-ext", ALGO_EXT),
     ("application", APP),
     ("agn", AGN),

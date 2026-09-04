@@ -240,6 +240,8 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
             quantity = _resolved_world_quantity(quantity)
             if quantity.type == WorldQuantityType.JointPosition:
                 return "joint-position"
+            if quantity.type == WorldQuantityType.JointCurrent:
+                return "joint-current"
             if quantity.type == WorldQuantityType.Pose:
                 return "pose"
         return None
@@ -273,6 +275,11 @@ def controller_command_record(
     resolved_controller = _resolved_controller(controller)
     constraint = resolved_controller.params.constraint.constraint
     quantity = resolved_constraint_quantity(constraint)
+    if quantity is not None and quantity.type == WorldQuantityType.JointCurrent:
+        raise ValueError(
+            f"Controller '{resolved_controller.name}' drives constraint '{constraint.name}' on "
+            f"'{quantity.name}': a joint current is measured, nothing can command it"
+        )
     raw_subspace = constraint.view.subspace
     axis = axis_label(getattr(constraint.view, "axis", None))
     view_subspace = constraint_view_subspace(constraint)
