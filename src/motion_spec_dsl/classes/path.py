@@ -95,6 +95,8 @@ class AdmittanceSpec:
     max_excursion_unit: object | None = None
     deadband: float = 0.0
     deadband_unit: object | None = None
+    release_threshold: float | None = None
+    release_threshold_unit: object | None = None
 
     def __post_init__(self) -> None:
         self.mass = const_value(self.mass)
@@ -104,3 +106,10 @@ class AdmittanceSpec:
         # Zero is "unbounded" for the excursion and "off" for the deadband; both are one-sided.
         self.max_excursion = abs(const_value(self.max_excursion)) if self.max_excursion else 0.0
         self.deadband = abs(const_value(self.deadband)) if self.deadband else 0.0
+        self.release_threshold = (
+            abs(const_value(self.release_threshold))
+            if self.release_threshold is not None
+            else self.deadband
+        )
+        if self.release_threshold > self.deadband:
+            raise ValueError("admittance release-threshold must not exceed deadband")

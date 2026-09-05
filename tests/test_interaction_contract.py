@@ -161,6 +161,20 @@ def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: 
     )
 
 
+def test_admittance_release_threshold_cannot_exceed_deadband() -> None:
+    source_path = MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    source = source_path.read_text().replace(
+        "                max-velocity: 0.30 m/s\n",
+        "                max-velocity: 0.30 m/s,\n"
+        "                deadband: 1.0 N,\n"
+        "                release-threshold: 2.0 N\n",
+        1,
+    )
+
+    with pytest.raises(ValueError, match="release-threshold must not exceed deadband"):
+        motion_spec_metamodel().model_from_str(source, file_name=str(source_path))
+
+
 def test_no_motion_captures_another_motions_snapshot(interaction_ir: dict) -> None:
     """Snapshots write shared slots, so a motion re-capturing another's retargets it.
 

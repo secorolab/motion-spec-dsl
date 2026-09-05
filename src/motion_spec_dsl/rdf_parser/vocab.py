@@ -484,6 +484,7 @@ class ALGO_EXT(DefinedNamespace):
         "maximum-velocity",
         "maximum-acceleration",
         "maximum-jerk",
+        "release-threshold",
         "s-curve",
     ]
 

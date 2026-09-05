@@ -4594,6 +4594,14 @@ class MotionSpecDatasetBuilder:
             band_node = URIRef(f"{op_node}-{term}")
             self._emit_scalar_quantity(band_node, value, QUDT_QKIND.Force, deadband_unit)
             self.graph.add((op_node, CSTR[term], band_node))
+        release_node = URIRef(f"{op_node}-release-threshold")
+        self._emit_scalar_quantity(
+            release_node,
+            float(spec_val.release_threshold),
+            QUDT_QKIND.Force,
+            _dsl_unit(spec_val.release_threshold_unit or spec_val.deadband_unit or "N"),
+        )
+        self.graph.add((op_node, ALGO_EXT["release-threshold"], release_node))
         self.graph.add((op_node, ALGO_EXT.out, out_node))
         return out_node
 

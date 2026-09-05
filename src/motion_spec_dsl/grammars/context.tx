@@ -322,6 +322,7 @@ AdmittanceSpec:
         // How much force counts as none. Subtracted from the magnitude, not zeroed inside the
         // band, so the force stays continuous as a push crosses it.
         ("," "deadband" ":" deadband=ConstExpr (deadband_unit=ForceUnit)?)?
+        ("," "release-threshold" ":" release_threshold=ConstExpr (release_threshold_unit=ForceUnit)?)?
     "}"
 ;
 
