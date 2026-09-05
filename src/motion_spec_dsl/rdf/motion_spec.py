@@ -2249,7 +2249,11 @@ class MotionSpecDatasetBuilder:
             rp_v = _geo_prop(props, "ref-point")
             asb_v = _geo_prop(props, "as-seen-by")
 
-            if qty.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent):
+            if qty.type in (
+                WorldQuantityType.JointPosition,
+                WorldQuantityType.JointVelocity,
+                WorldQuantityType.JointCurrent,
+            ):
                 joint = _geo_prop(props, "joint")
                 if joint:
                     self.graph.add((node, KC_STAT["of-joint"], self._owned_uri(joint, qty)))
@@ -2305,6 +2309,7 @@ class MotionSpecDatasetBuilder:
                 WorldQuantityType.VelocityTwist,
                 WorldQuantityType.Wrench,
                 WorldQuantityType.JointPosition,
+                WorldQuantityType.JointVelocity,
                 WorldQuantityType.JointCurrent,
             }:
                 return URIRef(quantity.uri)
@@ -4405,7 +4410,12 @@ class MotionSpecDatasetBuilder:
                     qty_node = self._view_node(spec.view, motion)
                 elif axis is None and (
                     (subspace == "pose" and qty.type == WorldQuantityType.Pose)
-                    or qty.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent)
+                    or qty.type
+                    in (
+                        WorldQuantityType.JointPosition,
+                        WorldQuantityType.JointVelocity,
+                        WorldQuantityType.JointCurrent,
+                    )
                 ):
                     qty_node = URIRef(qty.uri)
                 else:

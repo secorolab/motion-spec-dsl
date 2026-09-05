@@ -30,6 +30,7 @@ class WorldQuantityType(StrEnum):
     VelocityTwist = "VelocityTwist"
     Wrench = "Wrench"
     JointPosition = "JointPosition"
+    JointVelocity = "JointVelocity"
     JointCurrent = "JointCurrent"
 
 

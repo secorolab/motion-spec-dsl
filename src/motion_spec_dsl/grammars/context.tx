@@ -11,7 +11,7 @@ WorldQuantity:
 ;
 
 NonGravityWorldQuantityType:
-    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-current"
+    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-velocity" | "joint-current"
 ;
 
 GeometricProps:

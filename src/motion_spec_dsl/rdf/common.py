@@ -211,7 +211,11 @@ def _view_subspace(constraint: ConstraintSpecification) -> str:
 def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
     """Id stem for a scalar view of `quantity`: `<name>.<subspace>[.<axis>]`
     (bare `<name>` for joint positions)."""
-    if quantity.type in (WorldQuantityType.JointPosition, WorldQuantityType.JointCurrent):
+    if quantity.type in (
+        WorldQuantityType.JointPosition,
+        WorldQuantityType.JointVelocity,
+        WorldQuantityType.JointCurrent,
+    ):
         return quantity.name
     if axis is None:
         return f"{quantity.name}.{subspace}"
@@ -292,6 +296,8 @@ def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> An
     (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
     if quantity.type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
+    if quantity.type == WorldQuantityType.JointVelocity:
+        return QuantityType.AngularVelocity
     if quantity.type == WorldQuantityType.JointCurrent:
         return QuantityType.ElectricCurrent
     if quantity.type == WorldQuantityType.Pose:

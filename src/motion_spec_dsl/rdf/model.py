@@ -172,6 +172,12 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_UNIT.RAD,),
         {},
     ),
+    WorldQuantityType.JointVelocity: (
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointVelocityCoordinate),
+        (QUDT_QKIND.AngularVelocity,),
+        (QUDT_UNIT["RAD-PER-SEC"],),
+        {},
+    ),
     WorldQuantityType.JointCurrent: (
         (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, ACT.JointCurrent),
         (QUDT_QKIND.ElectricCurrent,),

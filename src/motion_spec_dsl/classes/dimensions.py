@@ -172,6 +172,8 @@ def _selected_subspace_type(subspace, axis, leaf, *, whole_label: str) -> Quanti
 def _world_leaf_type(world_type: WorldQuantityType, subspace, axis, leaf) -> QuantityType:
     if world_type == WorldQuantityType.JointPosition:
         return QuantityType.Angle
+    if world_type == WorldQuantityType.JointVelocity:
+        return QuantityType.AngularVelocity
     if world_type == WorldQuantityType.JointCurrent:
         return QuantityType.ElectricCurrent
     if world_type == WorldQuantityType.Pose:
