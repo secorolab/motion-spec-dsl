@@ -95,10 +95,21 @@ class GeometricPropKey(StrEnum):
     AsSeenBy = "as-seen-by"
     Joint = "joint"
     FtSensor = "ft-sensor"
+    EstimatedFrom = "estimated-from"
     ReTareOn = "re-tare-on"
     Normalization = "normalization"
     Normal = "normal"
     Along = "along"
+
+
+@dataclass(eq=False)
+class ObserverSpec:
+    """Tuning of a momentum observer: the residual's cut-off and the joint-torque low-pass."""
+
+    gain: float
+    gain_unit: str
+    filter: float
+    parent: object | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -110,6 +121,8 @@ class GeoPropPair:
     frame: object | None = None
     joint: object | None = None
     sensor: object | None = None
+    agent: object | None = None
+    observer: object | None = None
     quantity: object | None = None
     events: list = field(default_factory=list)
     normalization: object | None = None
@@ -119,7 +132,12 @@ class GeoPropPair:
         self.key = GeometricPropKey(self.key)
         if self.value is None:
             self.value = (
-                self.frame or self.joint or self.sensor or self.quantity or self.normalization
+                self.frame
+                or self.joint
+                or self.sensor
+                or self.agent
+                or self.quantity
+                or self.normalization
             )
 
 

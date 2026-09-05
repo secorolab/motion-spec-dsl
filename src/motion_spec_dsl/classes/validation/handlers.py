@@ -192,25 +192,26 @@ def validate_controller_solver_assembly(model: Model) -> None:
 
 
 def _observing_sensor(quantity) -> object | None:
-    """The sensor a world quantity is observed by, or None when nothing measures it."""
+    """The sensor or observer a world quantity is read from, or None when nothing supplies it."""
     props = getattr(quantity, "props", None)
     if not isinstance(props, GeometricProps):
         return None
     return next(
         (
-            pair.sensor
+            pair.sensor or pair.agent
             for pair in props.pairs
-            if pair.key == GeometricPropKey.FtSensor and pair.sensor is not None
+            if pair.key in (GeometricPropKey.FtSensor, GeometricPropKey.EstimatedFrom)
+            and (pair.sensor or pair.agent) is not None
         ),
         None,
     )
 
 
 def validate_commanded_quantity_is_measured(model: Model) -> None:
-    """Raise if a feed-forward controller assigns onto a sensor-observed quantity.
+    """Raise if a feed-forward controller assigns onto an observed quantity.
 
-    A quantity carrying `ft-sensor` states what the sensor reads; its value comes from the
-    sensor and from nowhere else, so no controller may command it.
+    A quantity carrying `ft-sensor` or `estimated-from` states what that source reads; its value
+    comes from there and from nowhere else, so no controller may command it.
     """
     for handler in constraint_handlers(model):
         for controller in handler.controllers:
@@ -223,8 +224,8 @@ def validate_commanded_quantity_is_measured(model: Model) -> None:
                 continue
             raise semantic_error(
                 f"Controller '{controller.name}' assigns to '{quantity.name}', which "
-                f"'{getattr(sensor, 'name', sensor)}' measures. Command a quantity of its own "
-                f"instead: declare one without 'ft-sensor'.",
+                f"'{getattr(sensor, 'name', sensor)}' measures or estimates. Command a quantity "
+                f"of its own instead: declare one without 'ft-sensor' or 'estimated-from'.",
                 controller,
             )
 

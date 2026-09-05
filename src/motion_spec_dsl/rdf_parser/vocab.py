@@ -45,6 +45,14 @@ class ACT(DefinedNamespace):
     _NS = Namespace(f"{URI_SECORO_MM}/robot/actuation#")
 
 
+class EST(DefinedNamespace):
+    MomentumObserver: URIRef
+
+    _extras = ["estimated-by", "estimation-gain", "filter-constant"]
+
+    _NS = Namespace(f"{URI_SECORO_MM}/robot/estimation#")
+
+
 class APP(DefinedNamespace):
     path: URIRef
 

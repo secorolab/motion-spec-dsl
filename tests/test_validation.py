@@ -4,7 +4,13 @@
 from __future__ import annotations
 
 import pytest
+from rdf_utils.constraints import ConstraintViolation
+from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
+
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import AGN, EST, QUDT_SCHEMA
 
 REJECTIONS = [
     pytest.param(
@@ -84,6 +90,27 @@ COMMANDED = """,
             ref-point:  <gripper.g_base.g_pinch>,
             as-seen-by: <kinova.base_link.base_link_origin>
         }"""
+ESTIMATED = """,
+        wrench press-wrench {
+            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by:     <kinova.base_link.base_link_origin>,
+            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
+            re-tare-on:     { <aas.E_HOME_SETTLED> }
+        }"""
+ESTIMATED_AND_MEASURED = """,
+        wrench press-wrench {
+            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by:     <kinova.base_link.base_link_origin>,
+            ft-sensor:      <wrist_ft>,
+            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
+            re-tare-on:     { <aas.E_HOME_SETTLED> }
+        }"""
+ESTIMATED_UNTARED = """,
+        wrench press-wrench {
+            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by:     <kinova.base_link.base_link_origin>,
+            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 }
+        }"""
 
 
 def _press_source(base_source: str, wrench: str) -> str:
@@ -112,9 +139,47 @@ def _press_source(base_source: str, wrench: str) -> str:
 
 
 def test_a_sensor_observed_wrench_cannot_be_commanded(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="which 'wrist_ft' measures"):
+    with pytest.raises(TextXSemanticError, match="which 'wrist_ft' measures or estimates"):
         parse_source(_press_source(base_source, MEASURED))
+
+
+def test_an_estimated_wrench_cannot_be_commanded(parse_source, base_source):
+    with pytest.raises(TextXSemanticError, match="measures or estimates"):
+        parse_source(_press_source(base_source, ESTIMATED))
 
 
 def test_a_wrench_without_a_sensor_can_be_commanded(parse_source, base_source):
     parse_source(_press_source(base_source, COMMANDED))
+
+
+def _wrench_graph(base_source: str, parse_source, wrench: str):
+    """The dataset built from the base model with `wrench` declared beside the twist."""
+    source = base_source.replace(TWIST_ANCHOR, TWIST_ANCHOR + wrench, 1)
+    return MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
+
+
+def test_a_wrench_is_measured_or_estimated_not_both(parse_source, base_source):
+    with pytest.raises(ConstraintViolation, match="measured or estimated, not both"):
+        _wrench_graph(base_source, parse_source, ESTIMATED_AND_MEASURED)
+
+
+def test_an_estimated_wrench_needs_retare_events(parse_source, base_source):
+    with pytest.raises(ConstraintViolation, match="has estimated-from but names no re-tare-on"):
+        _wrench_graph(base_source, parse_source, ESTIMATED_UNTARED)
+
+
+def test_an_estimated_wrench_names_its_observer(parse_source, base_source):
+    """The observer is a node of its own: one agent, a gain in Hz, a dimensionless filter."""
+    graph = _wrench_graph(base_source, parse_source, ESTIMATED)
+    wrench = next(s for s in graph.subjects() if str(s).endswith("/world/press-wrench"))
+    observer = graph.value(wrench, EST["estimated-by"])
+
+    assert observer is not None
+    assert (observer, RDF.type, EST.MomentumObserver) in graph
+    assert str(graph.value(observer, AGN["of-agent"])).endswith("/kinova_ft_2f85")
+    gain = graph.value(observer, EST["estimation-gain"])
+    assert graph.value(gain, QUDT_SCHEMA.value).toPython() == 30.0
+    assert graph.value(gain, QUDT_SCHEMA.unit) == QUDT_UNIT.HZ
+    filter_ = graph.value(observer, EST["filter-constant"])
+    assert graph.value(filter_, QUDT_SCHEMA.value).toPython() == 0.5
+    assert graph.value(filter_, QUDT_SCHEMA.unit) == QUDT_UNIT.UNITLESS

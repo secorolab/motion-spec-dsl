@@ -24,7 +24,9 @@ ANCHOR = (
     "<spec.home-pose>.position within <shared.spec.satisfied-band>"
 )
 SETTLED = "settled-z: <shared.world.twist-ee-base>.linvel.z"
-SETTLED_EQUAL = f"{SETTLED} equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>"
+SETTLED_EQUAL = (
+    f"{SETTLED} equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>"
+)
 SETTLED_GATE = f"{SETTLED} less than <shared.spec.zero-linvel>"
 
 
@@ -94,10 +96,14 @@ def test_a_gate_may_state_no_band(parse_source, base_source) -> None:
 def test_a_model_wide_default_bands_every_constraint_of_that_kind(
     parse_source, base_source
 ) -> None:
-    """Stated once and taken by every constraint whose error carries that kind, so the band a
-    model is tuned against is visible in it rather than implied by a constant."""
-    source = _swap(base_source, SETTLED_EQUAL, SETTLED_GATE)
-    source = _swap(source, "guarded-motion", "tolerances { linear-velocity: 0.02 m/s }\n\nguarded-motion")
+    """Stated once and taken by every equality whose error carries that kind, so the band a
+    model is tuned against is visible in it rather than implied by a constant. A gate keeps
+    its own boundary and never inherits one."""
+    bandless = SETTLED_EQUAL.replace(" within <shared.spec.satisfied-band-vel>", "")
+    source = _swap(base_source, SETTLED_EQUAL, bandless)
+    source = _swap(
+        source, "guarded-motion", "tolerances { linear-velocity: 0.02 m/s }\n\nguarded-motion"
+    )
     graph = _graph(parse_source, source)
 
     assert _band_of(graph, "settled-z") == 0.02

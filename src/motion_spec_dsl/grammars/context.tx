@@ -25,6 +25,7 @@ GeoPropPair:
       key=FrameProp ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
+    | key="estimated-from" ":" "<" agent=[scene.Agent|FQN] ">" observer=ObserverSpec
     // Re-take the tare on each of these: the load below the sensor changes when the robot picks
     // something up, and the startup bias then reports that payload as an external push.
     | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
@@ -41,6 +42,8 @@ PrimitiveDirectionProp:
 ;
 
 AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
+
+ObserverSpec: "{" "gain" ":" gain=FLOAT gain_unit=FrequencyUnit "," "filter" ":" filter=FLOAT "}" ;
 
 AngleBound: value=ConstExpr ;
 

@@ -233,6 +233,7 @@ from motion_spec_dsl.rdf_parser.vocab import (
     CSTR_HDL,
     CSTR_HDL_EXT,
     EL,
+    EST,
     EXEC,
     GEOM_COORD,
     GEOM_ENT,
@@ -1964,13 +1965,15 @@ class MotionSpecDatasetBuilder:
     def _commanded_wrench_node(self, qty: WorldQuantity) -> URIRef | None:
         """The declared wrench a command realizes, or None when `qty` is not one.
 
-        A wrench carrying `ft-sensor` states what that sensor reads and is never commanded;
-        validation rejects assigning to it.
+        A wrench carrying `ft-sensor` or `estimated-from` states what that source reads and is
+        never commanded; validation rejects assigning to it.
         """
         if qty.type != WorldQuantityType.Wrench:
             return None
         props = qty.props if isinstance(qty.props, GeometricProps) else None
         if _geo_prop(props, "ft-sensor") is not None:
+            return None
+        if _geo_prop(props, "estimated-from") is not None:
             return None
         return URIRef(qty.uri)
 
@@ -2182,8 +2185,32 @@ class MotionSpecDatasetBuilder:
                     if props is not None
                     else None
                 )
+                estimated_from = (
+                    next(
+                        (
+                            pair
+                            for pair in props.pairs
+                            if isinstance(pair, GeoPropPair)
+                            and pair.key == "estimated-from"
+                            and pair.agent is not None
+                        ),
+                        None,
+                    )
+                    if props is not None
+                    else None
+                )
+                if ft_sensor is not None and estimated_from is not None:
+                    raise ConstraintViolation(
+                        "dynamics",
+                        f"Wrench '{qty.name}' names both ft-sensor and estimated-from; "
+                        "a wrench is measured or estimated, not both.",
+                    )
                 sensor_frame_name = str(ft_sensor.frame.uri) if ft_sensor is not None else None
                 reference_name = _geo_prop(props, "ref-point") or sensor_frame_name
+                if reference_name is None and estimated_from is not None:
+                    raise ConstraintViolation(
+                        "dynamics", f"Wrench '{qty.name}' has no ref-point frame"
+                    )
                 reference_point = (
                     self._owned_uri(reference_name, qty)
                     if reference_name
@@ -2206,19 +2233,54 @@ class MotionSpecDatasetBuilder:
                 if ft_ref:
                     self.graph.add((node, RDF.type, SOSA.Observation))
                     self.graph.add((node, SOSA.madeBySensor, URIRef(ft_ref)))
+                observer = None
+                if estimated_from is not None:
+                    observer = URIRef(f"{node}-observer")
+                    self.graph.add((observer, RDF.type, EST.MomentumObserver))
+                    self.graph.add(
+                        (observer, AGN["of-agent"], URIRef(str(estimated_from.agent.uri)))
+                    )
+                    self.graph.add((node, EST["estimated-by"], observer))
+                    spec_ = estimated_from.observer
+                    self.graph.add(
+                        (
+                            observer,
+                            EST["estimation-gain"],
+                            self._emit_scalar_quantity(
+                                URIRef(f"{observer}-gain"),
+                                spec_.gain,
+                                QUDT_QKIND.Frequency,
+                                QUDT_UNIT.HZ,
+                            ),
+                        )
+                    )
+                    self.graph.add(
+                        (
+                            observer,
+                            EST["filter-constant"],
+                            self._emit_scalar_quantity(
+                                URIRef(f"{observer}-filter"),
+                                spec_.filter,
+                                QUDT_QKIND.Dimensionless,
+                                QUDT_UNIT.UNITLESS,
+                            ),
+                        )
+                    )
+                tare_target = ft_ref or observer
                 retare_events = _geo_prop_events(props, "re-tare-on")
-                if retare_events and not ft_ref:
+                if retare_events and not tare_target:
                     raise ConstraintViolation(
                         "dynamics",
-                        f"Wrench '{qty.name}' names re-tare-on events but no ft-sensor to tare.",
+                        f"Wrench '{qty.name}' names re-tare-on events but nothing to tare.",
                     )
-                # The tare is a sampling of what the sensor reads unloaded: once at startup, and
+                # The tare is a sampling of what the source reads unloaded: once at startup, and
                 # again on each named occurrence. There is no implicit "once at startup" left --
                 # an author who wants that names their model's own run-start event explicitly.
-                if ft_ref and not retare_events:
+                if tare_target and not retare_events:
+                    source = "an ft-sensor" if ft_ref else "estimated-from"
                     raise ConstraintViolation(
                         "dynamics",
-                        f"Wrench '{qty.name}' has an ft-sensor but names no re-tare-on events; "
+                        f"Wrench '{qty.name}' has {source} but names no re-tare-on events; "
                         "name the model's run-start event to tare once at startup.",
                     )
                 for event in retare_events:

@@ -145,6 +145,42 @@ def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -
     } == {("wrist_ft_site", "wrist_ft_site", "wrist_ft_site")}
 
 
+_ESTIMATED_WRENCH = """        wrench ext-force-est {
+            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by:     <kinova.base_link.base_link_origin>,
+            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
+            re-tare-on:     { <aas.E_RUN_STARTED> }
+        },
+        wrench press-wrench {"""
+
+
+def test_estimated_wrench_reaches_the_ir(tmp_path: Path) -> None:
+    """A wrench sourced from the momentum observer carries the observer's tuning into the IR,
+    and none of the sensor path: nothing measures it, so it has no sensor to name."""
+    source_path = MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+    source = source_path.read_text().replace("        wrench press-wrench {", _ESTIMATED_WRENCH, 1)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("METAMODELS_PATH", str(METAMODELS))
+        metamodel = motion_spec_metamodel()
+        model = metamodel.model_from_str(source, file_name=str(source_path))
+        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
+    ir = generate_ir(tmp_path / "admittance_arc_single-app.ld.json")
+    estimated = [
+        output
+        for solver in ir["resources"]["by_kind"]["serial_chain"]
+        for output in solver.output
+        if output.type == "Wrench" and output.estimator is not None
+    ]
+
+    assert estimated, "the model declares an estimated wrench but no solver carries it"
+    out = estimated[0]
+    assert out.sensor_name == ""
+    assert out.estimator.estimation_gain_hz == 30.0
+    assert out.estimator.filter_constant == 0.5
+    assert out.estimator.agent.endswith("kinova_ft_2f85")
+    assert (out.reference_point.id, out.as_seen_by.id) == ("wrist_ft_site", "base_link")
+
+
 def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: dict) -> None:
     """A closure feeding a pose-axis error group must be scheduled, and scheduled first.
 
