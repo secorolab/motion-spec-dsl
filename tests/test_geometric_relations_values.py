@@ -6,10 +6,10 @@ The row-emission checks say a gradient reaches the solver; they say nothing abou
 behind it. Both line-family operators once measured `B - A` where every point-family one measures
 `A - B`, which no run and no compile can report -- the sign is only wrong against the scene.
 
-Recorded run of `models/tableii_probe`:
+Recorded run of `models/geometric_relations`:
 
-    motion-spec run models/tableii_probe/tableii_probe.robmot \
-        -o generations/tableii_probe --prefix <install> --run-id <id> --headless
+    motion-spec run models/geometric_relations/geometric_relations.robmot \
+        -o generations/geometric_relations --prefix <install> --run-id <id> --headless
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import pytest
 from motion_spec.introspection.frame_log_pb import frame_records, read_contract
 
 
-RUN_ENV = "MOTION_SPEC_TABLEII_RUN"
-RUN_GLOB = "generations/tableii_probe/tableii_probe/*/runs/*/logs/frame_log.pb"
+RUN_ENV = "MOTION_SPEC_GEOMETRIC_RELATIONS_RUN"
+RUN_GLOB = "generations/geometric_relations/geometric_relations/*/runs/*/logs/frame_log.pb"
 # The band `tilt.align-forearm` tolerates, as authored; the rotation vector answers for what
 # exceeds it, not for the whole angle.
 ALIGN_CONE = 0.05
@@ -136,7 +136,7 @@ def _frame_log() -> Path:
     workspace = Path(__file__).resolve().parents[4]
     logs = sorted(workspace.glob(RUN_GLOB))
     if not logs:
-        pytest.skip(f"no recorded tableii_probe run under {workspace / RUN_GLOB}")
+        pytest.skip(f"no recorded geometric_relations run under {workspace / RUN_GLOB}")
     return logs[-1]
 
 

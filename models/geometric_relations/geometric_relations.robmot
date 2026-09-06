@@ -1,9 +1,9 @@
-import "tableii_probe.fsm"
+import "geometric_relations.fsm"
 import "../admittance_arc_single/admittance_arc_single.scenex"
-ns app = "https://secorolab.github.io/models/tableii-probe/"
-ns tp = "https://secorolab.github.io/models/tableii-probe/fsm/"
+ns app = "https://secorolab.github.io/models/geometric-relations/"
+ns gr = "https://secorolab.github.io/models/geometric-relations/fsm/"
 
-exec-context (ns=app) tableii-probe-exec {
+exec-context (ns=app) geometric-relations-exec {
     runs-scene: <admittance_arc_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
     config:     "robot.toml"
@@ -36,6 +36,10 @@ context (ns=app) shared {
             of:         <kinova.forearm_link.forearm_link_origin>,
             wrt:        <kinova.shoulder_link.shoulder_link_origin>,
             as-seen-by: <kinova.shoulder_link.shoulder_link_origin>
+        },
+        joint-position elbow-angle {
+            joint: <kinova.joint_3>,
+            normalization: (-pi, pi) rad
         }
     },
     spec {
@@ -53,11 +57,18 @@ context (ns=app) shared {
         line probe-line { of: <gripper.g_base.g_pinch>, along: <shared.spec.probe-axis> },
         angle align-cone = 0.05 rad,
         angle align-band = 0.05 rad,
-        torque align-moment-max = 30.0 Nm,
+        // The seventh degree of freedom, pinned in joint space so the elbow stays in its plane.
+        angle elbow-angle-target = pi rad,
+        torque elbow-torque-limit = 10.0 Nm,
+        // Exit gates: where a state counts as arrived, tighter than the rows' own bands.
+        length settle-band = 0.01 m,
+        length gate-band = 0.02 m,
         angle tool-incline-target = 0.5236 rad,
         angle tool-incline-band = 0.05 rad,
         angle tool-side-level-target = 1.5708 rad,
         angle tool-side-level-band = 0.05 rad,
+        // Tool axis kept in the vertical x-z plane: the heading the two angle rows leave free.
+        angle tool-heading-target = 1.5708 rad,
         length clearance-target = 0.55 m,
         length clearance-band = 0.3 m,
         length travel-target = 0.55 m,
@@ -78,7 +89,7 @@ guarded-motion (ns=app) tilt {
     description: "Two angle operators drive the attitude: the tool's incline against the table plane, and the angle its side axis makes with the base up-direction."
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_TILT_ENTERED>
+            pose start-pose = snapshot of <shared.world.tcp> on event <gr.E_TILT_ENTERED>
         }
     }
     when {}
@@ -86,10 +97,15 @@ guarded-motion (ns=app) tilt {
         hold-position: keeping <shared.world.tcp>.position equal to <spec.start-pose>.position,
         tool-incline: keeping angle between <shared.spec.tool-axis> and <shared.spec.table> equal to <shared.spec.tool-incline-target> within <shared.spec.tool-incline-band>,
         tool-side-level: keeping angle between <shared.spec.tool-side> and <shared.spec.base-up> equal to <shared.spec.tool-side-level-target> within <shared.spec.tool-side-level-band>,
+        tool-heading: keeping angle between <shared.spec.tool-axis> and <shared.spec.probe-axis> equal to <shared.spec.tool-heading-target> within <shared.spec.tool-side-level-band>,
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        // Undriven: the alignment expression is what this model exercises, not a forearm push.
         align-forearm: keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>
     }
-    until {
-        tilt-settled: elapsed greater than 5.0 s
+    until all {
+        tool-inclined: angle between <shared.spec.tool-axis> and <shared.spec.table> equal to <shared.spec.tool-incline-target> within <shared.spec.tool-incline-band>,
+        tool-side-levelled: angle between <shared.spec.tool-side> and <shared.spec.base-up> equal to <shared.spec.tool-side-level-target> within <shared.spec.tool-side-level-band>,
+        tip-held: <shared.world.tcp>.position equal to <spec.start-pose>.position within <shared.spec.settle-band>
     }
 }
 
@@ -97,7 +113,7 @@ guarded-motion (ns=app) traverse {
     description: "The point operators drive the tip: height above the table plane and travel along the rail, with the radius from the vertical rail watched but not driven."
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_TRAVERSE_ENTERED>
+            pose start-pose = snapshot of <shared.world.tcp> on event <gr.E_TRAVERSE_ENTERED>
         }
     }
     when {}
@@ -105,10 +121,12 @@ guarded-motion (ns=app) traverse {
         hold-position-y: keeping <shared.world.tcp>.position.y equal to <spec.start-pose>.position.y,
         hold-orientation: keeping <shared.world.tcp>.orientation equal to <spec.start-pose>.orientation,
         table-clearance: keeping distance of <shared.world.tcp> from <shared.spec.table> equal to <shared.spec.clearance-target> within <shared.spec.clearance-band>,
-        rail-travel: keeping projection of <shared.world.tcp> on <shared.spec.rail-x> equal to <shared.spec.travel-target> within <shared.spec.travel-band>
+        rail-travel: keeping projection of <shared.world.tcp> on <shared.spec.rail-x> equal to <shared.spec.travel-target> within <shared.spec.travel-band>,
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
-    until {
-        traverse-settled: elapsed greater than 5.0 s,
+    until all {
+        cleared: distance of <shared.world.tcp> from <shared.spec.table> equal to <shared.spec.clearance-target> within <shared.spec.gate-band>,
+        travelled: projection of <shared.world.tcp> on <shared.spec.rail-x> equal to <shared.spec.travel-target> within <shared.spec.gate-band>,
         tcp-radius: distance of <shared.world.tcp> from <shared.spec.rail-vert> greater than <shared.spec.radial-floor>
     }
 }
@@ -117,7 +135,7 @@ guarded-motion (ns=app) lines {
     description: "The line-line pair drives the tip: the gap along the common normal of a line carried by the gripper and the rail on the table, with that pair's projection watched but not driven."
     context {
         spec {
-            pose start-pose = snapshot of <shared.world.tcp> on event <tp.E_LINES_ENTERED>
+            pose start-pose = snapshot of <shared.world.tcp> on event <gr.E_LINES_ENTERED>
         }
     }
     when {}
@@ -125,27 +143,32 @@ guarded-motion (ns=app) lines {
         hold-position-x: keeping <shared.world.tcp>.position.x equal to <spec.start-pose>.position.x,
         hold-position-y: keeping <shared.world.tcp>.position.y equal to <spec.start-pose>.position.y,
         hold-orientation: keeping <shared.world.tcp>.orientation equal to <spec.start-pose>.orientation,
-        line-gap: keeping distance of <shared.spec.probe-line> from <shared.spec.rail-x> equal to <shared.spec.line-gap-target> within <shared.spec.line-gap-band>
+        line-gap: keeping distance of <shared.spec.probe-line> from <shared.spec.rail-x> equal to <shared.spec.line-gap-target> within <shared.spec.line-gap-band>,
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>
     }
-    until {
-        lines-settled: elapsed greater than 5.0 s,
+    until all {
+        gapped: distance of <shared.spec.probe-line> from <shared.spec.rail-x> equal to <shared.spec.line-gap-target> within <shared.spec.gate-band>,
         line-travel: projection of <shared.spec.probe-line> on <shared.spec.rail-x> greater than <shared.spec.line-travel-floor>
     }
 }
 
 constraint-handler (ns=app) handler-tilt {
     handles: <tilt>
-    runs-in: <tp.S_TILT>
+    runs-in: <gr.S_TILT>
     monitors {
         mon-tilt-done: monitor <tilt.until> {
-            satisfied { trigger: event <tp.E_TILT_DONE> }
+            satisfied for 0.3 s { trigger: event <gr.E_TILT_DONE> }
         }
     }
     controllers {
         pid ctrl-tilt-position { constraint: <tilt.hold-position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-tool-incline { constraint: <tilt.tool-incline>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
         pid ctrl-tool-side-level { constraint: <tilt.tool-side-level>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
-        impedance ctrl-tilt-align-forearm { constraint: <tilt.align-forearm>, output-saturation: saturation { max: <shared.spec.align-moment-max> }, stiffness: 50, damping: 10 } apply at <kinova.forearm_link>
+        pid ctrl-tool-heading { constraint: <tilt.tool-heading>, Kp: 20, Ki: 0, Kd: 16, decay: 0 },
+        pid ctrl-tilt-elbow {
+            constraint: <tilt.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers {
         arm: serial-chain {
@@ -159,17 +182,21 @@ constraint-handler (ns=app) handler-tilt {
 
 constraint-handler (ns=app) handler-traverse {
     handles: <traverse>
-    runs-in: <tp.S_TRAVERSE>
+    runs-in: <gr.S_TRAVERSE>
     monitors {
         mon-traverse-done: monitor <traverse.until> {
-            satisfied { trigger: event <tp.E_TRAVERSE_DONE> }
+            satisfied for 0.3 s { trigger: event <gr.E_TRAVERSE_DONE> }
         }
     }
     controllers {
         pid ctrl-traverse-position-y { constraint: <traverse.hold-position-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-traverse-orientation { constraint: <traverse.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
         pid ctrl-table-clearance { constraint: <traverse.table-clearance>, Kp: 60, Ki: 0, Kd: 40, decay: 0 },
-        pid ctrl-rail-travel { constraint: <traverse.rail-travel>, Kp: 60, Ki: 0, Kd: 40, decay: 0 }
+        pid ctrl-rail-travel { constraint: <traverse.rail-travel>, Kp: 60, Ki: 0, Kd: 40, decay: 0 },
+        pid ctrl-traverse-elbow {
+            constraint: <traverse.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers {
         arm: serial-chain {
@@ -183,17 +210,21 @@ constraint-handler (ns=app) handler-traverse {
 
 constraint-handler (ns=app) handler-lines {
     handles: <lines>
-    runs-in: <tp.S_LINES>
+    runs-in: <gr.S_LINES>
     monitors {
         mon-lines-done: monitor <lines.until> {
-            satisfied { trigger: event <tp.E_LINES_DONE> }
+            satisfied for 0.3 s { trigger: event <gr.E_LINES_DONE> }
         }
     }
     controllers {
         pid ctrl-lines-position-x { constraint: <lines.hold-position-x>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-lines-position-y { constraint: <lines.hold-position-y>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
         pid ctrl-lines-orientation { constraint: <lines.hold-orientation>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
-        pid ctrl-line-gap { constraint: <lines.line-gap>, Kp: 60, Ki: 0, Kd: 40, decay: 0 }
+        pid ctrl-line-gap { constraint: <lines.line-gap>, Kp: 60, Ki: 0, Kd: 40, decay: 0 },
+        pid ctrl-lines-elbow {
+            constraint: <lines.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers {
         arm: serial-chain {

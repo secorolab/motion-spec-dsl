@@ -1,6 +1,6 @@
-ns tp = "https://secorolab.github.io/models/tableii-probe/fsm/"
+ns gr = "https://secorolab.github.io/models/geometric-relations/fsm/"
 
-evt loop (ns=tp) tableii_probe_events {
+evt loop (ns=gr) geometric_relations_events {
     evt E_STEP,
     evt E_TILT_ENTERED,
     evt E_TILT_DONE,
@@ -10,10 +10,10 @@ evt loop (ns=tp) tableii_probe_events {
     evt E_LINES_DONE
 }
 
-fsm (ns=tp) tableii_probe_fsm {
+fsm (ns=gr) geometric_relations_fsm {
     description: "Three motions, each driven by a different family of Borghesan Table II operator: direction-direction and direction-plane angles, point-plane and point-line distances with a point-on-line projection, then the line-line pair."
     states { S_START, S_TILT, S_TRAVERSE, S_LINES, S_DONE }
-    evt loop: <tableii_probe_events>
+    evt loop: <geometric_relations_events>
     start: <S_START>
     end: <S_DONE>
     transitions {
@@ -24,20 +24,20 @@ fsm (ns=tp) tableii_probe_fsm {
     }
     reactions {
         R_START {
-            when: <tableii_probe_events.E_STEP>,
+            when: <geometric_relations_events.E_STEP>,
             do:   <T_START_TILT>,
-            fires { <tableii_probe_events.E_TILT_ENTERED> }
+            fires { <geometric_relations_events.E_TILT_ENTERED> }
         },
         R_TILT_DONE {
-            when: <tableii_probe_events.E_TILT_DONE>,
+            when: <geometric_relations_events.E_TILT_DONE>,
             do:   <T_TILT_TRAVERSE>,
-            fires { <tableii_probe_events.E_TRAVERSE_ENTERED> }
+            fires { <geometric_relations_events.E_TRAVERSE_ENTERED> }
         },
         R_TRAVERSE_DONE {
-            when: <tableii_probe_events.E_TRAVERSE_DONE>,
+            when: <geometric_relations_events.E_TRAVERSE_DONE>,
             do:   <T_TRAVERSE_LINES>,
-            fires { <tableii_probe_events.E_LINES_ENTERED> }
+            fires { <geometric_relations_events.E_LINES_ENTERED> }
         },
-        R_LINES_DONE { when: <tableii_probe_events.E_LINES_DONE>, do: <T_LINES_DONE> }
+        R_LINES_DONE { when: <geometric_relations_events.E_LINES_DONE>, do: <T_LINES_DONE> }
     }
 }

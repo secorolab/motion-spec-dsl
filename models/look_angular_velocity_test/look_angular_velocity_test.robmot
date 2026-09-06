@@ -51,7 +51,9 @@ context (ns=app) shared {
         length negative-reach-band = -0.06 m,
         pose home-pose = snapshot of <shared.world.tcp-base> on event <lav.E_HOME_ENTERED>,
         pose look-pose = [config.poses.look] for <shared.world.tcp-base>,
-        length elbow-z = snapshot of <shared.world.elbow-base>.position.z on event <lav.E_LOOK_ENTERED>
+        // The seventh degree of freedom, pinned in joint space so the elbow stays in its plane.
+        angle elbow-angle-target = pi rad,
+        torque elbow-torque-limit = 10.0 Nm
     }
 }
 
@@ -81,10 +83,12 @@ guarded-motion (ns=app) look {
     description: "Turn about the base axis at constant angular velocity to the joint-1 120 degree pose"
     context {
         spec {
-            angular-velocity turn-rate = -0.0738 rad/s,
+            // In the pinch frame: x points down, y runs tangent to the sweep, z out along the arm.
+            // A clockwise sweep seen from above is a positive rate about x and travel along -y.
+            angular-velocity turn-rate = 0.0738 rad/s,
             linear-velocity travel-rate = -0.0497 m/s,
-            length target-x = -0.335671 m,
-            length target-y = -0.584089 m,
+            length target-x = -0.337565 m,
+            length target-y = -0.587367 m,
             length target-x-lo = <spec.target-x> + <shared.spec.negative-reach-band>,
             length target-x-hi = <spec.target-x> + <shared.spec.reach-band>,
             length target-y-lo = <spec.target-y> + <shared.spec.negative-reach-band>,
@@ -93,13 +97,13 @@ guarded-motion (ns=app) look {
     }
     when { }
     while {
-        turn: keeping <shared.world.tcp-tool-twist>.angvel.y equal to <spec.turn-rate> within <shared.spec.angular-velocity-band>,
-        no-tilt-x: keeping <shared.world.tcp-tool-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        turn: keeping <shared.world.tcp-tool-twist>.angvel.x equal to <spec.turn-rate> within <shared.spec.angular-velocity-band>,
+        no-tilt-y: keeping <shared.world.tcp-tool-twist>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
         no-tilt-z: keeping <shared.world.tcp-tool-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
-        travel: keeping <shared.world.tcp-tool-twist>.linvel.x equal to <spec.travel-rate> within <shared.spec.velocity-band>,
-        hold-height: keeping <shared.world.tcp-tool-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        travel: keeping <shared.world.tcp-tool-twist>.linvel.y equal to <spec.travel-rate> within <shared.spec.velocity-band>,
+        hold-height: keeping <shared.world.tcp-tool-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
         hold-radius: keeping <shared.world.tcp-tool-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        hold-elbow-z: keeping <shared.world.elbow-base>.position.z equal to <shared.spec.elbow-z> within <shared.spec.position-band>
+        hold-elbow: keeping <shared.world.joint-3> equal to <shared.spec.elbow-angle-target>
     }
     until all {
         at-target-x: <shared.world.tcp-base>.position.x between <spec.target-x-lo> and <spec.target-x-hi>,
@@ -152,22 +156,6 @@ guarded-motion (ns=app) reach {
     }
 }
 
-guarded-motion (ns=app) hold {
-    description: "Settle the last millimetres onto the configured look pose and hold it"
-    context {
-        spec {
-            length elbow-z = snapshot of <shared.world.elbow-base>.position.z on event <lav.E_HOLD_ENTERED>
-        }
-    }
-    when { }
-    while {
-        position: keeping <shared.world.tcp-base>.position equal to <shared.spec.look-pose>.position within <shared.spec.position-band>,
-        orientation: keeping <shared.world.tcp-base>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.orientation-band>,
-        elbow-z: keeping <shared.world.elbow-base>.position.z equal to <spec.elbow-z> within <shared.spec.position-band>
-    }
-    until { }
-}
-
 constraint-handler (ns=app) handler-home {
     handles: <home>
     monitors {
@@ -197,17 +185,15 @@ constraint-handler (ns=app) handler-look {
     }
     controllers {
         pid turn { constraint: <look.turn>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid no-tilt-x { constraint: <look.no-tilt-x>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid no-tilt-y { constraint: <look.no-tilt-y>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         pid no-tilt-z { constraint: <look.no-tilt-z>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         pid travel { constraint: <look.travel>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         pid hold-height { constraint: <look.hold-height>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         pid hold-radius { constraint: <look.hold-radius>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        impedance support-elbow {
-            constraint: <look.hold-elbow-z>,
-            Ki: 200,
-            stiffness: 2500,
-            damping: 80
-        } apply at <kinova.forearm_link>
+        pid look-elbow {
+            constraint: <look.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque
     }
     solvers { <handler-home.arm> }
 }
@@ -239,20 +225,4 @@ constraint-handler (ns=app) handler-reach {
             gravity: (0.0, 0.0, 9.81) m/s^2
         }
     }
-}
-
-constraint-handler (ns=app) handler-hold {
-    handles: <hold>
-    runs-in: <lav.S_HOLD>
-    controllers {
-        pid position { constraint: <hold.position>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        impedance orientation { constraint: <hold.orientation>, stiffness: 40, damping: 8 } apply at <gripper.g_base>,
-        impedance elbow-z {
-            constraint: <hold.elbow-z>,
-            Ki: 200,
-            stiffness: 2500,
-            damping: 80
-        } apply at <kinova.forearm_link>
-    }
-    solvers { <handler-home.arm> }
 }
