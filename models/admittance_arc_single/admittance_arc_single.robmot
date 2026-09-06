@@ -81,7 +81,8 @@ context (ns=app) shared {
         linear-velocity zero-linvel          = 0.0 m/s,
         linear-velocity descend-vel          = -0.05 m/s,
         length forward-distance     = 0.05 m,
-        length contact-z            = 0.03 m,
+        // The pinch site rests 0.040 m above the table top when the pads touch it.
+        length contact-z            = 0.045 m,
         length bracelet-contact-z   = 0.07 m,
         force force-threshold                 = 10.0 N,
         force neg-force-threshold             = -10.0 N,
