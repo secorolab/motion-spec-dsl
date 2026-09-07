@@ -7,7 +7,7 @@
       <inertial pos="0 0 0.0325" mass="0.133396" diaginertia="9.386e-5 9.386e-5 9.379e-5"/>
       <geom name="wrist_ft_geom" type="cylinder" pos="0 0 0.0325" size="0.0375 0.0325"
             contype="0" conaffinity="0" rgba="0.15 0.15 0.15 1"/>
-      <site name="wrist_ft_site" pos="0 0 0.0325" size="0.012"/>
+      <site name="wrist_ft_site" pos="0 0 0.0325" quat="0 0 0 1" size="0.012"/>
       <!-- Where the gripper attaches; carries no geometry of its own. -->
       <site name="wrist_ft_mount" pos="0 0 0.065" size="0.001" rgba="0 0 0 0"/>
     </body>
