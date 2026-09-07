@@ -219,14 +219,14 @@ scene inst (ns=ddu_mjc) dual_scene_mjc {
 
     agn <dual_agents.arm1> {
         model arm1-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova1> to "base_link"
         }
     }
 
     agn <dual_agents.arm2> {
         model arm2-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova2> to "base_link"
         }
 

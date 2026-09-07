@@ -134,7 +134,7 @@ scene inst (ns=aas_mjc) admittance_arc_scene_mjc {
 
     agn <agents.kinova_ft_2f85> {
         model kinova-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova> to "base_link"
         }
 

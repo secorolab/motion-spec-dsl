@@ -200,7 +200,7 @@ scene inst (ns=dro_mjc) drawer_scene_mjc {
 
     agn <drawer_agents.arm1> {
         model kinova-mjc as mjcf {
-            sys path = '../../../mj_kdl_wrapper/third_party/menagerie/kinova_gen3/gen3.xml'
+            sys path = '../../../mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova> to "base_link"
         }
 

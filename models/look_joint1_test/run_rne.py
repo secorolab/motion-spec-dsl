@@ -28,9 +28,7 @@ def joint_array(values: list[float]) -> kdl.JntArray:
 
 def build_env() -> tuple[mjk.Env, mjk.Robot]:
     gripper = mjk.AttachmentSpec()
-    gripper.mjcf_path = mjk.menagerie.asset_path(
-        "robotiq_2f85/2f85.xml", env_var="MJ_KDL_GRIPPER"
-    )
+    gripper.mjcf_path = mjk.menagerie.asset_path("robotiq_2f85/2f85.xml", env_var="MJ_KDL_GRIPPER")
     gripper.attach_to = mjk.AttachTarget(mjk.AttachKind.Site, "pinch_site")
     gripper.prefix = "g_"
 
@@ -39,7 +37,7 @@ def build_env() -> tuple[mjk.Env, mjk.Robot]:
     scene.add_floor = True
     scene.add_skybox = True
     robot_spec = mjk.RobotSpec()
-    robot_spec.path = mjk.menagerie.model_path("kinova_gen3", env_var="MJ_KDL_MODEL")
+    robot_spec.path = mjk.menagerie.asset_path("kinova_gen3/gen3.xml", env_var="MJ_KDL_MODEL")
     robot_spec.pos = [0.0, 0.0, 0.72]
     robot_spec.attachments = [gripper]
     scene.robots = [robot_spec]
