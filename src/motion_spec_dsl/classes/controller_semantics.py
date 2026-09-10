@@ -219,6 +219,9 @@ def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
     if kind == "DistanceBetweenView":
         return "distance"
 
+    if kind == "DifferenceOfView":
+        return GEOMETRIC_DISTANCE_SUBSPACE["Subtraction"]
+
     if kind == "DistanceFromView":
         op_type = GEOMETRIC_DISTANCE_OPS.get(
             (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))

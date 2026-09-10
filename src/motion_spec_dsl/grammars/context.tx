@@ -131,6 +131,14 @@ View:
 
 BinaryView:
     DistanceBetweenView | AngleBetweenView | DistanceFromView | ProjectionOnView
+    | DifferenceOfView
+;
+
+DifferenceOfView:
+    "difference" "of"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "and"
+    "<" right=[ConstraintViewQuantity|FQN] ">"
 ;
 
 DistanceBetweenView:
@@ -284,6 +292,13 @@ PlainContextQuantityValue:
     SampledValue | QuantityValue | SnapshotValue | DirectionBetween | PoseCoordinate
     | VelocityTwistCoordinate
     | AccelerationTwistCoordinate | WrenchCoordinate | ConfigValue | ReferenceValue
+    | DerivedScalarValue
+;
+
+// A scalar the run computes rather than one the model states: the same binary views a
+// constraint may hold, named so another view can take them as operands.
+DerivedScalarValue:
+    "=" view=BinaryView
 ;
 
 SampledValue:

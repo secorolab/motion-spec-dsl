@@ -196,6 +196,7 @@ from motion_spec_dsl.rdf.common import (
     _GeometricDistancePlan,
     _gradient_scalar_id,
     _is_alignment_view,
+    _is_difference_view,
     _is_distance_view,
     _is_geometric_distance_view,
     _is_incident_angle_view,
@@ -493,6 +494,9 @@ class MotionSpecDatasetBuilder:
         self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
         self._alignment_plans: dict[ConstraintSpecification, _AlignmentPlan] = {}
         self._geometric_distance_plans: dict[ConstraintSpecification, _GeometricDistancePlan] = {}
+        self._difference_plans: dict[ConstraintSpecification, Any] = {}
+        self._derived_scalars: dict[Any, WorldQuantity | None] = {}
+        self._derived_scalar_declarations: list[Any] = []
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
         # coord_node, domain -> the relation `_emit_geom_relation` named for it. hasQuantityKind
         # lives on the relation, not the (possibly domain-combined) coordinate, and position/
@@ -591,6 +595,24 @@ class MotionSpecDatasetBuilder:
 
             self._emit_world_quantities(world_qtys)
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
+        # A derived scalar needs the same ops a constraint holding that view would get; it is
+        # owned by the context that declares it, not by any motion.
+        for declaration, declared_node in self._derived_scalar_declarations:
+            shim = self._derived_scalar_spec(declaration)
+            owner = shim.parent.parent
+            self._emit_map_operations(owner, [shim], world_qtys)
+            # The view's ops write their own scalar; the declared name is what the model reads,
+            # so the two are tied by a one-input sum rather than by minting a second computation.
+            target = self._resolve_constraint_quantity(shim, world_qtys)
+            scalar = self._owned_uri(_scalar_id(target, _view_subspace(shim), None), owner)
+            zero = self._owned_uri(f"{declaration.name}-zero", owner)
+            self._add_quantity(zero, QuantityType.Distance)
+            self.graph.add((zero, QUDT_SCHEMA.value, Literal(0.0, datatype=XSD.double)))
+            copy_op = self._owned_uri(f"compute-{declaration.name}", owner)
+            self.graph.add((copy_op, RDF.type, ALGO_EXT.Addition))
+            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), scalar))
+            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), zero))
+            self.graph.add((copy_op, ALGO_EXT.out, declared_node))
             self._emit_path_following(constraints, world_qtys)
             self._emit_constraints(motion, constraints, world_qtys)
             self._emit_detect_acts(motion)
@@ -1155,6 +1177,141 @@ class MotionSpecDatasetBuilder:
             return ref
         return world_qtys.get(_node_name(ref))
 
+    class _Shim:
+        """An attribute bag that hashes by identity, so plan caches can key on it."""
+
+        def __init__(self, **fields):
+            self.__dict__.update(fields)
+
+    def _derived_scalar_spec(self, quantity: Any):
+        """A constraint-shaped view of a `spec` scalar defined by a binary view.
+
+        The plan builders key off a ConstraintSpecification's `view`, `name` and owning motion;
+        a derived scalar carries the same view and needs the same ops, so it is handed the same
+        shape rather than duplicating every builder.
+        """
+        view = self._Shim(
+            binary=quantity.value.view,
+            quantity=None,
+            axis=None,
+            subspace=None,
+            norm=None,
+            is_elapsed=False,
+        )
+        return self._Shim(
+            name=quantity.name,
+            view=view,
+            parent=self._Shim(parent=getattr(quantity, "parent", None)),
+        )
+
+    def _derived_scalar_quantity(
+        self, quantity: Any, world_qtys: dict[str, WorldQuantity]
+    ) -> WorldQuantity | None:
+        """The scalar a `spec` quantity defined by a binary view resolves to, ops emitted once."""
+        cached = self._derived_scalars.get(quantity)
+        if cached is not None:
+            return cached
+        shim = self._derived_scalar_spec(quantity)
+        target = self._resolve_constraint_quantity(shim, world_qtys)
+        self._derived_scalars[quantity] = target
+        return target
+
+    def _difference_plan(self, spec: ConstraintSpecification, world_qtys) -> Any:
+        """`difference of A and B`: a scalar the run subtracts, over two already-named scalars."""
+        cached = self._difference_plans.get(spec)
+        if cached is not None:
+            return cached
+        binary = spec.view.binary
+        motion = getattr(getattr(spec, "parent", None), "parent", None)
+        left = self._difference_operand(binary.left, world_qtys, spec)
+        right = self._difference_operand(binary.right, world_qtys, spec)
+        # The scalar is a difference of two lengths, so it has no line of action of its own.
+        # It is stated in the frame its operands share, which is the frame a command about it
+        # is resolved in.
+        frame = self._difference_frame(binary, world_qtys, spec)
+        target = WorldQuantity(
+            parent=motion,
+            name=f"difference-{getattr(motion, 'name', '')}-{spec.name}",
+            type=WorldQuantityType.Pose,
+            props=GeometricProps(
+                [
+                    GeoPropPair(GeometricPropKey.Wrt, frame),
+                    GeoPropPair(GeometricPropKey.AsSeenBy, frame),
+                ]
+            ),
+        )
+        # The scalar the constraint reads is the carrier's own coordinate, named the way every
+        # other scalar view is, so the rest of the pipeline finds it where it expects to.
+        target_node = self._owned_uri(_scalar_id(target, _view_subspace(spec), None), motion)
+        self._add_quantity(target_node, QuantityType.Distance)
+        op_node = self._owned_uri(f"compute-difference-{spec.name}", motion)
+        self.graph.add((op_node, RDF.type, ALGO_EXT.Subtraction))
+        self.graph.add((op_node, ALGO_EXT["minuend"], URIRef(str(left))))
+        self.graph.add((op_node, ALGO_EXT["subtrahend"], URIRef(str(right))))
+        self.graph.add((op_node, ALGO_EXT.out, target_node))
+        # A difference has no line of action of its own; the left operand's gradient is one, and
+        # moving along it changes the left length strongly and the right one weakly, so it
+        # reduces the difference.
+        plan = self._Shim(target=target, node=target_node, gradient_id=self._difference_gradient(
+            binary.left, world_qtys
+        ))
+        self._difference_plans[spec] = plan
+        return plan
+
+    def _difference_gradient(self, ref: Any, world_qtys) -> str | None:
+        """The runtime gradient direction published for a difference operand's own view."""
+        resolved = _resolved_context_quantity(ref) if isinstance(ref, ContextQuantity) else ref
+        value = getattr(resolved, "value", None)
+        if value is None or type(value).__name__ != "DerivedScalarValue":
+            return None
+        target = self._derived_scalar_quantity(resolved, world_qtys)
+        return _gradient_scalar_id(target, self._derived_scalar_spec(resolved))
+
+    def _difference_frame(self, binary: Any, world_qtys, spec) -> str:
+        """The frame both operands of a difference are measured in; they must agree."""
+        frames = []
+        for ref in (binary.left, binary.right):
+            resolved = _resolved_context_quantity(ref) if isinstance(ref, ContextQuantity) else ref
+            value = getattr(resolved, "value", None)
+            if value is not None and type(value).__name__ == "DerivedScalarValue":
+                target = self._derived_scalar_quantity(resolved, world_qtys)
+                frames.append(_geo_prop(getattr(target, "props", None), "as-seen-by"))
+                continue
+            qty = self._resolve_qty(ref, world_qtys)
+            frames.append(_geo_prop(getattr(qty, "props", None), "as-seen-by"))
+        if frames[0] is None or frames[0] != frames[1]:
+            raise ValueError(
+                f"Constraint '{spec.name}' differences two scalars measured in different frames "
+                f"({frames[0]} and {frames[1]}); a command about it has no frame to resolve in."
+            )
+        return frames[0]
+
+    def _difference_operand(self, ref: Any, world_qtys, spec) -> str:
+        """One side of a difference: a `spec` scalar defined by a view, or a declared quantity."""
+        resolved = _resolved_context_quantity(ref) if isinstance(ref, ContextQuantity) else ref
+        value = getattr(resolved, "value", None)
+        if value is not None and type(value).__name__ == "DerivedScalarValue":
+            target = self._derived_scalar_quantity(resolved, world_qtys)
+            if target is None:
+                raise ValueError(
+                    f"Constraint '{spec.name}' takes a difference of '{resolved.name}', which "
+                    "does not resolve to a scalar."
+                )
+            # The plan's target is the pose carrier; the scalar is its distance coordinate.
+            shim = self._derived_scalar_spec(resolved)
+            return str(
+                self._owned_uri(
+                    _scalar_id(target, _view_subspace(shim), None), getattr(target, "parent", None)
+                )
+            )
+        qty = self._resolve_qty(ref, world_qtys)
+        if qty is None:
+            raise ValueError(
+                f"Constraint '{spec.name}' takes a difference of '{_node_name(ref)}', which is "
+                "neither a declared quantity nor a scalar defined by a view."
+            )
+        return qty.uri
+
     def _resolve_constraint_quantity(
         self,
         spec: ConstraintSpecification,
@@ -1165,6 +1322,8 @@ class MotionSpecDatasetBuilder:
         """
         if getattr(spec.view, "is_elapsed", False):
             return None
+        if _is_difference_view(spec):
+            return self._difference_plan(spec, world_qtys).target
         if _is_distance_view(spec):
             return self._distance_plan(spec, world_qtys).target
         if _is_alignment_view(spec):
@@ -2011,6 +2170,15 @@ class MotionSpecDatasetBuilder:
             self._emit_pose_to_direction(direction_node, qty, as_seen_by_node, motion, ctrl.name)
         elif axis is not None:
             self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
+        elif _is_difference_view(spec):
+            plan = self._difference_plans.get(spec)
+            gradient_id = getattr(plan, "gradient_id", None)
+            if gradient_id is None:
+                raise ValueError(
+                    f"Force controller '{ctrl.name}' holds a difference whose operands publish "
+                    "no gradient, so the command has no line of action."
+                )
+            direction_node = self._owned_uri(gradient_id, motion)
         else:
             gradient_id = _gradient_scalar_id(qty, spec)
             if gradient_id is None:
@@ -2067,6 +2235,11 @@ class MotionSpecDatasetBuilder:
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
         axes = [axis for _, axis in command.controlled_axes if axis is not None]
+        # A cone alignment is one degree of freedom, and its controller answers with one scalar
+        # about the gradient. Its two nominal axes are the rows a chain solver takes, not
+        # components anything writes, so the command is built from the gradient instead.
+        if _is_alignment_view(spec) and not _alignment_is_pointwise(spec):
+            axes = []
 
         # The wrench coordinate still needs a well-formed reference point; the op ignores it.
         point_node = self._declared_uri(f"point-moment-{ctrl.name}", ctrl)
@@ -3050,6 +3223,14 @@ class MotionSpecDatasetBuilder:
                 (VelocityTwistCoordinate, AccelerationTwistCoordinate, WrenchCoordinate),
             ):
                 self._emit_two_subspace_coordinate(node, quantity)
+                continue
+            # A scalar the run computes: it carries its type's unit and no authored value, and
+            # the ops behind it are emitted when something first asks what it resolves to.
+            if type(quantity.value).__name__ == "DerivedScalarValue":
+                self.graph.add(
+                    (node, QUDT_SCHEMA.unit, SCALAR_UNIT.get(quantity.type, QUDT_UNIT.UNITLESS))
+                )
+                self._derived_scalar_declarations.append((quantity, node))
                 continue
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(quantity.value.unit)))
             if isinstance(quantity.value, Measure):
@@ -4353,6 +4534,12 @@ class MotionSpecDatasetBuilder:
             return None
         context_qty = self._constraint_context_quantity(spec)
         if context_qty is not None:
+            subspace_raw = spec.view.subspace
+            view_spec = self._context_ref_view_spec(
+                context_qty, subspace_raw, semantic_axis_label(spec.view.axis)
+            )
+            if view_spec is not None and subspace_raw is not None:
+                return view_spec[0]
             return context_qty.type
         expr = getattr(spec.view, "expr", None)
         return _infer_expr_type(expr.as_op_tree()) if expr is not None else None
@@ -4362,12 +4549,21 @@ class MotionSpecDatasetBuilder:
         spec: ConstraintSpecification,
         motion: GuardedMotion,
         context_qty: ContextQuantity | None,
+        subspace: str | None = None,
+        axis: str | None = None,
     ) -> tuple[URIRef, Any]:
-        """`qty_node`/`scalar_t` for a constraint view naming no world quantity: a scalar
-        context quantity, or an inline parenthesized expression owned by the constraint.
+        """`qty_node`/`scalar_t` for a constraint view naming no world quantity: a component of a
+        vector context quantity, a scalar context quantity, or an inline parenthesized expression
+        owned by the constraint.
         """
         tree = None
         if context_qty is not None:
+            view_spec = self._context_ref_view_spec(context_qty, subspace, axis)
+            if view_spec is not None and subspace is not None:
+                return (
+                    self._emit_context_ref_view_node(context_qty, subspace, axis),
+                    view_spec[0],
+                )
             scalar_t = context_qty.type
         else:
             tree = spec.view.expr.as_op_tree()
@@ -4430,8 +4626,16 @@ class MotionSpecDatasetBuilder:
                 raise ValueError(f"Constraint '{spec.name}' does not resolve to a world quantity.")
 
             if qty is None:
-                subspace = axis = None
-                qty_node, scalar_t = self._constraint_quantityless_view(spec, motion, context_qty)
+                # A context quantity can be a 3-vector too -- a platform's twist and wrench are
+                # written by a solver, not by forward kinematics -- so its component view is
+                # resolved the same way a world quantity's is.
+                subspace = (
+                    _view_subspace(spec) if context_qty is not None and spec.view.subspace else None
+                )
+                axis = semantic_axis_label(spec.view.axis) if context_qty is not None else None
+                qty_node, scalar_t = self._constraint_quantityless_view(
+                    spec, motion, context_qty, spec.view.subspace, axis
+                )
             else:
                 subspace = _view_subspace(spec)
                 axis_raw = spec.view.axis
@@ -6482,6 +6686,14 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((solver_node, RDF.type, rdf_class))
                 if quantity is not None:
                     self.graph.add((solver_node, predicate, URIRef(quantity.uri)))
+                # A force distribution is fed wrenches, and a controller routed to one commands a
+                # force like any other -- so it needs the same wrench built from its magnitude and
+                # its direction. Without this the platform is handed a controller's bare scalar,
+                # which has no direction to distribute, and the base is commanded nothing at all.
+                if solver.algorithm == "ForceDistribution":
+                    self._emit_platform_force_drivers(
+                        handler, motion, solver, solver_node, world_qtys
+                    )
                 continue
 
             driver_stem = f"{solver.name}-{handler.name}" if multi else handler.name
@@ -6664,6 +6876,59 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((solver_node, SLV["output"], URIRef(qty.uri)))
                 self.graph.add((spec_node, SLV["attached-to"], joint_node))
                 self.graph.add((driver_node, SLV["joint-force"], spec_node))
+
+    def _emit_platform_force_drivers(
+        self,
+        handler: ConstraintHandler,
+        motion: GuardedMotion,
+        solver: Any,
+        solver_node: URIRef,
+        world_qtys: dict[str, WorldQuantity],
+    ) -> None:
+        """The command wrenches of every force controller routed to a force distribution.
+
+        The same chain the serial-chain path builds -- magnitude, direction, wrench -- because a
+        force distribution wants a wrench for the same reason a chain does. It is the direction
+        that matters here: a controller holding a distance has one, the line between the two
+        points it measures, and sc1 turns exactly that into the wrench it hands the platform
+        (compute-wrench-<arm>-dist-shoulder).
+        """
+        driver_node = self._owned_uri(f"driver-{solver.name}-{handler.name}", handler)
+        self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
+        self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
+
+        for ctrl_item in getattr(handler, "controllers", []):
+            ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
+            if self._controller_solver(handler, ctrl) is not solver:
+                continue
+            cref = ctrl.params.constraint
+            spec = cref.constraint if hasattr(cref, "constraint") else None
+            if spec is None:
+                continue
+            command = controller_command_record(ctrl)
+            if not (command.is_force_command or command.is_moment_command):
+                continue
+
+            qty = self._resolve_constraint_quantity(spec, world_qtys)
+            if qty is None and not command.is_moment_command:
+                raise ValueError(
+                    f"Controller '{ctrl.name}' routes a force to platform solver "
+                    f"'{solver.name}', but its constraint '{spec.name}' does not resolve to a "
+                    f"world quantity, so no direction can be taken for the wrench."
+                )
+            # A distribution takes a couple as readily as a force -- it is the same wrench, and
+            # the yaw a platform is steered by is exactly what a moment command states.
+            if command.is_moment_command:
+                wrench_node = self._emit_moment_command_wrench(
+                    ctrl, spec, qty, command, handler, motion
+                )
+            else:
+                axis = semantic_axis_label(spec.view.axis)
+                force_signal_node = self._force_control_signal_node(ctrl, handler)
+                wrench_node = self._emit_force_command_wrench(
+                    ctrl, spec, qty, axis, force_signal_node, motion
+                )
+            self._emit_cartesian_force_spec(ctrl, wrench_node, handler, driver_node)
 
     def _emit_cartesian_force_spec(
         self,
