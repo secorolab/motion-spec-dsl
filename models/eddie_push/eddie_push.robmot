@@ -1,0 +1,177 @@
+import "eddie_push.fsm"
+import "eddie_push.scenex"
+ns app = "https://secorolab.github.io/models/eddie-push/"
+ns epf = "https://secorolab.github.io/models/eddie-push/fsm/"
+
+// Force control of the platform, open loop: each motion commands a platform wrench and the
+// distribution spreads it over the four castors. Nothing regulates the result -- a held command
+// accelerates the platform until rolling resistance balances it, which is what makes this the
+// test of the force path rather than of a velocity loop that happens to use it.
+//
+// The twist is still composed every tick, so the run records what the commanded wrench did; no
+// constraint is judged on it.
+exec-context (ns=app) eddie-push-exec {
+    runs-scene: <eddie_push_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    spec {
+        velocity-twist platform-velocity {
+            of:         <eddie.base_link.base_link_origin>,
+            wrt:        <eddie.base_footprint.base_footprint_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+        wrench platform-force {
+            of:         <eddie.base_link.base_link_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+
+        // Rolling resistance and castor scrub cost this 94.8 kg platform on the order of 85 N at
+        // cruise, so 150 N settles it around half a metre per second inside the window.
+        force push-force    = 150.0 N,
+        force pull-force    = -150.0 N,
+        force force-band    = 1.0 N,
+        // Against a yaw inertia of 3.4 kg m^2 plus four scrubbing castors. Negative is clockwise:
+        // the platform's z is up, so a positive moment turns it counter-clockwise.
+        torque cw-moment    = -40.0 Nm,
+        torque ccw-moment   = 40.0 Nm,
+        torque moment-band  = 0.5 Nm
+    }
+}
+
+tolerances {
+    linear-velocity: 0.02 m/s,
+    position:        0.01 m,
+    orientation:     0.01 rad
+}
+
+guarded-motion (ns=app) drive-forward {
+    description: "Push the platform forward with a constant longitudinal force"
+    context { }
+    when {}
+    while {
+        force-x: keeping <shared.spec.platform-force>.force.x equal to <shared.spec.push-force> within <shared.spec.force-band>
+    }
+    until {
+        pushed: elapsed greater than 3.0 s
+    }
+}
+
+guarded-motion (ns=app) drive-backward {
+    description: "Reverse the longitudinal force and drive the castors through a flip"
+    context { }
+    when {}
+    while {
+        force-x: keeping <shared.spec.platform-force>.force.x equal to <shared.spec.pull-force> within <shared.spec.force-band>
+    }
+    until {
+        pulled: elapsed greater than 3.0 s
+    }
+}
+
+guarded-motion (ns=app) turn-cw {
+    description: "Turn the platform clockwise with a pure yaw moment"
+    context { }
+    when {}
+    while {
+        moment-z: keeping <shared.spec.platform-force>.torque.z equal to <shared.spec.cw-moment> within <shared.spec.moment-band>
+    }
+    until {
+        turned-cw: elapsed greater than 3.0 s
+    }
+}
+
+guarded-motion (ns=app) turn-ccw {
+    description: "Turn the platform counter-clockwise with a pure yaw moment"
+    context { }
+    when {}
+    while {
+        moment-z: keeping <shared.spec.platform-force>.torque.z equal to <shared.spec.ccw-moment> within <shared.spec.moment-band>
+    }
+    until {
+        turned-ccw: elapsed greater than 3.0 s
+    }
+}
+
+// A feed-forward controller emits its reference: the commanded wrench component reaches the
+// distribution unchanged, with no error term between them. That is the whole point of the test --
+// what the platform does is the force path's answer, not a controller's.
+constraint-handler (ns=app) handler-forward {
+    handles: <drive-forward>
+    runs-in: <epf.S_FORWARD>
+    monitors {
+        mon-forward: monitor <drive-forward.until> {
+            satisfied { trigger: event <epf.E_FORWARD_DONE> }
+        }
+    }
+    controllers {
+        feed-forward ctrl-forward-x { constraint: <drive-forward.force-x> } as force via <handler-forward.platform-force>
+    }
+    solvers {
+        platform-twist: mobile-platform {
+            agent: <agents.eddie>,
+            algorithm: velocity-composition,
+            configuration: "hddc2b_platform",
+            quantity: <shared.spec.platform-velocity>
+        },
+        platform-force: mobile-platform {
+            agent: <agents.eddie>,
+            algorithm: force-distribution,
+            configuration: "aligned",
+            quantity: <shared.spec.platform-force>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-backward {
+    handles: <drive-backward>
+    runs-in: <epf.S_BACKWARD>
+    monitors {
+        mon-backward: monitor <drive-backward.until> {
+            satisfied { trigger: event <epf.E_BACKWARD_DONE> }
+        }
+    }
+    controllers {
+        feed-forward ctrl-backward-x { constraint: <drive-backward.force-x> } as force via <handler-forward.platform-force>
+    }
+    solvers {
+        <handler-forward.platform-force>
+    }
+}
+
+constraint-handler (ns=app) handler-cw {
+    handles: <turn-cw>
+    runs-in: <epf.S_CW>
+    monitors {
+        mon-cw: monitor <turn-cw.until> {
+            satisfied { trigger: event <epf.E_CW_DONE> }
+        }
+    }
+    controllers {
+        feed-forward ctrl-cw-z { constraint: <turn-cw.moment-z> } as torque via <handler-forward.platform-force>
+    }
+    solvers {
+        <handler-forward.platform-force>
+    }
+}
+
+constraint-handler (ns=app) handler-ccw {
+    handles: <turn-ccw>
+    runs-in: <epf.S_CCW>
+    monitors {
+        mon-ccw: monitor <turn-ccw.until> {
+            satisfied { trigger: event <epf.E_CCW_DONE> }
+        }
+    }
+    controllers {
+        feed-forward ctrl-ccw-z { constraint: <turn-ccw.moment-z> } as torque via <handler-forward.platform-force>
+    }
+    solvers {
+        <handler-forward.platform-force>
+    }
+}
