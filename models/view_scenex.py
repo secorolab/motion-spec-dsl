@@ -196,6 +196,8 @@ def build_spec(scene: MjcfSceneSpec, start: Path) -> mjk.SceneSpec:
         object_spec.fixed = obj.fixed
         if obj.has_path:
             object_spec.mjcf_path = find_asset(obj.path, start)
+            if obj.color is not None:
+                object_spec.rgba = obj.color
         else:
             object_spec.shape = getattr(mjk.Shape, obj.shape)
             object_spec.size = obj.size
