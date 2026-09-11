@@ -12,7 +12,7 @@ from textx.scoping.providers import FQNImportURI
 
 from scene_dsl.classes.geom import Frame, IDefaultFrame
 from scene_dsl.classes.ktree import KinematicTreeTemplate
-from scene_dsl.langs import _pending_refs, build_instance_trees, link_tree_holders
+from scene_dsl.langs import _pending_refs, build_instance_trees
 
 
 def _fqn(obj) -> str:
@@ -169,6 +169,3 @@ def finalize_imported_scenes(model, metamodel):
         )
         if unfilled or getattr(imported, "_instanced_refs", None):
             build_instance_trees(imported, None)
-        # Composition back-edges land for the same reason: the tree references a `.scenex`
-        # composes are unresolved when its own processors run, so nothing was linked then.
-        link_tree_holders(imported, None)
