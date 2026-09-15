@@ -24,6 +24,47 @@ from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 
 log = logging.getLogger(__name__)
 
+
+_ANSI = re.compile("\x1b\\[[0-9;]*m")
+
+# What the caller calls a level. Python's own "warning" is a word wider than the column.
+_LEVEL_NAMES = {"WARNING": "warn", "CRITICAL": "error"}
+
+
+def _level_namer(labels: dict[str, str]):
+    """Give each record the caller's word for its level, as the caller writes it."""
+
+    def name(record: logging.LogRecord) -> bool:
+        level = _LEVEL_NAMES.get(record.levelname, record.levelname.lower())
+        record.levelname = labels.get(level, level)
+        return True
+
+    return name
+
+
+def _stamp_lines() -> None:
+    """Log in the caller's format when it named one, so a toolchain reads as a single stream.
+
+    textx configures the root logger with the bare message, and the generator runs in its own
+    process, so the line has to be formatted here or not at all.
+    """
+    pattern = os.environ.get("MOTION_SPEC_LOG_FORMAT")
+    if not pattern or any(isinstance(h, logging.StreamHandler) for h in log.handlers):
+        return
+    handler = logging.StreamHandler()
+    labels = json.loads(os.environ.get("MOTION_SPEC_LOG_LEVELS") or "{}")
+    if not handler.stream.isatty():
+        pattern = _ANSI.sub("", pattern)
+        labels = {level: _ANSI.sub("", label) for level, label in labels.items()}
+    handler.setFormatter(
+        logging.Formatter(pattern, datefmt=os.environ.get("MOTION_SPEC_LOG_DATEFMT") or None)
+    )
+    handler.addFilter(_level_namer(labels))
+    log.addHandler(handler)
+    log.setLevel(logging.INFO)
+    log.propagate = False
+
+
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 # Agents and file entities are shared concepts: one IRI each, in the space motion-spec's
 # prov_uri already mints, so this document, coord-dsl's and motion-spec's describe one node per
@@ -418,6 +459,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     and FSM outputs.
     """
     del metamodel, overwrite, debug
+    _stamp_lines()
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
 
