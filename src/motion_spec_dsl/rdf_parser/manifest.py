@@ -45,9 +45,14 @@ def metamodel_url_map():
         from rdf_utils.namespace import URL_COMP_ROB2B, URL_SECORO
         from rdf_utils.resolver import PKG_CACHE_ROOT
 
+        # The metamodel prefixes are listed too, and they are longer than the one a model's
+        # own iri-map claims for the whole host: without them a generated model resolves its
+        # metamodels into its own directory, so every generation downloads the set again.
         return {
             URL_SECORO: join(PKG_CACHE_ROOT, "secoro"),
             URL_COMP_ROB2B: join(PKG_CACHE_ROOT, "comp-rob2b"),
+            METAMODELS_URL: join(PKG_CACHE_ROOT, "secoro", "metamodels"),
+            COMP_ROB2B_URL: join(PKG_CACHE_ROOT, "comp-rob2b", "metamodels"),
         }
     url_map = {METAMODELS_URL: str(root)}
     comp_rob2b = root.parent / "comp-rob2b" / "metamodels"

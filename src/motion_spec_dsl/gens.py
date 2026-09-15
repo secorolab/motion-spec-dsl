@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -20,6 +21,8 @@ from textx import get_model
 
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+
+log = logging.getLogger(__name__)
 
 DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 # Agents and file entities are shared concepts: one IRI each, in the space motion-spec's
@@ -107,7 +110,7 @@ def _write_provenance_artifact(
     )
     path.write_text(json.dumps(document, indent=2) + "\n")
     _validate_provenance_artifact(path)
-    print(f"  wrote {path}")
+    log.info("wrote %s", path)
 
 
 def _tool_activity(
@@ -324,7 +327,7 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
         serialized = scene_graph.serialize(format="json-ld", auto_compact=True, indent=2)
         serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
         jsonld_path.write_text(serialized)
-        print(f"  wrote {jsonld_path}")
+        log.info("wrote %s", jsonld_path)
         jsonld_names.append(jsonld_name)
 
         kdl_name = f"{Path(imp.importURI).stem}.kdl.hpp"
@@ -344,7 +347,7 @@ def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
                 }
             )
         )
-        print(f"  wrote {kdl_path}")
+        log.info("wrote %s", kdl_path)
         kdl_names.append(kdl_name)
     return jsonld_names, kdl_names
 
@@ -381,31 +384,31 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
 
         hpp_path = output_dir / f"{ir['name']}.hpp"
         hpp_path.write_text(gen_cpp_header(ir))
-        print(f"  wrote {hpp_path}")
+        log.info("wrote %s", hpp_path)
         record(fsm_model, "cpp", hpp_path)
         tool_artifact_names.append(hpp_path.name)
 
         dot_source = fsm_dot(graph, fsm_ref)
         dot_path = output_dir / f"{ir['name']}.dot"
         dot_path.write_text(dot_source)
-        print(f"  wrote {dot_path}")
+        log.info("wrote %s", dot_path)
         record(fsm_model, "dot", dot_path)
         tool_artifact_names.append(dot_path.name)
         if shutil.which("dot") is not None:
             svg_path = output_dir / f"{ir['name']}.svg"
             write_dot(dot_source, svg_path, "svg")
-            print(f"  wrote {svg_path}")
+            log.info("wrote %s", svg_path)
             record(fsm_model, "dot", svg_path)
             tool_artifact_names.append(svg_path.name)
 
         ir_path = output_dir / "fsm_ir.json"
         ir_path.write_text(json.dumps(ir, indent=2))
-        print(f"  wrote {ir_path}")
+        log.info("wrote %s", ir_path)
 
         jsonld_name = f"{ir['name']}.ld.json"
         jsonld_path = output_dir / jsonld_name
         jsonld_path.write_text(_fsm_named_graph_jsonld(graph, None, fsm_ref))
-        print(f"  wrote {jsonld_path}")
+        log.info("wrote %s", jsonld_path)
         jsonld_names.append(jsonld_name)
     return jsonld_names, tool_artifact_names
 
@@ -429,7 +432,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     serialized = dataset.default_graph.serialize(format="json-ld", indent=2, context=context)
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
     graph_path.write_text(serialized)
-    print(f"  wrote {graph_path}")
+    log.info("wrote %s", graph_path)
 
     scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir)
 
@@ -454,7 +457,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
         *fsm_jsonld_names,
     ]
     manifest_path.write_text(json.dumps(_build_manifest(manifest_imports), indent=2))
-    print(f"  wrote {manifest_path}")
+    log.info("wrote %s", manifest_path)
 
     _write_provenance_artifact(
         model,
