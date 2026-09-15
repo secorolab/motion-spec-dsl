@@ -18,11 +18,11 @@ requires-python = ">=3.10"
 dependencies = [
     "textX>=4.1.0",
     "rdflib>=7.6.0",
-    "rdf-utils",
+    "rdf-utils @ git+https://github.com/minhnh/rdf-utils@main",
     "pyshacl>=0.25.0",
     "PyLD>=2.0.0",
-    "coord_dsl",
-    "scene-dsl",
+    "coord_dsl @ git+https://github.com/secorolab/coord-dsl@main",
+    "scene-dsl @ git+https://github.com/secorolab/scene-dsl@main",
 ]
 
 [project.entry-points."textx_languages"]
