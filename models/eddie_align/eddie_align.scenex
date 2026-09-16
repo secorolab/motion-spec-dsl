@@ -134,6 +134,16 @@ scene inst (ns=eal_mjc) eddie_align_scene_mjc {
                     }
                 }
             }
+            // Three-quarter view from the robot's front-left, looking down at the contact.
+            frame side_cam {
+                pose side_cam_on_table {
+                    wrt: <table.table_top>
+                    xyz: (-1.812, 1.584, 1.040) m
+                    orientation: quat {
+                        xyzw: (0.213761886, -0.411961985, -0.786230125, 0.407964911)
+                    }
+                }
+            }
             frame table_com {
                 pose table_com_in_table_top {
                     wrt: <table.table_top>
@@ -179,6 +189,14 @@ scene inst (ns=eal_mjc) eddie_align_scene_mjc {
 
         camera overhead {
             frame: <eddie_align_graph.table.overhead_cam>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 45.0 deg
+            update-rate: 30.0 Hz
+        }
+
+        camera side {
+            frame: <eddie_align_graph.table.side_cam>
             type: rgb
             resolution: (1280, 720)
             fov: 45.0 deg
