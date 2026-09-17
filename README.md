@@ -23,7 +23,7 @@ Verify language registration and parse the maintained model:
 
 ```bash
 textx list-languages
-textx check src/motion-spec-dsl/models/pick_place_single/pick_place_single.robmot
+textx check src/motion-spec-dsl/src/motion_spec_dsl/models/pick_place_single/pick_place_single.robmot
 ```
 
 Run repository checks from `src/motion-spec-dsl`:

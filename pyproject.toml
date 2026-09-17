@@ -39,8 +39,19 @@ include-package-data = true
 where = ["src"]
 
 [tool.setuptools.package-data]
+# The example models ship with the package, so `motion-spec examples` needs no checkout and no
+# clone. Named by extension rather than `models/**/*`: the recordings beside them are megabytes.
 "motion_spec_dsl" = [
     "grammars/*.tx",
+    "models/**/*.robmot",
+    "models/**/*.fsm",
+    "models/**/*.scene",
+    "models/**/*.scenex",
+    "models/**/*.ktree",
+    "models/**/*.toml",
+    "models/**/*.xml",
+    "models/**/*.json",
+    "models/**/*.py",
 ]
 
 [tool.ruff]
