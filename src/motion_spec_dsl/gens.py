@@ -8,15 +8,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+import pwd
 import re
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Any
 
 import pyshacl
+from rdf_utils.models.prov import (
+    add_agent,
+    add_file_entity,
+    load_pkg_prov,
+    load_transformation_prov,
+)
+from rdf_utils.models.vocab import URI_PROV_EXT_TYPE_SPECIFICATION
+from rdf_utils.namespace import (
+    URL_MM_PROV_EXT_JSON,
+    URL_MM_PROV_EXT_SHACL,
+    URL_MM_PROV_JSON,
+    URL_MM_PROV_SHACL,
+)
 from rdf_utils.naming import get_valid_var_name
-from rdflib import Dataset, URIRef
-from rdflib.namespace import Namespace
+from rdflib import Dataset, Graph, Literal, URIRef
+from rdflib.namespace import PROV, RDF, Namespace
 from textx import get_model
 
 from motion_spec_dsl.classes.motion_spec import Model
@@ -71,7 +86,21 @@ DSLPROV = Namespace("https://secorolab.github.io/motion-spec-dsl/provenance/")
 # tool and per file rather than three parallel ones. Only this document's own activity
 # instances stay under dslprov.
 MSPROV = Namespace("https://secorolab.github.io/motion-spec/provenance/")
-MS_PROV = Namespace("https://secorolab.github.io/metamodels/motion-spec/prov#")
+
+# agent.json redefines the term "Agent" as agn:Agent, so it goes before prov.json, whose
+# "Agent" must stay prov:Agent for the shapes to see one.
+PROVENANCE_CONTEXT = [
+    "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/agent.json",
+    URL_MM_PROV_JSON,
+    URL_MM_PROV_EXT_JSON,
+    {"dslprov": str(DSLPROV), "msprov": str(MSPROV)},
+]
+PROVENANCE_SHAPES = (URL_MM_PROV_SHACL, URL_MM_PROV_EXT_SHACL)
+PACKAGE_REPOSITORIES = {
+    "motion_spec_dsl": "https://github.com/secorolab/motion-spec-dsl",
+    "coord_dsl": "https://github.com/secorolab/coord-dsl",
+    "scene_dsl": "https://github.com/secorolab/scene-dsl",
+}
 
 
 def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
@@ -80,7 +109,6 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "https://secorolab.github.io/metamodels/algorithm-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/behaviour/event_loop.shacl.ttl",
         "https://secorolab.github.io/metamodels/acceptance-criteria/bdd/environment.shacl.ttl",
-        "https://secorolab.github.io/metamodels/prov.shacl.ttl",
         "https://secorolab.github.io/metamodels/robot/sensors.shacl.ttl",
         "https://secorolab.github.io/metamodels/geometry/spatial-operators-extension.shacl.ttl",
         "https://secorolab.github.io/metamodels/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
@@ -144,40 +172,92 @@ def _write_provenance_artifact(
     path: Path,
     fsm_tool_names: list[str],
     scene_tool_names: list[str],
+    spans: dict[str, tuple[datetime, datetime]],
 ) -> None:
+    from motion_spec_dsl.rdf_parser.manifest import install_metamodel_resolver
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    document = _build_provenance_document(
-        model, artifact_names, output_dir, fsm_tool_names, scene_tool_names
+    install_metamodel_resolver()
+    graph = _build_provenance_document(
+        model, artifact_names, output_dir, fsm_tool_names, scene_tool_names, spans
     )
-    path.write_text(json.dumps(document, indent=2) + "\n")
+    serialized = graph.serialize(
+        format="json-ld", context=PROVENANCE_CONTEXT, auto_compact=True, indent=2
+    )
+    document = json.loads(serialized.decode() if isinstance(serialized, bytes) else serialized)
+    path.write_text(json.dumps({"schema_version": 1, **document}, indent=2) + "\n")
     _validate_provenance_artifact(path)
     log.info("wrote %s", path)
 
 
-def _tool_activity(
-    graph: list[dict[str, Any]],
-    tool_names: list[str],
-    activity_id: str,
-    agent_id: str,
-    sources: list[Path],
-    generated_at: str,
-) -> None:
-    """Append an Activity (and its Agent) attributing `tool_names` to an external tool,
-    only if that tool actually produced anything for this generation pass.
-    """
-    if not tool_names:
-        return
-    graph.append(
-        {
-            "@id": activity_id,
-            "@type": ["prov:Activity", "ms-prov:SpecCompilation"],
-            "used": [_source_entity(s) for s in sources],
-            "wasAssociatedWith": agent_id,
-            "startedAtTime": generated_at,
-            "endedAtTime": generated_at,
-        }
+def _package_agent(graph: Graph, package: str) -> URIRef:
+    """One node per generator package, in the IRI space every generation document shares."""
+    agent = MSPROV[f"agent/{package}"]
+    load_pkg_prov(
+        graph,
+        agent,
+        name=package.replace("_", "-"),
+        version=_package_version(package),
+        commit=_package_commit(package),
+        repository=PACKAGE_REPOSITORIES.get(package),
     )
-    graph.append({"@id": agent_id, "@type": ["prov:SoftwareAgent", "prov:Agent"]})
+    return agent
+
+
+def _package_version(package: str) -> str | None:
+    try:
+        return version(package)
+    except PackageNotFoundError:
+        return None
+
+
+def _package_commit(package: str) -> str | None:
+    """The revision an installer recorded (PEP 610); absent for a plain source install."""
+    try:
+        direct_url = distribution(package).read_text("direct_url.json")
+    except PackageNotFoundError:
+        return None
+    if not direct_url:
+        return None
+    return (json.loads(direct_url).get("vcs_info") or {}).get("commit_id")
+
+
+def _record_authoring(graph: Graph, source: Path) -> URIRef:
+    """Who wrote this source file: a Specification generating it, ended when the file last changed."""
+    entity = _source_entity(source)
+    activity = MSPROV[f"activity/specification/{_slug(source.name)}"]
+    owner = _file_owner(source)
+    person = MSPROV[f"agent/person/{_slug(owner)}"]
+    add_agent(graph, person, (PROV.Person,), name=owner)
+    add_file_entity(graph, entity, location=str(source), generated_by=activity)
+    graph.add((activity, RDF.type, PROV.Activity))
+    graph.add((activity, RDF.type, URI_PROV_EXT_TYPE_SPECIFICATION))
+    graph.add((activity, PROV.wasAssociatedWith, person))
+    graph.add((activity, PROV.endedAtTime, Literal(_mtime(source))))
+    return entity
+
+
+def _transformation(
+    graph: Graph,
+    activity: URIRef,
+    sources: list[Path],
+    targets: list[str],
+    output_dir: Path,
+    agent: URIRef,
+    span: tuple[datetime, datetime],
+) -> None:
+    """One generation step: the files it read, the files it wrote, and when it ran."""
+    target_ids = []
+    for name in targets:
+        path = (output_dir / name).resolve()
+        target_id = _generated_entity(path)
+        add_file_entity(
+            graph, target_id, location=str(path), generated_by=activity, generated_at=_mtime(path)
+        )
+        target_ids.append(target_id)
+    load_transformation_prov(
+        graph, activity, [_source_entity(s) for s in sources], target_ids, agent, *span
+    )
 
 
 def _build_provenance_document(
@@ -186,125 +266,108 @@ def _build_provenance_document(
     output_dir: Path,
     fsm_tool_names: list[str],
     scene_tool_names: list[str],
-) -> dict[str, Any]:
-    """The DSL's own provenance: what motion-spec-dsl generated directly, plus what it
-    delegated to coord-dsl (FSM) and scene-dsl (scenex) -- each attributed to its own
-    agent rather than folded into motion_spec_dsl. coord-dsl also writes its own, richer
+    spans: dict[str, tuple[datetime, datetime]],
+) -> Graph:
+    """The DSL's own provenance: who authored each source, what motion-spec-dsl made of them,
+    and what it delegated to coord-dsl (FSM) and scene-dsl (scenex) -- each step its own
+    Transformation under its own package agent. coord-dsl also writes its own, richer
     provenance.ld.json beside its artifacts; a pointer entity here links to it rather than
-    duplicating its activity detail (this document is SHACL-validated standalone, so any
-    node referenced by @id must be described here too -- see `_tool_activity`).
+    duplicating its activity detail.
     """
-    stem = Path(model._tx_filename).stem
+    stem = _slug(Path(model._tx_filename).stem)
     sources = _source_paths(model)
-    activity = f"dslprov:activity/jsonld_generation/{_slug(stem)}"
-    fsm_activity = f"dslprov:activity/fsm_generation/{_slug(stem)}"
-    scene_activity = f"dslprov:activity/scenex_generation/{_slug(stem)}"
-    generated_at = datetime.now(timezone.utc).isoformat()
-
-    graph = [
-        {
-            "@id": activity,
-            "@type": ["prov:Activity", "ms-prov:SpecCompilation"],
-            "used": [_source_entity(s) for s in sources],
-            "wasAssociatedWith": "msprov:agent/motion_spec_dsl",
-            "startedAtTime": generated_at,
-            "endedAtTime": generated_at,
-        },
-    ]
-    _tool_activity(
-        graph,
-        fsm_tool_names,
-        fsm_activity,
-        "msprov:agent/coord_dsl",
-        [s for s in sources if s.suffix == ".fsm"],
-        generated_at,
-    )
-    _tool_activity(
-        graph,
-        scene_tool_names,
-        scene_activity,
-        "msprov:agent/scene_dsl",
-        [s for s in sources if s.suffix == ".scenex"],
-        generated_at,
-    )
-
+    graph = Graph()
     for source in sources:
-        graph.append(
-            {
-                "@id": _source_entity(source),
-                "@type": ["prov:Entity"],
-                "atLocation": source.resolve().as_uri(),
-            }
+        _record_authoring(graph, source)
+
+    delegated = {*fsm_tool_names, *scene_tool_names}
+    _transformation(
+        graph,
+        DSLPROV[f"activity/jsonld_generation/{stem}"],
+        sources,
+        [name for name in artifact_names if name not in delegated],
+        output_dir,
+        _package_agent(graph, "motion_spec_dsl"),
+        spans["jsonld"],
+    )
+    if fsm_tool_names:
+        _transformation(
+            graph,
+            DSLPROV[f"activity/fsm_generation/{stem}"],
+            [s for s in sources if s.suffix == ".fsm"],
+            fsm_tool_names,
+            output_dir,
+            _package_agent(graph, "coord_dsl"),
+            spans["fsm"],
         )
-    for name in artifact_names:
-        if name in fsm_tool_names:
-            generated_by = fsm_activity
-        elif name in scene_tool_names:
-            generated_by = scene_activity
-        else:
-            generated_by = activity
-        graph.append(
-            {
-                "@id": _generated_entity(Path(name)),
-                "@type": ["prov:Entity"],
-                "atLocation": (output_dir / name).resolve().as_uri(),
-                "wasGeneratedBy": generated_by,
-                "generatedAtTime": generated_at,
-            }
-        )
-    if fsm_tool_names and (output_dir / "provenance.ld.json").exists():
-        graph.append(
-            {
-                "@id": _generated_entity(output_dir / "provenance.ld.json"),
-                "@type": ["prov:Entity"],
-                "atLocation": (output_dir / "provenance.ld.json").resolve().as_uri(),
-                "wasAttributedTo": "msprov:agent/coord_dsl",
-            }
+    if scene_tool_names:
+        _transformation(
+            graph,
+            DSLPROV[f"activity/scenex_generation/{stem}"],
+            [s for s in sources if s.suffix == ".scenex"],
+            scene_tool_names,
+            output_dir,
+            _package_agent(graph, "scene_dsl"),
+            spans["scenex"],
         )
 
-    graph.append(
-        {"@id": "msprov:agent/motion_spec_dsl", "@type": ["prov:SoftwareAgent", "prov:Agent"]}
-    )
-    return {
-        "schema_version": 1,
-        "@context": [
-            "https://secorolab.github.io/metamodels/prov.json",
-            {"dslprov": str(DSLPROV), "msprov": str(MSPROV), "ms-prov": str(MS_PROV)},
-        ],
-        "@graph": graph,
-    }
+    coord_document = (output_dir / "provenance.ld.json").resolve()
+    if fsm_tool_names and coord_document.exists():
+        entity = _generated_entity(coord_document)
+        add_file_entity(
+            graph, entity, location=str(coord_document), generated_at=_mtime(coord_document)
+        )
+        graph.add((entity, PROV.wasAttributedTo, MSPROV["agent/coord_dsl"]))
+    return graph
 
 
 def _slug(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_") or "item"
 
 
-def _source_entity(path: Path) -> str:
+def _mtime(path: Path) -> datetime | None:
+    """When the file last changed, or None while it is still being written."""
+    if not path.exists():
+        return None
+    return datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+
+
+def _file_owner(path: Path) -> str:
+    uid = path.stat().st_uid
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def _source_entity(path: Path) -> URIRef:
     """The authored file's node. One IRI per file across every generation-time document, so
     coord-dsl's view of the same .fsm and this one's are the same node."""
-    return f"msprov:entity/source/{_slug(Path(path).name)}"
+    return MSPROV[f"entity/source/{_slug(Path(path).name)}"]
 
 
-def _generated_entity(path: Path) -> str:
-    return f"msprov:entity/generated/{_slug(Path(path).name)}"
+def _generated_entity(path: Path) -> URIRef:
+    return MSPROV[f"entity/generated/{_slug(Path(path).name)}"]
 
 
 def _validate_provenance_artifact(path: Path) -> None:
     from motion_spec_dsl.rdf_parser.manifest import install_metamodel_resolver
 
-    base = "https://secorolab.github.io/metamodels/"
     override = os.environ.get("METAMODELS_PATH")
-    shape: str | Path = f"{base}prov.shacl.ttl"
-    if override:
-        metamodels = Path(override)
-        if not (metamodels / "prov.shacl.ttl").is_file():
-            raise RuntimeError(f"METAMODELS_PATH={override} does not contain prov.shacl.ttl")
-        shape = metamodels / "prov.shacl.ttl"
     install_metamodel_resolver()
+    shapes = Graph()
+    for url in PROVENANCE_SHAPES:
+        source: str | Path = url
+        if override:
+            source = Path(override) / url.rsplit("/", 1)[-1]
+            if not source.is_file():
+                raise RuntimeError(f"METAMODELS_PATH={override} does not contain {source.name}")
+        shapes.parse(str(source), format="turtle")
     conforms, _graph, report = pyshacl.validate(
         data_graph=str(path),
         data_graph_format="json-ld",
-        shacl_graph=str(shape),
+        shacl_graph=shapes,
+        inference="rdfs",
     )
     if not conforms:
         raise RuntimeError(f"{path}: PROV SHACL validation failed\n{report}")
@@ -418,6 +481,7 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
         if not loaded:
             continue
         fsm_model = loaded[0]
+        started = datetime.now(timezone.utc)
         graph, fsm_ref = get_fsm_graph(fsm_model)
         ir = gen_json(graph, fsm_ref)
         # Add the namespace URI so it also travels with the framed IR / header.
@@ -426,20 +490,22 @@ def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
         hpp_path = output_dir / f"{ir['name']}.hpp"
         hpp_path.write_text(gen_cpp_header(ir))
         log.info("wrote %s", hpp_path)
-        record(fsm_model, "cpp", hpp_path)
+        record(fsm_model, "cpp", hpp_path, started)
         tool_artifact_names.append(hpp_path.name)
 
+        started = datetime.now(timezone.utc)
         dot_source = fsm_dot(graph, fsm_ref)
         dot_path = output_dir / f"{ir['name']}.dot"
         dot_path.write_text(dot_source)
         log.info("wrote %s", dot_path)
-        record(fsm_model, "dot", dot_path)
+        record(fsm_model, "dot", dot_path, started)
         tool_artifact_names.append(dot_path.name)
         if shutil.which("dot") is not None:
+            started = datetime.now(timezone.utc)
             svg_path = output_dir / f"{ir['name']}.svg"
             write_dot(dot_source, svg_path, "svg")
             log.info("wrote %s", svg_path)
-            record(fsm_model, "dot", svg_path)
+            record(fsm_model, "dot", svg_path, started)
             tool_artifact_names.append(svg_path.name)
 
         ir_path = output_dir / "fsm_ir.json"
@@ -460,6 +526,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     """
     del metamodel, overwrite, debug
     _stamp_lines()
+    started = datetime.now(timezone.utc)
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
 
@@ -476,12 +543,16 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     graph_path.write_text(serialized)
     log.info("wrote %s", graph_path)
 
+    scene_started = datetime.now(timezone.utc)
     scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir)
+    scene_ended = datetime.now(timezone.utc)
 
     # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
     # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
     # combined graph (no fsm_ir.json read at codegen time).
+    fsm_started = datetime.now(timezone.utc)
     fsm_jsonld_names, fsm_tool_names = _gen_fsm(model, output_dir)
+    fsm_ended = datetime.now(timezone.utc)
     artifact_names = [
         graph_path.name,
         manifest_path.name,
@@ -494,7 +565,6 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
     ]
     manifest_imports = [
         graph_path.name,
-        provenance_name,
         *scene_jsonld_names,
         *fsm_jsonld_names,
     ]
@@ -508,4 +578,9 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
         provenance_path,
         fsm_tool_names,
         [*scene_jsonld_names, *scene_kdl_names],
+        {
+            "jsonld": (started, datetime.now(timezone.utc)),
+            "fsm": (fsm_started, fsm_ended),
+            "scenex": (scene_started, scene_ended),
+        },
     )

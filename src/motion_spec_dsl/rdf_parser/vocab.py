@@ -105,26 +105,6 @@ class EXEC(DefinedNamespace):
     _NS = Namespace(f"{URI_SECORO_MM}/execution-context#")
 
 
-class EXEC_TRACE(DefinedNamespace):
-    Frame: URIRef
-    StateOccurrence: URIRef
-    TransitionOccurrence: URIRef
-    EventOccurrence: URIRef
-    MonitorOccurrence: URIRef
-
-    atFrame: URIRef
-    seq: URIRef
-    activeState: URIRef
-    step: URIRef
-    state: URIRef
-    transition: URIRef
-    event: URIRef
-    monitor: URIRef
-    value: URIRef
-
-    _NS = Namespace(f"{URI_SECORO_MM}/motion-spec/execution-trace/")
-
-
 class EL(DefinedNamespace):
     EventLoop: URIRef
     Event: URIRef
