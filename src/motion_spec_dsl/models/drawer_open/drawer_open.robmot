@@ -54,9 +54,9 @@ context (ns=app) shared {
         }
     },
     spec {
-        // gn: the grasp normal, the tool's x -- the axis the pads close along (the 2f85 pads
-        // face each other on x). Read in the tool's own frame so it turns with it.
-        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0),
+        // gn: the grasp normal, the tool's y -- the axis the pads close along (the 2f85 fingers
+        // sit at +/-y of the pinch frame). Read in the tool's own frame so it turns with it.
+        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (0, 1, 0),
         // ga: the grasping axis, the tool's z -- the direction it approaches along.
         direction approach-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
         direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
@@ -86,6 +86,21 @@ context (ns=app) shared {
         line handle-hy { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-y-base> },
         line handle-hz { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-z-base> },
 
+        // The drawer front, through the bar and square to the pull-out direction.
+        plane handle-face { of: <drawer_graph.cabinet.handle3>, normal: <shared.spec.drawer-inward> },
+        // Two lines riding the tool, stated in the base frame because a line pair needs both
+        // directions in one frame. The inward one is square to the bar: parallel lines share
+        // no unique common normal, so their distance would come back with a zero gradient.
+        line grasp-bar-line { of: <gripper.g_base.g_pinch>, along: <shared.spec.handle-z-base> },
+        line grasp-inward-line { of: <gripper.g_base.g_pinch>, along: <shared.spec.drawer-inward> },
+        // Bands for the watched relations only: wide, because nothing drives them.
+        length watch-band = 0.30 m,
+        angle square-target = 1.5708 rad,
+        angle square-band = 0.30 rad,
+        // Signed against the face normal, which points into the cabinet: coming out is negative.
+        length face-standoff = -0.01 m,
+        length pull-out-face = -0.10 m,
+
         length at-handle    = 0.0 m,
         // Held back along the opening axis: the fingertips reach 27 mm past the pinch frame,
         // which is exactly the bar-to-drawer-face distance -- pinch ON the bar presses the
@@ -105,6 +120,9 @@ context (ns=app) shared {
         // How far the drawer is pulled out: the projection along the opening axis, driven up.
         length pull-out     = 0.10 m,
         length pull-band    = 0.02 m,
+        // The exit gate, tighter than the row's own band: inside 20 mm the state ended with
+        // the drawer 17 mm short and still moving.
+        length opened-band  = 0.005 m,
 
         // Square to the bar: the jaws straddle it, closing across the bar rather than along it.
         angle aligned    = 1.5708 rad,
@@ -198,7 +216,14 @@ guarded-motion (ns=app) approach-handle {
 
         // The paper's (a): the handle stays near the grasping axis -- a line riding the tool.
         // Watched as an inequality; its unsigned magnitude has no derivative at zero.
-        on-grasp-axis: keeping distance of <shared.world.pose-handle-in-tool> from <shared.spec.grasp-axis> less than <shared.spec.grasp-axis-band>
+        on-grasp-axis: keeping distance of <shared.world.pose-handle-in-tool> from <shared.spec.grasp-axis> less than <shared.spec.grasp-axis-band>,
+
+        // The remaining Table II operands against the handle's own frame, watched rather than
+        // driven: the rows above already spend every axis the solver has.
+        off-bar-axis: keeping distance of <shared.world.pose-grasp> from <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.watch-band>,
+        axis-gap: keeping distance of <shared.spec.grasp-inward-line> from <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.watch-band>,
+        face-clearance: keeping distance of <shared.world.pose-grasp> from <shared.spec.handle-face> equal to <shared.spec.face-standoff> within <shared.spec.watch-band>,
+        square-to-face: keeping angle between <shared.spec.approach-axis> and <shared.spec.handle-face> equal to <shared.spec.square-target> within <shared.spec.square-band>
     }
 
     // The grasp may only start centered: all three projections inside the tight band, or the
@@ -248,13 +273,20 @@ guarded-motion (ns=app) pull-drawer {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
         normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
         align-approach: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to 0 rad,
-        pull-open: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.pull-out> within <shared.spec.pull-band>,
+        // The same travel as a projection on the opening axis, written against the face plane
+        // so the plane operator is exercised where a missing gradient row would show.
+        pull-open: keeping distance of <shared.world.pose-grasp> from <shared.spec.handle-face> equal to <shared.spec.pull-out-face> within <shared.spec.pull-band>,
         at-handle-y: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
         at-handle-z: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.at-handle> within <shared.spec.reach-band>,
-        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>
+        close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>,
+
+        // How far the grasping axis itself has travelled along the opening axis.
+        axis-travel: keeping projection of <shared.spec.grasp-bar-line> on <shared.spec.handle-hx> equal to <shared.spec.pull-out> within <shared.spec.watch-band>
     }
 
-    until {}
+    until {
+        opened: distance of <shared.world.pose-grasp> from <shared.spec.handle-face> equal to <shared.spec.pull-out-face> within <shared.spec.opened-band>
+    }
 }
 
 constraint-handler (ns=app) handler-approach {
@@ -354,7 +386,7 @@ constraint-handler (ns=app) handler-pull {
     handles: <pull-drawer>
     runs-in: <dro.S_PULL>
     monitors {
-        mon-opened: monitor <pull-drawer.pull-open> {
+        mon-opened: monitor <pull-drawer.until> {
             satisfied for 0.5 s {
                 trigger: event <dro.E_OPENED>
             },
@@ -367,7 +399,7 @@ constraint-handler (ns=app) handler-pull {
         } as torque,
         pid ctrl-p-normal { constraint: <pull-drawer.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
         pid ctrl-p-align { constraint: <pull-drawer.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
-        pid ctrl-p-pull { constraint: <pull-drawer.pull-open>, Kp: 120, Ki: 20, Kd: 30, decay: 0 },
+        pid ctrl-p-pull { constraint: <pull-drawer.pull-open>, Kp: 120, Ki: 60, Kd: 30, decay: 0 },
         pid ctrl-p-y { constraint: <pull-drawer.at-handle-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
         pid ctrl-p-z { constraint: <pull-drawer.at-handle-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
         feed-forward ctrl-p-close { constraint: <pull-drawer.close-gripper> }
