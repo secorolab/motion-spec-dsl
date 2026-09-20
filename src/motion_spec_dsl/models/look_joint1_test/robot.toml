@@ -1,6 +1,7 @@
 [agents.kinova_ft_2f85]
 home = [0.0, 0.2618, 3.1416, -2.2689, 0.0, 0.9599, 1.5708]
 
+# Home with joint 1 at 120 deg. Orientation is extrinsic-XYZ Euler, KDL's RPY.
 [poses.look]
-position = [-0.335671, -0.584089, 0.433689]
-orientation = [1.570860, 0.000005, -0.523606]
+position = [-0.330725, -0.591232, 0.433723]
+orientation = [1.630783, 1.570358, -0.451872]

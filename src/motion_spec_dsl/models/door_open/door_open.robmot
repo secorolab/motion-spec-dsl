@@ -41,6 +41,18 @@ context (ns=app) shared {
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
+        // Watched, not driven: the arm's lowest point through the swing and the retreat.
+        pose pose-wrist {
+            of:         <kinova.spherical_wrist_2_link.spherical_wrist_2_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        // In the tool's own frame, because the tool turns with the door: there the swing is constant.
+        velocity-twist grasp-tool-twist {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <gripper.g_base.g_pinch>
+        },
         joint-position gripper-pos {
             joint: <gripper.g_left_driver_joint>
         },
@@ -51,8 +63,8 @@ context (ns=app) shared {
         }
     },
     spec {
-        // gn: the grasp normal, the tool's x -- the axis the pads close along.
-        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0),
+        // gn: the grasp normal, the tool's y -- the axis the pads close along.
+        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (0, 1, 0),
         // ga: the grasping axis, the tool's z -- the direction it approaches along.
         direction approach-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
         direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),
@@ -93,17 +105,17 @@ context (ns=app) shared {
         // The swing's lateral drift at 13 deg is ~9 mm: held softly, not fought.
         length swing-lateral-band = 0.04 m,
 
-        // Increment 2 swings to full open. Hinge at cupboard-local (0.012, 0.170), grip at
-        // (0.062, -0.08): radius 0.255 m. Targets are the grip's circle at 70 deg; the
-        // door-open gate reads the lateral projection, which distinguishes angles where the
-        // out projection has already flattened (60 deg = 0.168 m).
-        length swing2-out = 0.202 m,
-        length swing2-lat = 0.2115 m,
-        length swing2-band = 0.03 m,
+        // Pads square on the bar: tool y lies along the hinge, x along the radius, z out of the face.
+        angular-velocity swing-rate = 0.35 rad/s,
+        length swing-radius = 0.255 m,
+        // swing-rate * swing-radius, out of the face, hence the sign.
+        linear-velocity swing-tangential = -0.0893 m/s,
+        angular-velocity swing-rate-band = 0.05 rad/s,
+        linear-velocity swing-speed-band = 0.02 m/s,
+        angular-velocity zero-angular = 0.0 rad/s,
+        linear-velocity zero-linear = 0.0 m/s,
+        // The lateral projection, which unlike the out one still separates angles past 60 deg.
         length open-gate-lat = 0.168 m,
-        // The tool yaws with the door so the pads stay square on the bar; commanded to the
-        // 70 deg end target with the same loose follow band the unlatch roll uses.
-        angle swing2-yaw = 1.2217 rad,
 
         angle aligned    = 1.5708 rad,
         angle align-band = 0.05 rad,
@@ -286,13 +298,13 @@ guarded-motion (ns=app) swing-full {
 
     while {
         hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
-        normal-to-handle: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.follow-band>,
-        follow-yaw: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to <shared.spec.swing2-yaw> within <shared.spec.follow-band>,
-        swing2-pull: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hx> equal to <shared.spec.swing2-out> within <shared.spec.swing2-band>,
-        swing2-track: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hz> equal to <shared.spec.swing2-lat> within <shared.spec.swing2-band>,
-        // The lever's press is released: the vertical projection is asked back to the bar
-        // height, wide-banded, so the spring brings the lever up without a fight.
-        release-lever: keeping projection of <shared.world.pose-grasp> on <shared.spec.handle-hy> equal to <shared.spec.at-handle> within <shared.spec.swing-lateral-band>,
+        // A pure rotation about the hinge, filling all six directions: no room for a squareness row.
+        swing-turn: keeping <shared.world.grasp-tool-twist>.angvel.y equal to <shared.spec.swing-rate> within <shared.spec.swing-rate-band>,
+        no-tilt-x: keeping <shared.world.grasp-tool-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.swing-rate-band>,
+        no-tilt-z: keeping <shared.world.grasp-tool-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.swing-rate-band>,
+        hold-radius: keeping <shared.world.grasp-tool-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.swing-speed-band>,
+        hold-height: keeping <shared.world.grasp-tool-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.swing-speed-band>,
+        swing-tangent: keeping <shared.world.grasp-tool-twist>.linvel.z equal to <shared.spec.swing-tangential> within <shared.spec.swing-speed-band>,
         close-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed> within <shared.spec.gripper-band>,
         // Watched, not driven: satisfied only when the driver has run past the bar band --
         // i.e. the pads closed on air because the bar slipped out.
@@ -416,7 +428,8 @@ guarded-motion (ns=app) retreat-clear {
     context {
         spec {
             length rest-y = snapshot of <shared.world.pose-grasp>.position.y on event <dor.E_RETREAT_ENTERED>,
-            length rest-z = snapshot of <shared.world.pose-grasp>.position.z on event <dor.E_RETREAT_ENTERED>
+            length rest-z = snapshot of <shared.world.pose-grasp>.position.z on event <dor.E_RETREAT_ENTERED>,
+            pose rest-pose = snapshot of <shared.world.pose-grasp> on event <dor.E_RETREAT_ENTERED>
         }
     }
 
@@ -427,8 +440,10 @@ guarded-motion (ns=app) retreat-clear {
         retreat-x: keeping <shared.world.pose-grasp>.position.x equal to <shared.spec.door-retreat-x> within <shared.spec.reach-band>,
         hold-y: keeping <shared.world.pose-grasp>.position.y equal to <spec.rest-y> within <shared.spec.reach-band>,
         hold-z: keeping <shared.world.pose-grasp>.position.z equal to <spec.rest-z> within <shared.spec.reach-band>,
-        rest-normal: keeping angle between <shared.spec.grasp-normal> and <shared.spec.handle-z-base> equal to <shared.spec.aligned> within <shared.spec.align-band>,
-        rest-yaw: keeping angle between <shared.spec.approach-axis> and <shared.spec.drawer-inward> equal to <shared.spec.swing2-yaw> within <shared.spec.follow-band>,
+        // All three: two angle rows left one of the seven free and the wrist sank to the table.
+        hold-roll: keeping <shared.world.pose-grasp>.orientation.x equal to <spec.rest-pose>.orientation.x within <shared.spec.align-band>,
+        hold-pitch: keeping <shared.world.pose-grasp>.orientation.y equal to <spec.rest-pose>.orientation.y within <shared.spec.align-band>,
+        hold-yaw: keeping <shared.world.pose-grasp>.orientation.z equal to <spec.rest-pose>.orientation.z within <shared.spec.align-band>,
         open-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.gripper-band>
     }
 
@@ -609,13 +624,13 @@ constraint-handler (ns=app) handler-swing-full {
             constraint: <swing-full.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque,
-        pid ctrl-f-normal { constraint: <swing-full.normal-to-handle>, output-saturation: saturation { max: <shared.spec.contact-ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 },
-        // The 70 deg yaw target is a step at entry: overdamped gains rate-shape it (~0.7
-        // rad/s) so the pads turn with the door instead of twisting off the stationary bar.
-        pid ctrl-f-yaw { constraint: <swing-full.follow-yaw>, integral-saturation: saturation { max: <shared.spec.contact-ori-integral-limit> }, Kp: 25, Ki: 5, Kd: 35, decay: 0 },
-        pid ctrl-f-pull { constraint: <swing-full.swing2-pull>, Kp: 60, Ki: 15, Kd: 25, decay: 0 },
-        pid ctrl-f-track { constraint: <swing-full.swing2-track>, Kp: 40, Ki: 10, Kd: 18, decay: 0 },
-        pid ctrl-f-release { constraint: <swing-full.release-lever>, Kp: 20, Ki: 0, Kd: 12, decay: 0 },
+        // Light PI pairs: the error is already a velocity, not a pose.
+        pid ctrl-f-turn { constraint: <swing-full.swing-turn>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-f-tilt-x { constraint: <swing-full.no-tilt-x>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-f-tilt-z { constraint: <swing-full.no-tilt-z>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-f-radius { constraint: <swing-full.hold-radius>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-f-height { constraint: <swing-full.hold-height>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-f-tangent { constraint: <swing-full.swing-tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
         feed-forward ctrl-f-close { constraint: <swing-full.close-gripper> }
     }
     solvers {
@@ -710,6 +725,31 @@ constraint-handler (ns=app) handler-regrip {
     }
 }
 
+// S.8 -- a state with no motion writes no torque, and nothing in this arm damps.
+guarded-motion (ns=app) rest-done {
+    description: "Hold the settled posture once the task is done"
+
+    context {
+        spec {
+            pose done-pose = snapshot of <shared.world.pose-grasp> on event <dor.E_DONE_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-elbow: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        hold-position: keeping <shared.world.pose-grasp>.position equal to <spec.done-pose>.position within <shared.spec.reach-band>,
+        hold-orientation: keeping <shared.world.pose-grasp>.orientation equal to <spec.done-pose>.orientation within <shared.spec.align-band>,
+        open-gripper: keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.gripper-band>
+    }
+
+    // Its event goes unconsumed: S_DONE is terminal, the hold runs to the end.
+    until {
+        settled: <shared.world.pose-grasp>.position equal to <spec.done-pose>.position within <shared.spec.reach-band>
+    }
+}
+
 constraint-handler (ns=app) handler-release {
     handles: <release-door>
     runs-in: <dor.S_RELEASE>
@@ -735,6 +775,31 @@ constraint-handler (ns=app) handler-release {
     }
 }
 
+constraint-handler (ns=app) handler-done {
+    handles: <rest-done>
+    runs-in: <dor.S_DONE>
+    monitors {
+        mon-rest: monitor <rest-done.until> {
+            satisfied for 0.5 s {
+                trigger: event <dor.E_REST_SETTLED>
+            },
+        }
+    }
+    controllers {
+        pid ctrl-d-elbow {
+            constraint: <rest-done.hold-elbow>, output-saturation: saturation { max: <shared.spec.rest-elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        pid ctrl-d-position { constraint: <rest-done.hold-position>, Kp: 120, Ki: 20, Kd: 40, decay: 0 },
+        pid ctrl-d-orientation { constraint: <rest-done.hold-orientation>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 120, Ki: 15, Kd: 45, decay: 0 },
+        feed-forward ctrl-d-open { constraint: <rest-done.open-gripper> }
+    }
+    solvers {
+        <handler-approach.arm-solver>,
+        <handler-approach.gripper-command-solver>
+    }
+}
+
 constraint-handler (ns=app) handler-retreat {
     handles: <retreat-clear>
     runs-in: <dor.S_RETREAT>
@@ -753,8 +818,9 @@ constraint-handler (ns=app) handler-retreat {
         pid ctrl-t-x { constraint: <retreat-clear.retreat-x>, Kp: 60, Ki: 10, Kd: 30, decay: 0 },
         pid ctrl-t-y { constraint: <retreat-clear.hold-y>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
         pid ctrl-t-z { constraint: <retreat-clear.hold-z>, Kp: 80, Ki: 10, Kd: 24, decay: 0 },
-        pid ctrl-t-normal { constraint: <retreat-clear.rest-normal>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 25, Ki: 5, Kd: 35, decay: 0 },
-        pid ctrl-t-yaw { constraint: <retreat-clear.rest-yaw>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 25, Ki: 5, Kd: 35, decay: 0 },
+        pid ctrl-t-roll { constraint: <retreat-clear.hold-roll>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 120, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-t-pitch { constraint: <retreat-clear.hold-pitch>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 120, Ki: 15, Kd: 45, decay: 0 },
+        pid ctrl-t-yaw { constraint: <retreat-clear.hold-yaw>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 120, Ki: 15, Kd: 45, decay: 0 },
         feed-forward ctrl-t-open { constraint: <retreat-clear.open-gripper> }
     }
     solvers {

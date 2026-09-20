@@ -68,9 +68,9 @@ context (ns=app) shared {
         }
     },
     spec {
-        // gn: the grasp normal, the tool's x -- the axis the pads close along (the 2f85 pads
-        // face each other on x). Read in the tool's own frame so it turns with it.
-        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0),
+        // gn: the grasp normal, the tool's y -- the axis the pads close along (the 2f85 fingers
+        // sit at +/-y of the pinch frame). Read in the tool's own frame so it turns with it.
+        direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (0, 1, 0),
         // ga: the grasping axis, the tool's z -- the direction it approaches along.
         direction approach-axis { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, 1),
         direction base-up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1),

@@ -34,6 +34,10 @@ context (ns=app) shared {
         angle q6-target = 0.9599 rad,
         angle q7-target = 1.5708 rad,
         angle joint-band = 2 deg,
+        angle q1-arrived-lo = 118 deg,
+        angle q1-arrived-hi = 122 deg,
+        length tcp-position-band = 0.02 m,
+        angle tcp-orientation-band = 0.05 rad,
         torque drive-limit = 12.0 Nm,
         torque hold-limit = 5.0 Nm,
         pose look-pose = [config.poses.look] for <shared.world.tcp>
@@ -59,9 +63,32 @@ guarded-motion (ns=app) look {
         hold-7: keeping <shared.world.joint-7> equal to <shared.spec.q7-target>
     }
     until {
-        joint-arrived: <shared.world.joint-1> equal to <shared.spec.q1-target> within <shared.spec.joint-band>,
-        tcp-position: <shared.world.tcp>.position equal to <shared.spec.look-pose>.position,
-        tcp-orientation: <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation
+        joint-arrived: <shared.world.joint-1> between <shared.spec.q1-arrived-lo> and <shared.spec.q1-arrived-hi>,
+        tcp-position: <shared.world.tcp>.position equal to <shared.spec.look-pose>.position within <shared.spec.tcp-position-band>,
+        tcp-orientation: <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.tcp-orientation-band>
+    }
+}
+
+// A state with no motion writes no torque, and nothing in this arm damps.
+guarded-motion (ns=app) rest-done {
+    description: "Hold the joint posture once the look is done"
+    context { <shared.spec> }
+
+    when {}
+
+    while {
+        hold-1: keeping <shared.world.joint-1> equal to <shared.spec.q1-target>,
+        hold-2: keeping <shared.world.joint-2> equal to <shared.spec.q2-target>,
+        hold-3: keeping <shared.world.joint-3> equal to <shared.spec.q3-target>,
+        hold-4: keeping <shared.world.joint-4> equal to <shared.spec.q4-target>,
+        hold-5: keeping <shared.world.joint-5> equal to <shared.spec.q5-target>,
+        hold-6: keeping <shared.world.joint-6> equal to <shared.spec.q6-target>,
+        hold-7: keeping <shared.world.joint-7> equal to <shared.spec.q7-target>
+    }
+
+    // Its event goes unconsumed: S_DONE is terminal, the hold runs to the end.
+    until {
+        settled: <shared.world.joint-1> equal to <shared.spec.q1-target> within <shared.spec.joint-band>
     }
 }
 
@@ -74,7 +101,8 @@ constraint-handler (ns=app) handler-look {
         }
     }
     controllers {
-        pid drive-1 { constraint: <look.drive-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 8, Ki: 0, Kd: 5, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        // Kd, not Kp, is the speed limit: while saturated the turn settles at drive-limit / Kd.
+        pid drive-1 { constraint: <look.drive-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 8, Ki: 0, Kd: 40, decay: 0, error-normalization: (-pi, pi) rad } as torque,
         pid hold-2 { constraint: <look.hold-2>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
         pid hold-3 { constraint: <look.hold-3>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
         pid hold-4 { constraint: <look.hold-4>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
@@ -88,5 +116,27 @@ constraint-handler (ns=app) handler-look {
             algorithm: rne,
             gravity: (0.0, 0.0, -9.81) m/s^2
         }
+    }
+}
+
+constraint-handler (ns=app) handler-done {
+    handles: <rest-done>
+    runs-in: <ljt.S_DONE>
+    monitors {
+        mon-rest: monitor <rest-done.until> {
+            satisfied for 0.5 s { trigger: event <ljt.E_REST_SETTLED> },
+        }
+    }
+    controllers {
+        pid rest-1 { constraint: <rest-done.hold-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-2 { constraint: <rest-done.hold-2>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-3 { constraint: <rest-done.hold-3>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-4 { constraint: <rest-done.hold-4>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-5 { constraint: <rest-done.hold-5>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-6 { constraint: <rest-done.hold-6>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid rest-7 { constraint: <rest-done.hold-7>, output-saturation: saturation { max: <shared.spec.hold-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque
+    }
+    solvers {
+        <handler-look.arm>
     }
 }

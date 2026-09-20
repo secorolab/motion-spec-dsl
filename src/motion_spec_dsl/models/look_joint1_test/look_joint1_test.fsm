@@ -2,7 +2,9 @@ ns ljt = "https://secorolab.github.io/models/look-joint1-test/fsm/"
 
 evt loop (ns=ljt) look_joint1_test_events {
     evt E_STEP,
-    evt E_DONE
+    evt E_DONE,
+    // Unconsumed: S_DONE is terminal, and every gate needs a monitor to fire something.
+    evt E_REST_SETTLED
 }
 
 fsm (ns=ljt) look_joint1_test_fsm {

@@ -18,6 +18,9 @@ evt loop (ns=dor) door_open_fsm_events {
     evt E_DOOR_RELEASED,
     evt E_RETREAT_ENTERED,
     evt E_RETREATED,
+    evt E_DONE_ENTERED,
+    // Unconsumed: S_DONE is terminal, and every gate needs a monitor to fire something.
+    evt E_REST_SETTLED,
     evt E_GRASP_LOST,
     evt E_STEADY_ENTERED,
     evt E_STEADIED,
@@ -85,6 +88,6 @@ fsm (ns=dor) door_open_fsm {
         R_REGRIP_MISSED { when: <door_open_fsm_events.E_REGRIP_MISSED>, do: <T_REGRIP_RETRY> },
         R_REGRASPED  { when: <door_open_fsm_events.E_REGRASPED>, do: <T_REGRIP_SWING>,   fires { <door_open_fsm_events.E_SWING_FULL_ENTERED> } },
         R_RELEASED   { when: <door_open_fsm_events.E_DOOR_RELEASED>, do: <T_RELEASE_RETREAT>, fires { <door_open_fsm_events.E_RETREAT_ENTERED> } },
-        R_RETREATED  { when: <door_open_fsm_events.E_RETREATED>, do: <T_RETREAT_DONE> }
+        R_RETREATED  { when: <door_open_fsm_events.E_RETREATED>, do: <T_RETREAT_DONE>, fires { <door_open_fsm_events.E_DONE_ENTERED> } }
     }
 }

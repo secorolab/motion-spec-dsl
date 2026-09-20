@@ -79,8 +79,8 @@ guarded-motion (ns=app) look {
         spec {
             pose start = snapshot of <shared.world.tcp> on event <lct.E_LOOK_ENTERED>,
             velocity-profile speed-profile = profile {
-                max-velocity: 0.05 m/s,
-                max-acceleration: 0.01 m/s^2,
+                max-velocity: 0.15 m/s,
+                max-acceleration: 0.05 m/s^2,
                 shape: trapezoidal
             },
             length position-band = 0.005 m,

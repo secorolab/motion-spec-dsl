@@ -71,7 +71,7 @@ context (ns=app) shared {
         direction base1-y { as-seen-by: <kinova1.base_link.base_link_origin> } = (0, 1, 0),
 
         // Arm2's grasp axes: drawer_open verbatim against base2.
-        direction grasp-normal { as-seen-by: <gripper2.g_base.g_pinch> } = (1, 0, 0),
+        direction grasp-normal { as-seen-by: <gripper2.g_base.g_pinch> } = (0, 1, 0),
         direction approach-axis { as-seen-by: <gripper2.g_base.g_pinch> } = (0, 0, 1),
         direction drawer-inward { as-seen-by: <kinova2.base_link.base_link_origin> } = (1, 0, 0),
         direction handle-x-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (-1, 0, 0),
