@@ -14,7 +14,7 @@ from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.classes.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
 
 GRAMMAR = Path(__file__).parents[1] / "src/motion_spec_dsl/grammars/model.tx"
-MODELS = Path(__file__).parents[1] / "models"
+MODELS = Path(__file__).parents[1] / "src/motion_spec_dsl/models"
 
 HEAD = """
 import "pick_place_single/pick_place_single.scenex"

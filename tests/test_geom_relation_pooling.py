@@ -14,7 +14,7 @@ from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.rdf_parser.vocab import CSTR, MAP
 
-MODELS = Path(__file__).parents[1] / "models"
+MODELS = Path(__file__).parents[1] / "src/motion_spec_dsl/models"
 
 
 def _pick_place_single_graph():

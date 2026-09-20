@@ -163,7 +163,9 @@ def test_a_tracked_path_states_a_band_too() -> None:
 
     from motion_spec_dsl.langs import motion_spec_metamodel
 
-    model_path = Path(__file__).resolve().parents[1] / "models" / "pick_place_single"
+    model_path = (
+        Path(__file__).resolve().parents[1] / "src" / "motion_spec_dsl" / "models" / "pick_place_single"
+    )
     source = (model_path / "pick_place_single.robmot").read_text()
     # The model now declares model-wide defaults, which would supply the very band this test
     # asserts the absence of; drop them so the constraint really states none.

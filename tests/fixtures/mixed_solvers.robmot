@@ -1,5 +1,5 @@
-import "../../models/admittance_arc_single/admittance_arc_single.fsm"
-import "../../models/admittance_arc_single/admittance_arc_single.scenex"
+import "../../src/motion_spec_dsl/models/admittance_arc_single/admittance_arc_single.fsm"
+import "../../src/motion_spec_dsl/models/admittance_arc_single/admittance_arc_single.scenex"
 ns app = "https://secorolab.github.io/models/mixed-solvers/"
 ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
 
