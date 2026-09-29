@@ -2187,7 +2187,9 @@ class MotionSpecDatasetBuilder:
                 )
             direction_node = self._owned_uri(gradient_id, motion)
 
-        point_node = self._declared_uri(f"point-force-{ctrl.name}", ctrl)
+        # The force acts where the constrained quantity is taken: its `of` frame.
+        of_name = _geo_prop(props, "of")
+        point_node = self._owned_uri(of_name, qty) if of_name is not None else as_seen_by_node
         position_node = self._declared_uri(f"position-force-{ctrl.name}", ctrl)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
         # A commanded wrench -- one no sensor observes -- is what this op produces: the model
@@ -2241,8 +2243,8 @@ class MotionSpecDatasetBuilder:
         if _is_alignment_view(spec) and not _alignment_is_pointwise(spec):
             axes = []
 
-        # The wrench coordinate still needs a well-formed reference point; the op ignores it.
-        point_node = self._declared_uri(f"point-moment-{ctrl.name}", ctrl)
+        # A couple needs no particular point; the frame's own origin is one the runtime can place.
+        point_node = as_seen_by_node
         position_node = self._declared_uri(f"position-moment-{ctrl.name}", ctrl)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
 

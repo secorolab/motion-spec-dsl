@@ -1,0 +1,15 @@
+<!--
+  Mounting column for the UR: the logged TCP poses reach below the robot base, so the arm
+  cannot stand on the floor. Visual only (contype/conaffinity 0) so the column can sit flush
+  against the base: the shoulder collision capsule dips ~27 mm below the base frame, and
+  pedestal-to-shoulder is a grandparent pair that MuJoCo does not auto-exclude.
+-->
+<mujoco model="pedestal">
+  <worldbody>
+    <body name="column">
+      <geom name="column_geom" type="box" size="0.09 0.09 0.5" pos="0 0 -0.5"
+            contype="0" conaffinity="0" rgba="0.2 0.2 0.22 1"/>
+      <site name="column_top" pos="0 0 0" size="0.001" rgba="0 0 0 0"/>
+    </body>
+  </worldbody>
+</mujoco>

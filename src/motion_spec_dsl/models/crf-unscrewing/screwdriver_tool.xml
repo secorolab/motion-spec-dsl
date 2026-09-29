@@ -1,0 +1,44 @@
+<!--
+  Nutrunner/screwdriver end-effector: flange plate + triangular gusset carrying an
+  offset spindle. Attach at the UR "attachment_site"; site "tcp" is the bit tip at
+  (-0.156, 0, 0.307) with flange orientation (offset along the plate, forward along flange +Z).
+-->
+<mujoco model="screwdriver_tool">
+  <compiler angle="radian" autolimits="true"/>
+
+  <asset>
+    <material name="sd_black" rgba="0.09 0.09 0.09 1" specular="0.3" shininess="0.3"/>
+    <material name="sd_white" rgba="0.88 0.88 0.86 1" specular="0.4" shininess="0.4"/>
+    <material name="sd_steel" rgba="0.55 0.55 0.58 1" specular="0.8" shininess="0.7"/>
+
+    <!-- 12 mm plate in the x-z plane; convex hull of the 6 corners is the prism. -->
+    <mesh name="sd_gusset_mesh"
+          vertex=" 0.055 -0.006 0.012   0.055  0.006 0.012
+                  -0.185 -0.006 0.012  -0.185  0.006 0.012
+                  -0.185 -0.006 0.245  -0.185  0.006 0.245"/>
+  </asset>
+
+  <worldbody>
+    <body name="tool">
+      <!-- adapter disc, not a wide square: a square corner sweeps into the wrist_1 envelope -->
+      <geom name="mount_plate" type="cylinder" size="0.045 0.006" pos="0 0 0.006"
+            mass="0.6" material="sd_black"/>
+      <geom name="gusset" type="mesh" mesh="sd_gusset_mesh" mass="1.2" material="sd_black"/>
+      <geom name="holder" type="box" size="0.035 0.032 0.022" pos="-0.156 0 0.196"
+            mass="0.4" material="sd_white"/>
+      <geom name="spindle" type="cylinder" size="0.028 0.031" pos="-0.156 0 0.249"
+            mass="1.4" material="sd_white"/>
+      <geom name="shaft" type="cylinder" size="0.010 0.010" pos="-0.156 0 0.290"
+            mass="0.10" material="sd_black"/>
+      <geom name="bit" type="cylinder" size="0.004 0.0035" pos="-0.156 0 0.3035"
+            mass="0.02" material="sd_steel"/>
+      <site name="tcp" pos="-0.156 0 0.307" size="0.006" rgba="1 0.2 0.1 0.9"/>
+    </body>
+  </worldbody>
+
+  <!-- The whole tool's reaction on the flange, referred to the bit tip: z is the moment about the bit. -->
+  <sensor>
+    <force name="bit_ft_force" site="tcp"/>
+    <torque name="bit_ft_torque" site="tcp"/>
+  </sensor>
+</mujoco>

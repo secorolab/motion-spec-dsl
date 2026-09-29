@@ -1,8 +1,7 @@
-// Dual-arm drawer opening: arm1 (bare flange, no gripper) presses the free-standing cabinet
-// down on its top so drawer friction cannot drag it, while arm2 runs the proven drawer_open
-// sequence. The press is held through every drawer state, and the cabinet's stillness during
-// the pull is a watched fact, snapshotted at pull entry.
-// Drawer 2 is the target: it alone resists hard enough to slide the cabinet when unpressed.
+// The control case for drawer_dual: identical in every respect except that arm1 stops ~10 mm
+// short of the cabinet top, so it never makes contact and the cabinet is never held. Drawer 2
+// then drags the whole cabinet across the table. Only press-z and press-gate-z differ from
+// drawer_dual.robmot; the gate still fires on the descent so the sequence advances as usual.
 import "drawer_dual.fsm"
 import "drawer_dual.scenex"
 ns app = "https://secorolab.github.io/models/drawer-dual/"
@@ -98,8 +97,8 @@ context (ns=app) shared {
         // deep target plus stiff gains shoves the whole body (measured: 18 cm slide), so the
         // press is shallow and soft and the integral carries the force.
         length hover-z      = 0.360 m,
-        length press-z      = 0.2995 m,
-        length press-gate-z = 0.3050 m,
+        length press-z      = 0.3100 m,
+        length press-gate-z = 0.3150 m,
         length hold-band    = 0.01 m,
         // The cabinet must not move while the drawer is pulled: watched, not driven.
         length still-band   = 0.005 m,

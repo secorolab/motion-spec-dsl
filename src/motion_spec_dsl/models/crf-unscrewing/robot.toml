@@ -1,0 +1,6 @@
+# Where each agent starts. Keyed by the name the execution context binds.
+
+[cell_agents.arm1]
+# The bit in the screw head: IK of the logged program-start TCP pose (log_history 9.txt),
+# as impedance_unscrew.py solves it [rad].
+home = [2.583, -0.9062, 1.8767, -0.9615, 2.6122, 1.5737]

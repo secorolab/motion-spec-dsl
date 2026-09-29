@@ -2,9 +2,8 @@
 // down on its top so drawer friction cannot drag it, while arm2 runs the proven drawer_open
 // sequence. The press is held through every drawer state, and the cabinet's stillness during
 // the pull is a watched fact, snapshotted at pull entry.
-// Drawer 2 is the target: it alone resists hard enough to slide the cabinet when unpressed.
-import "drawer_dual.fsm"
-import "drawer_dual.scenex"
+import "drawer_dual_baseline.fsm"
+import "drawer_dual_baseline.scenex"
 ns app = "https://secorolab.github.io/models/drawer-dual/"
 ns dd = "https://secorolab.github.io/models/drawer-dual/fsm/"
 
@@ -46,7 +45,7 @@ context (ns=app) shared {
             as-seen-by: <kinova2.base_link.base_link_origin>
         },
         pose pose-handle {
-            of:         <drawer_graph.cabinet.handle2>,
+            of:         <drawer_graph.cabinet.handle3>,
             wrt:        <kinova2.base_link.base_link_origin>,
             as-seen-by: <kinova2.base_link.base_link_origin>
         },
@@ -79,9 +78,9 @@ context (ns=app) shared {
         direction handle-y-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (0, 0, -1),
         direction handle-z-base { as-seen-by: <kinova2.base_link.base_link_origin> } = (0, -1, 0),
 
-        line handle-hx { of: <drawer_graph.cabinet.handle2>, along: <shared.spec.handle-x-base> },
-        line handle-hy { of: <drawer_graph.cabinet.handle2>, along: <shared.spec.handle-y-base> },
-        line handle-hz { of: <drawer_graph.cabinet.handle2>, along: <shared.spec.handle-z-base> },
+        line handle-hx { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-x-base> },
+        line handle-hy { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-y-base> },
+        line handle-hz { of: <drawer_graph.cabinet.handle3>, along: <shared.spec.handle-z-base> },
 
         length at-handle    = 0.0 m,
         length grasp-standoff = 0.01 m,

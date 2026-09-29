@@ -1,0 +1,25 @@
+ns cu_env = "https://secorolab.github.io/models/environments/crf-unscrewing/"
+ns cu_agn = "https://secorolab.github.io/models/agents/crf-unscrewing/"
+ns cu_scene = "https://secorolab.github.io/models/scenes/crf-unscrewing/"
+
+// The CRF cell: a UR on a pedestal, with the nutrunner as its tool.
+obj set (ns=cu_env) cell_objects {
+    object pedestal
+}
+
+ws set (ns=cu_env) cell_workspaces {
+    workspace cell_ws
+}
+
+agn set (ns=cu_agn) cell_agents {
+    agent arm1
+}
+
+comp (ns=cu_env) comp_cell of ws <cell_workspaces.cell_ws> {
+    obj <cell_objects.pedestal>
+}
+
+scene (ns=cu_scene) unscrew_scene {
+    ws comp <comp_cell>
+    agn set <cell_agents>
+}

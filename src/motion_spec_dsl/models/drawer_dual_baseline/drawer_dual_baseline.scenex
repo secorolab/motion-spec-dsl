@@ -1,4 +1,4 @@
-import "drawer_dual.scene"
+import "drawer_dual_baseline.scene"
 import "../kinova_gen3_7dof.ktree"
 import "../robotiq_2f85.ktree"
 
@@ -186,13 +186,6 @@ scene inst (ns=ddu_mjc) dual_scene_mjc {
                     orientation: euler { axes: xyz extrinsic angles: (0, 0, 180) unit: deg }
                 }
             }
-            frame handle2 {
-                pose handle2_in_cabinet {
-                    wrt: <cabinet.cabinet_origin>
-                    xyz: (0.08129, 0.0, 0.154503) m
-                    orientation: euler { axes: xyz extrinsic angles: (-90, 0, 0) unit: deg }
-                }
-            }
             frame handle3 {
                 pose handle3_in_cabinet {
                     wrt: <cabinet.cabinet_origin>
@@ -213,13 +206,13 @@ scene inst (ns=ddu_mjc) dual_scene_mjc {
     }
 
     obj <ws_objects.table> {
-        model table-mjc as mjcf { sys path = 'table_low_friction.xml'
+        model table-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/table.xml'
             map body <world_tree.table> to "table"
         }
     }
 
     obj <ws_objects.cabinet> {
-        model cabinet-mjc as mjcf { sys path = 'cabinet_drawer2_stiff.xml'
+        model cabinet-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cabinet/cabinet.xml'
             map body <drawer_graph.cabinet> to "root"
         }
     }

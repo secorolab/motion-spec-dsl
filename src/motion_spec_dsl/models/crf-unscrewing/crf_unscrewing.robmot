@@ -1,0 +1,355 @@
+// Deprag screwdriving sequence 4, "Soprano open", with the arm's wrist_3 as the spindle, as
+// ~/work/crf/screwdriver_tool/impedance_unscrew.py runs it: the bit held by impedance, turned by
+// a torque-limited speed loop about its own axis.
+import "crf_unscrewing.fsm"
+import "crf_unscrewing.scenex"
+ns app = "https://secorolab.github.io/models/crf-unscrewing/"
+ns cu = "https://secorolab.github.io/models/crf-unscrewing/fsm/"
+
+exec-context (ns=app) unscrew-exec {
+    runs-scene: <unscrew_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+tolerances {
+    position:    0.01 m,
+    orientation: 0.05 rad
+}
+
+context (ns=app) shared {
+    world {
+        // Everything is in the arm's base frame: its world pose is off by ur10e.xml's half turn.
+        pose pose-bit {
+            of:         <nutrunner_tree.tool.tcp>,
+            wrt:        <ur10e.base.base_origin>,
+            as-seen-by: <ur10e.base.base_origin>
+        },
+        velocity-twist bit-twist {
+            of:         <nutrunner_tree.tool.tcp>,
+            wrt:        <ur10e.base.base_origin>,
+            as-seen-by: <nutrunner_tree.tool.tcp>
+        },
+        wrench bit-wrench {
+            ref-point:  <nutrunner_tree.tool.tcp>,
+            as-seen-by: <nutrunner_tree.tool.tcp>,
+            ft-sensor:  <bit_ft>,
+            re-tare-on: { <cu.E_FIND_ENTERED> }
+        },
+        // Seen from the screw, the bit's rotation vector is (tilt x, tilt y, turn).
+        pose pose-bit-screw {
+            of:         <nutrunner_tree.tool.tcp>,
+            wrt:        <world_tree.column.screw_head>,
+            as-seen-by: <world_tree.column.screw_head>
+        }
+    },
+    spec {
+        length hold-band = 0.005 m,
+        angle tilt-band  = 0.05 rad,
+        angle level      = 0.0 rad,
+
+        // impedance_unscrew.py's limits: held force and tilt moment, and the drive about the bit.
+        force hold-force-limit  = 40.0 N,
+        torque tilt-moment-limit = 20.0 Nm,
+        torque unscrew-torque   = 25.0 Nm,
+
+        // Find turns clockwise (+z, into the screw), loosen counterclockwise. The arm orbits
+        // the offset bit, so both run at 45 deg/s, not the spindle's 35/208 min^-1.
+        angular-velocity find-speed   = 0.7854 rad/s,
+        angular-velocity loosen-speed = -0.7854 rad/s,
+        angular-velocity stopped      = 0.0 rad/s,
+        angular-velocity speed-band   = 0.1 rad/s,
+
+        // Find: shut off at 120 deg or 4 Nm, torque upper limit 12 Nm.
+        angle find-shutoff-angle     = 2.0944 rad,
+        torque find-shutoff          = 4.0 Nm,
+        torque neg-find-shutoff      = -4.0 Nm,
+        torque find-torque-limit     = 12.0 Nm,
+        torque neg-find-torque-limit = -12.0 Nm,
+
+        // Waiting time: 1000 ms.
+        duration wait-time = 1.0 s,
+
+        // Loosen to angle: shut off at 90 deg, torque upper limit 8.4 Nm.
+        angle loosen-shutoff-angle     = -1.5708 rad,
+        torque loosen-torque-limit     = 8.4 Nm,
+        torque neg-loosen-torque-limit = -8.4 Nm,
+
+        duration supervision-time = 5.0 s
+    }
+}
+
+// Find -- turn clockwise until the bit drops into the recess and takes torque.
+guarded-motion (ns=app) find {
+    description: "Turn the bit clockwise until it locks into the screw head"
+
+    context {
+        spec {
+            pose find-pose   = snapshot of <shared.world.pose-bit> on event <cu.E_FIND_ENTERED>,
+            angle find-start = snapshot of <shared.world.pose-bit-screw>.orientation.z on event <cu.E_FIND_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x: keeping <shared.world.pose-bit>.position.x equal to <spec.find-pose>.position.x within <shared.spec.hold-band>,
+        hold-y: keeping <shared.world.pose-bit>.position.y equal to <spec.find-pose>.position.y within <shared.spec.hold-band>,
+        hold-z: keeping <shared.world.pose-bit>.position.z equal to <spec.find-pose>.position.z within <shared.spec.hold-band>,
+        tilt-x: keeping <shared.world.pose-bit-screw>.orientation.x equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        tilt-y: keeping <shared.world.pose-bit-screw>.orientation.y equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        turn: keeping <shared.world.bit-twist>.angvel.z equal to <shared.spec.find-speed> within <shared.spec.speed-band>
+    }
+
+    until any {
+        found any {
+            seated: <shared.world.bit-wrench>.torque.z outside <shared.spec.neg-find-shutoff> and <shared.spec.find-shutoff>,
+            turned: (<shared.world.pose-bit-screw>.orientation.z -<spec.find-start>) greater than <shared.spec.find-shutoff-angle>
+        },
+        find-nok any {
+            over-torque: <shared.world.bit-wrench>.torque.z outside <shared.spec.neg-find-torque-limit> and <shared.spec.find-torque-limit>,
+            overtime: elapsed greater than <shared.spec.supervision-time>
+        }
+    }
+}
+
+// Waiting time -- hold the seated bit still.
+guarded-motion (ns=app) wait {
+    description: "Hold the bit still in the screw head for the waiting time"
+
+    context {
+        spec {
+            pose wait-pose = snapshot of <shared.world.pose-bit> on event <cu.E_WAIT_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x: keeping <shared.world.pose-bit>.position.x equal to <spec.wait-pose>.position.x within <shared.spec.hold-band>,
+        hold-y: keeping <shared.world.pose-bit>.position.y equal to <spec.wait-pose>.position.y within <shared.spec.hold-band>,
+        hold-z: keeping <shared.world.pose-bit>.position.z equal to <spec.wait-pose>.position.z within <shared.spec.hold-band>,
+        tilt-x: keeping <shared.world.pose-bit-screw>.orientation.x equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        tilt-y: keeping <shared.world.pose-bit-screw>.orientation.y equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        turn: keeping <shared.world.bit-twist>.angvel.z equal to <shared.spec.stopped> within <shared.spec.speed-band>
+    }
+
+    until {
+        waited: elapsed greater than <shared.spec.wait-time>
+    }
+}
+
+// Loosen to angle -- break the screw loose and back it out a quarter turn.
+guarded-motion (ns=app) loosen {
+    description: "Turn the bit a quarter turn counterclockwise"
+
+    context {
+        spec {
+            pose loosen-pose   = snapshot of <shared.world.pose-bit> on event <cu.E_LOOSEN_ENTERED>,
+            angle loosen-start = snapshot of <shared.world.pose-bit-screw>.orientation.z on event <cu.E_LOOSEN_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x: keeping <shared.world.pose-bit>.position.x equal to <spec.loosen-pose>.position.x within <shared.spec.hold-band>,
+        hold-y: keeping <shared.world.pose-bit>.position.y equal to <spec.loosen-pose>.position.y within <shared.spec.hold-band>,
+        hold-z: keeping <shared.world.pose-bit>.position.z equal to <spec.loosen-pose>.position.z within <shared.spec.hold-band>,
+        tilt-x: keeping <shared.world.pose-bit-screw>.orientation.x equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        tilt-y: keeping <shared.world.pose-bit-screw>.orientation.y equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        turn: keeping <shared.world.bit-twist>.angvel.z equal to <shared.spec.loosen-speed> within <shared.spec.speed-band>
+    }
+
+    until any {
+        loosened: (<shared.world.pose-bit-screw>.orientation.z -<spec.loosen-start>) less than <shared.spec.loosen-shutoff-angle>,
+        loosen-nok any {
+            loosen-over-torque: <shared.world.bit-wrench>.torque.z outside <shared.spec.neg-loosen-torque-limit> and <shared.spec.loosen-torque-limit>,
+            loosen-overtime: elapsed greater than <shared.spec.supervision-time>
+        }
+    }
+}
+
+guarded-motion (ns=app) rest {
+    description: "Hold the bit where the loosening stopped"
+
+    context {
+        spec {
+            pose rest-pose = snapshot of <shared.world.pose-bit> on event <cu.E_DONE_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x: keeping <shared.world.pose-bit>.position.x equal to <spec.rest-pose>.position.x within <shared.spec.hold-band>,
+        hold-y: keeping <shared.world.pose-bit>.position.y equal to <spec.rest-pose>.position.y within <shared.spec.hold-band>,
+        hold-z: keeping <shared.world.pose-bit>.position.z equal to <spec.rest-pose>.position.z within <shared.spec.hold-band>,
+        tilt-x: keeping <shared.world.pose-bit-screw>.orientation.x equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        tilt-y: keeping <shared.world.pose-bit-screw>.orientation.y equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        turn: keeping <shared.world.bit-twist>.angvel.z equal to <shared.spec.stopped> within <shared.spec.speed-band>
+    }
+
+    until {
+        settled: <shared.world.pose-bit>.position equal to <spec.rest-pose>.position within <shared.spec.hold-band>
+    }
+}
+
+guarded-motion (ns=app) fault-hold {
+    description: "Hold the bit where a step failed"
+
+    context {
+        spec {
+            pose fault-pose = snapshot of <shared.world.pose-bit> on event <cu.E_FAULT_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x: keeping <shared.world.pose-bit>.position.x equal to <spec.fault-pose>.position.x within <shared.spec.hold-band>,
+        hold-y: keeping <shared.world.pose-bit>.position.y equal to <spec.fault-pose>.position.y within <shared.spec.hold-band>,
+        hold-z: keeping <shared.world.pose-bit>.position.z equal to <spec.fault-pose>.position.z within <shared.spec.hold-band>,
+        tilt-x: keeping <shared.world.pose-bit-screw>.orientation.x equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        tilt-y: keeping <shared.world.pose-bit-screw>.orientation.y equal to <shared.spec.level> within <shared.spec.tilt-band>,
+        turn: keeping <shared.world.bit-twist>.angvel.z equal to <shared.spec.stopped> within <shared.spec.speed-band>
+    }
+
+    until {
+        settled: <shared.world.pose-bit>.position equal to <spec.fault-pose>.position within <shared.spec.hold-band>
+    }
+}
+
+// ------------------ constraint handlers ------------------
+// The script's control law, row for row: impedance on the held axes, a PI speed loop on the
+// bit axis with Kv = 25 Nm / 0.785 rad/s and a 0.25 s wind-up, all as a wrench at the TCP.
+
+constraint-handler (ns=app) handler-find {
+    handles: <find>
+    runs-in: <cu.S_FIND>
+    monitors {
+        mon-found: monitor <find.found> {
+            satisfied for 0.01 s {
+                trigger: event <cu.E_FOUND>
+            },
+        },
+        mon-find-nok: monitor <find.find-nok> {
+            satisfied {
+                trigger: event <cu.E_FIND_NOK>
+            },
+        }
+    }
+    controllers {
+        impedance ctrl-f-x { constraint: <find.hold-x>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-f-y { constraint: <find.hold-y>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-f-z { constraint: <find.hold-z>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-f-tilt-x { constraint: <find.tilt-x>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        impedance ctrl-f-tilt-y { constraint: <find.tilt-y>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        pid ctrl-f-turn { constraint: <find.turn>, output-saturation: saturation { max: <shared.spec.unscrew-torque> }, integral-saturation: saturation { max: <shared.spec.unscrew-torque> }, Kp: 31.8, Ki: 127, Kd: 0, decay: 0 } as torque apply at <nutrunner_tree.tool>
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <cell_agents.arm1>,
+            algorithm: rne,
+            gravity:   (0.0, 0.0, -9.81) m/s^2
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-wait {
+    handles: <wait>
+    runs-in: <cu.S_WAIT>
+    monitors {
+        mon-waited: monitor <wait.until> {
+            satisfied {
+                trigger: event <cu.E_WAITED>
+            },
+        }
+    }
+    controllers {
+        impedance ctrl-w-x { constraint: <wait.hold-x>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-w-y { constraint: <wait.hold-y>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-w-z { constraint: <wait.hold-z>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-w-tilt-x { constraint: <wait.tilt-x>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        impedance ctrl-w-tilt-y { constraint: <wait.tilt-y>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        pid ctrl-w-turn { constraint: <wait.turn>, output-saturation: saturation { max: <shared.spec.unscrew-torque> }, integral-saturation: saturation { max: <shared.spec.unscrew-torque> }, Kp: 31.8, Ki: 127, Kd: 0, decay: 0 } as torque apply at <nutrunner_tree.tool>
+    }
+    solvers {
+        <handler-find.arm-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-loosen {
+    handles: <loosen>
+    runs-in: <cu.S_LOOSEN>
+    monitors {
+        mon-loosened: monitor <loosen.loosened> {
+            satisfied for 0.01 s {
+                trigger: event <cu.E_LOOSENED>
+            },
+        },
+        mon-loosen-nok: monitor <loosen.loosen-nok> {
+            satisfied {
+                trigger: event <cu.E_LOOSEN_NOK>
+            },
+        }
+    }
+    controllers {
+        impedance ctrl-l-x { constraint: <loosen.hold-x>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-l-y { constraint: <loosen.hold-y>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-l-z { constraint: <loosen.hold-z>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-l-tilt-x { constraint: <loosen.tilt-x>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        impedance ctrl-l-tilt-y { constraint: <loosen.tilt-y>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        pid ctrl-l-turn { constraint: <loosen.turn>, output-saturation: saturation { max: <shared.spec.unscrew-torque> }, integral-saturation: saturation { max: <shared.spec.unscrew-torque> }, Kp: 31.8, Ki: 127, Kd: 0, decay: 0 } as torque apply at <nutrunner_tree.tool>
+    }
+    solvers {
+        <handler-find.arm-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-done {
+    handles: <rest>
+    runs-in: <cu.S_DONE>
+    monitors {
+        mon-rest: monitor <rest.until> {
+            satisfied for 0.5 s {
+                trigger: event <cu.E_REST_SETTLED>
+            },
+        }
+    }
+    controllers {
+        impedance ctrl-d-x { constraint: <rest.hold-x>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-d-y { constraint: <rest.hold-y>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-d-z { constraint: <rest.hold-z>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-d-tilt-x { constraint: <rest.tilt-x>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        impedance ctrl-d-tilt-y { constraint: <rest.tilt-y>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        pid ctrl-d-turn { constraint: <rest.turn>, output-saturation: saturation { max: <shared.spec.unscrew-torque> }, integral-saturation: saturation { max: <shared.spec.unscrew-torque> }, Kp: 31.8, Ki: 127, Kd: 0, decay: 0 } as torque apply at <nutrunner_tree.tool>
+    }
+    solvers {
+        <handler-find.arm-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-fault {
+    handles: <fault-hold>
+    runs-in: <cu.S_FAULT>
+    monitors {
+        mon-fault: monitor <fault-hold.until> {
+            satisfied for 0.5 s {
+                trigger: event <cu.E_FAULT_SETTLED>
+            },
+        }
+    }
+    controllers {
+        impedance ctrl-x-x { constraint: <fault-hold.hold-x>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-x-y { constraint: <fault-hold.hold-y>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-x-z { constraint: <fault-hold.hold-z>, output-saturation: saturation { max: <shared.spec.hold-force-limit> }, stiffness: 2000, damping: 100 } apply at <nutrunner_tree.tool>,
+        impedance ctrl-x-tilt-x { constraint: <fault-hold.tilt-x>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        impedance ctrl-x-tilt-y { constraint: <fault-hold.tilt-y>, output-saturation: saturation { max: <shared.spec.tilt-moment-limit> }, stiffness: 40, damping: 18 } as torque apply at <nutrunner_tree.tool>,
+        pid ctrl-x-turn { constraint: <fault-hold.turn>, output-saturation: saturation { max: <shared.spec.unscrew-torque> }, integral-saturation: saturation { max: <shared.spec.unscrew-torque> }, Kp: 31.8, Ki: 127, Kd: 0, decay: 0 } as torque apply at <nutrunner_tree.tool>
+    }
+    solvers {
+        <handler-find.arm-solver>
+    }
+}

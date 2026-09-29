@@ -1,0 +1,5 @@
+# Where each agent starts. Keyed by the name the execution context binds.
+
+[cell_agents.arm1]
+# The bit in the screw head: the UR cell's screw orientation, 0.25 m above the base [rad].
+home = [-0.258, 1.1141, -2.0707, -1.0724, -2.3852, 0.9693, 1.3746]
