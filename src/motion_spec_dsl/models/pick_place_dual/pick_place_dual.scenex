@@ -145,12 +145,14 @@ scene inst (ns=ppd_mjc) pick_place_scene_mjc {
 
     obj <pickplace_objects.cube> {
         model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            visual { colour: (0.9, 0.2, 0.2, 1.0) }
             map body <pick_place_graph.cube> to "cube"
         }
     }
 
     obj <pickplace_objects.cube2> {
         model cube2-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
+            visual { colour: (0.2, 0.8, 0.2, 1.0) }
             map body <pick_place_graph.cube2> to "cube"
         }
     }

@@ -1,0 +1,30 @@
+<mujoco model="arms_rig">
+  <option integrator="implicitfast"/>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.26 0.28 0.30" rgb2="0.32 0.34 0.36"
+             width="300" height="300"/>
+    <material name="floor" texture="grid" texrepeat="6 6" reflectance="0.05"/>
+    <material name="post" rgba="0.35 0.36 0.38 1"/>
+  </asset>
+
+  <worldbody>
+    <light name="key" pos="1.5 -1.5 3" dir="-0.4 0.4 -1" directional="true" diffuse="0.7 0.7 0.7"/>
+    <light name="fill" pos="-2 1 1.5" dir="0.7 -0.3 -0.5" directional="true" diffuse="0.35 0.45 0.7"/>
+    <geom name="floor" type="plane" size="5 5 0.1" material="floor" contype="1" conaffinity="1"/>
+
+    <body name="rig" pos="0 0 0">
+      <inertial pos="0 0 0" mass="0" diaginertia="0 0 0"/>
+      <geom name="rig_post" type="box" pos="-0.1393 0 0.374" size="0.02 0.02 0.374"
+            material="post" contype="0" conaffinity="0" group="2"/>
+
+      <site name="rig_origin" pos="0 0 0" size="0.001" rgba="0 0 0 0"/>
+      <site name="left_arm_attachment"  pos="-0.1393  0.0788 0.7481224"
+            quat="-0.28771429973882956 0.6946091769377477  0.2523195258530538 0.6091579679466975"
+            size="0.001" rgba="0 0 0 0"/>
+      <site name="right_arm_attachment" pos="-0.1393 -0.0782 0.7481224"
+            quat=" 0.28771429973882956 0.6946091769377477 -0.2523195258530538 0.6091579679466975"
+            size="0.001" rgba="0 0 0 0"/>
+    </body>
+  </worldbody>
+</mujoco>

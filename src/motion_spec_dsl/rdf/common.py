@@ -109,6 +109,11 @@ def _is_distance_view(constraint: ConstraintSpecification) -> bool:
     return _binary_view_kind(constraint) == "DistanceBetweenView"
 
 
+def _is_difference_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `difference of A and B` form."""
+    return _binary_view_kind(constraint) == "DifferenceOfView"
+
+
 def _is_norm_view(constraint: ConstraintSpecification) -> bool:
     """Whether the constraint's view is a `norm of <q>.<subspace> [across <d>]` form."""
     return getattr(constraint.view, "norm", None) is not None
@@ -287,6 +292,7 @@ _GEOMETRIC_DISTANCE_SUBSPACES = frozenset(
         "point-line-projection",
         "line-line-distance",
         "line-line-projection",
+        "scalar-difference",
     }
 )
 

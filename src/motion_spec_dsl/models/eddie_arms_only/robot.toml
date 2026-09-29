@@ -1,0 +1,27 @@
+# Where each arm starts: both flanges square to the table's near rim, tool pointing into the edge,
+# standing 2 mm clear of it. Solved from the scene, not authored by hand.
+#
+# The clearance is the point. Standing the bracelet back by pinch_site's 61.5 mm left its 64.5 mm
+# collision box 2.9 mm inside the top slab, and MuJoCo answered that on the first step with an
+# impulse that threw both arms off the table before any controller ran. The scene now starts with
+# no contact at all; the commanded push closes the gap.
+#
+# The IK is also bounded by the model's joint ranges now. Unbounded it returned a left arm with
+# j4 and j6 roughly 2 rad past their stops, and MuJoCo's limit constraints threw that arm the same
+# way -- which is why the right arm used to survive the first tick and the left never did.
+#
+# The right arm's j6 = 0.652 stands 0.65 rad from the wrist singularity at j6 = 0, and a hold run
+# walks it through: j6 hits zero at t = 0.42 s, j5 swings to +3.22, j7 to +2.02. That is worth
+# knowing, but it is NOT why the right arm loses the pose -- it is what the divergence does on the
+# way out. Re-solving onto the mirror branch (j6 = 1.787, same hand pose to 5e-08 m / 2.6e-05 rad,
+# swept over 79 exact IK solutions) still walked j6 through zero and left the arm slightly worse:
+# orientation peak 1.59 vs 1.27 rad, settling 0.57 vs 0.31. Reverted. Keep the verified pose.
+[agents.left_arm]
+home = [-1.089634, 1.159181, 2.386599, -1.665731, 0.427674, 1.783850, -1.048878]
+
+[agents.right_arm]
+home = [-1.057967, 0.758782, 0.032583, -1.847175, 0.929129, 0.652015, 0.348041]
+
+[platform]
+wheel_diameter = [0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047]
+w_align = [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]

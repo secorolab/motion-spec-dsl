@@ -529,6 +529,7 @@ GEOMETRIC_DISTANCE_SUBSPACE: dict[str, str] = {
     "PointOnLineProjection": "point-line-projection",
     "LineLineToLinearDistance": "line-line-distance",
     "LineOnLineProjection": "line-line-projection",
+    "Subtraction": "scalar-difference",
 }
 
 # geom-rel-ext relation (the entity pair) each Table IIa operator's coordinate is `of`. A

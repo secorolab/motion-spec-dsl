@@ -1,0 +1,27 @@
+ns eaf = "https://secorolab.github.io/models/eddie-align/fsm/"
+
+evt loop (ns=eaf) eddie_align_events {
+    evt E_STEP,
+    evt E_ALIGN_ENTERED,
+    evt E_ALIGNED
+}
+
+fsm (ns=eaf) eddie_align_fsm {
+    description: "Square the robot to the table it is holding, then stop."
+    states { S_START, S_ALIGN, S_DONE }
+    evt loop: <eddie_align_events>
+    start: <S_START>
+    end: <S_DONE>
+    transitions {
+        T_START_ALIGN { from: <S_START>, to: <S_ALIGN> },
+        T_ALIGN_DONE  { from: <S_ALIGN>, to: <S_DONE> }
+    }
+    reactions {
+        R_START {
+            when: <eddie_align_events.E_STEP>,
+            do:   <T_START_ALIGN>,
+            fires { <eddie_align_events.E_ALIGN_ENTERED> }
+        },
+        R_ALIGNED { when: <eddie_align_events.E_ALIGNED>, do: <T_ALIGN_DONE> }
+    }
+}
