@@ -1,0 +1,49 @@
+ns lav = "https://secorolab.github.io/models/base-rotation-angular-velocity/fsm/"
+
+evt loop (ns=lav) base_rotation_angular_velocity_events {
+    evt E_STEP,
+    evt E_HOME_SETTLED,
+    evt E_LOOK_DONE,
+    evt E_REACH_DONE,
+    evt E_HOME_ENTERED,
+    evt E_LOOK_ENTERED,
+    evt E_REACH_ENTERED
+}
+
+fsm (ns=lav) base_rotation_angular_velocity_fsm {
+    description: "Settle at home, then turn about the base axis to the joint-1 120 degree pose."
+
+    states { S_START, S_HOME, S_LOOK, S_REACH, S_DONE }
+    evt loop: <base_rotation_angular_velocity_events>
+    start: <S_START>
+    end: <S_DONE>
+
+    transitions {
+        T_START_HOME { from: <S_START>, to: <S_HOME> },
+        T_HOME_LOOK  { from: <S_HOME>,  to: <S_LOOK> },
+        T_LOOK_REACH { from: <S_LOOK>, to: <S_REACH> },
+        T_REACH_DONE { from: <S_REACH>, to: <S_DONE> }
+    }
+
+    reactions {
+        R_START {
+            when: <base_rotation_angular_velocity_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <base_rotation_angular_velocity_events.E_HOME_ENTERED> }
+        },
+        R_HOME {
+            when: <base_rotation_angular_velocity_events.E_HOME_SETTLED>,
+            do:   <T_HOME_LOOK>,
+            fires { <base_rotation_angular_velocity_events.E_LOOK_ENTERED> }
+        },
+        R_LOOK_DONE {
+            when: <base_rotation_angular_velocity_events.E_LOOK_DONE>,
+            do:   <T_LOOK_REACH>,
+            fires { <base_rotation_angular_velocity_events.E_REACH_ENTERED> }
+        },
+        R_REACH_DONE {
+            when: <base_rotation_angular_velocity_events.E_REACH_DONE>,
+            do:   <T_REACH_DONE>
+        }
+    }
+}

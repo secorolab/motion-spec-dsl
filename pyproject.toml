@@ -47,7 +47,6 @@ where = ["src"]
     "models/**/*.fsm",
     "models/**/*.scene",
     "models/**/*.scenex",
-    "models/**/*.ktree",
     "models/**/*.toml",
     "models/**/*.xml",
     "models/**/*.json",

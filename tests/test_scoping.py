@@ -17,7 +17,7 @@ GRAMMAR = Path(__file__).parents[1] / "src/motion_spec_dsl/grammars/model.tx"
 MODELS = Path(__file__).parents[1] / "src/motion_spec_dsl/models"
 
 HEAD = """
-import "pick_place_single/pick_place_single.scenex"
+import "01_pick_and_place/pick_and_place.scenex"
 ns app = "https://example.org/app/"
 context (ns=app) shared {
     world {
@@ -117,7 +117,7 @@ guarded-motion (ns=app) m1 {
 
 def test_solver_fqn_resolves_local_and_qualified_references():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "pick_place_dual" / "pick_place_dual.robmot"
+        MODELS / "02_dual_arm_pick_and_place" / "dual_arm_pick_and_place.robmot"
     )
     home = next(
         spec
@@ -135,7 +135,7 @@ def test_solver_fqn_resolves_local_and_qualified_references():
 
 def test_constraint_fqn_resolves_specs_and_groups():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+        MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     )
     handler = next(
         spec
@@ -153,7 +153,7 @@ def test_constraint_fqn_resolves_specs_and_groups():
 
 def test_event_scope_is_declared_by_the_grammar():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
+        MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     )
     handler = next(
         spec
@@ -167,8 +167,8 @@ def test_event_scope_is_declared_by_the_grammar():
 def test_path_following_splits_driver_geometry_and_guard():
     """A path fixes geometry but not timing, so the three roles are separate constraints and
     none of them may be restated as a setpoint on the same path."""
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
+    source = (MODELS / "01_pick_and_place" / "pick_and_place.robmot").read_text()
+    model_path = str(MODELS / "01_pick_and_place" / "pick_and_place.robmot")
     metamodel = motion_spec_metamodel()
 
     driver = (

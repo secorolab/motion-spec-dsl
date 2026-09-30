@@ -15,7 +15,7 @@ from rdflib import Literal
 from rdflib.namespace import RDF, RDFS
 from textx.exceptions import TextXSemanticError
 
-AAS = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+AAS = "https://secorolab.github.io/models/arc-tracing-with-admittance/fsm/"
 ANCHOR = "guarded-motion (ns=app) home {"
 
 SERVER = """ros (ns=app) {

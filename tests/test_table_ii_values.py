@@ -6,10 +6,10 @@ The row-emission checks say a gradient reaches the solver; they say nothing abou
 behind it. Both line-family operators once measured `B - A` where every point-family one measures
 `A - B`, which no run and no compile can report -- the sign is only wrong against the scene.
 
-Recorded run of `src/motion_spec_dsl/models/drawer_open`, Borghesan's own worked example:
+Recorded run of `src/motion_spec_dsl/models/06_drawer_opening`, Borghesan's own worked example:
 
-    motion-spec run src/motion_spec_dsl/models/drawer_open/drawer_open.robmot \
-        -o generations/drawer_open --prefix <install> --run-id <id> --headless
+    motion-spec run src/motion_spec_dsl/models/06_drawer_opening/drawer_opening.robmot \
+        -o generations/drawer_opening --prefix <install> --run-id <id> --headless
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from motion_spec.introspection.frame_log_pb import frame_records, read_contract
 
 
 RUN_ENV = "MOTION_SPEC_DRAWER_OPEN_RUN"
-RUN_GLOB = "generations/drawer_open/drawer_open/*/runs/*/logs/frame_log.pb"
+RUN_GLOB = "generations/drawer_opening/drawer_opening/*/runs/*/logs/frame_log.pb"
 TOLERANCE = 1e-9
 
 # The handle's own axes and the cabinet's inward normal, as the model states them in the base
@@ -144,7 +144,7 @@ def _frame_log() -> Path:
     workspace = Path(__file__).resolve().parents[4]
     logs = sorted(workspace.glob(RUN_GLOB))
     if not logs:
-        pytest.skip(f"no recorded drawer_open run under {workspace / RUN_GLOB}")
+        pytest.skip(f"no recorded drawer_opening run under {workspace / RUN_GLOB}")
     return logs[-1]
 
 

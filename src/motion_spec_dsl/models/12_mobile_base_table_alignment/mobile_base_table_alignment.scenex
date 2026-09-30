@@ -1,0 +1,220 @@
+import "mobile_base_table_alignment.scene"
+import "scene_dsl:robots/eddie_base.ktree"
+import "scene_dsl:robots/kinova_gen3_7dof.ktree"
+
+ns eal_mjc = "https://secorolab.github.io/models/scenes/mobile-base-table-alignment-mjc/"
+
+ktree inst (ns=eal_mjc) eddie of <eddie_base_tree>
+ktree inst (ns=eal_mjc) left_arm of <kinova_tree>
+ktree inst (ns=eal_mjc) right_arm of <kinova_tree>
+
+// One tree per arm, because a tree states at most one joint composition and each arm is its own
+// chain -- the same reason dual_arm_pick_and_place wraps its two arms separately. The tip is the bracelet:
+// there is no gripper on this robot, so the last link of the arm is the end-effector.
+//
+// Each wrapper carries the tower bracket its arm bolts to. That bracket is real -- the MJCF draws
+// it as torso_mounts -- and massless, as eddie_base.macro.xacro has it, because its mass is
+// already counted in base_link. It also makes the wrapper an assembly rather than a second name
+// for the arm: the wrapper holds the arm and joins it, which is how a reader tells the two apart.
+ktree (ns=eal_mjc) left_arm_tree {
+    root: <left_arm_mount.left_arm_mount_origin>
+    tree <left_arm>
+
+    body left_arm_mount {
+        frame left_arm_mount_origin { }
+        inertia {
+            frame: <left_arm_mount_origin>
+            mass: 0.0 kg
+            inertia-matrix: (
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed left_arm_on_mount {
+            parent: <left_arm_mount.left_arm_mount_origin>
+            child: <left_arm.base_link.base_link_origin>
+        }
+        serial {
+            root: <left_arm.base_link.base_link_origin>
+            tip: <left_arm.bracelet_link.bracelet_link_origin>
+        }
+    }
+}
+
+ktree (ns=eal_mjc) right_arm_tree {
+    root: <right_arm_mount.right_arm_mount_origin>
+    tree <right_arm>
+
+    body right_arm_mount {
+        frame right_arm_mount_origin { }
+        inertia {
+            frame: <right_arm_mount_origin>
+            mass: 0.0 kg
+            inertia-matrix: (
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed right_arm_on_mount {
+            parent: <right_arm_mount.right_arm_mount_origin>
+            child: <right_arm.base_link.base_link_origin>
+        }
+        serial {
+            root: <right_arm.base_link.base_link_origin>
+            tip: <right_arm.bracelet_link.bracelet_link_origin>
+        }
+    }
+}
+
+// The whole robot: the platform, and the two arms bolted to its tower. Rooted at the platform's
+// ground frame, because that is what the scene stands the robot on -- nothing holds it there, and
+// the MJCF's free joint is what lets it drive away.
+//
+// The platform declares no composition of its own: a castor base is a branching tree, and its
+// solver is a force distribution rather than a chain.
+ktree (ns=eal_mjc) mobile_base_table_alignment_tree {
+    root: <eddie.base_footprint.base_footprint_origin>
+    tree <eddie>
+    tree <left_arm_tree>
+    tree <right_arm_tree>
+
+    joints {
+        fixed left_mount_on_tower {
+            parent: <eddie.base_link.left_arm_attachment>
+            child: <left_arm_tree.left_arm_mount.left_arm_mount_origin>
+        }
+        fixed right_mount_on_tower {
+            parent: <eddie.base_link.right_arm_attachment>
+            child: <right_arm_tree.right_arm_mount.right_arm_mount_origin>
+        }
+    }
+}
+
+scene inst (ns=eal_mjc) mobile_base_table_alignment_scene_mjc {
+    scene: <mobile_base_table_alignment_scene>
+
+    // The robot is a root of this graph in its own right: no joint holds it, so it stands where
+    // the scene puts it and drives away from there. The table is the thing that stays put.
+    kgraph (ns=eal_mjc) mobile_base_table_alignment_graph {
+        anchor: <world_body.world>
+        tree <mobile_base_table_alignment_tree>
+
+        body world_body {
+            frame world { }
+        }
+
+        body table {
+            // Turned a quarter turn so its long 1.6 m edge faces the robot; the top is
+            // 1.6 x 1.2 m, so unrotated the robot would meet the 1.2 m end.
+            frame table_top {
+                pose table_in_world {
+                    wrt: <world_body.world>
+                    xyz: (1.15, -0.35, 0.72) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 90) unit: deg }
+                }
+            }
+            // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms,
+            // so the tree has to carry them or nothing can answer for the body's mass.
+            // Overhead view of the whole scene, looking straight down. Carried by the table
+            // because a camera needs a body the simulator actually builds.
+            frame overhead_cam {
+                pose overhead_cam_on_table {
+                    wrt: <table.table_top>
+                    xyz: (0.126, 0.657, 4.355) m
+                    orientation: quat {
+                        xyzw: (0.000084961, 0.008496955, 0.999913912, 0.009998139)
+                    }
+                }
+            }
+            // Three-quarter view from the robot's front-left, looking down at the contact.
+            frame side_cam {
+                pose side_cam_on_table {
+                    wrt: <table.table_top>
+                    xyz: (-1.812, 1.584, 1.040) m
+                    orientation: quat {
+                        xyzw: (0.213761886, -0.411961985, -0.786230125, 0.407964911)
+                    }
+                }
+            }
+            frame table_com {
+                pose table_com_in_table_top {
+                    wrt: <table.table_top>
+                    xyz: (0.0, 0.0, -0.05100416904566816) m
+                    orientation: quat {
+                        xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                    }
+                }
+            }
+            inertia {
+                frame: <table_com>
+                mass: 84.26442414492935 kg
+                inertia-matrix: (
+                    (32.454207471081375, 0.0, 0.0),
+                    (0.0, 21.92592723136972, 0.0),
+                    (0.0, 0.0, 12.75746156052865)
+                ) kg*m^2
+            }
+        }
+
+        // The table is bolted to the world, so the pair is a tree the graph stands on rather
+        // than two bodies floating in it -- a body no joint holds is one nothing can measure.
+        joints {
+            fixed table_on_world {
+                parent: <world_body.world>
+                child: <table.table_top>
+            }
+        }
+    }
+
+    obj <ws_objects.table> {
+        model table-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <mobile_base_table_alignment_graph.table> to "table"
+        }
+    }
+
+    agn <agents.eddie> {
+        model eddie-mjc as mjcf {
+            sys path = 'src/eddie_description/mujoco/mobile_platform.xml'
+            map tree <eddie> to "base"
+        }
+
+        camera overhead {
+            frame: <mobile_base_table_alignment_graph.table.overhead_cam>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 45.0 deg
+            update-rate: 30.0 Hz
+        }
+
+        camera side {
+            frame: <mobile_base_table_alignment_graph.table.side_cam>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 45.0 deg
+            update-rate: 30.0 Hz
+        }
+    }
+
+    agn <agents.left_arm> {
+        model left-arm-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            map tree <left_arm> to "base_link"
+        }
+    }
+
+    agn <agents.right_arm> {
+        model right-arm-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            map tree <right_arm> to "base_link"
+        }
+    }
+}

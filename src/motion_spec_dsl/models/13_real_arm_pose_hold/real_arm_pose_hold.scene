@@ -1,0 +1,12 @@
+ns aas_env = "https://secorolab.github.io/models/environments/arc-tracing-with-admittance/"
+ns aas_agn = "https://secorolab.github.io/models/agents/arc-tracing-with-admittance/"
+ns aas_scene = "https://secorolab.github.io/models/scenes/arc-tracing-with-admittance/"
+
+agn set (ns=aas_agn) agents {
+    agent arm1,
+    agent gripper1
+}
+
+scene (ns=aas_scene) admittance_arc_scene {
+    agn set <agents>
+}

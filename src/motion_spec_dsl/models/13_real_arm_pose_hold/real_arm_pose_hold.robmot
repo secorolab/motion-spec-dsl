@@ -1,0 +1,146 @@
+import "real_arm_pose_hold.fsm"
+import "real_arm_pose_hold.scenex"
+ns app = "https://secorolab.github.io/models/real-arm-pose-hold/"
+ns rdh = "https://secorolab.github.io/models/real-arm-pose-hold/fsm/"
+
+exec-context (ns=app) real-arm-pose-hold-exec {
+    runs-scene: <admittance_arc_scene_mjc>
+    platform:   real-world {
+                    <agents.arm1> realized by KinovaGen3,
+                    <agents.gripper1> realized by Robotiq2F85,
+                    <wrist_ft> realized by RobotiqFT300s
+                }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-elbow-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
+        // Not controlled: recorded, so the run says what the arm was pushed with while holding.
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <rdh.E_RUN_STARTED> }
+        }
+    },
+    spec {
+        // Shared, not per motion: the two states alternate, and a target re-captured on each
+        // entry would follow the standing error and walk the hold away from where it began.
+        pose start-pose       = snapshot of <shared.world.pose-ee-base> on event <rdh.E_RUN_STARTED>,
+        // Six constraints leave the 7th joint free, so the elbow can sink under gravity with
+        // the end-effector still on target. This is the actuator-4 bend the arm folds over --
+        // everything beyond it hangs off this point. Held where it started, like the pose above.
+        length support-z = snapshot of <shared.world.pose-elbow-base>.position.z on event <rdh.E_RUN_STARTED>,
+        angle gripper-closed  = 0.8 rad,
+        angle gripper-open    = 0.0 rad,
+        angle grasp-threshold = 0.65 rad
+    }
+}
+
+// The bands this model is tuned against, stated once by the kind of error they bound rather
+// than on each constraint that takes them.
+tolerances {
+    position:         0.05 m,
+    orientation:      0.01 rad
+}
+
+guarded-motion (ns=app) hold-close {
+    description: "Hold the starting pose while the gripper closes"
+
+    // The pose it holds is shared, so this motion captures nothing of its own.
+    context { }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
+        close-gripper:    keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
+    }
+
+    until {
+        closed: <shared.world.gripper-pos> greater than <shared.spec.grasp-threshold>
+    }
+}
+
+guarded-motion (ns=app) hold-open {
+    description: "Hold the same pose while the gripper opens"
+
+    context { }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
+    }
+
+    until {
+        opened: <shared.world.gripper-pos> equal to <shared.spec.gripper-open>
+    }
+}
+
+constraint-handler (ns=app) handler-close {
+    handles: <hold-close>
+    runs-in: <rdh.S_CLOSE>
+    monitors {
+        mon-closed: monitor <hold-close.until> {
+            satisfied for 0.3 s { trigger: event <rdh.E_GRIPPER_CLOSED> },
+        }
+    }
+    controllers {
+        pid ctrl-hold-position    { <hold-close.hold-position>,    Kp: 550, Ki: 50, Kd: 47, decay: 0 },
+        pid ctrl-hold-orientation { <hold-close.hold-orientation>, Kp: 250, Ki: 50, Kd: 32, decay: 0 },
+        feed-forward ctrl-close-gripper { <hold-close.close-gripper> },
+        impedance ctrl-support-z { <hold-close.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
+            apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <agents.arm1>,
+            algorithm: achd,
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper-command-solver: command-forwarding {
+            agent: <agents.gripper1>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-open {
+    handles: <hold-open>
+    runs-in: <rdh.S_OPEN>
+    monitors {
+        mon-opened: monitor <hold-open.until> {
+            satisfied for 0.3 s { trigger: event <rdh.E_GRIPPER_OPENED> },
+        }
+    }
+    controllers {
+        pid ctrl-open-hold-position    { <hold-open.hold-position>,    Kp: 550, Ki: 50, Kd: 47, decay: 0 },
+        pid ctrl-open-hold-orientation { <hold-open.hold-orientation>, Kp: 250, Ki: 50, Kd: 32, decay: 0 },
+        feed-forward ctrl-open-gripper { <hold-open.open-gripper> },
+        impedance ctrl-open-support-z { <hold-open.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
+            apply at <kinova.forearm_link>
+    }
+    solvers {
+        <handler-close.arm-solver>,
+        <handler-close.gripper-command-solver>
+    }
+}

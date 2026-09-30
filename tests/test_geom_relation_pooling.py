@@ -17,16 +17,16 @@ from motion_spec_dsl.rdf_parser.vocab import CSTR, MAP
 MODELS = Path(__file__).parents[1] / "src/motion_spec_dsl/models"
 
 
-def _pick_place_single_graph():
+def _pick_and_place_graph():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "pick_place_single" / "pick_place_single.robmot"
+        MODELS / "01_pick_and_place" / "pick_and_place.robmot"
     )
     return MotionSpecDatasetBuilder(model).build()[0].default_graph
 
 
 def test_one_relation_per_frame_pair():
     """16 Pose coordinates over 4 distinct (of, wrt) frame pairs now yield 4 Pose relations."""
-    graph = _pick_place_single_graph()
+    graph = _pick_and_place_graph()
     poses = set(graph.subjects(RDF.type, URI_GEOM_TYPE_POSE))
     assert len(poses) == 4
 
@@ -34,7 +34,7 @@ def test_one_relation_per_frame_pair():
 def test_coordinates_of_one_frame_pair_share_their_relation():
     """A measured pose and a config-authored goal pose stated `for` it are two coordinates of
     the same frame pair -- after phase B they point at one relation node, not two."""
-    graph = _pick_place_single_graph()
+    graph = _pick_and_place_graph()
     pose_ee_base = next(
         s for s in graph.subjects() if str(s).endswith("/shared/world/pose-ee-base")
     )
@@ -50,7 +50,7 @@ def test_coordinates_of_one_frame_pair_share_their_relation():
 def test_a_constraint_names_a_view_per_operand():
     """Pooling made the relation 1-to-N, so a constraint's two operands over one frame pair
     would be the same node. Each edge names the view that pins its own coordinate instead."""
-    graph = _pick_place_single_graph()
+    graph = _pick_and_place_graph()
     constraints = {
         s for s in graph.subjects(RDF.type, CSTR.Constraint) if str(s).endswith("hold-position")
     }

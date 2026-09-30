@@ -164,9 +164,9 @@ def test_a_tracked_path_states_a_band_too() -> None:
     from motion_spec_dsl.langs import motion_spec_metamodel
 
     model_path = (
-        Path(__file__).resolve().parents[1] / "src" / "motion_spec_dsl" / "models" / "pick_place_single"
+        Path(__file__).resolve().parents[1] / "src" / "motion_spec_dsl" / "models" / "01_pick_and_place"
     )
-    source = (model_path / "pick_place_single.robmot").read_text()
+    source = (model_path / "pick_and_place.robmot").read_text()
     # The model now declares model-wide defaults, which would supply the very band this test
     # asserts the absence of; drop them so the constraint really states none.
     source = re.sub(r"\ntolerances \{[^}]*\}\n", "\n", source)
@@ -176,7 +176,7 @@ def test_a_tracked_path_states_a_band_too() -> None:
         "on <spec.approach-path>,",
     )
     parsed = motion_spec_metamodel().model_from_str(
-        bandless, file_name=str(model_path / "pick_place_single.robmot")
+        bandless, file_name=str(model_path / "pick_and_place.robmot")
     )
     with pytest.raises(ValueError, match="states no band"):
         MotionSpecDatasetBuilder(parsed).build()

@@ -1,0 +1,11 @@
+ns ed_agn = "https://secorolab.github.io/models/agents/mobile-base-driving/"
+ns ed_scene = "https://secorolab.github.io/models/scenes/mobile-base-driving/"
+
+agn set (ns=ed_agn) agents {
+    agent eddie
+}
+
+// The platform drives over open floor, so the scene holds no workspace and no object.
+scene (ns=ed_scene) mobile_base_driving_scene {
+    agn set <agents>
+}

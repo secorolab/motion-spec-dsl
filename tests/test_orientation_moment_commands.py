@@ -103,7 +103,7 @@ def test_force_command_on_angular_subspace_is_rejected(parse_source, base_source
 
 
 def test_linear_impedance_still_commands_a_force(parse_source, base_source) -> None:
-    """The regression guard for pick_place_dual's elbow-support controllers, which hold a
+    """The regression guard for dual_arm_pick_and_place's elbow-support controllers, which hold a
     `.position.z` with an impedance."""
     source = _swap(
         base_source,
