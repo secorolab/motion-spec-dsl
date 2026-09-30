@@ -72,7 +72,6 @@ ktree (ns=ppd_mjc) world_tree {
                 orientation: euler { axes: xyz extrinsic angles: (0, 0, 180) unit: deg }
             }
         }
-        // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
         frame table_com {
             pose table_com_in_table_top {
                 wrt: <table.table_top>

@@ -2,7 +2,7 @@ import "pick_and_place.fsm"
 import "pick_and_place.scenex"
 ns app = "https://secorolab.github.io/models/pick-and-place/"
 ns pp = "https://secorolab.github.io/models/pick-and-place/fsm/"
-//
+
 exec-context (ns=app) pick-and-place-exec {
     runs-scene: <pick_place_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
@@ -27,16 +27,6 @@ context (ns=app) shared {
             wrt:        <kinova.base_link>,
             as-seen-by: <kinova.base_link>
         },
-        pose pose-forearm-base {
-            of:         <kinova.forearm_link>,
-            wrt:        <kinova.base_link>,
-            as-seen-by: <kinova.base_link>
-        },
-        pose pose-table-base {
-            of:         <table.table_top>,
-            wrt:        <kinova.base_link>,
-            as-seen-by: <kinova.base_link>
-        },
         joint-position gripper-pos {
             joint: <gripper.g_left_driver_joint>
         },
@@ -46,30 +36,18 @@ context (ns=app) shared {
         }
     },
     spec {
-        length satisfied-band     = 0.01 m,
-        angle satisfied-band-rot           = 0.01 rad,
-        linear-velocity zero-linvel = 0.0 m/s,
-        length zero-dist   = 0.0 m,
-        angle grasp-rot-x            = 3.14159 rad,
-        angle grasp-rot-y           = 0.0 rad,
-        angle grasp-rot-z             = 1.5708 rad,
-        angle gripper-closed        = 0.8 rad,
-        angle gripper-open          = 0.0 rad,
-        length lost-dist   = 0.12 m,
-        // Where this deployment parks the TCP: a property of the cell the arm stands in, not
-        // of the pick-and-place task, so robot.toml states it and this names which section.
-        pose home-pose = [config.poses.home] for <shared.world.pose-ee-base>,
-        // The forearm's own up axis: its z runs along the elbow hinge, so y is the one that
-        // stands up when the arm is upright.
-        direction forearm-up { as-seen-by: <kinova.forearm_link> } = (0, 1, 0),
-        direction base-up { as-seen-by: <kinova.base_link> } = (0, 0, 1),
-        angle align-band = 0.05 rad,
-        angle elbow-angle-target = pi rad,
-        torque elbow-torque-limit = 10.0 Nm,
-        // The table surface the arm mounts on, normal up (same frame as pose-ee-base's wrt).
-        plane table { of: <table.table_top>, normal: <shared.spec.base-up> }
+        length satisfied-band      = 0.01 m,
+        angle satisfied-band-rot   = 0.01 rad,
+        angle grasp-rot-x          = 3.14159 rad,
+        angle grasp-rot-y          = 0.0 rad,
+        angle grasp-rot-z          = 1.5708 rad,
+        angle gripper-closed       = 0.8 rad,
+        angle gripper-open         = 0.0 rad,
+        length lost-dist           = 0.12 m,
+        pose home-pose             = [config.poses.home] for <shared.world.pose-ee-base>,
+        angle elbow-angle-target   = pi rad,
+        torque elbow-torque-limit  = 10.0 Nm
     }
-    // nothing, the pose is the cube's start placement.
 }
 
 tolerances {
@@ -91,9 +69,7 @@ guarded-motion (ns=app) home {
         hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position within <shared.spec.satisfied-band>,
         hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
         hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
-        // Plan 10: no controller drives it -- proves the 1-DOF gradient row generates end to end.
-        align-forearm-lean: keeping angle between <shared.spec.forearm-up> and <shared.spec.base-up> equal to 0.03 rad within <shared.spec.align-band>,
-        above-table: keeping distance of <shared.world.pose-ee-base> from <shared.spec.table> greater than 0.05 m
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
     until {}
@@ -381,8 +357,6 @@ guarded-motion (ns=app) recover {
     until {}
 }
 
-// ------------------ constraint handlers ------------------
-
 constraint-handler (ns=app) handler-home {
     handles: <home>
     controllers {
@@ -391,7 +365,8 @@ constraint-handler (ns=app) handler-home {
         pid ctrl-home-elbow {
             constraint: <home.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
-        } as torque
+        } as torque,
+        feed-forward ctrl-home-open-gripper { constraint: <home.open-gripper> }
     }
 
     solvers {
@@ -399,6 +374,9 @@ constraint-handler (ns=app) handler-home {
             agent:     <pickplace_agents.arm1>,
             algorithm: achd,
             gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper-command-solver: command-forwarding {
+            agent: <pickplace_agents.gripper1>
         }
     }
 }
@@ -478,9 +456,7 @@ constraint-handler (ns=app) handler-close-grip {
 
     solvers {
         <handler-home.arm-solver>,
-        gripper-command-solver: command-forwarding {
-            agent: <pickplace_agents.gripper1>
-        }
+        <handler-home.gripper-command-solver>
     }
 }
 
@@ -510,7 +486,7 @@ constraint-handler (ns=app) handler-lift {
 
     solvers {
         <handler-home.arm-solver>,
-        <handler-close-grip.gripper-command-solver>
+        <handler-home.gripper-command-solver>
     }
 }
 
@@ -540,7 +516,7 @@ constraint-handler (ns=app) handler-place-above {
 
     solvers {
         <handler-home.arm-solver>,
-        <handler-close-grip.gripper-command-solver>
+        <handler-home.gripper-command-solver>
     }
 }
 
@@ -570,7 +546,7 @@ constraint-handler (ns=app) handler-place {
 
     solvers {
         <handler-home.arm-solver>,
-        <handler-close-grip.gripper-command-solver>
+        <handler-home.gripper-command-solver>
     }
 }
 
@@ -597,7 +573,7 @@ constraint-handler (ns=app) handler-open-grip {
 
     solvers {
         <handler-home.arm-solver>,
-        <handler-close-grip.gripper-command-solver>
+        <handler-home.gripper-command-solver>
     }
 }
 
@@ -627,7 +603,7 @@ constraint-handler (ns=app) handler-retreat {
 
     solvers {
         <handler-home.arm-solver>,
-        <handler-close-grip.gripper-command-solver>
+        <handler-home.gripper-command-solver>
     }
 }
 

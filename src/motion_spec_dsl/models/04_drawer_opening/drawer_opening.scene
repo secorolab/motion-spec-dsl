@@ -3,10 +3,10 @@ ns dro_agn = "https://secorolab.github.io/models/agents/drawer-opening/"
 ns dro_scene = "https://secorolab.github.io/models/scenes/drawer-opening/"
 ns dro_mjc = "https://secorolab.github.io/models/scenes/drawer-opening-mjc/"
 
-// What the workspace is built from: the table the arm stands on, and the cabinet standing on it.
 obj set (ns=dro_env) ws_objects {
     object table,
-    object cabinet
+    object cabinet1,
+    object cabinet2
 }
 
 ws set (ns=dro_env) drawer_workspaces {
@@ -15,12 +15,14 @@ ws set (ns=dro_env) drawer_workspaces {
 
 agn set (ns=dro_agn) drawer_agents {
     agent arm1,
-    agent gripper1
+    agent gripper1,
+    agent arm2
 }
 
 comp (ns=dro_env) comp_table_drawer of ws <drawer_workspaces.table_ws> {
     obj <ws_objects.table>
-    obj <ws_objects.cabinet>
+    obj <ws_objects.cabinet1>
+    obj <ws_objects.cabinet2>
 }
 
 scene (ns=dro_scene) drawer_scene {

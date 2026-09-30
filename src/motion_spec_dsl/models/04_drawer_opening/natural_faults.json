@@ -4,8 +4,8 @@
     {
       "name": "n01_grasp_normal_axis_typo",
       "note": "The grasp normal was first authored as the tool y axis; the pads close along x. Fingers clamped the drawer panel and the grasp jammed.",
-      "find": "direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (1, 0, 0)",
-      "replace": "direction grasp-normal { as-seen-by: <gripper.g_base.g_pinch> } = (0, 1, 0)",
+      "find": "direction grasp-normal { as-seen-by: <gripper1.g_base.g_pinch> } = (0, 1, 0)",
+      "replace": "direction grasp-normal { as-seen-by: <gripper1.g_base.g_pinch> } = (1, 0, 0)",
       "element_uri": "https://secorolab.github.io/models/drawer-opening/shared/spec/grasp-normal"
     },
     {
@@ -25,9 +25,9 @@
     {
       "name": "n04_approach_integral_hangover",
       "note": "The approach x controller was first authored with the same Ki as the gravity axis; the wound-up integral dragged the approach into a long stall.",
-      "find": "pid ctrl-at-handle-x { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 },",
-      "replace": "pid ctrl-at-handle-x { constraint: <approach-handle.at-handle-x>, Kp: 80, Ki: 80, Kd: 24, decay: 0 },",
-      "element_uri": "https://secorolab.github.io/models/drawer-opening/approach-handle/while/at-handle-x"
+      "find": "pid ctrl-a1-x { constraint: <approach1.at-handle-x>, Kp: 80, Ki: 0, Kd: 24, decay: 0 } via <arm1-solver>,",
+      "replace": "pid ctrl-a1-x { constraint: <approach1.at-handle-x>, Kp: 80, Ki: 80, Kd: 24, decay: 0 } via <arm1-solver>,",
+      "element_uri": "https://secorolab.github.io/models/drawer-opening/approach1/while/at-handle-x"
     }
   ]
 }

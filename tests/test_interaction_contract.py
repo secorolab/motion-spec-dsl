@@ -32,7 +32,7 @@ def admittance_arc_manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
         mp.setenv("METAMODELS_PATH", str(METAMODELS))
         metamodel = motion_spec_metamodel()
         model = metamodel.model_from_file(
-            MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+            MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
         )
         _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "arc_tracing_with_admittance-app.ld.json"
@@ -56,7 +56,7 @@ def table_ii_manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("METAMODELS_PATH", str(METAMODELS))
         metamodel = motion_spec_metamodel()
-        model = metamodel.model_from_file(MODELS / "06_drawer_opening" / "drawer_opening.robmot")
+        model = metamodel.model_from_file(MODELS / "04_drawer_opening" / "drawer_opening.robmot")
         _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
     return tmp_path / "drawer_opening-app.ld.json"
 
@@ -124,7 +124,7 @@ def test_force_torque_sensor_reaches_the_runtime(interaction_ir: dict) -> None:
 
 
 def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -> None:
-    source_path = MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+    source_path = MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     source = source_path.read_text().replace(
         "            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,\n"
         "            as-seen-by: <kinova.base_link.base_link_origin>,\n",
@@ -161,7 +161,7 @@ _ESTIMATED_WRENCH = """        wrench ext-force-est {
 def test_estimated_wrench_reaches_the_ir(tmp_path: Path) -> None:
     """A wrench sourced from the momentum observer carries the observer's tuning into the IR,
     and none of the sensor path: nothing measures it, so it has no sensor to name."""
-    source_path = MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+    source_path = MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     source = source_path.read_text().replace("        wrench press-wrench {", _ESTIMATED_WRENCH, 1)
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("METAMODELS_PATH", str(METAMODELS))
@@ -202,7 +202,7 @@ def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: 
 
 
 def test_admittance_release_threshold_cannot_exceed_deadband() -> None:
-    source_path = MODELS / "10_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+    source_path = MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     source = source_path.read_text().replace(
         "                max-velocity: 0.30 m/s\n",
         "                max-velocity: 0.30 m/s,\n"

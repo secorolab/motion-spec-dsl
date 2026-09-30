@@ -1,9 +1,5 @@
 <mujoco model="table_asset">
-  <!--
-    dual_arm_drawer_opening's variant of mj_kdl_wrapper's assets/table.xml. Only the top surface differs:
-    MuJoCo takes the max of the two contacting frictions, so the stock 1.0 would pin the
-    cabinet here no matter how slippery the cabinet's own foot is.
-  -->
+  <!-- mj_kdl_wrapper's table.xml with a slippery top: MuJoCo takes the max contact friction. -->
   <worldbody>
     <!-- Root body origin is the table top surface center. Place this asset at z=surface_z. -->
     <body name="root">

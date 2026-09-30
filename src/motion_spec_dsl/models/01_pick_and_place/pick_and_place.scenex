@@ -10,11 +10,7 @@ ktree inst (ns=pps_mjc) gripper of <gripper_tree>
 ktree (ns=pps_mjc) ft_tree {
     root: <wrist_ft_body.wrist_ft_body_origin>
     body wrist_ft_body {
-        // The coupler between bracelet and gripper: a 65 mm cylinder whose origin is the
-        // bracelet mating face, +z along the tool axis -- which is -z of the bracelet.
         frame wrist_ft_body_origin { }
-        // The sensing element sits mid-cylinder, as it does on the real tool; ft_mount.xml
-        // puts the site there.
         frame wrist_ft_site {
             pose wrist_ft_site_in_wrist_ft_body {
                 wrt: <wrist_ft_body.wrist_ft_body_origin>
@@ -22,7 +18,6 @@ ktree (ns=pps_mjc) ft_tree {
                 orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
             }
         }
-        // The far face, where the gripper bolts on.
         frame wrist_ft_mount {
             pose wrist_ft_mount_in_wrist_ft_body {
                 wrt: <wrist_ft_body.wrist_ft_body_origin>
@@ -30,9 +25,7 @@ ktree (ns=pps_mjc) ft_tree {
                 orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
             }
         }
-        // The measured tool weighs 1.195 kg -- coupler, sensor and gripper together -- and the
-        // gripper bodies carry 1.061604 of it from their MJCF, so the coupler carries the rest,
-        // as a solid cylinder 75 mm across.
+        // The measured 1.195 kg tool less the gripper's 1.0616 kg, as a solid 75 mm cylinder.
         inertia {
             frame: <wrist_ft_site>
             mass: 0.133396 kg
@@ -84,7 +77,6 @@ ktree (ns=pps_mjc) world_tree {
                 orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
             }
         }
-        // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
         frame table_com {
             pose table_com_in_table_top {
                 wrt: <table.table_top>

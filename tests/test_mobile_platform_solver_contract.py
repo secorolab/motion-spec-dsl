@@ -19,6 +19,7 @@ from motion_spec_dsl.gens import _gen_graph
 from motion_spec_dsl.langs import motion_spec_metamodel
 
 FIXTURE = Path(__file__).parent / "fixtures" / "mixed_solvers.robmot"
+METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 
 # Keyed by the authored configuration, which is unique per solver in the fixture.
 EXPECTED = {
@@ -33,7 +34,7 @@ EXPECTED = {
 def solvers_by_configuration(tmp_path_factory: pytest.TempPathFactory) -> dict[str, URIRef]:
     tmp_path = tmp_path_factory.mktemp("mixed_solvers")
     with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", "/home/batsy/work/ms/src/metamodels")
+        mp.setenv("METAMODELS_PATH", str(METAMODELS))
         metamodel = motion_spec_metamodel()
         model = metamodel.model_from_file(FIXTURE)
         _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)

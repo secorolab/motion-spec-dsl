@@ -101,6 +101,9 @@ context (ns=app) shared {
         // The quarter-turn states drive orientation with overdamped gains; this caps what
         // the integral may contribute so the swing cannot wind it up.
         angular-acceleration ori-integral-limit = 5.0 rad/s^2,
+        // Uncapped, the quarter turns and long reaches are steps: ~100 Nm on joint 2.
+        angular-acceleration turn-acc-limit = 10.0 rad/s^2,
+        linear-acceleration move-acc-limit = 1.0 m/s^2,
 
         // Heights of the pick sequence, all in each arm's base frame (origin on the table top).
         length above-z = 0.26 m,
@@ -818,14 +821,14 @@ constraint-handler (ns=app) handler-present {
     }
     controllers {
         pid ctrl-pr1-reach-x { constraint: <present.reach1-x>, profile: <present.spec.reach1-x-profile>, measured-derivative: <shared.world.twist-ee1-base>.linvel.x, Kp: 100, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pr1-reach-y { constraint: <present.reach1-y>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pr1-reach-z { constraint: <present.reach1-z>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pr1-ori { constraint: <present.present1-ori>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pr1-reach-y { constraint: <present.reach1-y>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pr1-reach-z { constraint: <present.reach1-z>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pr1-ori { constraint: <present.present1-ori>, output-saturation: saturation { max: <shared.spec.turn-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
         feed-forward ctrl-pr1-close { constraint: <present.close1-gripper> } via <handler-grasp1.gripper1-solver>,
         pid ctrl-pr2-reach-x { constraint: <present.reach2-x>, profile: <present.spec.reach2-x-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.x, Kp: 100, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pr2-reach-y { constraint: <present.reach2-y>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pr2-reach-y { constraint: <present.reach2-y>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-pr2-reach-z { constraint: <present.reach2-z>, profile: <present.spec.reach2-z-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.z, Kp: 100, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pr2-ori { constraint: <present.premeet2-ori>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pr2-ori { constraint: <present.premeet2-ori>, output-saturation: saturation { max: <shared.spec.turn-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-pr-elbow1 {
             constraint: <present.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
@@ -964,8 +967,8 @@ constraint-handler (ns=app) handler-transport {
         feed-forward ctrl-tr1-open { constraint: <transport.open1-gripper> } via <handler-grasp1.gripper1-solver>,
         pid ctrl-tr2-reach-x { constraint: <transport.reach2-x>, profile: <transport.spec.reach2-x-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.x, Kp: 100, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-tr2-reach-y { constraint: <transport.reach2-y>, profile: <transport.spec.reach2-y-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.y, Kp: 100, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-tr2-reach-z { constraint: <transport.reach2-z>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-tr2-ori { constraint: <transport.place2-ori>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-tr2-reach-z { constraint: <transport.reach2-z>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-tr2-ori { constraint: <transport.place2-ori>, output-saturation: saturation { max: <shared.spec.turn-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
         feed-forward ctrl-tr2-close { constraint: <transport.close2-gripper> } via <handler-grasp1.gripper2-solver>,
         pid ctrl-tr-elbow1 {
             constraint: <transport.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
@@ -993,10 +996,10 @@ constraint-handler (ns=app) handler-place {
         }
     }
     controllers {
-        pid ctrl-pl1-rest-x { constraint: <place.rest1-x>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-rest-y { constraint: <place.rest1-y>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-rest-z { constraint: <place.rest1-z>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-rest-ori { constraint: <place.rest1-ori>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pl1-rest-x { constraint: <place.rest1-x>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pl1-rest-y { constraint: <place.rest1-y>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pl1-rest-z { constraint: <place.rest1-z>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pl1-rest-ori { constraint: <place.rest1-ori>, output-saturation: saturation { max: <shared.spec.turn-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
         pid ctrl-pl2-hold-x { constraint: <place.hold2-x>,   Kp: 140, Ki: 20, Kd: 55, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-pl2-hold-y { constraint: <place.hold2-y>,   Kp: 140, Ki: 20, Kd: 55, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-pl2-lower-z { constraint: <place.lower2-z>, Kp: 15,  Ki: 5,  Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
@@ -1027,10 +1030,10 @@ constraint-handler (ns=app) handler-release2 {
         }
     }
     controllers {
-        pid ctrl-r2-rest-x { constraint: <release2.rest1-x>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-r2-rest-y { constraint: <release2.rest1-y>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-r2-rest-z { constraint: <release2.rest1-z>,   Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-r2-rest-ori { constraint: <release2.rest1-ori>, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-r2-rest-x { constraint: <release2.rest1-x>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-r2-rest-y { constraint: <release2.rest1-y>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-r2-rest-z { constraint: <release2.rest1-z>, output-saturation: saturation { max: <shared.spec.move-acc-limit> }, Kp: 60, Ki: 10, Kd: 30, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-r2-rest-ori { constraint: <release2.rest1-ori>, output-saturation: saturation { max: <shared.spec.turn-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 60, Ki: 10, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
         pid ctrl-r2-hold2-position { constraint: <release2.hold2-position>, Kp: 140, Ki: 20, Kd: 55, decay: 0 } via <handler-home.arm2-solver>,
         pid ctrl-r2-hold2-orientation { constraint: <release2.hold2-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
         feed-forward ctrl-r2-open2 { constraint: <release2.open2-gripper> } via <handler-grasp1.gripper2-solver>,

@@ -6,9 +6,9 @@ The row-emission checks say a gradient reaches the solver; they say nothing abou
 behind it. Both line-family operators once measured `B - A` where every point-family one measures
 `A - B`, which no run and no compile can report -- the sign is only wrong against the scene.
 
-Recorded run of `src/motion_spec_dsl/models/06_drawer_opening`, Borghesan's own worked example:
+Recorded run of `src/motion_spec_dsl/models/04_drawer_opening`, Borghesan's own worked example:
 
-    motion-spec run src/motion_spec_dsl/models/06_drawer_opening/drawer_opening.robmot \
+    motion-spec run src/motion_spec_dsl/models/04_drawer_opening/drawer_opening.robmot \
         -o generations/drawer_opening --prefix <install> --run-id <id> --headless
 """
 
