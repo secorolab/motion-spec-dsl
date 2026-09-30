@@ -207,6 +207,7 @@ from motion_spec_dsl.rdf.common import (
     _norm_id,
     _norm_scalar_type,
     _ns_term,
+    _owning_motion,
     _quantity_axis_frame,
     _resolved_constraint_items,
     _scalar_id,
@@ -579,6 +580,7 @@ class MotionSpecDatasetBuilder:
                         self.dataset.bind(spec.ns.name, spec.ns.uri)
                         context[spec.ns.name] = spec.ns.uri
 
+        all_world_qtys: dict[str, Any] = {}
         for handler_order, handler in enumerate(handlers):
             motion = handler.motion
             if not isinstance(motion, GuardedMotion):
@@ -595,24 +597,7 @@ class MotionSpecDatasetBuilder:
 
             self._emit_world_quantities(world_qtys)
             self._emit_context_quantities(context_quantities, constraints, world_qtys)
-        # A derived scalar needs the same ops a constraint holding that view would get; it is
-        # owned by the context that declares it, not by any motion.
-        for declaration, declared_node in self._derived_scalar_declarations:
-            shim = self._derived_scalar_spec(declaration)
-            owner = shim.parent.parent
-            self._emit_map_operations(owner, [shim], world_qtys)
-            # The view's ops write their own scalar; the declared name is what the model reads,
-            # so the two are tied by a one-input sum rather than by minting a second computation.
-            target = self._resolve_constraint_quantity(shim, world_qtys)
-            scalar = self._owned_uri(_scalar_id(target, _view_subspace(shim), None), owner)
-            zero = self._owned_uri(f"{declaration.name}-zero", owner)
-            self._add_quantity(zero, QuantityType.Distance)
-            self.graph.add((zero, QUDT_SCHEMA.value, Literal(0.0, datatype=XSD.double)))
-            copy_op = self._owned_uri(f"compute-{declaration.name}", owner)
-            self.graph.add((copy_op, RDF.type, ALGO_EXT.Addition))
-            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), scalar))
-            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), zero))
-            self.graph.add((copy_op, ALGO_EXT.out, declared_node))
+            all_world_qtys.update(world_qtys)
             self._emit_path_following(constraints, world_qtys)
             self._emit_constraints(motion, constraints, world_qtys)
             self._emit_detect_acts(motion)
@@ -623,6 +608,25 @@ class MotionSpecDatasetBuilder:
                 handler, motion, world_qtys, shared_spec_ids, handler_order
             )
             self._emit_solvers(handler, motion, world_qtys)
+
+        # A derived scalar needs the same ops a constraint holding that view would get; it is
+        # owned by the context that declares it, not by any motion.
+        for declaration, declared_node in self._derived_scalar_declarations:
+            shim = self._derived_scalar_spec(declaration)
+            owner = shim.parent.parent
+            self._emit_map_operations(owner, [shim], all_world_qtys)
+            # The view's ops write their own scalar; the declared name is what the model reads,
+            # so the two are tied by a one-input sum rather than by minting a second computation.
+            target = self._resolve_constraint_quantity(shim, all_world_qtys)
+            scalar = self._owned_uri(_scalar_id(target, _view_subspace(shim), None), owner)
+            zero = self._owned_uri(f"{declaration.name}-zero", owner)
+            self._add_quantity(zero, QuantityType.Distance)
+            self.graph.add((zero, QUDT_SCHEMA.value, Literal(0.0, datatype=XSD.double)))
+            copy_op = self._owned_uri(f"compute-{declaration.name}", owner)
+            self.graph.add((copy_op, RDF.type, ALGO_EXT.Addition))
+            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), scalar))
+            self.graph.add((copy_op, _ns_term(ALGO_EXT, "in"), zero))
+            self.graph.add((copy_op, ALGO_EXT.out, declared_node))
 
         context.update(_numeric_term_coercions(self.graph, context))
         return self.dataset, context
@@ -1222,7 +1226,7 @@ class MotionSpecDatasetBuilder:
         if cached is not None:
             return cached
         binary = spec.view.binary
-        motion = getattr(getattr(spec, "parent", None), "parent", None)
+        motion = _owning_motion(spec)
         left = self._difference_operand(binary.left, world_qtys, spec)
         right = self._difference_operand(binary.right, world_qtys, spec)
         # The scalar is a difference of two lengths, so it has no line of action of its own.
@@ -1395,7 +1399,7 @@ class MotionSpecDatasetBuilder:
         # The motion qualifies the carrier because an endpoint may be motion-local: two motions
         # can name the same constraint over their own snapshots, and one carrier for both would
         # measure the first motion's snapshot from inside the second.
-        motion = getattr(getattr(spec, "parent", None), "parent", None)
+        motion = _owning_motion(spec)
         target = WorldQuantity(
             parent=motion,
             name=f"distance-{getattr(motion, 'name', '')}-{spec.name}",
@@ -1724,7 +1728,7 @@ class MotionSpecDatasetBuilder:
         )
         op_type = table[(_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref))]
         context = f"Constraint '{spec.name}'"
-        motion = getattr(getattr(spec, "parent", None), "parent", None)
+        motion = _owning_motion(spec)
         stem = f"geo-distance-{getattr(motion, 'name', '')}-{spec.name}"
 
         if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):

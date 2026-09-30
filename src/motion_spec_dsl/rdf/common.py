@@ -353,10 +353,24 @@ def _constraint_scalar_type(quantity: WorldQuantity, constraint: ConstraintSpeci
     return _scalar_type(quantity, subspace, semantic_axis_label(constraint.view.axis))
 
 
+def _owning_section(spec: ConstraintSpecification):
+    """The when/while/until section a constraint belongs to, through a named until group."""
+    section = getattr(spec, "parent", None)
+    while section is not None and not getattr(section, "kind", ""):
+        section = getattr(section, "parent", None)
+    return section
+
+
+def _owning_motion(spec: ConstraintSpecification):
+    """The guarded motion a constraint belongs to, or None outside one."""
+    section = _owning_section(spec)
+    return getattr(section, "parent", None) if section is not None else None
+
+
 def _evaluator_id(spec: ConstraintSpecification) -> str:
     """Stable id for a constraint's monitor evaluator, qualified by motion + section kind."""
-    section = getattr(spec, "parent", None)
-    motion = getattr(section, "parent", None) if section is not None else None
+    section = _owning_section(spec)
+    motion = _owning_motion(spec)
     section_kind = getattr(section, "kind", None)
     motion_name = getattr(motion, "name", None)
     if motion_name and section_kind:
