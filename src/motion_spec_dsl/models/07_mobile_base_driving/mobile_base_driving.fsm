@@ -1,0 +1,31 @@
+ns fsm = "https://secorolab.github.io/models/mobile-base-driving/fsm/"
+
+evt loop (ns=fsm) mobile_base_driving_events {
+    evt E_STEP,
+    evt E_FORWARD_DONE,
+    evt E_BACKWARD_DONE,
+    evt E_CW_DONE,
+    evt E_CCW_DONE
+}
+
+fsm (ns=fsm) mobile_base_driving_fsm {
+    description: "Hold a commanded platform twist: forward, backward, clockwise, counter-clockwise."
+    states { S_START, S_FORWARD, S_BACKWARD, S_CW, S_CCW, S_DONE }
+    evt loop: <mobile_base_driving_events>
+    start: <S_START>
+    end: <S_DONE>
+    transitions {
+        T_START_FORWARD    { from: <S_START>,    to: <S_FORWARD> },
+        T_FORWARD_BACKWARD { from: <S_FORWARD>,  to: <S_BACKWARD> },
+        T_BACKWARD_CW      { from: <S_BACKWARD>, to: <S_CW> },
+        T_CW_CCW           { from: <S_CW>,       to: <S_CCW> },
+        T_CCW_DONE         { from: <S_CCW>,      to: <S_DONE> }
+    }
+    reactions {
+        R_START          { when: <mobile_base_driving_events.E_STEP>,          do: <T_START_FORWARD> },
+        R_FORWARD_DONE   { when: <mobile_base_driving_events.E_FORWARD_DONE>,  do: <T_FORWARD_BACKWARD> },
+        R_BACKWARD_DONE  { when: <mobile_base_driving_events.E_BACKWARD_DONE>, do: <T_BACKWARD_CW> },
+        R_CW_DONE        { when: <mobile_base_driving_events.E_CW_DONE>,       do: <T_CW_CCW> },
+        R_CCW_DONE { when: <mobile_base_driving_events.E_CCW_DONE>, do: <T_CCW_DONE> }
+    }
+}

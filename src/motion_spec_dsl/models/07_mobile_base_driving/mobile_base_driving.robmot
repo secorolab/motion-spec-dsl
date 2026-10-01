@@ -1,0 +1,189 @@
+import "mobile_base_driving.fsm"
+import "mobile_base_driving.scenex"
+ns app = "https://secorolab.github.io/models/mobile-base-driving/"
+ns fsm = "https://secorolab.github.io/models/mobile-base-driving/fsm/"
+
+exec-context (ns=app) mobile-base-driving-exec {
+    runs-scene: <mobile_base_driving_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+// A platform has no chain to forward its state through, so its twist and wrench are solver-owned slots.
+context (ns=app) shared {
+    spec {
+        velocity-twist platform-velocity {
+            of:         <eddie.base_link.base_link_origin>,
+            wrt:        <eddie.base_footprint.base_footprint_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+        wrench platform-force {
+            of:         <eddie.base_link.base_link_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+
+        linear-velocity drive-speed    = 0.30 m/s,
+        linear-velocity reverse-speed  = -0.30 m/s,
+        linear-velocity zero-linear    = 0.0 m/s,
+        linear-velocity speed-band     = 0.02 m/s,
+        // The platform's z is up, so a positive yaw rate turns it counter-clockwise.
+        angular-velocity cw-rate       = -0.60 rad/s,
+        angular-velocity ccw-rate      = 0.60 rad/s,
+        angular-velocity zero-angular  = 0.0 rad/s,
+        angular-velocity rate-band     = 0.05 rad/s,
+        duration drive-time            = 4.0 s,
+        // Above rolling resistance at cruise, below what the eight 12 Nm hubs deliver into a stall.
+        force platform-force-limit     = 260.0 N,
+        torque platform-moment-limit   = 45.0 Nm,
+        // Castors stall the base until they swivel; capped at ~1.3x what cruising takes.
+        length speed-integral-limit    = 0.33 m,
+        angle yaw-integral-limit       = 0.6 rad
+    }
+}
+
+tolerances {
+    linear-velocity: 0.02 m/s
+}
+
+guarded-motion (ns=app) drive-forward {
+    description: "Hold a forward speed in a straight line"
+    context {}
+    when {}
+    while {
+        speed-x:  keeping <shared.spec.platform-velocity>.linvel.x equal to <shared.spec.drive-speed> within <shared.spec.speed-band>,
+        hold-y:   keeping <shared.spec.platform-velocity>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        hold-yaw: keeping <shared.spec.platform-velocity>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.rate-band>
+    }
+    until {
+        travelled: elapsed greater than <shared.spec.drive-time>
+    }
+}
+
+guarded-motion (ns=app) drive-backward {
+    description: "Hold a reverse speed back along the same line"
+    context {}
+    when {}
+    while {
+        speed-x:  keeping <shared.spec.platform-velocity>.linvel.x equal to <shared.spec.reverse-speed> within <shared.spec.speed-band>,
+        hold-y:   keeping <shared.spec.platform-velocity>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        hold-yaw: keeping <shared.spec.platform-velocity>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.rate-band>
+    }
+    until {
+        returned: elapsed greater than <shared.spec.drive-time>
+    }
+}
+
+guarded-motion (ns=app) turn-cw {
+    description: "Hold a clockwise yaw rate about the platform's own centre"
+    context {}
+    when {}
+    while {
+        hold-x:   keeping <shared.spec.platform-velocity>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        hold-y:   keeping <shared.spec.platform-velocity>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        yaw-rate: keeping <shared.spec.platform-velocity>.angvel.z equal to <shared.spec.cw-rate> within <shared.spec.rate-band>
+    }
+    until {
+        turned-cw: elapsed greater than <shared.spec.drive-time>
+    }
+}
+
+guarded-motion (ns=app) turn-ccw {
+    description: "Hold a counter-clockwise yaw rate about the platform's own centre"
+    context {}
+    when {}
+    while {
+        hold-x:   keeping <shared.spec.platform-velocity>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        hold-y:   keeping <shared.spec.platform-velocity>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.speed-band>,
+        yaw-rate: keeping <shared.spec.platform-velocity>.angvel.z equal to <shared.spec.ccw-rate> within <shared.spec.rate-band>
+    }
+    until {
+        turned-ccw: elapsed greater than <shared.spec.drive-time>
+    }
+}
+
+// Castor alignment is the distribution's nullspace task, so it is configured on the solver, not authored.
+constraint-handler (ns=app) handler-drive-forward {
+    handles: <drive-forward>
+    runs-in: <fsm.S_FORWARD>
+    monitors {
+        mon-drive-forward-done: monitor <drive-forward.until> {
+            satisfied { trigger: event <fsm.E_FORWARD_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-drive-forward-speed-x  { constraint: <drive-forward.speed-x>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, integral-saturation: saturation { max: <shared.spec.speed-integral-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-drive-forward-hold-y   { constraint: <drive-forward.hold-y>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-drive-forward-hold-yaw { constraint: <drive-forward.hold-yaw>, output-saturation: saturation { max: <shared.spec.platform-moment-limit> }, Kp: 25, Ki: 50, Kd: 0, decay: 0 } as torque apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>
+    }
+    solvers {
+        platform-velocity-solver: mobile-platform {
+            agent:         <agents.eddie>,
+            algorithm:     velocity-composition,
+            configuration: "hddc2b_platform",
+            quantity:      <shared.spec.platform-velocity>
+        },
+        platform-force-solver: mobile-platform {
+            agent:         <agents.eddie>,
+            algorithm:     force-distribution,
+            configuration: "aligned",
+            quantity:      <shared.spec.platform-force>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-drive-backward {
+    handles: <drive-backward>
+    runs-in: <fsm.S_BACKWARD>
+    monitors {
+        mon-drive-backward-done: monitor <drive-backward.until> {
+            satisfied { trigger: event <fsm.E_BACKWARD_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-drive-backward-speed-x  { constraint: <drive-backward.speed-x>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, integral-saturation: saturation { max: <shared.spec.speed-integral-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-drive-backward-hold-y   { constraint: <drive-backward.hold-y>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-drive-backward-hold-yaw { constraint: <drive-backward.hold-yaw>, output-saturation: saturation { max: <shared.spec.platform-moment-limit> }, Kp: 25, Ki: 50, Kd: 0, decay: 0 } as torque apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>
+    }
+    solvers {
+        <handler-drive-forward.platform-force-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-turn-cw {
+    handles: <turn-cw>
+    runs-in: <fsm.S_CW>
+    monitors {
+        mon-turn-cw-done: monitor <turn-cw.until> {
+            satisfied { trigger: event <fsm.E_CW_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-turn-cw-hold-x   { constraint: <turn-cw.hold-x>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-turn-cw-hold-y   { constraint: <turn-cw.hold-y>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-turn-cw-yaw-rate { constraint: <turn-cw.yaw-rate>, output-saturation: saturation { max: <shared.spec.platform-moment-limit> }, integral-saturation: saturation { max: <shared.spec.yaw-integral-limit> }, Kp: 25, Ki: 50, Kd: 0, decay: 0 } as torque apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>
+    }
+    solvers {
+        <handler-drive-forward.platform-force-solver>
+    }
+}
+
+constraint-handler (ns=app) handler-turn-ccw {
+    handles: <turn-ccw>
+    runs-in: <fsm.S_CCW>
+    monitors {
+        mon-turn-ccw-done: monitor <turn-ccw.until> {
+            satisfied { trigger: event <fsm.E_CCW_DONE> }
+        }
+    }
+    controllers {
+        pid ctrl-turn-ccw-hold-x   { constraint: <turn-ccw.hold-x>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-turn-ccw-hold-y   { constraint: <turn-ccw.hold-y>, output-saturation: saturation { max: <shared.spec.platform-force-limit> }, Kp: 220, Ki: 400, Kd: 0, decay: 0 } as force apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>,
+        pid ctrl-turn-ccw-yaw-rate { constraint: <turn-ccw.yaw-rate>, output-saturation: saturation { max: <shared.spec.platform-moment-limit> }, integral-saturation: saturation { max: <shared.spec.yaw-integral-limit> }, Kp: 25, Ki: 50, Kd: 0, decay: 0 } as torque apply at <eddie.base_link> via <handler-drive-forward.platform-force-solver>
+    }
+    solvers {
+        <handler-drive-forward.platform-force-solver>
+    }
+}

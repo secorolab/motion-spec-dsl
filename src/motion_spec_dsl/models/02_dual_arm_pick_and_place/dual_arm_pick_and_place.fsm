@@ -1,6 +1,6 @@
-ns pp = "https://secorolab.github.io/models/dual-arm-pick-and-place/fsm/"
+ns fsm = "https://secorolab.github.io/models/dual-arm-pick-and-place/fsm/"
 
-evt loop (ns=pp) dual_arm_pick_and_place_fsm_events {
+evt loop (ns=fsm) dual_arm_pick_and_place_fsm_events {
     evt E_STEP,
     evt E_PICK_ABOVE_READY,
     evt E_PICK_READY,
@@ -24,7 +24,7 @@ evt loop (ns=pp) dual_arm_pick_and_place_fsm_events {
     evt E_RECOVER_ENTERED
 }
 
-fsm (ns=pp) dual_arm_pick_and_place_fsm {
+fsm (ns=fsm) dual_arm_pick_and_place_fsm {
     description: "Two arms facing each other, each pick&placing its own cube in lockstep; paths only home->pick_above, geometric setpoints elsewhere. Grasp-loss on either arm during transport (lift/place_above/place) routes to S_RECOVER, which captures and holds both current poses."
 
     states {

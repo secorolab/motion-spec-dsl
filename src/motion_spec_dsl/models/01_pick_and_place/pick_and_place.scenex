@@ -1,118 +1,14 @@
 import "pick_and_place.scene"
-import "scene_dsl:robots/kinova_gen3_7dof.ktree"
-import "scene_dsl:robots/robotiq_2f85.ktree"
+import "../common/wrist_ft.scenex"
+import "../common/kinova_ft_2f85.scenex"
+import "../common/table_arm.scenex"
 
 ns pps_mjc = "https://secorolab.github.io/models/scenes/pick-and-place-mjc/"
 
-ktree inst (ns=pps_mjc) kinova of <kinova_tree>
-ktree inst (ns=pps_mjc) gripper of <gripper_tree>
+scene inst (ns=pps_mjc) pick_and_place_scene_mjc {
+    scene: <pick_and_place_scene>
 
-ktree (ns=pps_mjc) ft_tree {
-    root: <wrist_ft_body.wrist_ft_body_origin>
-    body wrist_ft_body {
-        frame wrist_ft_body_origin { }
-        frame wrist_ft_site {
-            pose wrist_ft_site_in_wrist_ft_body {
-                wrt: <wrist_ft_body.wrist_ft_body_origin>
-                xyz: (0.0, 0.0, 0.0325) m
-                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
-            }
-        }
-        frame wrist_ft_mount {
-            pose wrist_ft_mount_in_wrist_ft_body {
-                wrt: <wrist_ft_body.wrist_ft_body_origin>
-                xyz: (0.0, 0.0, 0.065) m
-                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
-            }
-        }
-        // The measured 1.195 kg tool less the gripper's 1.0616 kg, as a solid 75 mm cylinder.
-        inertia {
-            frame: <wrist_ft_site>
-            mass: 0.133396 kg
-            inertia-matrix: (
-                (9.386e-5, 0.0, 0.0),
-                (0.0, 9.386e-5, 0.0),
-                (0.0, 0.0, 9.379e-5)
-            ) kg*m^2
-        }
-    }
-    joints { }
-}
-
-ktree (ns=pps_mjc) kinova_2f85 {
-    root: <kinova.base_link.base_link_origin>
-    tree <kinova>
-    tree <ft_tree>
-    tree <gripper>
-
-    joints {
-        fixed ft_on_pinch_site {
-            parent: <kinova.bracelet_link.pinch_site>
-            child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
-        }
-        fixed gripper_on_ft {
-            parent: <ft_tree.wrist_ft_body.wrist_ft_mount>
-            child: <gripper.g_base_mount.g_mount_interface>
-        }
-        serial {
-            root: <kinova.base_link.base_link_origin>
-            tip: <gripper.g_base.g_pinch>
-        }
-    }
-}
-
-ktree (ns=pps_mjc) world_tree {
-    root: <world_body.world>
-    tree <kinova_2f85>
-
-    body world_body {
-        frame world { }
-    }
-
-    body table {
-        frame table_top {
-            pose table_top_in_world {
-                wrt: <world_body.world>
-                xyz: (0.0, 0.0, 0.72) m
-                orientation: euler { axes: xyz extrinsic angles: (0, 0, 0) unit: deg }
-            }
-        }
-        frame table_com {
-            pose table_com_in_table_top {
-                wrt: <table.table_top>
-                xyz: (0.0, 0.0, -0.05100416904566816) m
-                orientation: quat {
-                    xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
-                }
-            }
-        }
-        inertia {
-            frame: <table_com>
-            mass: 84.26442414492935 kg
-            inertia-matrix: (
-                (32.454207471081375, 0.0, 0.0),
-                (0.0, 21.92592723136972, 0.0),
-                (0.0, 0.0, 12.75746156052865)
-            ) kg*m^2
-        }
-    }
-
-    joints {
-        fixed table_on_world {
-            parent: <world_body.world>
-            child: <table.table_top>
-        }
-        fixed arm_on_table {
-            parent: <table.table_top>
-            child: <kinova.base_link.base_link_origin>
-        }
-    }
-}
-
-scene inst (ns=pps_mjc) pick_place_scene_mjc {
-    scene: <pick_place_scene>
-
-    kgraph (ns=pps_mjc) pick_place_graph {
+    kgraph (ns=pps_mjc) pick_and_place_graph {
         anchor: <world_tree.world_body.world>
         tree <world_tree>
 
@@ -133,20 +29,20 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
         }
     }
 
-    obj <pickplace_objects.cube> {
+    obj <objects.cube> {
         model cube-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cube.xml'
-            map body <pick_place_graph.cube> to "cube"
+            map body <pick_and_place_graph.cube> to "cube"
         }
     }
 
-    agn <pickplace_agents.arm1> {
+    agn <agents.arm1> {
         model kinova-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova> to "base_link"
         }
 
         model ft-mjc as mjcf {
-            sys path = '../ft_mount.xml'
+            sys path = '../common/ft_mount.xml'
             map tree <ft_tree> to "wrist_ft_body"
         }
 
@@ -165,7 +61,7 @@ scene inst (ns=pps_mjc) pick_place_scene_mjc {
         }
     }
 
-    agn <pickplace_agents.gripper1> {
+    agn <agents.gripper1> {
         model gripper-mjc as mjcf {
             sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
             map tree <gripper> to "base_mount"

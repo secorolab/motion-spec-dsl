@@ -1,10 +1,10 @@
 import "dual_arm_pick_and_place.fsm"
 import "dual_arm_pick_and_place.scenex"
 ns app = "https://secorolab.github.io/models/dual-arm-pick-and-place/"
-ns pp = "https://secorolab.github.io/models/dual-arm-pick-and-place/fsm/"
+ns fsm = "https://secorolab.github.io/models/dual-arm-pick-and-place/fsm/"
 
 exec-context (ns=app) dual-arm-pick-and-place-exec {
-    runs-scene: <pick_place_scene_mjc>
+    runs-scene: <dual_arm_pick_and_place_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
     config:     "robot.toml"
     timestep:   1.0 ms
@@ -14,18 +14,18 @@ context (ns=app) shared {
     world {
         pose pose-ee1-base {
             of:         <gripper1.g_base.g_pinch>,
-            wrt:        <kinova1.base_link>,
-            as-seen-by: <kinova1.base_link>
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
         },
         velocity-twist twist-ee1-base {
             of:         <gripper1.g_base.g_pinch>,
-            wrt:        <kinova1.base_link>,
-            as-seen-by: <kinova1.base_link>
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
         },
         pose pose-cube1-base {
-            of:         <pick_place_graph.cube>,
-            wrt:        <kinova1.base_link>,
-            as-seen-by: <kinova1.base_link>
+            of:         <dual_arm_pick_and_place_graph.cube>,
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
         },
         joint-position gripper1-pos {
             joint: <gripper1.g_left_driver_joint>
@@ -36,18 +36,18 @@ context (ns=app) shared {
         },
         pose pose-ee2-base {
             of:         <gripper2.g_base.g_pinch>,
-            wrt:        <kinova2.base_link>,
-            as-seen-by: <kinova2.base_link>
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
         },
         velocity-twist twist-ee2-base {
             of:         <gripper2.g_base.g_pinch>,
-            wrt:        <kinova2.base_link>,
-            as-seen-by: <kinova2.base_link>
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
         },
         pose pose-cube2-base {
-            of:         <pick_place_graph.cube2>,
-            wrt:        <kinova2.base_link>,
-            as-seen-by: <kinova2.base_link>
+            of:         <dual_arm_pick_and_place_graph.cube2>,
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
         },
         joint-position gripper2-pos {
             joint: <gripper2.g_left_driver_joint>
@@ -60,14 +60,35 @@ context (ns=app) shared {
     spec {
         length satisfied-band      = 0.01 m,
         angle satisfied-band-rot   = 0.01 rad,
-        angle grasp-rot-x          = 3.14159 rad,
+        angle grasp-rot-x          = pi rad,
         angle grasp-rot-y          = 0.0 rad,
-        angle grasp-rot-z          = 1.5708 rad,
+        angle grasp-rot-z          = pi / 2 rad,
+        pose grasp1-ori-pose {
+            of:         <gripper1.g_base.g_pinch>,
+            wrt:        <kinova1.base_link.base_link_origin>,
+            as-seen-by: <kinova1.base_link.base_link_origin>
+        } = {
+            position: (0.0, 0.0, 0.0) m,
+            orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
+        },
+        pose grasp2-ori-pose {
+            of:         <gripper2.g_base.g_pinch>,
+            wrt:        <kinova2.base_link.base_link_origin>,
+            as-seen-by: <kinova2.base_link.base_link_origin>
+        } = {
+            position: (0.0, 0.0, 0.0) m,
+            orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
+        },
         angle gripper-closed       = 0.8 rad,
         angle gripper-open         = 0.0 rad,
         length lost-dist           = 0.12 m,
+        length place-x             = 0.40 m,
+        length place-y             = 0.24 m,
+        length place-above-z       = 0.22 m,
         angle elbow-angle-target   = pi rad,
-        torque elbow-torque-limit  = 10.0 Nm
+        torque elbow-torque-limit  = 10.0 Nm,
+        // Gen3 large-actuator peak torque.
+        torque arm-torque-limit    = 39.0 Nm
     }
 }
 
@@ -82,8 +103,8 @@ guarded-motion (ns=app) home {
 
     context {
         spec {
-            pose home1-pose = snapshot of <shared.world.pose-ee1-base> on event <pp.E_HOME_ENTERED>,
-            pose home2-pose = snapshot of <shared.world.pose-ee2-base> on event <pp.E_HOME_ENTERED>
+            pose home1-pose = snapshot of <shared.world.pose-ee1-base> on event <fsm.E_HOME_ENTERED>,
+            pose home2-pose = snapshot of <shared.world.pose-ee2-base> on event <fsm.E_HOME_ENTERED>
         }
     }
 
@@ -94,13 +115,16 @@ guarded-motion (ns=app) home {
         hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.home1-pose>.orientation within <shared.spec.satisfied-band-rot>,
         hold2-position:    keeping <shared.world.pose-ee2-base>.position    equal to <spec.home2-pose>.position within <shared.spec.satisfied-band>,
         hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.home2-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
-        open1-gripper: keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-        open2-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+        hold1-elbow:       keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:       keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>,
+        open1-gripper:     keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        open2-gripper:     keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
 
-    until {}
+    until all {
+        gripper1-ready: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        gripper2-ready: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
 }
 
 guarded-motion (ns=app) pick-above {
@@ -115,45 +139,45 @@ guarded-motion (ns=app) pick-above {
                 max-acceleration: 0.05 m/s^2,
                 shape: trapezoidal
             },
-            pose start1-pose = snapshot of <shared.world.pose-ee1-base> on event <pp.E_PICK_ABOVE_ENTERED>,
-            length start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x on event <pp.E_PICK_ABOVE_ENTERED>,
-            length start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y on event <pp.E_PICK_ABOVE_ENTERED>,
+            pose start1-pose     = snapshot of <shared.world.pose-ee1-base> on event <fsm.E_PICK_ABOVE_ENTERED>,
+            length start1-cube-x = snapshot of <shared.world.pose-cube1-base>.position.x on event <fsm.E_PICK_ABOVE_ENTERED>,
+            length start1-cube-y = snapshot of <shared.world.pose-cube1-base>.position.y on event <fsm.E_PICK_ABOVE_ENTERED>,
             pose goal1-pose = {
                 position: (<spec.start1-cube-x>, <spec.start1-cube-y>, <spec.above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
-            path arm1-approach-path = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose> },
+            path approach1-path = lerp { start: <spec.start1-pose>, goal: <spec.goal1-pose> },
 
-            pose start2-pose = snapshot of <shared.world.pose-ee2-base> on event <pp.E_PICK_ABOVE_ENTERED>,
-            length start2-cube-x = snapshot of <shared.world.pose-cube2-base>.position.x on event <pp.E_PICK_ABOVE_ENTERED>,
-            length start2-cube-y = snapshot of <shared.world.pose-cube2-base>.position.y on event <pp.E_PICK_ABOVE_ENTERED>,
+            pose start2-pose     = snapshot of <shared.world.pose-ee2-base> on event <fsm.E_PICK_ABOVE_ENTERED>,
+            length start2-cube-x = snapshot of <shared.world.pose-cube2-base>.position.x on event <fsm.E_PICK_ABOVE_ENTERED>,
+            length start2-cube-y = snapshot of <shared.world.pose-cube2-base>.position.y on event <fsm.E_PICK_ABOVE_ENTERED>,
             pose goal2-pose = {
                 position: (<spec.start2-cube-x>, <spec.start2-cube-y>, <spec.above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             },
-            path arm2-approach-path = lerp { start: <spec.start2-pose>, goal: <spec.goal2-pose> }
+            path approach2-path = lerp { start: <spec.start2-pose>, goal: <spec.goal2-pose> }
         }
     }
 
-    when all {
-        gripper1-ready: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-        gripper2-ready: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
-    }
+    when {}
 
     while {
-        follow1-tan: moving <shared.world.pose-ee1-base> along <spec.arm1-approach-path> with <spec.approach-profile>,
-        follow1-lat: keeping <shared.world.pose-ee1-base>.position    on <spec.arm1-approach-path> within <shared.spec.satisfied-band>,
-        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation on <spec.arm1-approach-path> within <shared.spec.satisfied-band-rot>,
-        advance1:    progress of <shared.world.pose-ee1-base> along <spec.arm1-approach-path> more than <spec.min-approach-speed>,
-        follow2-tan: moving <shared.world.pose-ee2-base> along <spec.arm2-approach-path> with <spec.approach-profile>,
-        follow2-lat: keeping <shared.world.pose-ee2-base>.position    on <spec.arm2-approach-path> within <shared.spec.satisfied-band>,
-        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation on <spec.arm2-approach-path> within <shared.spec.satisfied-band-rot>,
-        advance2:    progress of <shared.world.pose-ee2-base> along <spec.arm2-approach-path> more than <spec.min-approach-speed>,
+        follow1-tan: moving <shared.world.pose-ee1-base> along <spec.approach1-path> with <spec.approach-profile>,
+        follow1-lat: keeping <shared.world.pose-ee1-base>.position    on <spec.approach1-path> within <shared.spec.satisfied-band>,
+        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation on <spec.approach1-path> within <shared.spec.satisfied-band-rot>,
+        advance1:    progress of <shared.world.pose-ee1-base> along <spec.approach1-path> more than <spec.min-approach-speed>,
+        follow2-tan: moving <shared.world.pose-ee2-base> along <spec.approach2-path> with <spec.approach-profile>,
+        follow2-lat: keeping <shared.world.pose-ee2-base>.position    on <spec.approach2-path> within <shared.spec.satisfied-band>,
+        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation on <spec.approach2-path> within <shared.spec.satisfied-band-rot>,
+        advance2:    progress of <shared.world.pose-ee2-base> along <spec.approach2-path> more than <spec.min-approach-speed>,
         hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
         hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until {}
+    until all {
+        aligned1-above: <shared.world.pose-ee1-base>.position equal to <spec.goal1-pose>.position within <shared.spec.satisfied-band>,
+        aligned2-above: <shared.world.pose-ee2-base>.position equal to <spec.goal2-pose>.position within <shared.spec.satisfied-band>
+    }
 }
 
 guarded-motion (ns=app) pick {
@@ -162,6 +186,7 @@ guarded-motion (ns=app) pick {
     context {
         spec {
             length grasp-z = 0.015 m,
+            length grasp-reach = 0.015 m,
             linear-velocity max-lower-velocity = 0.10 m/s,
             linear-acceleration max-lower-acceleration = 0.30 m/s^2,
             linear-jerk max-lower-jerk = 2.0 m/s^3,
@@ -179,43 +204,32 @@ guarded-motion (ns=app) pick {
                 max-jerk: <spec.max-lower-jerk>,
                 shape: s-curve
             },
-
-            length grasp1-x = snapshot of <shared.world.pose-cube1-base>.position.x on event <pp.E_PICK_ENTERED>,
-            length grasp1-y = snapshot of <shared.world.pose-cube1-base>.position.y on event <pp.E_PICK_ENTERED>,
-            pose pick1-ori-pose = {
-                position: (0.0, 0.0, 0.0) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            },
-
-            length grasp2-x = snapshot of <shared.world.pose-cube2-base>.position.x on event <pp.E_PICK_ENTERED>,
-            length grasp2-y = snapshot of <shared.world.pose-cube2-base>.position.y on event <pp.E_PICK_ENTERED>,
-            pose pick2-ori-pose = {
-                position: (0.0, 0.0, 0.0) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            }
+            length grasp1-x = snapshot of <shared.world.pose-cube1-base>.position.x on event <fsm.E_PICK_ENTERED>,
+            length grasp1-y = snapshot of <shared.world.pose-cube1-base>.position.y on event <fsm.E_PICK_ENTERED>,
+            length grasp2-x = snapshot of <shared.world.pose-cube2-base>.position.x on event <fsm.E_PICK_ENTERED>,
+            length grasp2-y = snapshot of <shared.world.pose-cube2-base>.position.y on event <fsm.E_PICK_ENTERED>
         }
     }
 
-    when all {
-        aligned1-above: <shared.world.pose-ee1-base>.position equal to <pick-above.spec.goal1-pose>.position within <shared.spec.satisfied-band>,
-        aligned2-above: <shared.world.pose-ee2-base>.position equal to <pick-above.spec.goal2-pose>.position within <shared.spec.satisfied-band>
-    }
+    when {}
 
     while {
-        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.grasp1-x> within <shared.spec.satisfied-band>,
-        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.grasp1-y> within <shared.spec.satisfied-band>,
-        lower1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
-        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.pick1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
-
-        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.grasp2-x> within <shared.spec.satisfied-band>,
-        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.grasp2-y> within <shared.spec.satisfied-band>,
-        lower2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
-        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.pick2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold1-x:     keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.grasp1-x> within <shared.spec.satisfied-band>,
+        hold1-y:     keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.grasp1-y> within <shared.spec.satisfied-band>,
+        lower1-z:    keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
+        follow1-ori: keeping <shared.world.pose-ee1-base>.orientation equal to <shared.spec.grasp1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold2-x:     keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.grasp2-x> within <shared.spec.satisfied-band>,
+        hold2-y:     keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.grasp2-y> within <shared.spec.satisfied-band>,
+        lower2-z:    keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.grasp-z> within <shared.spec.satisfied-band>,
+        follow2-ori: keeping <shared.world.pose-ee2-base>.orientation equal to <shared.spec.grasp2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
         hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
         hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until {}
+    until all {
+        near1-cube: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> less than <spec.grasp-reach>,
+        near2-cube: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> less than <spec.grasp-reach>
+    }
 }
 
 guarded-motion (ns=app) grasp-hold {
@@ -223,34 +237,35 @@ guarded-motion (ns=app) grasp-hold {
 
     context {
         spec {
-            length grasp-reach = 0.015 m,
-            pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base> on event <pp.E_GRASP_ENTERED>,
-            pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base> on event <pp.E_GRASP_ENTERED>
+            // Pads stopped on the cube: past free swing, short of closing on air.
+            angle grasp-threshold = 0.15 rad,
+            angle grip-on-cube-hi = 0.70 rad,
+            pose hold1-pose = snapshot of <shared.world.pose-ee1-base> on event <fsm.E_GRASP_ENTERED>,
+            pose hold2-pose = snapshot of <shared.world.pose-ee2-base> on event <fsm.E_GRASP_ENTERED>
         }
     }
 
-    when all {
-        near1-cube: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> less than <grasp-hold.spec.grasp-reach>,
-        near2-cube: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> less than <grasp-hold.spec.grasp-reach>
-    }
+    when {}
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-pose>.orientation within <shared.spec.satisfied-band-rot>,
         close1-gripper:    keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-pose>.orientation within <shared.spec.satisfied-band-rot>,
         close2-gripper:    keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        hold1-elbow:       keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:       keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until {}
+    until all {
+        grasped1: <shared.world.gripper1-pos> between <spec.grasp-threshold> and <spec.grip-on-cube-hi>,
+        grasped2: <shared.world.gripper2-pos> between <spec.grasp-threshold> and <spec.grip-on-cube-hi>
+    }
 }
 
 guarded-motion (ns=app) lift {
@@ -259,48 +274,40 @@ guarded-motion (ns=app) lift {
     context {
         spec {
             length lift-z = 0.32 m,
-            angle grasp-threshold = 0.15 rad,
-
-            length lift1-start-x = snapshot of <shared.world.pose-ee1-base>.position.x on event <pp.E_LIFT_ENTERED>,
-            length lift1-start-y = snapshot of <shared.world.pose-ee1-base>.position.y on event <pp.E_LIFT_ENTERED>,
-            pose lift1-ori-pose = {
-                position: (0.0, 0.0, 0.0) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            },
-
-            length lift2-start-x = snapshot of <shared.world.pose-ee2-base>.position.x on event <pp.E_LIFT_ENTERED>,
-            length lift2-start-y = snapshot of <shared.world.pose-ee2-base>.position.y on event <pp.E_LIFT_ENTERED>,
-            pose lift2-ori-pose = {
-                position: (0.0, 0.0, 0.0) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            }
+            length lifted-z = 0.30 m,
+            length lift1-start-x = snapshot of <shared.world.pose-ee1-base>.position.x on event <fsm.E_LIFT_ENTERED>,
+            length lift1-start-y = snapshot of <shared.world.pose-ee1-base>.position.y on event <fsm.E_LIFT_ENTERED>,
+            length lift2-start-x = snapshot of <shared.world.pose-ee2-base>.position.x on event <fsm.E_LIFT_ENTERED>,
+            length lift2-start-y = snapshot of <shared.world.pose-ee2-base>.position.y on event <fsm.E_LIFT_ENTERED>
         }
     }
 
-    when all {
-        grasped1: <shared.world.gripper1-pos> greater than <lift.spec.grasp-threshold>,
-        grasped2: <shared.world.gripper2-pos> greater than <lift.spec.grasp-threshold>
-    }
+    when {}
 
     while {
-        hold1-x:          keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.lift1-start-x> within <shared.spec.satisfied-band>,
-        hold1-y:          keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.lift1-start-y> within <shared.spec.satisfied-band>,
-        lift1-z:          keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
-        follow1-ori:      keeping <shared.world.pose-ee1-base>.orientation equal to <spec.lift1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-
-        hold2-x:          keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.lift2-start-x> within <shared.spec.satisfied-band>,
-        hold2-y:          keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.lift2-start-y> within <shared.spec.satisfied-band>,
-        lift2-z:          keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
-        follow2-ori:      keeping <shared.world.pose-ee2-base>.orientation equal to <spec.lift2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        hold1-x:        keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.lift1-start-x> within <shared.spec.satisfied-band>,
+        hold1-y:        keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.lift1-start-y> within <shared.spec.satisfied-band>,
+        lift1-z:        keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
+        follow1-ori:    keeping <shared.world.pose-ee1-base>.orientation equal to <shared.spec.grasp1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close1-gripper: keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        hold2-x:        keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.lift2-start-x> within <shared.spec.satisfied-band>,
+        hold2-y:        keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.lift2-start-y> within <shared.spec.satisfied-band>,
+        lift2-z:        keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.lift-z> within <shared.spec.satisfied-band>,
+        follow2-ori:    keeping <shared.world.pose-ee2-base>.orientation equal to <shared.spec.grasp2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close2-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        hold1-elbow:    keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:    keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until any {
-        grasp-lost1: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
-        grasp-lost2: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+    until {
+        lifted all {
+            lifted1: <shared.world.pose-ee1-base>.position.z greater than <spec.lifted-z>,
+            lifted2: <shared.world.pose-ee2-base>.position.z greater than <spec.lifted-z>
+        },
+        grasp-lost any {
+            grasp1-lost: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
+            grasp2-lost: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+        }
     }
 }
 
@@ -309,47 +316,36 @@ guarded-motion (ns=app) place-above {
 
     context {
         spec {
-            length place-x = 0.40 m,
-            length place-y = 0.24 m,
-            length place-above-z = 0.22 m,
-            length lifted-z = 0.30 m,
-
-            pose goal1-pose-above = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            },
-
-            pose goal2-pose-above = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            }
+            length place-y-gate = 0.20 m
         }
     }
 
-    when all {
-        lifted1: <shared.world.pose-ee1-base>.position.z greater than <place-above.spec.lifted-z>,
-        lifted2: <shared.world.pose-ee2-base>.position.z greater than <place-above.spec.lifted-z>
-    }
+    when {}
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-above>.orientation within <shared.spec.satisfied-band-rot>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-above>.orientation within <shared.spec.satisfied-band-rot>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        reach1-x:       keeping <shared.world.pose-ee1-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:       keeping <shared.world.pose-ee1-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:       keeping <shared.world.pose-ee1-base>.position.z  equal to <shared.spec.place-above-z> within <shared.spec.satisfied-band>,
+        align1-ori:     keeping <shared.world.pose-ee1-base>.orientation equal to <shared.spec.grasp1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close1-gripper: keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        reach2-x:       keeping <shared.world.pose-ee2-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:       keeping <shared.world.pose-ee2-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:       keeping <shared.world.pose-ee2-base>.position.z  equal to <shared.spec.place-above-z> within <shared.spec.satisfied-band>,
+        align2-ori:     keeping <shared.world.pose-ee2-base>.orientation equal to <shared.spec.grasp2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close2-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        hold1-elbow:    keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:    keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until any {
-        grasp-lost1: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
-        grasp-lost2: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+    until {
+        at-pre-place all {
+            at1-pre-place: <shared.world.pose-ee1-base>.position.y greater than <spec.place-y-gate>,
+            at2-pre-place: <shared.world.pose-ee2-base>.position.y greater than <spec.place-y-gate>
+        },
+        grasp-lost any {
+            grasp1-lost: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
+            grasp2-lost: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+        }
     }
 }
 
@@ -358,47 +354,36 @@ guarded-motion (ns=app) place {
 
     context {
         spec {
-            length place-x = 0.40 m,
-            length place-y = 0.24 m,
-            length place-z = 0.03 m,
-            length place-y-gate = 0.20 m,
-
-            pose goal1-pose-place = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            },
-
-            pose goal2-pose-place = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            }
+            length place-z   = 0.03 m
         }
     }
 
-    when all {
-        at1-pre-place: <shared.world.pose-ee1-base>.position.y greater than <place.spec.place-y-gate>,
-        at2-pre-place: <shared.world.pose-ee2-base>.position.y greater than <place.spec.place-y-gate>
-    }
+    when {}
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-place>.orientation within <shared.spec.satisfied-band-rot>,
-        close1-gripper:   keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-place>.orientation within <shared.spec.satisfied-band-rot>,
-        close2-gripper:   keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        reach1-x:       keeping <shared.world.pose-ee1-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:       keeping <shared.world.pose-ee1-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:       keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
+        align1-ori:     keeping <shared.world.pose-ee1-base>.orientation equal to <shared.spec.grasp1-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close1-gripper: keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        reach2-x:       keeping <shared.world.pose-ee2-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:       keeping <shared.world.pose-ee2-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:       keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-z> within <shared.spec.satisfied-band>,
+        align2-ori:     keeping <shared.world.pose-ee2-base>.orientation equal to <shared.spec.grasp2-ori-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        close2-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-closed> within <shared.spec.satisfied-band-rot>,
+        hold1-elbow:    keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:    keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until any {
-        grasp-lost1: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
-        grasp-lost2: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+    until {
+        at-place all {
+            at1-place: <shared.world.pose-ee1-base>.position.z equal to <spec.place-z> within <shared.spec.satisfied-band>,
+            at2-place: <shared.world.pose-ee2-base>.position.z equal to <spec.place-z> within <shared.spec.satisfied-band>
+        },
+        grasp-lost any {
+            grasp1-lost: distance between <shared.world.pose-ee1-base> and <shared.world.pose-cube1-base> greater than <shared.spec.lost-dist>,
+            grasp2-lost: distance between <shared.world.pose-ee2-base> and <shared.world.pose-cube2-base> greater than <shared.spec.lost-dist>
+        }
     }
 }
 
@@ -407,34 +392,32 @@ guarded-motion (ns=app) open-grasp-hold {
 
     context {
         spec {
-            length release-z = 0.04 m,
-            pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base> on event <pp.E_OPEN_ENTERED>,
-            pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base> on event <pp.E_OPEN_ENTERED>
+            pose hold1-pose = snapshot of <shared.world.pose-ee1-base> on event <fsm.E_OPEN_ENTERED>,
+            pose hold2-pose = snapshot of <shared.world.pose-ee2-base> on event <fsm.E_OPEN_ENTERED>
         }
     }
 
-    when all {
-        at1-place: <shared.world.pose-ee1-base>.position.z equal to <open-grasp-hold.spec.release-z> within <shared.spec.satisfied-band>,
-        at2-place: <shared.world.pose-ee2-base>.position.z equal to <open-grasp-hold.spec.release-z> within <shared.spec.satisfied-band>
-    }
+    when {}
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-pose>.orientation within <shared.spec.satisfied-band-rot>,
         open1-gripper:     keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-pose>.orientation within <shared.spec.satisfied-band-rot>,
         open2-gripper:     keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        hold1-elbow:       keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:       keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
-    until {}
+    until all {
+        released1: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        released2: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
 }
 
 guarded-motion (ns=app) retreat {
@@ -442,48 +425,35 @@ guarded-motion (ns=app) retreat {
 
     context {
         spec {
-            length place-x = 0.40 m,
-            length place-y = 0.24 m,
-            length place-above-z = 0.22 m,
-
-            pose goal1-pose-retreat = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
-                orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
-            },
-
-            pose goal2-pose-retreat = {
-                position: (<spec.place-x>, <spec.place-y>, <spec.place-above-z>) m,
+            pose retreat-pose = {
+                position: (<shared.spec.place-x>, <shared.spec.place-y>, <shared.spec.place-above-z>) m,
                 orientation: euler { axes: xyz extrinsic, angles: (<shared.spec.grasp-rot-x>, <shared.spec.grasp-rot-y>, <shared.spec.grasp-rot-z>) }
             }
         }
     }
 
-    when all {
-        released1: <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-        released2: <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
-    }
+    when {}
 
     while {
-        reach1-x:         keeping <shared.world.pose-ee1-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach1-y:         keeping <shared.world.pose-ee1-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach1-z:         keeping <shared.world.pose-ee1-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
-        align1-ori:       keeping <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
-        open1-gripper:    keeping <shared.world.gripper1-pos>              equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-
-        reach2-x:         keeping <shared.world.pose-ee2-base>.position.x  equal to <spec.place-x> within <shared.spec.satisfied-band>,
-        reach2-y:         keeping <shared.world.pose-ee2-base>.position.y  equal to <spec.place-y> within <shared.spec.satisfied-band>,
-        reach2-z:         keeping <shared.world.pose-ee2-base>.position.z  equal to <spec.place-above-z> within <shared.spec.satisfied-band>,
-        align2-ori:       keeping <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
-        open2-gripper:    keeping <shared.world.gripper2-pos>              equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        reach1-x:      keeping <shared.world.pose-ee1-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach1-y:      keeping <shared.world.pose-ee1-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach1-z:      keeping <shared.world.pose-ee1-base>.position.z  equal to <shared.spec.place-above-z> within <shared.spec.satisfied-band>,
+        align1-ori:    keeping <shared.world.pose-ee1-base>.orientation equal to <spec.retreat-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        open1-gripper: keeping <shared.world.gripper1-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        reach2-x:      keeping <shared.world.pose-ee2-base>.position.x  equal to <shared.spec.place-x> within <shared.spec.satisfied-band>,
+        reach2-y:      keeping <shared.world.pose-ee2-base>.position.y  equal to <shared.spec.place-y> within <shared.spec.satisfied-band>,
+        reach2-z:      keeping <shared.world.pose-ee2-base>.position.z  equal to <shared.spec.place-above-z> within <shared.spec.satisfied-band>,
+        align2-ori:    keeping <shared.world.pose-ee2-base>.orientation equal to <spec.retreat-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        open2-gripper: keeping <shared.world.gripper2-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>,
+        hold1-elbow:   keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:   keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until all {
-        at-retreat1-settled: <shared.world.pose-ee1-base>.position equal to <spec.goal1-pose-retreat>.position within <shared.spec.satisfied-band>,
-        at-retreat1-settled-rot: <shared.world.pose-ee1-base>.orientation equal to <spec.goal1-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>,
-        at-retreat2-settled: <shared.world.pose-ee2-base>.position equal to <spec.goal2-pose-retreat>.position within <shared.spec.satisfied-band>,
-        at-retreat2-settled-rot: <shared.world.pose-ee2-base>.orientation equal to <spec.goal2-pose-retreat>.orientation within <shared.spec.satisfied-band-rot>
+        at1-retreat-settled:     <shared.world.pose-ee1-base>.position    equal to <spec.retreat-pose>.position within <shared.spec.satisfied-band>,
+        at1-retreat-settled-rot: <shared.world.pose-ee1-base>.orientation equal to <spec.retreat-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        at2-retreat-settled:     <shared.world.pose-ee2-base>.position    equal to <spec.retreat-pose>.position within <shared.spec.satisfied-band>,
+        at2-retreat-settled-rot: <shared.world.pose-ee2-base>.orientation equal to <spec.retreat-pose>.orientation within <shared.spec.satisfied-band-rot>
     }
 }
 
@@ -492,25 +462,24 @@ guarded-motion (ns=app) recover {
 
     context {
         spec {
-            pose hold1-orientation-pose = snapshot of <shared.world.pose-ee1-base> on event <pp.E_RECOVER_ENTERED>,
-            pose hold2-orientation-pose = snapshot of <shared.world.pose-ee2-base> on event <pp.E_RECOVER_ENTERED>
+            pose hold1-pose = snapshot of <shared.world.pose-ee1-base> on event <fsm.E_RECOVER_ENTERED>,
+            pose hold2-pose = snapshot of <shared.world.pose-ee2-base> on event <fsm.E_RECOVER_ENTERED>
         }
     }
 
     when {}
 
     while {
-        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
-
-        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-orientation-pose>.position.x within <shared.spec.satisfied-band>,
-        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-orientation-pose>.position.y within <shared.spec.satisfied-band>,
-        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-orientation-pose>.position.z within <shared.spec.satisfied-band>,
-        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-orientation-pose>.orientation within <shared.spec.satisfied-band-rot>,
-        hold1-elbow: keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
-        hold2-elbow: keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
+        hold1-x:           keeping <shared.world.pose-ee1-base>.position.x equal to <spec.hold1-pose>.position.x within <shared.spec.satisfied-band>,
+        hold1-y:           keeping <shared.world.pose-ee1-base>.position.y equal to <spec.hold1-pose>.position.y within <shared.spec.satisfied-band>,
+        hold1-z:           keeping <shared.world.pose-ee1-base>.position.z equal to <spec.hold1-pose>.position.z within <shared.spec.satisfied-band>,
+        hold1-orientation: keeping <shared.world.pose-ee1-base>.orientation equal to <spec.hold1-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold2-x:           keeping <shared.world.pose-ee2-base>.position.x equal to <spec.hold2-pose>.position.x within <shared.spec.satisfied-band>,
+        hold2-y:           keeping <shared.world.pose-ee2-base>.position.y equal to <spec.hold2-pose>.position.y within <shared.spec.satisfied-band>,
+        hold2-z:           keeping <shared.world.pose-ee2-base>.position.z equal to <spec.hold2-pose>.position.z within <shared.spec.satisfied-band>,
+        hold2-orientation: keeping <shared.world.pose-ee2-base>.orientation equal to <spec.hold2-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        hold1-elbow:       keeping <shared.world.elbow1-angle> equal to <shared.spec.elbow-angle-target>,
+        hold2-elbow:       keeping <shared.world.elbow2-angle> equal to <shared.spec.elbow-angle-target>
     }
 
     until {}
@@ -518,16 +487,22 @@ guarded-motion (ns=app) recover {
 
 constraint-handler (ns=app) handler-home {
     handles: <home>
+    runs-in: <fsm.S_HOME>
+    monitors {
+        mon-home-done: monitor <home.until> {
+            satisfied { trigger: event <fsm.E_PICK_ABOVE_READY> }
+        }
+    }
     controllers {
-        pid ctrl-h1-position { constraint: <home.hold1-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <arm1-solver>,
-        pid ctrl-h1-orientation { constraint: <home.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <arm1-solver>,
-        pid ctrl-h2-position { constraint: <home.hold2-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <arm2-solver>,
-        pid ctrl-h2-orientation { constraint: <home.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <arm2-solver>,
-        pid ctrl-home-elbow1 {
+        pid ctrl-home-hold1-position    { constraint: <home.hold1-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <arm1-solver>,
+        pid ctrl-home-hold1-orientation { constraint: <home.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <arm1-solver>,
+        pid ctrl-home-hold2-position    { constraint: <home.hold2-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <arm2-solver>,
+        pid ctrl-home-hold2-orientation { constraint: <home.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <arm2-solver>,
+        pid ctrl-home-hold1-elbow {
             constraint: <home.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <arm1-solver>,
-        pid ctrl-home-elbow2 {
+        pid ctrl-home-hold2-elbow {
             constraint: <home.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <arm2-solver>,
@@ -537,51 +512,53 @@ constraint-handler (ns=app) handler-home {
 
     solvers {
         arm1-solver: serial-chain {
-            agent:     <pickplace_agents.arm1>,
+            agent:     <agents.arm1>,
             algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
             gravity:   (0.0, 0.0, 9.81) m/s^2
         },
         arm2-solver: serial-chain {
-            agent:     <pickplace_agents.arm2>,
+            agent:     <agents.arm2>,
             algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
             gravity:   (0.0, 0.0, 9.81) m/s^2
         },
         gripper1-solver: command-forwarding {
-            agent: <pickplace_agents.arm1>
+            agent: <agents.gripper1>
         },
         gripper2-solver: command-forwarding {
-            agent: <pickplace_agents.arm2>
+            agent: <agents.gripper2>
         }
     }
 }
 
 constraint-handler (ns=app) handler-pick-above {
     handles: <pick-above>
+    runs-in: <fsm.S_PICK_ABOVE>
     monitors {
-        mon-pick-above-ready: monitor <pick-above.when> {
-            satisfied { trigger: event <pp.E_PICK_ABOVE_READY> },
-            violated { hold: <home> }
+        mon-pick-above-done: monitor <pick-above.until> {
+            satisfied { trigger: event <fsm.E_PICK_READY> }
         },
-        mon-pa1-advancing: monitor <pick-above.advance1> {
-            satisfied { flag: pa1-advancing }
+        mon-pick-above-advance1: monitor <pick-above.advance1> {
+            satisfied { flag: pick-above-advance1 }
         },
-        mon-pa2-advancing: monitor <pick-above.advance2> {
-            satisfied { flag: pa2-advancing }
+        mon-pick-above-advance2: monitor <pick-above.advance2> {
+            satisfied { flag: pick-above-advance2 }
         }
     }
 
     controllers {
-        pid ctrl-pa1-follow-tan { constraint: <pick-above.follow1-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pa1-follow-lat { constraint: <pick-above.follow1-lat>, measured-derivative: <shared.world.twist-ee1-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pa1-follow-ori { constraint: <pick-above.follow1-ori>, measured-derivative: <shared.world.twist-ee1-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pa2-follow-tan { constraint: <pick-above.follow2-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pa2-follow-lat { constraint: <pick-above.follow2-lat>, measured-derivative: <shared.world.twist-ee2-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pa2-follow-ori { constraint: <pick-above.follow2-ori>, measured-derivative: <shared.world.twist-ee2-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pick-above-elbow1 {
+        pid ctrl-pick-above-follow1-tan { constraint: <pick-above.follow1-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-above-follow1-lat { constraint: <pick-above.follow1-lat>, measured-derivative: <shared.world.twist-ee1-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-above-follow1-ori { constraint: <pick-above.follow1-ori>, measured-derivative: <shared.world.twist-ee1-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-above-follow2-tan { constraint: <pick-above.follow2-tan>, Kp: 20,  Ki: 4,   Kd: 0,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-above-follow2-lat { constraint: <pick-above.follow2-lat>, measured-derivative: <shared.world.twist-ee2-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-above-follow2-ori { constraint: <pick-above.follow2-ori>, measured-derivative: <shared.world.twist-ee2-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-above-hold1-elbow {
             constraint: <pick-above.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-pick-above-elbow2 {
+        pid ctrl-pick-above-hold2-elbow {
             constraint: <pick-above.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -595,28 +572,27 @@ constraint-handler (ns=app) handler-pick-above {
 
 constraint-handler (ns=app) handler-pick {
     handles: <pick>
+    runs-in: <fsm.S_PICK>
     monitors {
-        mon-pick-ready: monitor <pick.when> {
-            satisfied { trigger: event <pp.E_PICK_READY> },
-            violated { hold: <pick-above> }
+        mon-pick-done: monitor <pick.until> {
+            satisfied { trigger: event <fsm.E_GRASP_READY> }
         }
     }
 
     controllers {
-        pid ctrl-pk1-hold-x { constraint: <pick.hold1-x>,     Kp: 200, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pk1-hold-y { constraint: <pick.hold1-y>,     Kp: 200, Ki: 30, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pk1-lower-z { constraint: <pick.lower1-z>, profile: <pick.spec.lower1-profile>, measured-derivative: <shared.world.twist-ee1-base>.linvel.z, Kp: 12, Ki: 5, Kd: 15, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pk1-follow-ori { constraint: <pick.follow1-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-
-        pid ctrl-pk2-hold-x { constraint: <pick.hold2-x>,     Kp: 200, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pk2-hold-y { constraint: <pick.hold2-y>,     Kp: 200, Ki: 30, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pk2-lower-z { constraint: <pick.lower2-z>, profile: <pick.spec.lower2-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.z, Kp: 12, Ki: 5, Kd: 15, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pk2-follow-ori { constraint: <pick.follow2-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pick-elbow1 {
+        pid ctrl-pick-hold1-x     { constraint: <pick.hold1-x>, Kp: 200, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-hold1-y     { constraint: <pick.hold1-y>, Kp: 200, Ki: 30, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-lower1-z    { constraint: <pick.lower1-z>, profile: <pick.spec.lower1-profile>, measured-derivative: <shared.world.twist-ee1-base>.linvel.z, Kp: 12, Ki: 5, Kd: 15, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-follow1-ori { constraint: <pick.follow1-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-pick-hold2-x     { constraint: <pick.hold2-x>, Kp: 200, Ki: 20, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-hold2-y     { constraint: <pick.hold2-y>, Kp: 200, Ki: 30, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-lower2-z    { constraint: <pick.lower2-z>, profile: <pick.spec.lower2-profile>, measured-derivative: <shared.world.twist-ee2-base>.linvel.z, Kp: 12, Ki: 5, Kd: 15, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-follow2-ori { constraint: <pick.follow2-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-pick-hold1-elbow {
             constraint: <pick.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-pick-elbow2 {
+        pid ctrl-pick-hold2-elbow {
             constraint: <pick.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -628,32 +604,31 @@ constraint-handler (ns=app) handler-pick {
     }
 }
 
-constraint-handler (ns=app) handler-close-grip {
+constraint-handler (ns=app) handler-grasp-hold {
     handles: <grasp-hold>
+    runs-in: <fsm.S_GRASP>
     monitors {
-        mon-grasp-ready: monitor <grasp-hold.when> {
-            satisfied { trigger: event <pp.E_GRASP_READY> },
-            violated { hold: <pick> }
+        mon-grasp-done: monitor <grasp-hold.until> {
+            satisfied for 0.2 s { trigger: event <fsm.E_LIFT_READY> }
         }
     }
 
     controllers {
-        pid ctrl-cg1-hold-x { constraint: <grasp-hold.hold1-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-cg1-hold-y { constraint: <grasp-hold.hold1-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-cg1-hold-z { constraint: <grasp-hold.hold1-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-cg1-hold-orientation { constraint: <grasp-hold.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-cg1-close-gripper { constraint: <grasp-hold.close1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-cg2-hold-x { constraint: <grasp-hold.hold2-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-cg2-hold-y { constraint: <grasp-hold.hold2-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-cg2-hold-z { constraint: <grasp-hold.hold2-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-cg2-hold-orientation { constraint: <grasp-hold.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-cg2-close-gripper { constraint: <grasp-hold.close2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-close-grip-elbow1 {
+        pid ctrl-grasp-hold-hold1-x           { constraint: <grasp-hold.hold1-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-grasp-hold-hold1-y           { constraint: <grasp-hold.hold1-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-grasp-hold-hold1-z           { constraint: <grasp-hold.hold1-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-grasp-hold-hold1-orientation { constraint: <grasp-hold.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-grasp-hold-close1-gripper { constraint: <grasp-hold.close1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-grasp-hold-hold2-x           { constraint: <grasp-hold.hold2-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-grasp-hold-hold2-y           { constraint: <grasp-hold.hold2-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-grasp-hold-hold2-z           { constraint: <grasp-hold.hold2-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-grasp-hold-hold2-orientation { constraint: <grasp-hold.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-grasp-hold-close2-gripper { constraint: <grasp-hold.close2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-grasp-hold-hold1-elbow {
             constraint: <grasp-hold.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-close-grip-elbow2 {
+        pid ctrl-grasp-hold-hold2-elbow {
             constraint: <grasp-hold.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -669,33 +644,32 @@ constraint-handler (ns=app) handler-close-grip {
 
 constraint-handler (ns=app) handler-lift {
     handles: <lift>
+    runs-in: <fsm.S_LIFT>
     monitors {
-        mon-lift-ready: monitor <lift.when> {
-            satisfied { trigger: event <pp.E_LIFT_READY> },
-            violated { hold: <grasp-hold> }
+        mon-lift-done: monitor <lift.lifted> {
+            satisfied { trigger: event <fsm.E_PLACE_ABOVE_READY> }
         },
-        mon-lift-grasp-lost: monitor <lift.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_LIFT> }
+        mon-lift-grasp-lost: monitor <lift.grasp-lost> {
+            satisfied { trigger: event <fsm.E_GRASP_LOST_LIFT> }
         }
     }
 
     controllers {
-        pid ctrl-lt1-hold-x { constraint: <lift.hold1-x>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-lt1-hold-y { constraint: <lift.hold1-y>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-lt1-lift-z { constraint: <lift.lift1-z>,     Kp: 15,  Ki: 5,   Kd: 20, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-lt1-follow-ori { constraint: <lift.follow1-ori>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-lt1-close-gripper { constraint: <lift.close1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-lt2-hold-x { constraint: <lift.hold2-x>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-lt2-hold-y { constraint: <lift.hold2-y>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-lt2-lift-z { constraint: <lift.lift2-z>,     Kp: 15,  Ki: 5,   Kd: 20, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-lt2-follow-ori { constraint: <lift.follow2-ori>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-lt2-close-gripper { constraint: <lift.close2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-lift-elbow1 {
+        pid ctrl-lift-hold1-x     { constraint: <lift.hold1-x>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-lift-hold1-y     { constraint: <lift.hold1-y>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-lift-lift1-z     { constraint: <lift.lift1-z>,     Kp: 15,  Ki: 5,   Kd: 20, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-lift-follow1-ori { constraint: <lift.follow1-ori>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-lift-close1-gripper { constraint: <lift.close1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-lift-hold2-x     { constraint: <lift.hold2-x>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-lift-hold2-y     { constraint: <lift.hold2-y>,     Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-lift-lift2-z     { constraint: <lift.lift2-z>,     Kp: 15,  Ki: 5,   Kd: 20, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-lift-follow2-ori { constraint: <lift.follow2-ori>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-lift-close2-gripper { constraint: <lift.close2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-lift-hold1-elbow {
             constraint: <lift.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-lift-elbow2 {
+        pid ctrl-lift-hold2-elbow {
             constraint: <lift.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -711,33 +685,32 @@ constraint-handler (ns=app) handler-lift {
 
 constraint-handler (ns=app) handler-place-above {
     handles: <place-above>
+    runs-in: <fsm.S_PLACE_ABOVE>
     monitors {
-        mon-place-above-ready: monitor <place-above.when> {
-            satisfied { trigger: event <pp.E_PLACE_ABOVE_READY> },
-            violated { hold: <lift> }
+        mon-place-above-done: monitor <place-above.at-pre-place> {
+            satisfied { trigger: event <fsm.E_PLACE_READY> }
         },
-        mon-place-above-grasp-lost: monitor <place-above.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE_ABOVE> }
+        mon-place-above-grasp-lost: monitor <place-above.grasp-lost> {
+            satisfied { trigger: event <fsm.E_GRASP_LOST_PLACE_ABOVE> }
         }
     }
 
     controllers {
-        pid ctrl-pla1-reach-x { constraint: <place-above.reach1-x>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pla1-reach-y { constraint: <place-above.reach1-y>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pla1-reach-z { constraint: <place-above.reach1-z>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pla1-align-ori { constraint: <place-above.align1-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-pla1-close-gripper { constraint: <place-above.close1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-pla2-reach-x { constraint: <place-above.reach2-x>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pla2-reach-y { constraint: <place-above.reach2-y>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pla2-reach-z { constraint: <place-above.reach2-z>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pla2-align-ori { constraint: <place-above.align2-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-pla2-close-gripper { constraint: <place-above.close2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-place-above-elbow1 {
+        pid ctrl-place-above-reach1-x   { constraint: <place-above.reach1-x>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-above-reach1-y   { constraint: <place-above.reach1-y>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-above-reach1-z   { constraint: <place-above.reach1-z>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-above-align1-ori { constraint: <place-above.align1-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-place-above-close1-gripper { constraint: <place-above.close1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-place-above-reach2-x   { constraint: <place-above.reach2-x>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-above-reach2-y   { constraint: <place-above.reach2-y>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-above-reach2-z   { constraint: <place-above.reach2-z>,   Kp: 180, Ki: 40, Kd: 60, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-above-align2-ori { constraint: <place-above.align2-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-place-above-close2-gripper { constraint: <place-above.close2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-place-above-hold1-elbow {
             constraint: <place-above.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-place-above-elbow2 {
+        pid ctrl-place-above-hold2-elbow {
             constraint: <place-above.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -753,33 +726,32 @@ constraint-handler (ns=app) handler-place-above {
 
 constraint-handler (ns=app) handler-place {
     handles: <place>
+    runs-in: <fsm.S_PLACE>
     monitors {
-        mon-place-ready: monitor <place.when> {
-            satisfied { trigger: event <pp.E_PLACE_READY> },
-            violated { hold: <place-above> }
+        mon-place-done: monitor <place.at-place> {
+            satisfied { trigger: event <fsm.E_OPEN_READY> }
         },
-        mon-place-grasp-lost: monitor <place.until> {
-            satisfied { trigger: event <pp.E_GRASP_LOST_PLACE> }
+        mon-place-grasp-lost: monitor <place.grasp-lost> {
+            satisfied { trigger: event <fsm.E_GRASP_LOST_PLACE> }
         }
     }
 
     controllers {
-        pid ctrl-pl1-reach-x { constraint: <place.reach1-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-reach-y { constraint: <place.reach1-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-reach-z { constraint: <place.reach1-z>,   Kp: 15,  Ki: 5,  Kd: 40,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-pl1-align-ori { constraint: <place.align1-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-pl1-close-gripper { constraint: <place.close1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-pl2-reach-x { constraint: <place.reach2-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pl2-reach-y { constraint: <place.reach2-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pl2-reach-z { constraint: <place.reach2-z>,   Kp: 15,  Ki: 5,  Kd: 40,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-pl2-align-ori { constraint: <place.align2-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-pl2-close-gripper { constraint: <place.close2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-place-elbow1 {
+        pid ctrl-place-reach1-x   { constraint: <place.reach1-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-reach1-y   { constraint: <place.reach1-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-reach1-z   { constraint: <place.reach1-z>,   Kp: 15,  Ki: 5,  Kd: 40,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-place-align1-ori { constraint: <place.align1-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-place-close1-gripper { constraint: <place.close1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-place-reach2-x   { constraint: <place.reach2-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-reach2-y   { constraint: <place.reach2-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-reach2-z   { constraint: <place.reach2-z>,   Kp: 15,  Ki: 5,  Kd: 40,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-place-align2-ori { constraint: <place.align2-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-place-close2-gripper { constraint: <place.close2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-place-hold1-elbow {
             constraint: <place.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-place-elbow2 {
+        pid ctrl-place-hold2-elbow {
             constraint: <place.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -793,32 +765,31 @@ constraint-handler (ns=app) handler-place {
     }
 }
 
-constraint-handler (ns=app) handler-open-grip {
+constraint-handler (ns=app) handler-open-grasp-hold {
     handles: <open-grasp-hold>
+    runs-in: <fsm.S_OPEN>
     monitors {
-        mon-open-ready: monitor <open-grasp-hold.when> {
-            satisfied { trigger: event <pp.E_OPEN_READY> },
-            violated { hold: <place> }
+        mon-open-done: monitor <open-grasp-hold.until> {
+            satisfied { trigger: event <fsm.E_RETREAT_READY> }
         }
     }
 
     controllers {
-        pid ctrl-og1-hold-x { constraint: <open-grasp-hold.hold1-x>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-og1-hold-y { constraint: <open-grasp-hold.hold1-y>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-og1-hold-z { constraint: <open-grasp-hold.hold1-z>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-og1-hold-orientation { constraint: <open-grasp-hold.hold1-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-og1-open-gripper { constraint: <open-grasp-hold.open1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-og2-hold-x { constraint: <open-grasp-hold.hold2-x>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-og2-hold-y { constraint: <open-grasp-hold.hold2-y>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-og2-hold-z { constraint: <open-grasp-hold.hold2-z>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-og2-hold-orientation { constraint: <open-grasp-hold.hold2-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-og2-open-gripper { constraint: <open-grasp-hold.open2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-open-grip-elbow1 {
+        pid ctrl-open-grasp-hold-hold1-x           { constraint: <open-grasp-hold.hold1-x>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-open-grasp-hold-hold1-y           { constraint: <open-grasp-hold.hold1-y>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-open-grasp-hold-hold1-z           { constraint: <open-grasp-hold.hold1-z>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-open-grasp-hold-hold1-orientation { constraint: <open-grasp-hold.hold1-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-open-grasp-hold-open1-gripper { constraint: <open-grasp-hold.open1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-open-grasp-hold-hold2-x           { constraint: <open-grasp-hold.hold2-x>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-open-grasp-hold-hold2-y           { constraint: <open-grasp-hold.hold2-y>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-open-grasp-hold-hold2-z           { constraint: <open-grasp-hold.hold2-z>,           Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-open-grasp-hold-hold2-orientation { constraint: <open-grasp-hold.hold2-orientation>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-open-grasp-hold-open2-gripper { constraint: <open-grasp-hold.open2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-open-grasp-hold-hold1-elbow {
             constraint: <open-grasp-hold.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-open-grip-elbow2 {
+        pid ctrl-open-grasp-hold-hold2-elbow {
             constraint: <open-grasp-hold.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -834,33 +805,29 @@ constraint-handler (ns=app) handler-open-grip {
 
 constraint-handler (ns=app) handler-retreat {
     handles: <retreat>
+    runs-in: <fsm.S_RETREAT>
     monitors {
-        mon-retreat-ready: monitor <retreat.when> {
-            satisfied { trigger: event <pp.E_RETREAT_READY> },
-            violated { hold: <open-grasp-hold> }
-        },
         mon-retreat-settled: monitor <retreat.until> {
-            satisfied { trigger: event <pp.E_RETREAT_SETTLED> }
+            satisfied { trigger: event <fsm.E_RETREAT_SETTLED> }
         }
     }
 
     controllers {
-        pid ctrl-ret1-reach-x { constraint: <retreat.reach1-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-ret1-reach-y { constraint: <retreat.reach1-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-ret1-reach-z { constraint: <retreat.reach1-z>,   Kp: 15,  Ki: 5,  Kd: 20,  decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-ret1-align-ori { constraint: <retreat.align1-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
-        feed-forward ctrl-ret1-open-gripper { constraint: <retreat.open1-gripper> } via <handler-home.gripper1-solver>,
-
-        pid ctrl-ret2-reach-x { constraint: <retreat.reach2-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-ret2-reach-y { constraint: <retreat.reach2-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-ret2-reach-z { constraint: <retreat.reach2-z>,   Kp: 15,  Ki: 5,  Kd: 20,  decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-ret2-align-ori { constraint: <retreat.align2-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
-        feed-forward ctrl-ret2-open-gripper { constraint: <retreat.open2-gripper> } via <handler-home.gripper2-solver>,
-        pid ctrl-retreat-elbow1 {
+        pid ctrl-retreat-reach1-x   { constraint: <retreat.reach1-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-retreat-reach1-y   { constraint: <retreat.reach1-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-retreat-reach1-z   { constraint: <retreat.reach1-z>,   Kp: 15,  Ki: 5,  Kd: 20,  decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-retreat-align1-ori { constraint: <retreat.align1-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm1-solver>,
+        feed-forward ctrl-retreat-open1-gripper { constraint: <retreat.open1-gripper> } via <handler-home.gripper1-solver>,
+        pid ctrl-retreat-reach2-x   { constraint: <retreat.reach2-x>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-retreat-reach2-y   { constraint: <retreat.reach2-y>,   Kp: 140, Ki: 20, Kd: 55,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-retreat-reach2-z   { constraint: <retreat.reach2-z>,   Kp: 15,  Ki: 5,  Kd: 20,  decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-retreat-align2-ori { constraint: <retreat.align2-ori>, Kp: 180, Ki: 30, Kd: 120, decay: 0 } via <handler-home.arm2-solver>,
+        feed-forward ctrl-retreat-open2-gripper { constraint: <retreat.open2-gripper> } via <handler-home.gripper2-solver>,
+        pid ctrl-retreat-hold1-elbow {
             constraint: <retreat.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-retreat-elbow2 {
+        pid ctrl-retreat-hold2-elbow {
             constraint: <retreat.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>
@@ -876,27 +843,27 @@ constraint-handler (ns=app) handler-retreat {
 
 constraint-handler (ns=app) handler-recover {
     handles: <recover>
+    runs-in: <fsm.S_RECOVER>
     monitors {
         mon-recover-hold: monitor <recover.hold1-x> {
-            satisfied for 0.1 s { trigger: event <pp.E_RECOVER> }
+            satisfied for 0.1 s { trigger: event <fsm.E_RECOVER> }
         }
     }
 
     controllers {
-        pid ctrl-rc1-hold-x { constraint: <recover.hold1-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-rc1-hold-y { constraint: <recover.hold1-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-rc1-hold-z { constraint: <recover.hold1-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
-        pid ctrl-rc1-hold-orientation { constraint: <recover.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
-
-        pid ctrl-rc2-hold-x { constraint: <recover.hold2-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-rc2-hold-y { constraint: <recover.hold2-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-rc2-hold-z { constraint: <recover.hold2-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-rc2-hold-orientation { constraint: <recover.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
-        pid ctrl-recover-elbow1 {
+        pid ctrl-recover-hold1-x           { constraint: <recover.hold1-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-recover-hold1-y           { constraint: <recover.hold1-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-recover-hold1-z           { constraint: <recover.hold1-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-recover-hold1-orientation { constraint: <recover.hold1-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm1-solver>,
+        pid ctrl-recover-hold2-x           { constraint: <recover.hold2-x>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-recover-hold2-y           { constraint: <recover.hold2-y>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-recover-hold2-z           { constraint: <recover.hold2-z>,           Kp: 200, Ki: 100, Kd: 40, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-recover-hold2-orientation { constraint: <recover.hold2-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 } via <handler-home.arm2-solver>,
+        pid ctrl-recover-hold1-elbow {
             constraint: <recover.hold1-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm1-solver>,
-        pid ctrl-recover-elbow2 {
+        pid ctrl-recover-hold2-elbow {
             constraint: <recover.hold2-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque via <handler-home.arm2-solver>

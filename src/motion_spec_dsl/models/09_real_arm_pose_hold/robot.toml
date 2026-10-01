@@ -1,0 +1,33 @@
+# Device endpoints, keyed by the name the execution context binds.
+
+[agents.arm1]
+ip                    = "192.168.1.10"
+user                  = "admin"
+password              = "admin"
+port                  = 10000
+port_real_time        = 10001
+session_timeout_ms    = 60000
+connection_timeout_ms = 2000
+
+[agents.gripper1]
+port              = "/dev/ttyUSB1"
+baudrate          = 115200
+slave_address     = 0x09
+# At the 50 % default the gripper latches contact short of the commanded stroke.
+gripper_force_pct = 100
+gripper_speed_pct = 50
+
+[arm1.wrist_ft]
+port             = "/dev/ttyUSB0"
+baudrate         = 19200
+# One frame per 10 ms, plus up to 16 ms of USB-serial latency.
+timeout_ms       = 50.0
+# The driver needs about a second to reopen the port after a run of empty reads.
+invalid_after_ms = 2000.0
+slave_address    = 0x09
+bias_samples     = 100
+
+# Present means published; topic and rate change without regenerating.
+[ros.joint_states]
+topic = "/joint_states"
+rate  = 100.0

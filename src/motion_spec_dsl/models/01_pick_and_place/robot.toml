@@ -1,4 +1,4 @@
-[pickplace_agents.arm1]
+[agents.arm1]
 # Joint configuration a reset returns to [rad].
 home = [0.0, 0.2618, 3.1416, -2.2689, 0.0, 0.9599, 1.5708]
 

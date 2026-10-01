@@ -1,30 +1,30 @@
 import "base_rotation.fsm"
-import "../08_arc_tracing_with_admittance/arc_tracing_with_admittance.scenex"
+import "../common/table_arm_sim.scenex"
 ns app = "https://secorolab.github.io/models/base-rotation/"
-ns br = "https://secorolab.github.io/models/base-rotation/fsm/"
+ns fsm = "https://secorolab.github.io/models/base-rotation/fsm/"
 
 exec-context (ns=app) base-rotation-exec {
-    runs-scene: <admittance_arc_scene_mjc>
-    platform: simulation { name: "MuJoCo" }
-    config: "robot.toml"
-    timestep: 1.0 ms
+    runs-scene: <table_arm_sim_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
 }
 
 context (ns=app) shared {
     world {
-        pose tcp {
-            of: <gripper.g_base.g_pinch>,
-            wrt: <kinova.base_link.base_link_origin>,
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
-        velocity-twist tcp-twist {
-            of: <gripper.g_base.g_pinch>,
-            wrt: <kinova.base_link.base_link_origin>,
+        velocity-twist twist-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
-        velocity-twist tcp-tool-twist {
-            of: <gripper.g_base.g_pinch>,
-            wrt: <kinova.base_link.base_link_origin>,
+        velocity-twist twist-ee-tool {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <gripper.g_base.g_pinch>
         },
         joint-position joint-1 { joint: <kinova.joint_1>, normalization: (-pi, pi) rad },
@@ -36,15 +36,16 @@ context (ns=app) shared {
         joint-position joint-7 { joint: <kinova.joint_7>, normalization: (-pi, pi) rad }
     },
     spec {
-        pose home-pose               = snapshot of <shared.world.tcp> on event <br.E_HOME_ENTERED>,
-        pose look-pose               = [config.poses.look] for <shared.world.tcp>,
+        pose home-pose               = snapshot of <shared.world.pose-ee-base> on event <fsm.E_HOME_ENTERED>,
+        pose look-pose               = [config.poses.look] for <shared.world.pose-ee-base>,
+        // Gen3 joint_1 turns about -z of the base, so +120 deg turns the TCP -120 deg.
         angle q1-look                = 120 deg,
         angle q2-home                = 0.2618 rad,
-        angle q3-home                = 3.1416 rad,
+        angle q3-home                = pi rad,
         angle q4-home                = -2.2689 rad,
         angle q5-home                = 0.0 rad,
         angle q6-home                = 0.9599 rad,
-        angle q7-home                = 1.5708 rad,
+        angle q7-home                = pi / 2 rad,
         length position-band         = 0.02 m,
         angle orientation-band       = 0.05 rad,
         angle joint-band             = 2 deg,
@@ -60,9 +61,9 @@ context (ns=app) shared {
 }
 
 tolerances {
-    position: 0.05 m,
-    orientation: 0.05 rad,
-    linear-velocity: 0.005 m/s,
+    position:         0.05 m,
+    orientation:      0.05 rad,
+    linear-velocity:  0.005 m/s,
     angular-velocity: 0.01 rad/s
 }
 
@@ -71,17 +72,17 @@ guarded-motion (ns=app) home {
     context {}
     when {}
     while {
-        hold-position:    keeping <shared.world.tcp>.position    equal to <shared.spec.home-pose>.position,
-        hold-orientation: keeping <shared.world.tcp>.orientation equal to <shared.spec.home-pose>.orientation,
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation,
         hold-elbow:       keeping <shared.world.joint-3> equal to <shared.spec.q3-home>
     }
     until all {
-        settled-x:  <shared.world.tcp-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        settled-y:  <shared.world.tcp-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        settled-z:  <shared.world.tcp-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        settled-rx: <shared.world.tcp-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
-        settled-ry: <shared.world.tcp-twist>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
-        settled-rz: <shared.world.tcp-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
+        settled-x:  <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-y:  <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-z:  <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        settled-rx: <shared.world.twist-ee-base>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        settled-ry: <shared.world.twist-ee-base>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        settled-rz: <shared.world.twist-ee-base>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
     }
 }
 
@@ -99,8 +100,8 @@ guarded-motion (ns=app) joint-space {
         hold-7:  keeping <shared.world.joint-7> equal to <shared.spec.q7-home>
     }
     until all {
-        at-position:    <shared.world.tcp>.position    equal to <shared.spec.look-pose>.position    within <shared.spec.position-band>,
-        at-orientation: <shared.world.tcp>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.orientation-band>
+        at-position:    <shared.world.pose-ee-base>.position    equal to <shared.spec.look-pose>.position    within <shared.spec.position-band>,
+        at-orientation: <shared.world.pose-ee-base>.orientation equal to <shared.spec.look-pose>.orientation within <shared.spec.orientation-band>
     }
 }
 
@@ -109,7 +110,7 @@ guarded-motion (ns=app) cartesian-arc {
     context {
         <shared.spec>,
         spec {
-            pose start = snapshot of <shared.world.tcp> on event <br.E_ARC_ENTERED>,
+            pose start = snapshot of <shared.world.pose-ee-base> on event <fsm.E_ARC_ENTERED>,
             velocity-profile speed-profile = profile {
                 max-velocity: 0.15 m/s,
                 max-acceleration: 0.05 m/s^2,
@@ -128,20 +129,20 @@ guarded-motion (ns=app) cartesian-arc {
     }
     when {}
     while {
-        tangent:     moving <shared.world.tcp> along <spec.trajectory> with <spec.speed-profile>,
-        position:    keeping <shared.world.tcp>.position    on <spec.trajectory>,
-        orientation: keeping <shared.world.tcp>.orientation on <spec.trajectory>,
+        tangent:     moving <shared.world.pose-ee-base> along <spec.trajectory> with <spec.speed-profile>,
+        position:    keeping <shared.world.pose-ee-base>.position    on <spec.trajectory>,
+        orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.trajectory>,
         hold-elbow:  keeping <shared.world.joint-3> equal to <shared.spec.q3-home>
     }
     until all {
-        at-position:    <shared.world.tcp>.position    equal to <shared.spec.home-pose>.position    within <spec.arrive-band>,
-        at-orientation: <shared.world.tcp>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.orientation-band>,
-        stopped-x:  <shared.world.tcp-twist>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        stopped-y:  <shared.world.tcp-twist>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        stopped-z:  <shared.world.tcp-twist>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
-        stopped-rx: <shared.world.tcp-twist>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
-        stopped-ry: <shared.world.tcp-twist>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
-        stopped-rz: <shared.world.tcp-twist>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
+        at-position:    <shared.world.pose-ee-base>.position    equal to <shared.spec.home-pose>.position    within <spec.arrive-band>,
+        at-orientation: <shared.world.pose-ee-base>.orientation equal to <shared.spec.home-pose>.orientation within <shared.spec.orientation-band>,
+        stopped-x:  <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-y:  <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-z:  <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linear> within <shared.spec.velocity-band>,
+        stopped-rx: <shared.world.twist-ee-base>.angvel.x equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        stopped-ry: <shared.world.twist-ee-base>.angvel.y equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>,
+        stopped-rz: <shared.world.twist-ee-base>.angvel.z equal to <shared.spec.zero-angular> within <shared.spec.angular-velocity-band>
     }
 }
 
@@ -153,28 +154,25 @@ guarded-motion (ns=app) angular-velocity {
             angular-velocity turn-rate = 0.0738 rad/s,
             linear-velocity travel-rate = -0.0497 m/s,
             length reach-band = 0.06 m,
-            length negative-reach-band = -0.06 m,
-            length target-x = -0.337565 m,
-            length target-y = -0.587367 m,
-            length target-x-lo = <spec.target-x> + <spec.negative-reach-band>,
-            length target-x-hi = <spec.target-x> + <spec.reach-band>,
-            length target-y-lo = <spec.target-y> + <spec.negative-reach-band>,
-            length target-y-hi = <spec.target-y> + <spec.reach-band>
+            length target-x-lo = <shared.spec.look-pose>.position.x - <spec.reach-band>,
+            length target-x-hi = <shared.spec.look-pose>.position.x + <spec.reach-band>,
+            length target-y-lo = <shared.spec.look-pose>.position.y - <spec.reach-band>,
+            length target-y-hi = <shared.spec.look-pose>.position.y + <spec.reach-band>
         }
     }
     when {}
     while {
-        turn:        keeping <shared.world.tcp-tool-twist>.angvel.x equal to <spec.turn-rate>,
-        no-tilt-y:   keeping <shared.world.tcp-tool-twist>.angvel.y equal to <shared.spec.zero-angular>,
-        no-tilt-z:   keeping <shared.world.tcp-tool-twist>.angvel.z equal to <shared.spec.zero-angular>,
-        travel:      keeping <shared.world.tcp-tool-twist>.linvel.y equal to <spec.travel-rate>,
-        hold-height: keeping <shared.world.tcp-tool-twist>.linvel.x equal to <shared.spec.zero-linear>,
-        hold-radius: keeping <shared.world.tcp-tool-twist>.linvel.z equal to <shared.spec.zero-linear>,
+        turn:        keeping <shared.world.twist-ee-tool>.angvel.x equal to <spec.turn-rate>,
+        no-tilt-y:   keeping <shared.world.twist-ee-tool>.angvel.y equal to <shared.spec.zero-angular>,
+        no-tilt-z:   keeping <shared.world.twist-ee-tool>.angvel.z equal to <shared.spec.zero-angular>,
+        travel:      keeping <shared.world.twist-ee-tool>.linvel.y equal to <spec.travel-rate>,
+        hold-height: keeping <shared.world.twist-ee-tool>.linvel.x equal to <shared.spec.zero-linear>,
+        hold-radius: keeping <shared.world.twist-ee-tool>.linvel.z equal to <shared.spec.zero-linear>,
         hold-elbow:  keeping <shared.world.joint-3> equal to <shared.spec.q3-home>
     }
     until all {
-        at-target-x: <shared.world.tcp>.position.x between <spec.target-x-lo> and <spec.target-x-hi>,
-        at-target-y: <shared.world.tcp>.position.y between <spec.target-y-lo> and <spec.target-y-hi>
+        at-target-x: <shared.world.pose-ee-base>.position.x between <spec.target-x-lo> and <spec.target-x-hi>,
+        at-target-y: <shared.world.pose-ee-base>.position.y between <spec.target-y-lo> and <spec.target-y-hi>
     }
 }
 
@@ -199,116 +197,116 @@ guarded-motion (ns=app) done {
 
 constraint-handler (ns=app) handler-home {
     handles: <home>
-    runs-in: <br.S_HOME>
+    runs-in: <fsm.S_HOME>
     monitors {
-        mon-settled: monitor <home.until> {
-            satisfied for 0.3 s { trigger: event <br.E_HOME_SETTLED> }
+        mon-home-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_HOME_SETTLED> }
         }
     }
     controllers {
-        pid home-position    { constraint: <home.hold-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid home-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
-        pid home-elbow {
+        pid ctrl-home-hold-position    { constraint: <home.hold-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-home-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
+        pid ctrl-home-hold-elbow {
             constraint: <home.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque
     }
     solvers {
-        arm-achd: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
+        arm-achd-solver: serial-chain {
+            agent:     <agents.arm1>,
             algorithm: achd,
-            limits { torque: saturation { max: <shared.spec.arm-torque-limit> } },
-            gravity: (0.0, 0.0, 9.81) m/s^2
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity:   (0.0, 0.0, 9.81) m/s^2
         }
     }
 }
 
 constraint-handler (ns=app) handler-joint-space {
     handles: <joint-space>
-    runs-in: <br.S_JOINT_SPACE>
+    runs-in: <fsm.S_JOINT_SPACE>
     monitors {
-        mon-done: monitor <joint-space.until> {
-            satisfied for 0.3 s { trigger: event <br.E_JOINT_SPACE_DONE> }
+        mon-joint-space-done: monitor <joint-space.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_JOINT_SPACE_DONE> }
         }
     }
     controllers {
         // Kd, not Kp, is the speed limit: while saturated the turn settles at drive-limit / Kd.
-        pid drive-1 { constraint: <joint-space.drive-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 8,  Ki: 0, Kd: 40, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-2  { constraint: <joint-space.hold-2>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-3  { constraint: <joint-space.hold-3>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-4  { constraint: <joint-space.hold-4>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-5  { constraint: <joint-space.hold-5>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-6  { constraint: <joint-space.hold-6>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid hold-7  { constraint: <joint-space.hold-7>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque
+        pid ctrl-joint-space-drive-1 { constraint: <joint-space.drive-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 8,  Ki: 0, Kd: 40, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-2  { constraint: <joint-space.hold-2>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-3  { constraint: <joint-space.hold-3>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-4  { constraint: <joint-space.hold-4>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-5  { constraint: <joint-space.hold-5>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-6  { constraint: <joint-space.hold-6>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-joint-space-hold-7  { constraint: <joint-space.hold-7>,  output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8,  decay: 0, error-normalization: (-pi, pi) rad } as torque
     }
     solvers {
-        arm-rne: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
+        arm-rne-solver: serial-chain {
+            agent:     <agents.arm1>,
             algorithm: rne,
-            gravity: (0.0, 0.0, -9.81) m/s^2
+            gravity:   (0.0, 0.0, -9.81) m/s^2
         }
     }
 }
 
 constraint-handler (ns=app) handler-cartesian-arc {
     handles: <cartesian-arc>
-    runs-in: <br.S_CARTESIAN_ARC>
+    runs-in: <fsm.S_CARTESIAN_ARC>
     monitors {
-        mon-done: monitor <cartesian-arc.until> {
-            satisfied for 0.3 s { trigger: event <br.E_ARC_DONE> }
+        mon-cartesian-arc-done: monitor <cartesian-arc.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_ARC_DONE> }
         }
     }
     controllers {
-        pid arc-tangent     { constraint: <cartesian-arc.tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid arc-position    { constraint: <cartesian-arc.position>,    measured-derivative: <shared.world.tcp-twist>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
-        pid arc-orientation { constraint: <cartesian-arc.orientation>, measured-derivative: <shared.world.tcp-twist>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
-        pid arc-elbow {
+        pid ctrl-cartesian-arc-tangent     { constraint: <cartesian-arc.tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-cartesian-arc-position    { constraint: <cartesian-arc.position>,    measured-derivative: <shared.world.twist-ee-base>.linvel, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-cartesian-arc-orientation { constraint: <cartesian-arc.orientation>, measured-derivative: <shared.world.twist-ee-base>.angvel, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
+        pid ctrl-cartesian-arc-hold-elbow {
             constraint: <cartesian-arc.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque
     }
-    solvers { <handler-home.arm-achd> }
+    solvers { <handler-home.arm-achd-solver> }
 }
 
 constraint-handler (ns=app) handler-angular-velocity {
     handles: <angular-velocity>
-    runs-in: <br.S_ANGULAR_VELOCITY>
+    runs-in: <fsm.S_ANGULAR_VELOCITY>
     monitors {
-        mon-done: monitor <angular-velocity.until> {
-            satisfied for 0.3 s { trigger: event <br.E_ANGULAR_VELOCITY_DONE> }
+        mon-angular-velocity-done: monitor <angular-velocity.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_ANGULAR_VELOCITY_DONE> }
         }
     }
     controllers {
-        pid turn        { constraint: <angular-velocity.turn>,        Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid no-tilt-y   { constraint: <angular-velocity.no-tilt-y>,   Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid no-tilt-z   { constraint: <angular-velocity.no-tilt-z>,   Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid travel      { constraint: <angular-velocity.travel>,      Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid hold-height { constraint: <angular-velocity.hold-height>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid hold-radius { constraint: <angular-velocity.hold-radius>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
-        pid av-elbow {
+        pid ctrl-angular-velocity-turn        { constraint: <angular-velocity.turn>,        Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-no-tilt-y   { constraint: <angular-velocity.no-tilt-y>,   Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-no-tilt-z   { constraint: <angular-velocity.no-tilt-z>,   Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-travel      { constraint: <angular-velocity.travel>,      Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-hold-height { constraint: <angular-velocity.hold-height>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-hold-radius { constraint: <angular-velocity.hold-radius>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-angular-velocity-hold-elbow {
             constraint: <angular-velocity.hold-elbow>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
             Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
         } as torque
     }
-    solvers { <handler-joint-space.arm-rne> }
+    solvers { <handler-joint-space.arm-rne-solver> }
 }
 
 constraint-handler (ns=app) handler-done {
     handles: <done>
-    runs-in: <br.S_DONE>
+    runs-in: <fsm.S_DONE>
     monitors {
-        mon-settled: monitor <done.until> {
-            satisfied for 0.5 s { trigger: event <br.E_DONE_SETTLED> }
+        mon-done-settled: monitor <done.until> {
+            satisfied for 0.5 s { trigger: event <fsm.E_DONE_SETTLED> }
         }
     }
     controllers {
-        pid rest-1 { constraint: <done.hold-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-2 { constraint: <done.hold-2>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-3 { constraint: <done.hold-3>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-4 { constraint: <done.hold-4>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-5 { constraint: <done.hold-5>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-6 { constraint: <done.hold-6>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
-        pid rest-7 { constraint: <done.hold-7>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque
+        pid ctrl-done-hold-1 { constraint: <done.hold-1>, output-saturation: saturation { max: <shared.spec.drive-limit> }, Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-2 { constraint: <done.hold-2>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-3 { constraint: <done.hold-3>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-4 { constraint: <done.hold-4>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-5 { constraint: <done.hold-5>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-6 { constraint: <done.hold-6>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque,
+        pid ctrl-done-hold-7 { constraint: <done.hold-7>, output-saturation: saturation { max: <shared.spec.hold-limit> },  Kp: 20, Ki: 0, Kd: 8, decay: 0, error-normalization: (-pi, pi) rad } as torque
     }
-    solvers { <handler-joint-space.arm-rne> }
+    solvers { <handler-joint-space.arm-rne-solver> }
 }

@@ -1,6 +1,6 @@
-ns br = "https://secorolab.github.io/models/base-rotation/fsm/"
+ns fsm = "https://secorolab.github.io/models/base-rotation/fsm/"
 
-evt loop (ns=br) base_rotation_events {
+evt loop (ns=fsm) base_rotation_events {
     evt E_STEP,
     evt E_HOME_ENTERED,
     evt E_HOME_SETTLED,
@@ -11,7 +11,7 @@ evt loop (ns=br) base_rotation_events {
     evt E_DONE_SETTLED
 }
 
-fsm (ns=br) base_rotation_fsm {
+fsm (ns=fsm) base_rotation_fsm {
     description: "Turn the arm 120 degrees about its base axis three ways: in joint space, back along the Cartesian arc, and at a constant angular velocity."
 
     states { S_START, S_HOME, S_JOINT_SPACE, S_CARTESIAN_ARC, S_ANGULAR_VELOCITY, S_DONE }
