@@ -491,22 +491,26 @@ class SolverLimits:
     entries: list[object] = field(default_factory=list)
 
 
+KINEMATICS_ALGORITHMS = frozenset({"FPK", "FVK"})
+
+
 @dataclass(eq=False)
 class SerialChainSolver(NamedNamespaceObject):
-    """A serial-chain dynamics solver (ACHD/RNE) over one ordered kinematic chain,
-    assigned to an agent."""
+    """A serial-chain solver over one ordered kinematic chain, assigned to an agent: dynamics
+    (ACHD/RNE) commanding it, or forward kinematics (FPK/FVK) only reading it."""
 
     parent: object
     name: str
     agent: object
-    # None on a monitor-only solver: no controller drives it, so no dynamics algorithm runs.
-    algorithm: str | None = None
+    algorithm: str
     limits: SolverLimits | None = None
     gravity_value: GravityValue | None = None
 
     def __post_init__(self):
         super().__init__(parent=self.parent, name=self.name)
-        self.algorithm = {"achd": "ACHD", "rne": "RNE"}.get(self.algorithm, self.algorithm)
+        self.algorithm = {"achd": "ACHD", "rne": "RNE", "fpk": "FPK", "fvk": "FVK"}.get(
+            self.algorithm, self.algorithm
+        )
 
 
 @dataclass(eq=False)

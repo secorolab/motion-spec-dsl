@@ -362,9 +362,12 @@ def _owning_section(spec: ConstraintSpecification):
 
 
 def _owning_motion(spec: ConstraintSpecification):
-    """The guarded motion a constraint belongs to, or None outside one."""
+    """The guarded motion a constraint belongs to; for one in no section (a derived scalar's
+    shim), the context that declares it."""
     section = _owning_section(spec)
-    return getattr(section, "parent", None) if section is not None else None
+    if section is None:
+        return getattr(getattr(spec, "parent", None), "parent", None)
+    return getattr(section, "parent", None)
 
 
 def _evaluator_id(spec: ConstraintSpecification) -> str:

@@ -42,6 +42,7 @@ from motion_spec_dsl.classes.validation.handlers import (
     validate_controller_solver_assembly,
     validate_handler_constraint_assembly,
     validate_handler_requirements,
+    validate_kinematics_solvers,
     validate_mobile_platform_solver_quantity,
 )
 from motion_spec_dsl.classes.validation.monitors import validate_monitor_state_blocks
@@ -85,6 +86,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
+    validate_kinematics_solvers(model)
     validate_commanded_quantity_is_measured(model)
     validate_controlled_expressions(model)
     validate_mobile_platform_solver_quantity(model)

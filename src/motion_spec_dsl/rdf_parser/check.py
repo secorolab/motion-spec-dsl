@@ -3,8 +3,6 @@
 # Author: Vamsi Kalagaturu
 """Validate generated motion-spec RDF against its declared SHACL constraints."""
 
-import sys
-import argparse
 from pathlib import Path
 
 import pyshacl
@@ -54,19 +52,3 @@ def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tup
         data_graph=g, shacl_graph=g_sh, inference="none", meta_shacl=meta_shacl
     )
     return bool(conforms), v_text
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Compatibility entry point; the installed CLI is ``motion-spec check``."""
-    parser = argparse.ArgumentParser(prog="motion-spec check")
-    parser.add_argument("manifest")
-    parser.add_argument("--meta-shacl", action="store_true")
-    args = parser.parse_args(argv)
-
-    conforms, report = validate_manifest(args.manifest, meta_shacl=args.meta_shacl)
-    print(report)
-    return 0 if conforms else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

@@ -245,6 +245,8 @@ from motion_spec_dsl.rdf_parser.vocab import (
     GEOM_PATH,
     GEOM_REL,
     GEOM_REL_EXT,
+    KC_OP,
+    KC_OP_EXT,
     KC_STAT,
     MAP,
     MAP_EXT,
@@ -269,6 +271,13 @@ _MOBILE_PLATFORM_ALGORITHM_RDF: dict[str, tuple[URIRef, URIRef]] = {
     "VelocityDistribution": (SLV_EXT.VelocityDistributionSolver, SLV.velocity),
     "ForceDistribution": (SLV.ForceDistributionSolver, SLV.force),
     "ForceComposition": (SLV_EXT.ForceCompositionSolver, SLV.force),
+}
+
+_SERIAL_CHAIN_ALGORITHM_RDF: dict[str, URIRef] = {
+    "ACHD": SLV.AccelerationConstrainedHybridDynamicsAlgorithm,
+    "RNE": SLV.RecursiveNewtonEulerAlgorithm,
+    "FPK": KC_OP.ForwardPositionKinematics,
+    "FVK": KC_OP_EXT.ForwardVelocityKinematics,
 }
 
 
@@ -6720,17 +6729,9 @@ class MotionSpecDatasetBuilder:
                 )
                 continue
 
-            # SerialChainSolver: ACHD/RNE dynamics over one ordered kinematic chain.
+            # SerialChainSolver: dynamics or forward kinematics over one ordered kinematic chain.
             self.graph.add((solver_node, RDF.type, SLV.SolverWithInputAndOutput))
-
-            alg = solver.algorithm
-            if alg is not None:
-                alg_node = (
-                    SLV.AccelerationConstrainedHybridDynamicsAlgorithm
-                    if alg == "ACHD"
-                    else SLV["RecursiveNewtonEulerAlgorithm"]
-                )
-                self.graph.add((solver_node, SLV.solver, alg_node))
+            self.graph.add((solver_node, SLV.solver, _SERIAL_CHAIN_ALGORITHM_RDF[solver.algorithm]))
 
             gravity_value = getattr(solver, "gravity_value", None)
             if gravity_value is not None:
@@ -6804,12 +6805,6 @@ class MotionSpecDatasetBuilder:
             ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
             if self._controller_solver(handler, ctrl) is not solver:
                 continue
-
-            if solver.algorithm is None:
-                raise ValueError(
-                    f"Serial-chain solver '{solver.name}' declares no algorithm, but "
-                    f"controller '{ctrl.name}' routes through it; a driven solver needs one."
-                )
 
             cref = ctrl.params.constraint
             spec = cref.constraint if hasattr(cref, "constraint") else None
@@ -6917,10 +6912,16 @@ class MotionSpecDatasetBuilder:
 
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None and not command.is_moment_command:
+                # A platform's twist has no chain to observe it through, so it is stated in
+                # context; its frames give the axis just as a world twist's would.
+                context_qty = self._constraint_context_quantity(spec)
+                if context_qty is not None and isinstance(context_qty.props, GeometricProps):
+                    qty = context_qty
+            if qty is None and not command.is_moment_command:
                 raise ValueError(
                     f"Controller '{ctrl.name}' routes a force to platform solver "
-                    f"'{solver.name}', but its constraint '{spec.name}' does not resolve to a "
-                    f"world quantity, so no direction can be taken for the wrench."
+                    f"'{solver.name}', but its constraint '{spec.name}' names no quantity with "
+                    f"frames, so no direction can be taken for the wrench."
                 )
             # A distribution takes a couple as readily as a force -- it is the same wrench, and
             # the yaw a platform is steered by is exactly what a moment command states.

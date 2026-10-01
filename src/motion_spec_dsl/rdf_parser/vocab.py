@@ -161,6 +161,18 @@ class KC_STAT(DefinedNamespace):
     _NS = NS_MM_KC_STAT
 
 
+class KC_OP(DefinedNamespace):
+    ForwardPositionKinematics: URIRef
+
+    _NS = Namespace(f"{URI_CR2B_MM}/kinematic-chain/operators#")
+
+
+class KC_OP_EXT(DefinedNamespace):
+    ForwardVelocityKinematics: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/kinematic-chain/operators#")
+
+
 class AGN(DefinedNamespace):
     Agent: URIRef
     AgentModel: URIRef

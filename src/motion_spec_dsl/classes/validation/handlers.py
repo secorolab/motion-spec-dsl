@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from motion_spec_dsl.classes.constraint_handler import (
+    KINEMATICS_ALGORITHMS,
     ControllerType,
     MobilePlatformSolver,
     UntilMonitorRef,
@@ -236,6 +237,32 @@ _MOBILE_PLATFORM_QUANTITY_TYPE = {
     "ForceDistribution": "Wrench",
     "ForceComposition": "Wrench",
 }
+
+
+def validate_kinematics_solvers(model: Model) -> None:
+    """Reject dynamics a forward-kinematics solver cannot take: a driving controller, gravity,
+    or a torque limit."""
+    for handler in constraint_handlers(model):
+        for item in handler.solvers:
+            solver = _resolved_solver(item)
+            if getattr(solver, "algorithm", None) not in KINEMATICS_ALGORITHMS:
+                continue
+            for field in ("gravity_value", "limits"):
+                if getattr(solver, field, None) is not None:
+                    raise semantic_error(
+                        f"Serial-chain solver '{solver.name}' ({solver.algorithm}) only reads "
+                        f"the chain; it takes no {field.removesuffix('_value')}.",
+                        solver,
+                    )
+        for controller in handler.controllers:
+            solver = controller_solver(handler, controller)
+            if getattr(solver, "algorithm", None) in KINEMATICS_ALGORITHMS:
+                raise semantic_error(
+                    f"Controller '{controller.name}' routes through '{solver.name}' "
+                    f"({solver.algorithm}), which only reads the chain; a driven arm needs "
+                    "'achd' or 'rne'.",
+                    controller,
+                )
 
 
 def validate_mobile_platform_solver_quantity(model: Model) -> None:

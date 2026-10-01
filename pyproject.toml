@@ -20,7 +20,6 @@ dependencies = [
     "rdflib>=7.6.0",
     "rdf-utils @ git+https://github.com/minhnh/rdf-utils@main",
     "pyshacl>=0.25.0",
-    "PyLD>=2.0.0",
     "coord_dsl @ git+https://github.com/secorolab/coord-dsl@main",
     "scene-dsl @ git+https://github.com/secorolab/scene-dsl@main",
 ]
@@ -49,7 +48,6 @@ where = ["src"]
     "models/**/*.scenex",
     "models/**/*.toml",
     "models/**/*.xml",
-    "models/**/*.json",
     "models/**/*.py",
 ]
 

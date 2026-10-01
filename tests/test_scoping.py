@@ -135,7 +135,7 @@ def test_solver_fqn_resolves_local_and_qualified_references():
 
 def test_constraint_fqn_resolves_specs_and_groups():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+        MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     )
     handler = next(
         spec
@@ -153,7 +153,7 @@ def test_constraint_fqn_resolves_specs_and_groups():
 
 def test_event_scope_is_declared_by_the_grammar():
     model = motion_spec_metamodel().model_from_file(
-        MODELS / "08_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+        MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     )
     handler = next(
         spec
