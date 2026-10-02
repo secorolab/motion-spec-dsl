@@ -501,10 +501,8 @@ class MotionSpecDatasetBuilder:
         self._tolerance_defaults = _tolerance_defaults(self.models)
 
         # Resolution indexes, populated once and read during emission (see module docstring).
-        self._distance_plans: dict[ConstraintSpecification, _DistancePlan] = {}
-        self._alignment_plans: dict[ConstraintSpecification, _AlignmentPlan] = {}
-        self._geometric_distance_plans: dict[ConstraintSpecification, _GeometricDistancePlan] = {}
-        self._difference_plans: dict[ConstraintSpecification, Any] = {}
+        # One plan per constraint, of whichever kind its view is.
+        self._plans: dict[ConstraintSpecification, Any] = {}
         self._derived_scalars: dict[Any, WorldQuantity | None] = {}
         self._derived_scalar_declarations: list[Any] = []
         self._frame_coords_index: dict[URIRef, tuple[URIRef, URIRef, URIRef]] = {}
@@ -540,8 +538,7 @@ class MotionSpecDatasetBuilder:
         self._linear_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._angular_distance_relations: dict[tuple[str, str], URIRef] = {}
         self._emitted_views: set[URIRef] = set()
-        self._emitted_position_coords: set[URIRef] = set()
-        self._emitted_orientation_coords: set[URIRef] = set()
+        self._emitted_pose_parts: set[URIRef] = set()
         self._path_projections: set[URIRef] = set()
         self._motion_time_endpoints_index: dict[str, tuple[URIRef, URIRef]] = {}
         self._observation_instant_index: dict[str, URIRef] = {}
@@ -1231,7 +1228,7 @@ class MotionSpecDatasetBuilder:
 
     def _difference_plan(self, spec: ConstraintSpecification, world_qtys) -> Any:
         """`difference of A and B`: a scalar the run subtracts, over two already-named scalars."""
-        cached = self._difference_plans.get(spec)
+        cached = self._plans.get(spec)
         if cached is not None:
             return cached
         binary = spec.view.binary
@@ -1268,7 +1265,7 @@ class MotionSpecDatasetBuilder:
         plan = self._Shim(target=target, node=target_node, gradient_id=self._difference_gradient(
             binary.left, world_qtys
         ))
-        self._difference_plans[spec] = plan
+        self._plans[spec] = plan
         return plan
 
     def _difference_gradient(self, ref: Any, world_qtys) -> str | None:
@@ -1339,14 +1336,10 @@ class MotionSpecDatasetBuilder:
             return self._difference_plan(spec, world_qtys).target
         if _is_distance_view(spec):
             return self._distance_plan(spec, world_qtys).target
-        if _is_alignment_view(spec):
-            return self._alignment_plan(spec, world_qtys).target
+        if _is_alignment_view(spec) or _is_incident_angle_view(spec) or _is_plane_angle_view(spec):
+            return self._angle_plan(spec, world_qtys).target
         if _is_geometric_distance_view(spec) or _is_projection_view(spec):
             return self._geometric_distance_plan(spec, world_qtys).target
-        if _is_incident_angle_view(spec):
-            return self._incident_angle_plan(spec, world_qtys).target
-        if _is_plane_angle_view(spec):
-            return self._plane_angle_plan(spec, world_qtys).target
         return self._resolve_qty(spec.view.quantity, world_qtys)
 
     def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
@@ -1387,7 +1380,7 @@ class MotionSpecDatasetBuilder:
         world_qtys: dict[str, WorldQuantity],
     ) -> _DistancePlan:
         """Resolve an authored distance relation's pose endpoints and scalar-view carrier."""
-        cached = self._distance_plans.get(spec)
+        cached = self._plans.get(spec)
         if cached is not None:
             return cached
 
@@ -1418,7 +1411,7 @@ class MotionSpecDatasetBuilder:
         relation_a = str(self._distance_endpoint_point(start))
         relation_b = str(self._distance_endpoint_point(end))
         plan = _DistancePlan(start, end, target, relation_a, relation_b)
-        self._distance_plans[spec] = plan
+        self._plans[spec] = plan
         return plan
 
     def _distance_endpoint_point(self, operand: WorldQuantity | ContextQuantity) -> URIRef:
@@ -1532,11 +1525,9 @@ class MotionSpecDatasetBuilder:
         """Resolve two direction operands of an `angle between` view and the already computed
         pose (moving frame wrt reference frame) the rotated-direction op reads.
 
-        Shared by all three Table IIb forms: versor-versor compares its two authored directions
-        directly; versor-plane and plane-plane resolve their plane operand(s) to a normal
-        direction first (see `_incident_angle_plan` / `_plane_angle_plan`) and pass it through
-        here unchanged. `relation_a`/`relation_b` default to the direction operands themselves
-        (versor-versor); the plane forms pass the plane entity instead of its normal.
+        Shared by all three Table IIb forms: a plane operand arrives as its normal direction
+        (see `_angle_plan`), and its relation names the plane entity instead of the normal.
+        `relation_a`/`relation_b` default to the direction operands themselves.
 
         Unlike a distance's endpoints, this pose's *value* is read at runtime, so it must be an
         existing solver-computed `world` quantity -- there is no operator to derive a fresh
@@ -1580,25 +1571,6 @@ class MotionSpecDatasetBuilder:
             relation_b if relation_b is not None else str(reference.uri),
         )
 
-    def _alignment_plan(
-        self,
-        spec: ConstraintSpecification,
-        world_qtys: dict[str, WorldQuantity],
-    ) -> _AlignmentPlan:
-        """Resolve a versor-versor `angle between` view's direction operands (plan cached by
-        spec, shared with the incident-angle and plane-angle forms below)."""
-        cached = self._alignment_plans.get(spec)
-        if cached is not None:
-            return cached
-        plan = self._direction_pair_plan(
-            spec.view.binary.left,
-            spec.view.binary.right,
-            f"Alignment constraint '{spec.name}'",
-            world_qtys,
-        )
-        self._alignment_plans[spec] = plan
-        return plan
-
     def _plane_normal(self, plane: ContextQuantity) -> ContextQuantity:
         """The resolved `direction` quantity a `plane`'s `normal:` role names. `_geo_prop`
         would give its URI string (the frame-lookup helper); this needs the object itself,
@@ -1606,53 +1578,31 @@ class MotionSpecDatasetBuilder:
         """
         return _resolved_context_quantity(_geo_prop_value(plane.props, GeometricPropKey.Normal))
 
-    def _incident_angle_plan(
+    def _angle_plan(
         self,
         spec: ConstraintSpecification,
         world_qtys: dict[str, WorldQuantity],
     ) -> _AlignmentPlan:
-        """Resolve a versor-plane `angle between` view: the versor operand against the plane
-        operand's normal direction."""
-        cached = self._alignment_plans.get(spec)
+        """Resolve an `angle between` view: a versor operand is its own direction, a plane
+        operand its normal, related by the plane itself. Only the first operand moves.
+        """
+        cached = self._plans.get(spec)
         if cached is not None:
             return cached
-        moving = _resolved_context_quantity(spec.view.binary.left)
-        plane = _resolved_context_quantity(spec.view.binary.right)
-        reference = self._plane_normal(plane)
-        plan = self._direction_pair_plan(
-            moving,
-            reference,
-            f"Incident-angle constraint '{spec.name}'",
-            world_qtys,
-            relation_a=str(moving.uri),
-            relation_b=str(plane.uri),
+        planes = (
+            _is_plane_angle_view(spec),
+            _is_plane_angle_view(spec) or _is_incident_angle_view(spec),
         )
-        self._alignment_plans[spec] = plan
-        return plan
-
-    def _plane_angle_plan(
-        self,
-        spec: ConstraintSpecification,
-        world_qtys: dict[str, WorldQuantity],
-    ) -> _AlignmentPlan:
-        """Resolve a plane-plane `angle between` view: the first-named plane's normal (moving)
-        against the second's (reference) -- see plan 09 Sec.1, only the first operand moves."""
-        cached = self._alignment_plans.get(spec)
-        if cached is not None:
-            return cached
-        plane_a = _resolved_context_quantity(spec.view.binary.left)
-        plane_b = _resolved_context_quantity(spec.view.binary.right)
-        moving = self._plane_normal(plane_a)
-        reference = self._plane_normal(plane_b)
+        directions, relations = [], []
+        for ref, is_plane in zip((spec.view.binary.left, spec.view.binary.right), planes):
+            operand = _resolved_context_quantity(ref)
+            directions.append(self._plane_normal(operand) if is_plane else operand)
+            relations.append(str(operand.uri))
+        kind = "Plane-angle" if planes[0] else "Incident-angle" if planes[1] else "Alignment"
         plan = self._direction_pair_plan(
-            moving,
-            reference,
-            f"Plane-angle constraint '{spec.name}'",
-            world_qtys,
-            relation_a=str(plane_a.uri),
-            relation_b=str(plane_b.uri),
+            *directions, f"{kind} constraint '{spec.name}'", world_qtys, *relations
         )
-        self._alignment_plans[spec] = plan
+        self._plans[spec] = plan
         return plan
 
     def _primitive_direction(self, primitive: ContextQuantity, context: str) -> ContextQuantity:
@@ -1675,7 +1625,7 @@ class MotionSpecDatasetBuilder:
     ) -> WorldQuantity | None:
         """An already-declared `world` Pose(of, wrt) quantity, or None.
 
-        Mirrors `_alignment_plan`: a Table IIa expression reads an already-computed pose the
+        Mirrors `_angle_plan`: a Table IIa expression reads an already-computed pose the
         same way alignment does, it does not derive one -- minting a fresh of/wrt pose here
         would duplicate whatever fixed/articulated chain already relates the two frames, which
         is exactly the resources.py agent-placement and dataflow-scheduling machinery's job, not
@@ -1720,11 +1670,11 @@ class MotionSpecDatasetBuilder:
         carrier `_resolve_constraint_quantity` returns for it.
 
         Every pose operand -- the point (ops 1-3) and both line origins (ops 4-5) -- has to
-        already be a declared `world` pose (same requirement `_alignment_plan` has): this
+        already be a declared `world` pose (same requirement `_angle_plan` has): this
         emitter reads already-computed poses, it does not derive new ones. Ops 4-5 additionally
         difference the two origins through a `PoseDiffEvaluator`.
         """
-        cached = self._geometric_distance_plans.get(spec)
+        cached = self._plans.get(spec)
         if cached is not None:
             return cached
 
@@ -1827,7 +1777,7 @@ class MotionSpecDatasetBuilder:
                     gradient_frame=point_wrt,
                     target=target,
                 )
-                self._geometric_distance_plans[spec] = plan
+                self._plans[spec] = plan
                 return plan
             origin = self._existing_world_pose(world_qtys, primitive_frame, point_wrt)
             if origin is None:
@@ -1853,7 +1803,7 @@ class MotionSpecDatasetBuilder:
                 target=target,
             )
 
-        self._geometric_distance_plans[spec] = plan
+        self._plans[spec] = plan
         return plan
 
     def _linear_distance_relation(
@@ -2184,7 +2134,7 @@ class MotionSpecDatasetBuilder:
         elif axis is not None:
             self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
         elif _is_difference_view(spec):
-            plan = self._difference_plans.get(spec)
+            plan = self._plans.get(spec)
             gradient_id = getattr(plan, "gradient_id", None)
             if gradient_id is None:
                 raise ValueError(
@@ -2587,23 +2537,19 @@ class MotionSpecDatasetBuilder:
                 and mapped_subspace in {"distance", "position"}
                 and axis is None
             ):
-                self._register_pose_position_view(scalar_uri, quantity, owner)
+                self._register_pose_part_view(scalar_uri, quantity, "position", owner)
             elif (
                 quantity.type == WorldQuantityType.Pose
                 and mapped_subspace in {"orientation", "rotation"}
                 and axis is None
             ):
-                self._register_pose_orientation_view(scalar_uri, quantity, owner)
-            elif axis is not None:
+                self._register_pose_part_view(scalar_uri, quantity, "orientation", owner)
+            elif axis is not None or (
+                quantity.type == WorldQuantityType.Wrench and mapped_subspace in {"force", "torque"}
+            ):
                 self._register_world_component_view(
                     scalar_uri, quantity, mapped_subspace, axis, owner
                 )
-            elif quantity.type == WorldQuantityType.Wrench and mapped_subspace in {
-                "force",
-                "torque",
-            }:
-                # Whole force/torque 3-vector (no axis).
-                self._register_wrench_vector_view(scalar_uri, quantity, mapped_subspace, owner)
             if quantity.type == WorldQuantityType.Pose and axis is None:
                 if mapped_subspace in {"distance", "position"}:
                     return self._component_view(URIRef(quantity.uri), "position")
@@ -2612,27 +2558,6 @@ class MotionSpecDatasetBuilder:
             return scalar_uri
 
         return self._owned_uri(_node_name(quantity), owner)
-
-    def _register_wrench_vector_view(
-        self,
-        scalar_uri: URIRef,
-        quantity: WorldQuantity,
-        mapped_subspace: str,
-        owner: Any,
-    ) -> None:
-        """Register a wrench view exposing its whole force/torque vector."""
-        # Whole force/torque 3-vector view (no axis); resolves to shared.<w>.force|.torque.
-        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
-        scalar_t = prop[3] if prop is not None else QuantityType.Force
-        self._add_quantity(scalar_uri, scalar_t)
-        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, None)}", owner)
-        if view_uri in self._emitted_views:
-            return
-        self._emit_view(view_uri)
-        self.graph.add((view_uri, RDF.type, MAP_EXT.WrenchCoordinateView))
-        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-        self.graph.add((view_uri, MAP.subobject, scalar_uri))
-        self.graph.add((view_uri, MAP.subspace, MAP[mapped_subspace]))
 
     def _norm_view_node(self, view: Any, owner: Any) -> URIRef:
         """The scalar a `norm of <q>.<subspace> [across <d>]` view names, emitting the vector
@@ -2654,13 +2579,10 @@ class MotionSpecDatasetBuilder:
 
         vector_uri = self._owned_uri(_scalar_id(quantity, mapped, None), owner)
         if quantity.type == WorldQuantityType.Pose:
-            self._register_pose_position_view(vector_uri, quantity, owner)
+            self._register_pose_part_view(vector_uri, quantity, "position", owner)
             in_node = self._component_view(URIRef(quantity.uri), "position")
-        elif quantity.type == WorldQuantityType.Wrench:
-            self._register_wrench_vector_view(vector_uri, quantity, mapped, owner)
-            in_node = vector_uri
         else:
-            self._register_twist_vector_view(vector_uri, quantity, mapped, owner)
+            self._register_world_component_view(vector_uri, quantity, mapped, None, owner)
             in_node = vector_uri
 
         direction_qty = None
@@ -2693,46 +2615,43 @@ class MotionSpecDatasetBuilder:
             self.graph.add((op_node, GEOM_OP_EXT.norm, norm_uri))
         return norm_uri
 
-    def _register_twist_vector_view(
+    def _map_view(
         self,
-        scalar_uri: URIRef,
-        quantity: WorldQuantity,
-        mapped_subspace: str,
-        owner: Any,
+        view_uri: URIRef,
+        view_type: URIRef | None,
+        superobject: URIRef,
+        subobject: URIRef,
+        subspace: URIRef,
+        axis: str | None = None,
     ) -> None:
-        """Register a velocity-twist view exposing its whole linear/angular 3-vector."""
-        prop = WORLD_SPECS[quantity.type][3][mapped_subspace]
-        self._add_quantity(scalar_uri, prop[3])
-        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, None)}", owner)
-        if view_uri in self._emitted_views:
-            return
+        """Emit the map:View exposing `superobject`'s `subspace` (and `axis`) as `subobject`."""
         self._emit_view(view_uri)
-        self.graph.add((view_uri, RDF.type, prop[4]))
-        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-        self.graph.add((view_uri, MAP.subobject, scalar_uri))
-        self.graph.add((view_uri, MAP.subspace, MAP[prop[0]]))
+        if view_type is not None:
+            self.graph.add((view_uri, RDF.type, view_type))
+        self.graph.add((view_uri, MAP.superobject, superobject))
+        self.graph.add((view_uri, MAP.subobject, subobject))
+        self.graph.add((view_uri, MAP.subspace, subspace))
+        if axis is not None:
+            self.graph.add((view_uri, MAP.axis, MAP[axis]))
 
-    def _register_pose_position_view(
+    def _register_pose_part_view(
         self,
         scalar_uri: URIRef,
         quantity: WorldQuantity,
+        part: str,
         owner: Any,
     ) -> None:
-        """Promote `<pose>.position` and register its whole-vector coordinate view."""
-        if scalar_uri in self._emitted_position_coords:
+        """Promote `<pose>.position` or `<pose>.orientation` and register its coordinate view."""
+        if scalar_uri in self._emitted_pose_parts:
             return
-        self._emitted_position_coords.add(scalar_uri)
-        position_relation = self._component_relation(URIRef(quantity.uri), "position")
-
-        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'position', None)}", owner)
+        self._emitted_pose_parts.add(scalar_uri)
+        relation = self._component_relation(URIRef(quantity.uri), part)
+        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, part, None)}", owner)
         if view_uri not in self._emitted_views:
-            self._emit_view(view_uri)
-            self.graph.add((view_uri, RDF.type, MAP_EXT.PoseCoordinateView))
-            self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-            self.graph.add((view_uri, MAP.subobject, position_relation))
-            self.graph.add((view_uri, MAP.subspace, MAP_EXT.position))
-            # axis intentionally omitted: this view exposes the whole 3-vector.
-        self._register_component_view(URIRef(quantity.uri), "position", view_uri)
+            self._map_view(
+                view_uri, MAP_EXT.PoseCoordinateView, URIRef(quantity.uri), relation, MAP_EXT[part]
+            )
+        self._register_component_view(URIRef(quantity.uri), part, view_uri)
 
     def _register_pose_component_view(
         self,
@@ -2751,14 +2670,10 @@ class MotionSpecDatasetBuilder:
         props = pose_specs.get(mapped_subspace)
         if props is None:
             return
-        view_subspace_uri, _, _, scalar_t, view_type = props
+        view_subspace_uri, _, _, scalar_t, _ = props
         self._add_quantity(scalar_uri, scalar_t)
-        self._emit_view(view_uri)
-        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-        self.graph.add((view_uri, MAP.subobject, scalar_uri))
         subspace = MAP_EXT.orientation if view_subspace_uri == "rotation" else MAP_EXT.position
-        self.graph.add((view_uri, MAP.subspace, subspace))
-        self.graph.add((view_uri, MAP.axis, MAP[axis]))
+        self._map_view(view_uri, None, URIRef(quantity.uri), scalar_uri, subspace, axis)
 
     @staticmethod
     def _is_euler_orientation(orientation: OrientationCoordinate | None) -> bool:
@@ -2807,27 +2722,6 @@ class MotionSpecDatasetBuilder:
             for angle_unit in ANGLE_UNITS:
                 self.graph.remove((node, QUDT_SCHEMA.unit, angle_unit))
 
-    def _register_pose_orientation_view(
-        self,
-        scalar_uri: URIRef,
-        quantity: WorldQuantity,
-        owner: Any,
-    ) -> None:
-        """Promote `<pose>.orientation` and register its coordinate view."""
-        if scalar_uri in self._emitted_orientation_coords:
-            return
-        self._emitted_orientation_coords.add(scalar_uri)
-        orientation_relation = self._component_relation(URIRef(quantity.uri), "orientation")
-
-        view_uri = self._owned_uri(f"view-{_scalar_id(quantity, 'orientation', None)}", owner)
-        if view_uri not in self._emitted_views:
-            self._emit_view(view_uri)
-            self.graph.add((view_uri, RDF.type, MAP_EXT.PoseCoordinateView))
-            self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-            self.graph.add((view_uri, MAP.subobject, orientation_relation))
-            self.graph.add((view_uri, MAP.subspace, MAP_EXT.orientation))
-        self._register_component_view(URIRef(quantity.uri), "orientation", view_uri)
-
     def _register_world_component_view(
         self,
         scalar_uri: URIRef,
@@ -2836,7 +2730,7 @@ class MotionSpecDatasetBuilder:
         axis: str | None,
         owner: Any,
     ) -> None:
-        """Register a per-axis component view for a non-pose world-quantity subspace."""
+        """Register a non-pose world-quantity subspace view: one axis, or the whole 3-vector."""
         prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
         if prop is None or prop[4] is None:
             return
@@ -2845,13 +2739,9 @@ class MotionSpecDatasetBuilder:
         view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, axis)}", owner)
         if view_uri in self._emitted_views:
             return
-        self._emit_view(view_uri)
-        self.graph.add((view_uri, RDF.type, view_type))
-        self.graph.add((view_uri, MAP.superobject, URIRef(quantity.uri)))
-        self.graph.add((view_uri, MAP.subobject, scalar_uri))
-        self.graph.add((view_uri, MAP.subspace, MAP[view_subspace_uri]))
-        if axis is not None:
-            self.graph.add((view_uri, MAP.axis, MAP[axis]))
+        self._map_view(
+            view_uri, view_type, URIRef(quantity.uri), scalar_uri, MAP[view_subspace_uri], axis
+        )
 
     def _emit_context_composite_metadata(
         self,
@@ -5485,9 +5375,13 @@ class MotionSpecDatasetBuilder:
             )
             self._emit_distance_operand_selection(distance_node, plan)
 
+        # Table IIb: versor-versor, versor-plane and plane-plane angles share the rotated
+        # direction and the angle; they differ in the relation, the angle operator and the error.
         seen_alignment_ops = self._emitted_alignment_ops
         for spec in constraints:
-            if not _is_alignment_view(spec):
+            incident = _is_incident_angle_view(spec)
+            plane_angle = _is_plane_angle_view(spec)
+            if not (_is_alignment_view(spec) or incident or plane_angle):
                 continue
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             alignment_id = _alignment_id(qty, spec)
@@ -5495,7 +5389,7 @@ class MotionSpecDatasetBuilder:
                 continue
             seen_alignment_ops.add(alignment_id)
 
-            plan = self._alignment_plan(spec, world_qtys)
+            plan = self._angle_plan(spec, world_qtys)
             reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
 
             rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
@@ -5510,24 +5404,36 @@ class MotionSpecDatasetBuilder:
             self._add_quantity(theta_node, QuantityType.Angle)
             # Base-alignment (fixed-axis solver rows) is decided from this frame downstream.
             self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
+            relation = (
+                GEOM_REL_EXT.PlanePlaneAngularDistance
+                if plane_angle
+                else GEOM_REL_EXT.DirectionPlaneAngularDistance
+                if incident
+                else GEOM_REL_EXT.DirectionDirectionAngularDistance
+            )
             self.graph.add(
                 (
                     theta_node,
                     GEOM_COORD.of,
-                    self._angular_distance_relation(
-                        plan.relation_a,
-                        plan.relation_b,
-                        GEOM_REL_EXT.DirectionDirectionAngularDistance,
-                    ),
+                    self._angular_distance_relation(plan.relation_a, plan.relation_b, relation),
                 )
             )
             angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
+            if incident:
+                gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
+                self._emit_direction_coordinate(gradient_node, reference_frame)
+                self.graph.add((angle_op, RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance))
+                self.graph.add((angle_op, GEOM_OP.in1, rotated_node))
+                self.graph.add((angle_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
+                self.graph.add((angle_op, GEOM_OP.angle, theta_node))
+                self.graph.add((angle_op, GEOM_OP_EXT.gradient, gradient_node))
+                continue
             self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
             self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
             self.graph.add((angle_op, GEOM_OP["from-directions"], URIRef(plan.reference.uri)))
             self.graph.add((angle_op, GEOM_OP.angle, theta_node))
 
-            if _alignment_is_pointwise(spec):
+            if not plane_angle and _alignment_is_pointwise(spec):
                 # Point target (2 DOF): the exact cross-product error, unchanged from before
                 # this plan.
                 vector_node = self._owned_uri(f"{alignment_id}-error", motion)
@@ -5542,8 +5448,8 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((vector_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
                 self.graph.add((vector_op, GEOM_OP.out, vector_node))
             else:
-                # Cone target (1 DOF): the row is theta's runtime gradient, not a rotation
-                # vector -- same shared theta_node/rotated_node, no second scalar minted.
+                # Cone target or plane-plane angle (1 DOF): the row is theta's runtime gradient,
+                # from ordered in1/in2 -- `from-directions` is unordered, normalize(n2 x n1) is not.
                 gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
                 self._emit_direction_coordinate(gradient_node, reference_frame)
                 grad_op = self._owned_uri(f"compute-{alignment_id}-gradient", motion)
@@ -5608,98 +5514,6 @@ class MotionSpecDatasetBuilder:
                     moment_node, self._owned_uri(plan.gradient_frame, motion)
                 )
                 self.graph.add((op_node, GEOM_OP_EXT["gradient-moment"], moment_node))
-
-        for spec in constraints:
-            if not _is_incident_angle_view(spec):
-                continue
-            qty = self._resolve_constraint_quantity(spec, world_qtys)
-            alignment_id = _alignment_id(qty, spec)
-            if alignment_id in seen_alignment_ops:
-                continue
-            seen_alignment_ops.add(alignment_id)
-
-            plan = self._incident_angle_plan(spec, world_qtys)
-            reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
-
-            rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
-            self._emit_direction_coordinate(rotated_node, reference_frame)
-            rotate_op = self._owned_uri(f"compute-{alignment_id}-rotated", motion)
-            self.graph.add((rotate_op, RDF.type, GEOM_OP.RotateDirectionDistalToProximalWithPose))
-            self.graph.add((rotate_op, GEOM_OP.pose, URIRef(plan.target.uri)))
-            self.graph.add((rotate_op, GEOM_OP["from"], URIRef(plan.moving.uri)))
-            self.graph.add((rotate_op, GEOM_OP.to, rotated_node))
-
-            theta_node = self._owned_uri(alignment_id, motion)
-            self._add_quantity(theta_node, QuantityType.Angle)
-            self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
-            self.graph.add(
-                (
-                    theta_node,
-                    GEOM_COORD.of,
-                    self._angular_distance_relation(
-                        plan.relation_a, plan.relation_b, GEOM_REL_EXT.DirectionPlaneAngularDistance
-                    ),
-                )
-            )
-
-            gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
-            self._emit_direction_coordinate(gradient_node, reference_frame)
-
-            angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
-            self.graph.add((angle_op, RDF.type, GEOM_OP_EXT.DirectionPlaneToAngularDistance))
-            self.graph.add((angle_op, GEOM_OP.in1, rotated_node))
-            self.graph.add((angle_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
-            self.graph.add((angle_op, GEOM_OP.angle, theta_node))
-            self.graph.add((angle_op, GEOM_OP_EXT.gradient, gradient_node))
-
-        for spec in constraints:
-            if not _is_plane_angle_view(spec):
-                continue
-            qty = self._resolve_constraint_quantity(spec, world_qtys)
-            alignment_id = _alignment_id(qty, spec)
-            if alignment_id in seen_alignment_ops:
-                continue
-            seen_alignment_ops.add(alignment_id)
-
-            plan = self._plane_angle_plan(spec, world_qtys)
-            reference_frame = self._owned_uri(_geo_prop(plan.target.props, "wrt"), motion)
-
-            rotated_node = self._owned_uri(f"{alignment_id}-rotated", motion)
-            self._emit_direction_coordinate(rotated_node, reference_frame)
-            rotate_op = self._owned_uri(f"compute-{alignment_id}-rotated", motion)
-            self.graph.add((rotate_op, RDF.type, GEOM_OP.RotateDirectionDistalToProximalWithPose))
-            self.graph.add((rotate_op, GEOM_OP.pose, URIRef(plan.target.uri)))
-            self.graph.add((rotate_op, GEOM_OP["from"], URIRef(plan.moving.uri)))
-            self.graph.add((rotate_op, GEOM_OP.to, rotated_node))
-
-            theta_node = self._owned_uri(alignment_id, motion)
-            self._add_quantity(theta_node, QuantityType.Angle)
-            self.graph.add((theta_node, GEOM_COORD["as-seen-by"], reference_frame))
-            self.graph.add(
-                (
-                    theta_node,
-                    GEOM_COORD.of,
-                    self._angular_distance_relation(
-                        plan.relation_a, plan.relation_b, GEOM_REL_EXT.PlanePlaneAngularDistance
-                    ),
-                )
-            )
-            angle_op = self._owned_uri(f"compute-{alignment_id}", motion)
-            self.graph.add((angle_op, RDF.type, GEOM_OP.PlanarAngleFromDirections))
-            self.graph.add((angle_op, GEOM_OP["from-directions"], rotated_node))
-            self.graph.add((angle_op, GEOM_OP["from-directions"], URIRef(plan.reference.uri)))
-            self.graph.add((angle_op, GEOM_OP.angle, theta_node))
-
-            # from-directions is multi-valued/unordered on angle_op; the scalar above is
-            # symmetric so that is safe, but gradient normalize(n2 x n1) is not -- it needs
-            # AngleGradientFromDirections' ordered in1/in2, never riding on angle_op.
-            gradient_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
-            self._emit_direction_coordinate(gradient_node, reference_frame)
-            grad_op = self._owned_uri(f"compute-{alignment_id}-gradient", motion)
-            self.graph.add((grad_op, RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
-            self.graph.add((grad_op, GEOM_OP.in1, rotated_node))
-            self.graph.add((grad_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
-            self.graph.add((grad_op, GEOM_OP_EXT.gradient, gradient_node))
 
     def _emit_controller_base(
         self, ctrl_node: URIRef, ctrl: ControllerEntry, command: Any = None
