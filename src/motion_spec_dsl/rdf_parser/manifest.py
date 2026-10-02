@@ -101,47 +101,10 @@ def build_url_map(g, manifest_path):
             # Already absolute path, use as-is
             url_map[str(key)] = value
         else:
-            # For existing models, the IRI mapping "models/" should resolve to the manifest directory itself
-            # For new DSL models, "models/" should resolve to a models/ subdirectory
-            if value == "models/":
-                # Try manifest directory first (for existing models)
-                manifest_dir_path = app_model_path.parent
-                # Try models subdirectory (for new DSL models)
-                models_subdir_path = app_model_path.parent / "models"
-
-                # Check which one contains the expected files by looking at imports
-                imports = list({o for _, _, o, _ in g.quads((None, APP["import"], None, None))})
-                if imports:
-                    # Take first import URL and extract the path part after the base URL
-                    first_import_url = str(imports[0])
-                    # The import URLs are like "https://secorolab.github.io/00-common/00-misc.json"
-                    # We want to extract "00-common/00-misc.json"
-                    import_path = None
-                    for base_url in [str(k) for k in iri_map_keys]:
-                        if first_import_url.startswith(base_url):
-                            import_path = first_import_url[len(base_url) :]
-                            break
-
-                    if import_path:
-                        if (manifest_dir_path / import_path).exists():
-                            url_map[str(key)] = str(manifest_dir_path)
-                        elif (models_subdir_path / import_path).exists():
-                            url_map[str(key)] = str(models_subdir_path)
-                        else:
-                            # Fallback to current working directory
-                            url_map[str(key)] = str(Path.cwd() / value)
-                    else:
-                        # Couldn't extract path, use models subdirectory by default
-                        url_map[str(key)] = str(models_subdir_path)
-                else:
-                    # No imports to check, use models subdirectory by default
-                    url_map[str(key)] = str(models_subdir_path)
-            else:
-                # For non-models paths, resolve normally relative to manifest
-                absolute_path = app_model_path.parent / value
-                if not absolute_path.exists():
-                    source_path = PACKAGE_ROOT / value
-                    absolute_path = source_path if source_path.exists() else Path.cwd() / value
-                url_map[str(key)] = str(absolute_path)
+            absolute_path = app_model_path.parent / value
+            if not absolute_path.exists():
+                source_path = PACKAGE_ROOT / value
+                absolute_path = source_path if source_path.exists() else Path.cwd() / value
+            url_map[str(key)] = str(absolute_path)
 
     return url_map

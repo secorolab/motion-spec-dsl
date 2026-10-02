@@ -226,7 +226,7 @@ CONSTRAINT_TYPE_OVERRIDE: dict[Any, tuple[Any, str]] = {
 QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Pose: GEOM_REL.Pose,
     QuantityType.Length: QUDT_QKIND.Length,
-    QuantityType.Position: QUDT_QKIND.Position,
+    QuantityType.Position: QUDT_QKIND.PositionVector,
     QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
     QuantityType.Angle: QUDT_QKIND.PlaneAngle,
     QuantityType.PlaneAngle: QUDT_QKIND.PlaneAngle,
@@ -242,6 +242,12 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
     QuantityType.Mass: QUDT_QKIND.Mass,
     QuantityType.ElectricCurrent: QUDT_QKIND.ElectricCurrent,
 }
+
+
+def _qudt_kind(quantity_type: Any) -> URIRef:
+    """QUDT quantity kind for a DSL quantity type."""
+    return QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type) or QUDT_QKIND[quantity_type]
+
 
 # Quantity kinds are individuals, not classes; these namespaces distinguish them
 # from structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) during emission.

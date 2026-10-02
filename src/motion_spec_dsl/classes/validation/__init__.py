@@ -13,6 +13,7 @@ from motion_spec_dsl.classes.validation.common import (
 from motion_spec_dsl.classes.validation.constraints import (
     validate_alignment_views,
     validate_bare_axis_selectors,
+    validate_context_geometry,
     validate_direction_cosine_components,
     validate_euler_components,
     validate_geometric_distance_views,
@@ -25,12 +26,18 @@ from motion_spec_dsl.classes.validation.constraints import (
     validate_two_subspace_coordinates,
     validate_unique_constraint_names,
     validate_unit_kinds,
+    validate_view_operands,
+    validate_world_quantities,
 )
 from motion_spec_dsl.classes.validation.detects import (
     validate_camera_providers,
     validate_detect_targets,
     validate_goal_status_acts,
     validate_subscription_targets,
+)
+from motion_spec_dsl.classes.validation.execution_context import (
+    validate_config_poses,
+    validate_device_bindings,
 )
 from motion_spec_dsl.classes.validation.expressions import (
     validate_controlled_expressions,
@@ -39,6 +46,7 @@ from motion_spec_dsl.classes.validation.expressions import (
 )
 from motion_spec_dsl.classes.validation.handlers import (
     validate_commanded_quantity_is_measured,
+    validate_controller_commands,
     validate_controller_solver_assembly,
     validate_handler_constraint_assembly,
     validate_handler_requirements,
@@ -70,6 +78,8 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_quaternion_components(model)
     validate_direction_cosine_components(model)
     validate_two_subspace_coordinates(model)
+    validate_world_quantities(model)
+    validate_context_geometry(model)
     validate_unit_kinds(model)
     validate_bare_axis_selectors(model)
     validate_expression_dimensions(model)
@@ -77,6 +87,7 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_alignment_views(model)
     validate_line_plane_primitives(model)
     validate_geometric_distance_views(model)
+    validate_view_operands(model)
     validate_tolerance_defaults(model)
     validate_detect_targets(model)
     validate_subscription_targets(model)
@@ -87,9 +98,12 @@ def validate_model(model: Model, metamodel=None) -> None:
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
     validate_kinematics_solvers(model)
+    validate_controller_commands(model)
     validate_commanded_quantity_is_measured(model)
     validate_controlled_expressions(model)
     validate_mobile_platform_solver_quantity(model)
     validate_perturbations(model)
+    validate_device_bindings(model)
+    validate_config_poses(model)
     validate_sampled_quantities(model)
     validate_ros(model)

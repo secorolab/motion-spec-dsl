@@ -14,6 +14,7 @@ from motion_spec_dsl.classes.context import (
     ContextQuantity,
     ContextRef,
     QOpNode,
+    QuantityType,
     ReferenceValue,
     SampledValue,
     SnapshotValue,
@@ -27,6 +28,19 @@ from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
 from motion_spec_dsl.rdf.common import _quantity_axis_frame
 
+# Geometry is stated through map views of its components, never aliased whole.
+_GEOMETRIC_TYPES = frozenset(
+    {
+        QuantityType.Pose,
+        QuantityType.Position,
+        QuantityType.Orientation,
+        QuantityType.VelocityTwist,
+        QuantityType.AccelerationTwist,
+        QuantityType.Wrench,
+        QuantityType.Direction,
+    }
+)
+
 
 def validate_expression_dimensions(model: Model) -> None:
     """Every authored quantity expression must type-check, and a declared quantity's stated
@@ -35,6 +49,12 @@ def validate_expression_dimensions(model: Model) -> None:
     for quantity in get_children_of_type(ContextQuantity, model):
         quantity = _resolved_context_quantity(quantity)
         value = quantity.value
+        if isinstance(value, ReferenceValue) and quantity.type in _GEOMETRIC_TYPES:
+            raise semantic_error(
+                f"Direct geometry alias '{quantity.name}' ({quantity.type}) is unsupported; "
+                "reference pose components through their map views instead",
+                quantity,
+            )
         if isinstance(value, ReferenceValue):
             _check_declared(quantity, value.expr)
         elif isinstance(value, SnapshotValue) and value.tail:

@@ -196,7 +196,7 @@ class QUDT_QKIND(DefinedNamespace):
     Length: URIRef
     Distance: URIRef
     PlaneAngle: URIRef
-    Position: URIRef
+    PositionVector: URIRef
     AngularVelocity: URIRef
     LinearVelocity: URIRef
     AngularAcceleration: URIRef

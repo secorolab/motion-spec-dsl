@@ -15,22 +15,7 @@ class NamespaceDeclLike(Protocol):
     uri: str
 
 
-class IHasParent:
-    def __init__(self, **kwargs) -> None:
-        self.parent = kwargs.get("parent", None)
-        if self.parent is None:
-            raise ValueError(f"'parent' not handled for type '{self.__class__.__name__}'")
-
-
-class IHasNamespace(IHasParent):
-    @property
-    def namespace(self) -> Namespace:
-        raise NotImplementedError(
-            f"'namespace' property not implemented for '{self.__class__.__name__}'"
-        )
-
-
-class IHasNamespaceDeclare(IHasNamespace):
+class IHasNamespaceDeclare:
     """Root of a namespace: everything below it mints IRIs under `ns`."""
 
     name: str
@@ -38,7 +23,9 @@ class IHasNamespaceDeclare(IHasNamespace):
     _ns_obj: Namespace
 
     def __init__(self, **kwargs) -> None:
-        super().__init__(**kwargs)
+        self.parent = kwargs.get("parent", None)
+        if self.parent is None:
+            raise ValueError(f"'parent' not handled for type '{self.__class__.__name__}'")
         self.ns = kwargs.get("ns", None)
         if self.ns is None:
             raise ValueError("Namespace declaration requires 'ns'")
@@ -62,14 +49,16 @@ class IHasNamespaceDeclare(IHasNamespace):
         return f"<({self.__class__.__name__}) {self.ns_prefix}:{self.name}>"
 
 
-class NamedNamespaceObject(IHasNamespace):
+class NamedNamespaceObject:
     """A named DSL object whose URI is derived from its parent's namespace and its name."""
 
     name: str
     _uri: URIRef | str
 
     def __init__(self, parent, name: str, **kwargs):
-        super().__init__(parent=parent)
+        if parent is None:
+            raise ValueError(f"'parent' not handled for type '{self.__class__.__name__}'")
+        self.parent = parent
         self.name = name
         self._uri = ""
 

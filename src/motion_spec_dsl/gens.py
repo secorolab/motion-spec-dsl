@@ -11,7 +11,6 @@ import os
 import pwd
 import re
 from datetime import datetime, timezone
-from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ import pyshacl
 from rdf_utils.models.prov import (
     add_agent,
     add_file_entity,
+    get_pkg_info,
     load_pkg_prov,
     load_transformation_prov,
 )
@@ -29,7 +29,6 @@ from rdf_utils.namespace import (
     URL_MM_PROV_JSON,
     URL_MM_PROV_SHACL,
 )
-from rdf_utils.naming import get_valid_var_name
 from rdflib import Dataset, Graph, Literal, URIRef
 from rdflib.namespace import PROV, RDF, Namespace
 from textx import get_model
@@ -96,11 +95,8 @@ PROVENANCE_CONTEXT = [
     {"dslprov": str(DSLPROV), "msprov": str(MSPROV)},
 ]
 PROVENANCE_SHAPES = (URL_MM_PROV_SHACL, URL_MM_PROV_EXT_SHACL)
-PACKAGE_REPOSITORIES = {
-    "motion_spec_dsl": "https://github.com/secorolab/motion-spec-dsl",
-    "coord_dsl": "https://github.com/secorolab/coord-dsl",
-    "scene_dsl": "https://github.com/secorolab/scene-dsl",
-}
+# The manifest names each imported document under this base; its IRI also names the graph it is.
+IMPORT_BASE = "https://secorolab.github.io/"
 
 
 def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
@@ -131,7 +127,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
     # generated manifest stays free of machine-specific absolute paths and is
     # portable into run archives.
     iri_map = {
-        "https://secorolab.github.io/": {"path": "models/"},
+        IMPORT_BASE: {"path": "."},
     }
 
     return {
@@ -143,7 +139,7 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
             "import": {
                 "@id": "app:import",
                 "@type": "@id",
-                "@context": {"@base": "https://secorolab.github.io/"},
+                "@context": {"@base": IMPORT_BASE},
             },
             "constraints": {
                 "@id": "app:constraints",
@@ -158,68 +154,11 @@ def _build_manifest(imported_files: list[str]) -> dict[str, Any]:
         "@graph": [
             {
                 "import": imported_files,
-                "constraints": sorted(local_constraint_paths),
+                "constraints": list(local_constraint_paths),
                 "iri-map": iri_map,
             }
         ],
     }
-
-
-def _write_provenance_artifact(
-    model: Model,
-    artifact_names: list[str],
-    output_dir: Path,
-    path: Path,
-    fsm_tool_names: list[str],
-    scene_tool_names: list[str],
-    spans: dict[str, tuple[datetime, datetime]],
-) -> None:
-    from motion_spec_dsl.rdf_parser.manifest import install_metamodel_resolver
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    install_metamodel_resolver()
-    graph = _build_provenance_document(
-        model, artifact_names, output_dir, fsm_tool_names, scene_tool_names, spans
-    )
-    serialized = graph.serialize(
-        format="json-ld", context=PROVENANCE_CONTEXT, auto_compact=True, indent=2
-    )
-    document = json.loads(serialized.decode() if isinstance(serialized, bytes) else serialized)
-    path.write_text(json.dumps({"schema_version": 1, **document}, indent=2) + "\n")
-    _validate_provenance_artifact(path)
-    log.info("wrote %s", path)
-
-
-def _package_agent(graph: Graph, package: str) -> URIRef:
-    """One node per generator package, in the IRI space every generation document shares."""
-    agent = MSPROV[f"agent/{package}"]
-    load_pkg_prov(
-        graph,
-        agent,
-        name=package.replace("_", "-"),
-        version=_package_version(package),
-        commit=_package_commit(package),
-        repository=PACKAGE_REPOSITORIES.get(package),
-    )
-    return agent
-
-
-def _package_version(package: str) -> str | None:
-    try:
-        return version(package)
-    except PackageNotFoundError:
-        return None
-
-
-def _package_commit(package: str) -> str | None:
-    """The revision an installer recorded (PEP 610); absent for a plain source install."""
-    try:
-        direct_url = distribution(package).read_text("direct_url.json")
-    except PackageNotFoundError:
-        return None
-    if not direct_url:
-        return None
-    return (json.loads(direct_url).get("vcs_info") or {}).get("commit_id")
 
 
 def _record_authoring(graph: Graph, source: Path) -> URIRef:
@@ -227,7 +166,8 @@ def _record_authoring(graph: Graph, source: Path) -> URIRef:
     entity = _source_entity(source)
     activity = MSPROV[f"activity/specification/{_slug(source.name)}"]
     owner = _file_owner(source)
-    person = MSPROV[f"agent/person/{_slug(owner)}"]
+    # The file's owner is an OS account, which is all a source file can say of its author.
+    person = MSPROV[f"agent/os-account/{_slug(owner)}"]
     add_agent(graph, person, (PROV.Person,), name=owner)
     add_file_entity(graph, entity, location=str(source), generated_by=activity)
     graph.add((activity, RDF.type, PROV.Activity))
@@ -264,60 +204,27 @@ def _build_provenance_document(
     model: Model,
     artifact_names: list[str],
     output_dir: Path,
-    fsm_tool_names: list[str],
-    scene_tool_names: list[str],
-    spans: dict[str, tuple[datetime, datetime]],
+    span: tuple[datetime, datetime],
 ) -> Graph:
-    """The DSL's own provenance: who authored each source, what motion-spec-dsl made of them,
-    and what it delegated to coord-dsl (FSM) and scene-dsl (scenex) -- each step its own
-    Transformation under its own package agent. coord-dsl also writes its own, richer
-    provenance.ld.json beside its artifacts; a pointer entity here links to it rather than
-    duplicating its activity detail.
-    """
+    """The DSL's own provenance: who authored each source and what motion-spec-dsl made of them."""
     stem = _slug(Path(model._tx_filename).stem)
     sources = _source_paths(model)
     graph = Graph()
     for source in sources:
         _record_authoring(graph, source)
 
-    delegated = {*fsm_tool_names, *scene_tool_names}
+    # One node per generator package, in the IRI space every generation document shares.
+    agent = MSPROV["agent/motion_spec_dsl"]
+    load_pkg_prov(graph, agent, *get_pkg_info("motion_spec_dsl"))
     _transformation(
         graph,
         DSLPROV[f"activity/jsonld_generation/{stem}"],
         sources,
-        [name for name in artifact_names if name not in delegated],
+        artifact_names,
         output_dir,
-        _package_agent(graph, "motion_spec_dsl"),
-        spans["jsonld"],
+        agent,
+        span,
     )
-    if fsm_tool_names:
-        _transformation(
-            graph,
-            DSLPROV[f"activity/fsm_generation/{stem}"],
-            [s for s in sources if s.suffix == ".fsm"],
-            fsm_tool_names,
-            output_dir,
-            _package_agent(graph, "coord_dsl"),
-            spans["fsm"],
-        )
-    if scene_tool_names:
-        _transformation(
-            graph,
-            DSLPROV[f"activity/scenex_generation/{stem}"],
-            [s for s in sources if s.suffix == ".scenex"],
-            scene_tool_names,
-            output_dir,
-            _package_agent(graph, "scene_dsl"),
-            spans["scenex"],
-        )
-
-    coord_document = (output_dir / "provenance.ld.json").resolve()
-    if fsm_tool_names and coord_document.exists():
-        entity = _generated_entity(coord_document)
-        add_file_entity(
-            graph, entity, location=str(coord_document), generated_at=_mtime(coord_document)
-        )
-        graph.add((entity, PROV.wasAttributedTo, MSPROV["agent/coord_dsl"]))
     return graph
 
 
@@ -350,7 +257,7 @@ def _generated_entity(path: Path) -> URIRef:
     return MSPROV[f"entity/generated/{_slug(Path(path).name)}"]
 
 
-def _validate_provenance_artifact(path: Path) -> None:
+def _validate_provenance(graph: Graph) -> None:
     from motion_spec_dsl.rdf_parser.manifest import install_metamodel_resolver
 
     override = os.environ.get("METAMODELS_PATH")
@@ -364,13 +271,10 @@ def _validate_provenance_artifact(path: Path) -> None:
                 raise RuntimeError(f"METAMODELS_PATH={override} does not contain {source.name}")
         shapes.parse(str(source), format="turtle")
     conforms, _graph, report = pyshacl.validate(
-        data_graph=str(path),
-        data_graph_format="json-ld",
-        shacl_graph=shapes,
-        inference="rdfs",
+        data_graph=graph, shacl_graph=shapes, inference="rdfs"
     )
     if not conforms:
-        raise RuntimeError(f"{path}: PROV SHACL validation failed\n{report}")
+        raise RuntimeError(f"the DSL's provenance failed PROV SHACL validation\n{report}")
 
 
 def _source_paths(model: Model) -> list[Path]:
@@ -397,190 +301,60 @@ def _source_paths(model: Model) -> list[Path]:
     return list(paths)
 
 
-def _fsm_named_graph_jsonld(graph, context, fsm_ref) -> str:
-    """Serialize the FSM rdflib graph as a JSON-LD *named graph* (@id = the FSM IRI) so
-    it stays a distinct graph when ir_gen unions it into the model dataset."""
-    dataset = Dataset()
-    named_graph = dataset.graph(URIRef(fsm_ref))
-    for triple in graph:
-        named_graph.add(triple)
-    serialized = dataset.serialize(format="json-ld", context=context, auto_compact=True, indent=2)
-    serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
-    return serialized
-
-
-def _gen_scenex(model, output_dir: Path) -> tuple[list[str], list[str]]:
-    """Generate JSON-LD and KDL headers for directly imported executable scenes."""
-    import scene_dsl
-    from jinja2 import Environment, FileSystemLoader
-    from scene_dsl.kdl_tree import build_kdl_trees
-    from scene_dsl.rdf.scenex import create_scenex_model_graph
-
-    jsonld_names: list[str] = []
-    kdl_names: list[str] = []
-    for imp in getattr(model, "imports", []):
-        if not imp.importURI.endswith(".scenex"):
-            continue
-        loaded = getattr(imp, "_tx_loaded_models", [])
-        if not loaded:
-            continue
-
-        jsonld_name = f"{Path(imp.importURI).stem}.scenex.ld.json"
-        jsonld_path = output_dir / jsonld_name
-        scene_graph = create_scenex_model_graph(loaded[0])
-        serialized = scene_graph.serialize(format="json-ld", auto_compact=True, indent=2)
-        serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
-        jsonld_path.write_text(serialized)
-        log.info("wrote %s", jsonld_path)
-        jsonld_names.append(jsonld_name)
-
-        kdl_name = f"{Path(imp.importURI).stem}.kdl.hpp"
-        kdl_path = output_dir / kdl_name
-        env = Environment(
-            loader=FileSystemLoader(Path(scene_dsl.__file__).parent / "templates"),
-            keep_trailing_newline=True,
-        )
-        kdl_path.write_text(
-            env.get_template("kdl.hpp.jinja2").render(
-                {
-                    "data": {
-                        "name": get_valid_var_name(Path(imp.importURI).stem),
-                        "source": Path(imp.importURI).name,
-                        "trees": build_kdl_trees(scene_graph, Path(loaded[0]._tx_filename).parent),
-                    }
-                }
-            )
-        )
-        log.info("wrote %s", kdl_path)
-        kdl_names.append(kdl_name)
-    return jsonld_names, kdl_names
-
-
-def _gen_fsm(model, output_dir: Path) -> tuple[list[str], list[str]]:
-    """Generate FSM C++ header, a graphviz drawing, IR JSON, and a named-graph JSON-LD for
-    any .fsm files imported by the model. Returns (jsonld_names, tool_artifact_names):
-    jsonld_names are added to the app manifest so ir_gen derives the FSM wiring from the
-    combined graph (the .hpp stays standalone); tool_artifact_names are the filenames
-    coord-dsl itself generated (and recorded into its own provenance.ld.json beside
-    motion-spec-dsl's), so the caller can attribute them to coord-dsl rather than to
-    motion-spec-dsl in the DSL's own provenance document.
-    """
-    import shutil
-
-    from coord_dsl.generators.dot import fsm_dot, write_dot
-    from coord_dsl.generators.fsm import gen_cpp_header, gen_json
-    from coord_dsl.generators.provenance import record
-    from coord_dsl.rdf.fsm import get_fsm_graph
-
-    jsonld_names: list[str] = []
-    tool_artifact_names: list[str] = []
-    for imp in getattr(model, "imports", []):
-        if not imp.importURI.endswith(".fsm"):
-            continue
-        loaded = getattr(imp, "_tx_loaded_models", [])
-        if not loaded:
-            continue
-        fsm_model = loaded[0]
-        started = datetime.now(timezone.utc)
-        graph, fsm_ref = get_fsm_graph(fsm_model)
-        ir = gen_json(graph, fsm_ref)
-        # Add the namespace URI so it also travels with the framed IR / header.
-        ir["namespace_uri"] = fsm_model.fsm.ns.uri
-
-        hpp_path = output_dir / f"{ir['name']}.hpp"
-        hpp_path.write_text(gen_cpp_header(ir))
-        log.info("wrote %s", hpp_path)
-        record(fsm_model, "cpp", hpp_path, started)
-        tool_artifact_names.append(hpp_path.name)
-
-        started = datetime.now(timezone.utc)
-        dot_source = fsm_dot(graph, fsm_ref)
-        dot_path = output_dir / f"{ir['name']}.dot"
-        dot_path.write_text(dot_source)
-        log.info("wrote %s", dot_path)
-        record(fsm_model, "dot", dot_path, started)
-        tool_artifact_names.append(dot_path.name)
-        if shutil.which("dot") is not None:
-            started = datetime.now(timezone.utc)
-            svg_path = output_dir / f"{ir['name']}.svg"
-            write_dot(dot_source, svg_path, "svg")
-            log.info("wrote %s", svg_path)
-            record(fsm_model, "dot", svg_path, started)
-            tool_artifact_names.append(svg_path.name)
-
-        ir_path = output_dir / "fsm_ir.json"
-        ir_path.write_text(json.dumps(ir, indent=2))
-        log.info("wrote %s", ir_path)
-
-        jsonld_name = f"{ir['name']}.ld.json"
-        jsonld_path = output_dir / jsonld_name
-        jsonld_path.write_text(_fsm_named_graph_jsonld(graph, None, fsm_ref))
-        log.info("wrote %s", jsonld_path)
-        jsonld_names.append(jsonld_name)
-    return jsonld_names, tool_artifact_names
-
-
 def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> None:
-    """textx generator: build the dataset for `model` and write its JSON-LD, app manifest
-    and FSM outputs.
-    """
+    """textx generator: write `model`'s JSON-LD, app manifest and provenance document."""
     del metamodel, overwrite, debug
     _stamp_lines()
+    output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
+    _dataset, provenance = generate(model, output_dir)
+    path = output_dir / "provenance" / "dsl.ld.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = provenance.serialize(
+        format="json-ld", context=PROVENANCE_CONTEXT, auto_compact=True, indent=2
+    )
+    document = json.loads(serialized.decode() if isinstance(serialized, bytes) else serialized)
+    path.write_text(json.dumps({"schema_version": 1, **document}, indent=2) + "\n")
+    log.info("wrote %s", path)
+
+
+def generate(model, output_dir: Path) -> tuple[Dataset, Graph]:
+    """Write `model`'s JSON-LD and app manifest into OUTPUT_DIR, and return them as the dataset
+    loading that manifest yields -- the manifest in the default graph, and the model's document as
+    the graph its import IRI names -- with the provenance of what this generation read and wrote.
+    """
+    from motion_spec_dsl.rdf_parser.manifest import build_url_map, install_metamodel_resolver
+
     started = datetime.now(timezone.utc)
     builder = MotionSpecDatasetBuilder(model)
     dataset, context = builder.build()
 
-    output_dir = Path(output_path) if output_path else Path(model._tx_filename).parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = Path(model._tx_filename).stem
 
     graph_path = output_dir / f"{stem}.ld.json"
     manifest_path = output_dir / f"{stem}-app.ld.json"
-    provenance_name = "provenance/dsl.ld.json"
-    provenance_path = output_dir / provenance_name
     serialized = dataset.default_graph.serialize(format="json-ld", indent=2, context=context)
     serialized = serialized.decode() if isinstance(serialized, bytes) else serialized
     graph_path.write_text(serialized)
     log.info("wrote %s", graph_path)
 
-    scene_started = datetime.now(timezone.utc)
-    scene_jsonld_names, scene_kdl_names = _gen_scenex(model, output_dir)
-    scene_ended = datetime.now(timezone.utc)
-
-    # FSM graphs are emitted as separate named-graph JSON-LD files and imported by the
-    # manifest, so ir_gen loads them as named graphs and derives the FSM wiring from the
-    # combined graph (no fsm_ir.json read at codegen time).
-    fsm_started = datetime.now(timezone.utc)
-    fsm_jsonld_names, fsm_tool_names = _gen_fsm(model, output_dir)
-    fsm_ended = datetime.now(timezone.utc)
-    artifact_names = [
-        graph_path.name,
-        manifest_path.name,
-        provenance_name,
-        *fsm_tool_names,
-        *(["fsm_ir.json"] if fsm_tool_names else []),
-        *scene_jsonld_names,
-        *scene_kdl_names,
-        *fsm_jsonld_names,
-    ]
-    manifest_imports = [
-        graph_path.name,
-        *scene_jsonld_names,
-        *fsm_jsonld_names,
-    ]
-    manifest_path.write_text(json.dumps(_build_manifest(manifest_imports), indent=2))
+    manifest = json.dumps(_build_manifest([graph_path.name]), indent=2)
+    manifest_path.write_text(manifest)
     log.info("wrote %s", manifest_path)
 
-    _write_provenance_artifact(
+    provenance = _build_provenance_document(
         model,
-        artifact_names,
+        [graph_path.name, manifest_path.name],
         output_dir,
-        provenance_path,
-        fsm_tool_names,
-        [*scene_jsonld_names, *scene_kdl_names],
-        {
-            "jsonld": (started, datetime.now(timezone.utc)),
-            "fsm": (fsm_started, fsm_ended),
-            "scenex": (scene_started, scene_ended),
-        },
+        (started, datetime.now(timezone.utc)),
     )
+    _validate_provenance(provenance)
+
+    merged = Dataset(default_union=True)
+    merged.parse(data=manifest, format="json-ld")
+    named = merged.graph(URIRef(IMPORT_BASE + graph_path.name))
+    named += dataset.default_graph
+    # After the provenance check, which installs the resolver without this model's iri-map.
+    install_metamodel_resolver(build_url_map(merged, manifest_path.resolve()))
+
+    return merged, provenance

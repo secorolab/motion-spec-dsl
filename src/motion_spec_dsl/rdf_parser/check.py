@@ -29,8 +29,19 @@ def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tup
     for o in models:
         g.parse(location=o, format="json-ld")
 
+    return validate_dataset(g, meta_shacl=meta_shacl)
+
+
+def validate_dataset(g: rdflib.Dataset, *, meta_shacl: bool = False) -> tuple[bool, str]:
+    """Validate a loaded application dataset as one graph and return conformance plus the report.
+
+    pyshacl validates each named graph of a dataset on its own, and shapes span documents.
+    """
+    data = rdflib.Graph()
+    for s, p, o, _graph in g.quads():
+        data.add((s, p, o))
     g_sh = rdflib.Dataset()
-    metamodels = sorted(str(o) for _, _, o, _ in g.quads((None, APP["constraints"], None, None)))
+    metamodels = {str(o) for _, _, o, _ in g.quads((None, APP["constraints"], None, None))}
     if not metamodels:
         return (
             False,
@@ -47,8 +58,7 @@ def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tup
                 f"Failed to load SHACL constraint graph {location}: {exc}",
             )
 
-    # Validate using Dataset directly
     conforms, _v_graph, v_text = pyshacl.validate(
-        data_graph=g, shacl_graph=g_sh, inference="none", meta_shacl=meta_shacl
+        data_graph=data, shacl_graph=g_sh, inference="none", meta_shacl=meta_shacl
     )
     return bool(conforms), v_text

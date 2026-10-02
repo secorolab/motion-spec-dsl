@@ -1,10 +1,17 @@
 [build-system]
-requires = ["setuptools>=64"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.metadata]
+# rdf-utils, coord-dsl and scene-dsl are on no index.
+allow-direct-references = true
 
 [project]
 name = "motion_spec_dsl"
-version = "0.1.0"
+dynamic = ["version"]
 description = "A DSL for specifying guarded motions, transforming .rob_mot files to JSON-LD."
 authors = [
     {name = "Sven Schneider", email = "sven.schneider@h-brs.de"},
@@ -30,26 +37,8 @@ dependencies = [
 [project.entry-points."textx_generators"]
 "motion_spec_jsonld" = "motion_spec_dsl.registration:motion_spec_gen"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-include-package-data = true
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-# The example models ship with the package, so `motion-spec examples` needs no checkout and no
-# clone. Named by extension rather than `models/**/*`: the recordings beside them are megabytes.
-"motion_spec_dsl" = [
-    "grammars/*.tx",
-    "models/**/*.robmot",
-    "models/**/*.fsm",
-    "models/**/*.scene",
-    "models/**/*.scenex",
-    "models/**/*.toml",
-    "models/**/*.xml",
-    "models/**/*.py",
-]
+[tool.hatch.build.targets.wheel]
+packages = ["src/motion_spec_dsl"]
 
 [tool.ruff]
 line-length = 100

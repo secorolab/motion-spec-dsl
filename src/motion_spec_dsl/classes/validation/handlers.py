@@ -19,17 +19,52 @@ from motion_spec_dsl.classes.constraints import (
     _flatten_constraint_items,
     _resolved_spec,
 )
-from motion_spec_dsl.classes.context import GeometricPropKey, GeometricProps
+from motion_spec_dsl.classes.constraints import EqualityConstraint
+from motion_spec_dsl.classes.context import (
+    ContextQuantity,
+    GeometricPropKey,
+    GeometricProps,
+    QuantityType,
+    ReferenceGeneratorType,
+    WorldQuantityType,
+    _resolved_context_quantity,
+)
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.classes.controller_semantics import (
+    ANGULAR_SUBSPACES,
+    _alignment_is_pointwise,
+    axis_label,
+    constraint_view_subspace,
+    controller_command_record,
     controller_solver,
     resolved_constraint_quantity,
 )
+from motion_spec_dsl.classes.path import ProfileSpec
 from motion_spec_dsl.classes.validation.common import (
     constraint_handlers,
     motion_constraint_items,
+    motion_constraints,
+    motion_specs,
     semantic_error,
 )
+from motion_spec_dsl.rdf.common import (
+    _binary_view,
+    _context_quantity,
+    _geo_prop,
+    _is_alignment_view,
+    _is_difference_view,
+    _is_distance_view,
+    _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_norm_view,
+    _is_plane_angle_view,
+    _is_projection_view,
+)
+
+# Resolved view subspaces whose command is a force, not a moment.
+_LINEAR_SUBSPACES = frozenset({"position", "distance", "linear", "linear-velocity"})
+# Binary views that publish a runtime gradient a force or moment can act along.
+_GRADIENT_VIEWS = frozenset({"AngleBetweenView", "DistanceFromView", "ProjectionOnView"})
 
 
 def validate_handler_constraint_assembly(model: Model) -> None:
@@ -285,3 +320,180 @@ def validate_mobile_platform_solver_quantity(model: Model) -> None:
                     f"'{wanted}' quantity, got '{got}'.",
                     solver,
                 )
+
+
+def validate_controller_commands(model: Model) -> None:
+    """Raise if a controller's command cannot be built: a norm nothing can command, a force or
+    moment on the wrong subspace, a profile that is none, or a wrench with no body, frame or
+    line of action.
+    """
+    controlled = set()
+    for handler in constraint_handlers(model):
+        for item in handler.controllers:
+            ctrl = item.ref.controller if hasattr(item, "ref") else item
+            spec = getattr(ctrl.params.constraint, "constraint", None)
+            if spec is None:
+                continue
+            controlled.add(spec)
+            command = controller_command_record(ctrl)
+            if not spec.disabled:
+                if _is_norm_view(spec):
+                    raise semantic_error(
+                        f"controller '{ctrl.name}' constrains a norm view, which nothing can "
+                        "command",
+                        ctrl,
+                    )
+                if command.view_subspace in ANGULAR_SUBSPACES and (
+                    ctrl.command_type == QuantityType.Force
+                ):
+                    raise semantic_error(
+                        f"Controller '{ctrl.name}' commands a force on the angular subspace of "
+                        f"'{spec.name}'; an angular constraint commands a moment ('as torque').",
+                        ctrl,
+                    )
+                if command.view_subspace in _LINEAR_SUBSPACES and (
+                    ctrl.command_type == QuantityType.Torque
+                ):
+                    raise semantic_error(
+                        f"Controller '{ctrl.name}' commands a moment on the linear subspace of "
+                        f"'{spec.name}'; a linear constraint commands a force ('as force').",
+                        ctrl,
+                    )
+            if getattr(ctrl.params, "profile", None) is not None:
+                profile = _context_quantity(ctrl.params.profile)
+                if not isinstance(profile, ContextQuantity):
+                    raise semantic_error(
+                        f"Controller '{ctrl.name}' has an unresolved velocity profile.", ctrl
+                    )
+                profile = _resolved_context_quantity(profile)
+                if not isinstance(profile.value, ProfileSpec):
+                    raise semantic_error(
+                        f"Controller '{ctrl.name}' profile '{profile.name}' is not a Profile.",
+                        ctrl,
+                    )
+
+            solver = controller_solver(handler, ctrl)
+            if solver is None:
+                continue
+            quantity = resolved_constraint_quantity(spec)
+            platform = isinstance(solver, MobilePlatformSolver)
+            if (
+                not platform
+                and solver.algorithm in {"ACHD", "RNE"}
+                and command.is_posture_torque_command
+                and quantity is not None
+                and quantity.type == WorldQuantityType.JointPosition
+                and _geo_prop(
+                    quantity.props if isinstance(quantity.props, GeometricProps) else None,
+                    "joint",
+                )
+                is None
+            ):
+                raise semantic_error(
+                    f"Joint torque command 'tau-{ctrl.name}' has no target joint", ctrl
+                )
+            if not (command.is_force_command or command.is_moment_command):
+                continue
+            if platform and solver.algorithm != "ForceDistribution":
+                continue
+            if (
+                not platform
+                and solver.algorithm == "CommandForwarding"
+                and ctrl.type == ControllerType.FeedForward
+            ):
+                continue
+            # A platform builds a moment first, a chain a force first.
+            moment = command.is_moment_command if platform else not command.is_force_command
+            label = "Moment" if moment else "Force"
+            apply_at = getattr(ctrl, "apply_at", None)
+            if apply_at is None or not hasattr(apply_at, "uri"):
+                raise semantic_error(
+                    f"{label} controller '{ctrl.name}' must specify 'apply at <link>'.", ctrl
+                )
+            if platform and not moment and quantity is None and _binary_view(spec) is None:
+                stated = getattr(spec.view, "quantity", None)
+                if isinstance(stated, ContextQuantity):
+                    stated = _resolved_context_quantity(stated)
+                if not isinstance(stated, ContextQuantity) or not isinstance(
+                    stated.props, GeometricProps
+                ):
+                    raise semantic_error(
+                        f"Controller '{ctrl.name}' routes a force to platform solver "
+                        f"'{solver.name}', but its constraint '{spec.name}' names no quantity "
+                        "with frames, so no direction can be taken for the wrench.",
+                        ctrl,
+                    )
+                quantity = stated
+            # A binary view's operands already state the frame its target is taken in.
+            if quantity is not None:
+                props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+                if (_geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")) is None:
+                    raise semantic_error(
+                        f"{label} controller '{ctrl.name}' needs a frame from the constrained "
+                        "quantity.",
+                        ctrl,
+                    )
+            gradient = (
+                (_is_alignment_view(spec) and not _alignment_is_pointwise(spec))
+                or _is_geometric_distance_view(spec)
+                or _is_projection_view(spec)
+                or _is_incident_angle_view(spec)
+                or _is_plane_angle_view(spec)
+            )
+            if moment:
+                axes = [axis for _, axis in command.controlled_axes if axis is not None]
+                if _is_alignment_view(spec) and not _alignment_is_pointwise(spec):
+                    axes = []
+                if not axes and not gradient:
+                    raise semantic_error(
+                        f"Moment controller '{ctrl.name}' commands no angular axis.", ctrl
+                    )
+                continue
+            if axis_label(spec.view.axis) is not None or _is_distance_view(spec):
+                continue
+            if (
+                quantity is not None
+                and quantity.type == WorldQuantityType.Pose
+                and constraint_view_subspace(spec) == "distance"
+            ):
+                continue
+            if _is_difference_view(spec):
+                left = _binary_view(spec).left
+                left = (
+                    _resolved_context_quantity(left) if isinstance(left, ContextQuantity) else left
+                )
+                value = getattr(left, "value", None)
+                if (
+                    type(value).__name__ != "DerivedScalarValue"
+                    or type(value.view).__name__ not in _GRADIENT_VIEWS
+                ):
+                    raise semantic_error(
+                        f"Force controller '{ctrl.name}' holds a difference whose operands "
+                        "publish no gradient, so the command has no line of action.",
+                        ctrl,
+                    )
+            elif not gradient:
+                raise semantic_error(
+                    f"Force controller '{ctrl.name}' needs an axis or a distance pose.", ctrl
+                )
+
+    for motion in motion_specs(model):
+        for spec in motion_constraints(motion):
+            if spec.disabled or spec in controlled:
+                continue
+            if getattr(spec.view, "moving", None) is not None:
+                raise semantic_error(
+                    f"Profiled path constraint '{spec.name}' needs a tracking controller.", spec
+                )
+            if isinstance(spec.expr, EqualityConstraint):
+                reference = _context_quantity(spec.expr.reference)
+                if (
+                    isinstance(reference, ContextQuantity)
+                    and _resolved_context_quantity(reference).type
+                    == ReferenceGeneratorType.Admittance
+                ):
+                    raise semantic_error(
+                        f"Admittance constraint '{spec.name}' needs a tracking PID to host the "
+                        "filter's per-step integrator state.",
+                        spec,
+                    )

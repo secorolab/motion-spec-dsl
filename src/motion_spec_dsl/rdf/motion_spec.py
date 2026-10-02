@@ -105,6 +105,7 @@ from motion_spec_dsl.classes.context import (
     GEOMETRIC_PROJECTION_OPS,
     ConfigValue,
     ContextQuantity,
+    ContextQuantityAlias,
     ContextRef,
     DirectionBetween,
     GeometricPropKey,
@@ -125,9 +126,9 @@ from motion_spec_dsl.classes.context import (
     _resolved_world_quantity,
 )
 from motion_spec_dsl.classes.controller_semantics import (
-    ANGULAR_SUBSPACES,
     SUBSPACE_ALIAS,
     _alignment_is_pointwise,
+    constraint_view_subspace,
     controller_command_record,
     controller_solver,
 )
@@ -205,17 +206,18 @@ from motion_spec_dsl.rdf.common import (
     _is_projection_view,
     _node_name,
     _norm_id,
-    _norm_scalar_type,
+    _NORM_SCALAR_TYPES,
     _ns_term,
     _owning_motion,
-    _quantity_axis_frame,
+    _path_pose_endpoints,
+    _pose_frame_names,
     _resolved_constraint_items,
     _scalar_id,
     _scalar_type,
-    _view_subspace,
 )
 from motion_spec_dsl.rdf.model import (
     _QKIND_PREFIXES,
+    _qudt_kind,
     CONSTRAINT_TYPE_OVERRIDE,
     CONTEXT_COMPOSITE_WORLD_TYPE,
     CSTR_TYPE_NAME,
@@ -309,21 +311,6 @@ def _owns_pose_subobjects(value) -> bool:
     return isinstance(value, (PoseCoordinate, ConfigValue))
 
 
-def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
-    """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
-    source quantity when the pose declares none. None when they are not resolvable."""
-    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-    if _geo_prop(props, "of") is None:
-        source = getattr(getattr(quantity, "value", None), "source", None)
-        source_props = getattr(getattr(source, "quantity", None), "props", None)
-        props = source_props if isinstance(source_props, GeometricProps) else None
-    of_frame = _geo_prop(props, "of")
-    wrt_frame = _geo_prop(props, "wrt")
-    if of_frame is None or wrt_frame is None:
-        return None
-    return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
-
-
 def _orientation_angle_unit(orientation) -> str:
     """The angle unit a pose's rotation is authored in; radians when it states none (a quaternion
     or a direction-cosine matrix carries angles all the same, just not as an authored number)."""
@@ -333,11 +320,6 @@ def _orientation_angle_unit(orientation) -> str:
         if unit:
             return unit
     return getattr(orientation, "unit", None) or "rad"
-
-
-def _qudt_kind(quantity_type: Any) -> URIRef:
-    """QUDT quantity kind for a DSL quantity type."""
-    return QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type) or QUDT_QKIND[quantity_type]
 
 
 # A band bounds a scalar error in one unit, so one default per unit family: an axis of a
@@ -400,9 +382,6 @@ def _perturbation_conditions(handler: ConstraintHandler) -> list[ConstraintSpeci
     return out
 
 
-_DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
-
-
 def _authored_fqn(target) -> str:
     """The dotted name the model refers to this element by, e.g. `agents.arm1`."""
     parts, node = [], target
@@ -411,29 +390,6 @@ def _authored_fqn(target) -> str:
         node = getattr(node, "parent", None)
     # A sensor's chain runs up through the scene instance; the agent that hosts it is enough.
     return ".".join(reversed(parts[:2]))
-
-
-# Resolved view subspaces whose command is a force, not a moment.
-_LINEAR_SUBSPACES = frozenset({"position", "distance", "linear", "linear-velocity"})
-
-
-def _validate_command_subspace(ctrl: ControllerEntry, spec, command) -> None:
-    """Reject an authored `as` that contradicts its constraint's subspace: an angular
-    subspace commands a moment, a linear one a force."""
-    authored = ctrl.command_type
-    if authored is None:
-        return
-    subspace = command.view_subspace
-    if subspace in ANGULAR_SUBSPACES and authored == QuantityType.Force:
-        raise ValueError(
-            f"Controller '{ctrl.name}' commands a force on the angular subspace of "
-            f"'{spec.name}'; an angular constraint commands a moment ('as torque')."
-        )
-    if subspace in _LINEAR_SUBSPACES and authored == QuantityType.Torque:
-        raise ValueError(
-            f"Controller '{ctrl.name}' commands a moment on the linear subspace of "
-            f"'{spec.name}'; a linear constraint commands a force ('as force')."
-        )
 
 
 _COERCIBLE_DATATYPES = (XSD.double, XSD.integer)
@@ -573,6 +529,7 @@ class MotionSpecDatasetBuilder:
                         self.dataset.bind(agent_set.ns_prefix, agent_set.ns.uri)
                         context[agent_set.ns_prefix] = agent_set.ns.uri
                 elif isinstance(spec, ContextSpec):
+                    self._emit_context_members(URIRef(spec.uri), spec)
                     self.dataset.bind(spec.ns_prefix, spec.ns.uri)
                     context[spec.ns_prefix] = spec.ns.uri
                 elif isinstance(spec, Ros):
@@ -624,7 +581,7 @@ class MotionSpecDatasetBuilder:
             # The view's ops write their own scalar; the declared name is what the model reads,
             # so the two are tied by a one-input sum rather than by minting a second computation.
             target = self._resolve_constraint_quantity(shim, all_world_qtys)
-            scalar = self._owned_uri(_scalar_id(target, _view_subspace(shim), None), owner)
+            scalar = self._owned_uri(_scalar_id(target, constraint_view_subspace(shim), None), owner)
             zero = self._owned_uri(f"{declaration.name}-zero", owner)
             self._add_quantity(zero, QuantityType.Distance)
             self.graph.add((zero, QUDT_SCHEMA.value, Literal(0.0, datatype=XSD.double)))
@@ -761,36 +718,6 @@ class MotionSpecDatasetBuilder:
         """
         devices = getattr(context.platform, "devices", None) or ()
         real_world = context.platform.kind == "real-world"
-        if devices and not real_world:
-            raise ValueError(
-                f"Execution context '{context.name}' binds devices on a simulation platform."
-            )
-        if devices and not context.config:
-            raise ValueError(
-                f"Execution context '{context.name}' binds devices but declares no 'config'. "
-                "Every bound device needs somewhere to read its address from."
-            )
-        seen: dict[str, str] = {}
-        for binding in devices:
-            target = binding.target
-            uri = getattr(target, "uri", None)
-            if uri is None:
-                raise ValueError(
-                    f"Execution context '{context.name}' binds '{binding.device}' to "
-                    f"'{getattr(target, 'name', target)}', which is not an addressable element."
-                )
-            if type(target).__name__ not in _DEVICE_TARGETS:
-                raise ValueError(
-                    f"Execution context '{context.name}' binds '{binding.device}' to a "
-                    f"{type(target).__name__}. A device realizes an agent or a sensor."
-                )
-            if uri in seen:
-                raise ValueError(
-                    f"Execution context '{context.name}' binds '{target.name}' twice: "
-                    f"'{seen[uri]}' and '{binding.device}'. One element, one device."
-                )
-            seen[uri] = binding.device
-
         if context.config:
             config = URIRef(f"{context.uri}.config")
             self.graph.add((config, RDF.type, EXEC.ResourceWithPath))
@@ -1252,7 +1179,7 @@ class MotionSpecDatasetBuilder:
         )
         # The scalar the constraint reads is the carrier's own coordinate, named the way every
         # other scalar view is, so the rest of the pipeline finds it where it expects to.
-        target_node = self._owned_uri(_scalar_id(target, _view_subspace(spec), None), motion)
+        target_node = self._owned_uri(_scalar_id(target, constraint_view_subspace(spec), None), motion)
         self._add_quantity(target_node, QuantityType.Distance)
         op_node = self._owned_uri(f"compute-difference-{spec.name}", motion)
         self.graph.add((op_node, RDF.type, ALGO_EXT.Subtraction))
@@ -1311,16 +1238,10 @@ class MotionSpecDatasetBuilder:
             shim = self._derived_scalar_spec(resolved)
             return str(
                 self._owned_uri(
-                    _scalar_id(target, _view_subspace(shim), None), getattr(target, "parent", None)
+                    _scalar_id(target, constraint_view_subspace(shim), None), getattr(target, "parent", None)
                 )
             )
-        qty = self._resolve_qty(ref, world_qtys)
-        if qty is None:
-            raise ValueError(
-                f"Constraint '{spec.name}' takes a difference of '{_node_name(ref)}', which is "
-                "neither a declared quantity nor a scalar defined by a view."
-            )
-        return qty.uri
+        return self._resolve_qty(ref, world_qtys).uri
 
     def _resolve_constraint_quantity(
         self,
@@ -1342,18 +1263,6 @@ class MotionSpecDatasetBuilder:
             return self._geometric_distance_plan(spec, world_qtys).target
         return self._resolve_qty(spec.view.quantity, world_qtys)
 
-    def _pose_frames(self, quantity: WorldQuantity, context: str) -> tuple[str, str]:
-        """The (of, wrt) frame names of a fully-specified Pose quantity; raises otherwise."""
-        if quantity.type != WorldQuantityType.Pose or not isinstance(
-            quantity.props, GeometricProps
-        ):
-            raise ValueError(f"{context} needs Pose quantities with explicit endpoints.")
-        of_frame = _geo_prop(quantity.props, "of")
-        wrt_frame = _geo_prop(quantity.props, "wrt")
-        if of_frame is None or wrt_frame is None:
-            raise ValueError(f"{context} needs explicit 'of' and 'wrt' frames.")
-        return of_frame, wrt_frame
-
     def _distance_operand(
         self, ref: Any, world_qtys: dict[str, WorldQuantity]
     ) -> WorldQuantity | ContextQuantity | None:
@@ -1362,17 +1271,6 @@ class MotionSpecDatasetBuilder:
         if qty is not None:
             return qty
         return ref if isinstance(ref, ContextQuantity) else None
-
-    def _distance_endpoint_frame(self, qty: Any, context: str) -> str:
-        """The `of` frame of a distance endpoint; raises when it is not a framed pose."""
-        if isinstance(qty, WorldQuantity):
-            return self._pose_frames(qty, context)[0]
-        if qty.type != QuantityType.Pose:
-            raise ValueError(f"{context} must reference Pose quantities.")
-        frames = _pose_frame_names(qty)
-        if frames is None:
-            raise ValueError(f"{context} needs explicit 'of' and 'wrt' frames.")
-        return frames[0]
 
     def _distance_plan(
         self,
@@ -1386,11 +1284,8 @@ class MotionSpecDatasetBuilder:
 
         start = self._distance_operand(spec.view.binary.left, world_qtys)
         end = self._distance_operand(spec.view.binary.right, world_qtys)
-        if start is None or end is None:
-            raise ValueError(f"Distance constraint '{spec.name}' references an unknown pose.")
-        context = f"Distance constraint '{spec.name}'"
-        start_frame = self._distance_endpoint_frame(start, context)
-        end_frame = self._distance_endpoint_frame(end, context)
+        start_frame = _pose_frame_names(start)[0]
+        end_frame = _pose_frame_names(end)[0]
         props = GeometricProps(
             [
                 GeoPropPair(GeometricPropKey.Of, end_frame),
@@ -1423,8 +1318,7 @@ class MotionSpecDatasetBuilder:
         coordinate each endpoint names -- is carried separately, as a coord_policy selection
         recorded as PROV (`_emit_distance_operand_selection`), not by tagging the Point.
         """
-        of_frame = self._distance_endpoint_frame(operand, f"Distance operand '{operand.name}'")
-        return self._frame_origin(self._owned_uri(of_frame, operand))
+        return self._frame_origin(self._owned_uri(_pose_frame_names(operand)[0], operand))
 
     def _record_pose_component(self, pose_node: URIRef, component: str, coordinate: URIRef) -> None:
         """Record which position/orientation coordinate a pose coordinate is built from.
@@ -1537,8 +1431,6 @@ class MotionSpecDatasetBuilder:
         reference_frame = _geo_prop(reference.props, "as-seen-by") or _geo_prop(
             reference.props, "wrt"
         )
-        if moving_frame is None or reference_frame is None:
-            raise ValueError(f"{context} needs 'as-seen-by' frames on both directions.")
         target = next(
             (
                 qty
@@ -1605,7 +1497,7 @@ class MotionSpecDatasetBuilder:
         self._plans[spec] = plan
         return plan
 
-    def _primitive_direction(self, primitive: ContextQuantity, context: str) -> ContextQuantity:
+    def _primitive_direction(self, primitive: ContextQuantity) -> ContextQuantity:
         """The direction context quantity a `line`/`plane` primitive composes (its `along` or
         `normal`); plan 06 validation guarantees it exists and resolves to a well-formed
         direction by the time RDF emission runs.
@@ -1615,9 +1507,7 @@ class MotionSpecDatasetBuilder:
             if primitive.type == QuantityType.Plane
             else GeometricPropKey.Along
         )
-        referent = next((pair.value for pair in primitive.props.pairs if pair.key == key), None)
-        if referent is None:
-            raise ValueError(f"{context} needs '{primitive.name}' to declare its {key.value}.")
+        referent = next(pair.value for pair in primitive.props.pairs if pair.key == key)
         return _resolved_context_quantity(referent)
 
     def _existing_world_pose(
@@ -1693,13 +1583,9 @@ class MotionSpecDatasetBuilder:
         if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
             line_a = _resolved_context_quantity(a_ref)
             line_b = _resolved_context_quantity(b_ref)
-            dir_a = self._primitive_direction(line_a, context)
-            dir_b = self._primitive_direction(line_b, context)
+            dir_a = self._primitive_direction(line_a)
+            dir_b = self._primitive_direction(line_b)
             frame = _geo_prop(dir_a.props, "as-seen-by")
-            if frame is None or _geo_prop(dir_b.props, "as-seen-by") != frame:
-                raise ValueError(
-                    f"{context} needs both lines' directions stated 'as-seen-by' the same frame."
-                )
             origin_a = self._existing_world_pose(world_qtys, _geo_prop(line_a.props, "of"), frame)
             origin_b = self._existing_world_pose(world_qtys, _geo_prop(line_b.props, "of"), frame)
             for line, origin in ((line_a, origin_a), (line_b, origin_b)):
@@ -1742,18 +1628,8 @@ class MotionSpecDatasetBuilder:
         else:
             point_qty = self._distance_operand(a_ref, world_qtys)
             primitive = _resolved_context_quantity(b_ref)
-            direction_qty = self._primitive_direction(primitive, context)
-            direction_frame = _geo_prop(direction_qty.props, "as-seen-by")
-            point_frames = _pose_frame_names(point_qty)
-            if point_frames is None:
-                raise ValueError(f"{context} needs an explicit-frame pose operand.")
-            point_of, point_wrt, _ = point_frames
-            if direction_frame is None or direction_frame != point_wrt:
-                role = "normal" if primitive.type == QuantityType.Plane else "direction"
-                raise ValueError(
-                    f"{context} needs '{primitive.name}' {role} stated 'as-seen-by' "
-                    f"'{point_wrt}', the point operand's own reference frame."
-                )
+            direction_qty = self._primitive_direction(primitive)
+            point_of, point_wrt, _ = _pose_frame_names(point_qty)
             primitive_frame = _geo_prop(primitive.props, "of")
             if op_type == "PointLineToLinearDistance" and primitive_frame == point_wrt:
                 # The line rides the frame the point is measured against (Borghesan's
@@ -1938,50 +1814,14 @@ class MotionSpecDatasetBuilder:
         self._frame_coords_index[node] = (of_node, wrt_node, seen_by_node)
         return relation
 
-    @staticmethod
-    def _path_pose_endpoints(quantity: ContextQuantity) -> tuple[ContextQuantity, ...]:
-        """Pose-valued endpoints whose frame relation defines a geometric path."""
-        value = quantity.value
-        for spec_name, endpoint_names in (
-            ("lerp", ("start", "goal")),
-            ("arc", ("start", "end")),
-            ("circle", ("start",)),
-            ("helix", ("start",)),
-            ("figure8", ("anchor",)),
-        ):
-            spec = getattr(value, spec_name, None)
-            if spec is None:
-                continue
-            return tuple(
-                endpoint
-                for name in endpoint_names
-                if (endpoint := _context_quantity(getattr(spec, name, None))) is not None
-            )
-        return ()
-
     def _path_frame_nodes(self, quantity: ContextQuantity) -> tuple[URIRef, URIRef, URIRef]:
-        """Resolve and validate the single frame tuple shared by a path's pose endpoints."""
-        endpoint_frames = [
-            (
-                endpoint,
-                tuple(self._owned_uri(name, endpoint) for name in frames),
-            )
-            for endpoint in self._path_pose_endpoints(quantity)
+        """The single frame tuple a path's pose endpoints share."""
+        endpoint, frames = next(
+            (endpoint, frames)
+            for endpoint in _path_pose_endpoints(quantity)
             if (frames := _pose_frame_names(endpoint)) is not None
-        ]
-        if not endpoint_frames:
-            raise ConstraintViolation(
-                "geometry", f"Path '{quantity.name}' has no endpoint with frame metadata"
-            )
-        distinct = {frames for _, frames in endpoint_frames}
-        if len(distinct) != 1:
-            details = ", ".join(
-                f"{endpoint.name}={tuple(map(str, frames))}" for endpoint, frames in endpoint_frames
-            )
-            raise ConstraintViolation(
-                "geometry", f"Path '{quantity.name}' endpoint frames disagree: {details}"
-            )
-        return endpoint_frames[0][1]
+        )
+        return tuple(self._owned_uri(name, endpoint) for name in frames)
 
     def _force_control_signal_node(
         self, ctrl: ControllerEntry, handler: ConstraintHandler
@@ -1989,6 +1829,7 @@ class MotionSpecDatasetBuilder:
         """Owned Force-quantity node carrying a force controller's control signal."""
         signal_node = self._declared_uri(f"force-{ctrl.name}", ctrl)
         self._add_quantity(signal_node, QuantityType.Force)
+        self.graph.add((URIRef(ctrl.uri), CSTR_HDL["control-signal"], signal_node))
         return signal_node
 
     def _moment_control_signal_node(
@@ -1998,6 +1839,7 @@ class MotionSpecDatasetBuilder:
         name = f"moment-{ctrl.name}" if axis is None else f"moment-{ctrl.name}-ang-{axis}"
         signal_node = self._owned_uri(name, handler)
         self._add_quantity(signal_node, QuantityType.Torque)
+        self.graph.add((URIRef(ctrl.uri), CSTR_HDL["control-signal"], signal_node))
         return signal_node
 
     def _emit_direction_coordinate(
@@ -2112,43 +1954,23 @@ class MotionSpecDatasetBuilder:
         and a direction -- an axis unit vector, or a runtime pose-to-direction for a distance
         view. Returns the wrench node.
         """
-        apply_at = getattr(ctrl, "apply_at", None)
-        if apply_at is None or not hasattr(apply_at, "uri"):
-            raise ValueError(f"Force controller '{ctrl.name}' must specify 'apply at <link>'.")
-
         props = qty.props if isinstance(qty.props, GeometricProps) else None
         as_seen_by_name = _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
-        if as_seen_by_name is None:
-            raise ValueError(
-                f"Force controller '{ctrl.name}' needs a frame from the constrained quantity."
-            )
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
         direction_node = self._declared_uri(f"direction-{ctrl.name}", ctrl)
         if (
             qty.type == WorldQuantityType.Pose
-            and _view_subspace(spec) == "distance"
+            and constraint_view_subspace(spec) == "distance"
             and axis is None
         ):
             self._emit_pose_to_direction(direction_node, qty, as_seen_by_node, motion, ctrl.name)
         elif axis is not None:
             self._emit_direction_coordinate(direction_node, as_seen_by_node, _axis_vector(axis))
         elif _is_difference_view(spec):
-            plan = self._plans.get(spec)
-            gradient_id = getattr(plan, "gradient_id", None)
-            if gradient_id is None:
-                raise ValueError(
-                    f"Force controller '{ctrl.name}' holds a difference whose operands publish "
-                    "no gradient, so the command has no line of action."
-                )
-            direction_node = self._owned_uri(gradient_id, motion)
+            direction_node = self._owned_uri(self._plans[spec].gradient_id, motion)
         else:
-            gradient_id = _gradient_scalar_id(qty, spec)
-            if gradient_id is None:
-                raise ValueError(
-                    f"Force controller '{ctrl.name}' needs an axis or a distance pose."
-                )
-            direction_node = self._owned_uri(gradient_id, motion)
+            direction_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
 
         # The force acts where the constrained quantity is taken: its `of` frame.
         of_name = _geo_prop(props, "of")
@@ -2187,16 +2009,8 @@ class MotionSpecDatasetBuilder:
         WrenchFromDirectionAndMoment wired to that expression's runtime gradient direction.
         A couple is reference-point independent, so no position enters the ops.
         """
-        apply_at = getattr(ctrl, "apply_at", None)
-        if apply_at is None or not hasattr(apply_at, "uri"):
-            raise ValueError(f"Moment controller '{ctrl.name}' must specify 'apply at <link>'.")
-
         props = qty.props if isinstance(qty.props, GeometricProps) else None
         as_seen_by_name = _geo_prop(props, "as-seen-by") or _geo_prop(props, "wrt")
-        if as_seen_by_name is None:
-            raise ValueError(
-                f"Moment controller '{ctrl.name}' needs a frame from the constrained quantity."
-            )
         as_seen_by_node = self._owned_uri(as_seen_by_name, qty)
 
         axes = [axis for _, axis in command.controlled_axes if axis is not None]
@@ -2212,10 +2026,7 @@ class MotionSpecDatasetBuilder:
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
 
         if not axes:
-            gradient_id = _gradient_scalar_id(qty, spec)
-            if gradient_id is None:
-                raise ValueError(f"Moment controller '{ctrl.name}' commands no angular axis.")
-            direction_node = self._owned_uri(gradient_id, motion)
+            direction_node = self._owned_uri(_gradient_scalar_id(qty, spec), motion)
             magnitude_node = self._moment_control_signal_node(ctrl, handler, None)
             wrench_node = self._declared_uri(f"wrench-moment-{ctrl.name}", ctrl)
             self._emit_wrench_coordinate(wrench_node, point_node, as_seen_by_node)
@@ -2283,15 +2094,14 @@ class MotionSpecDatasetBuilder:
             spec = WORLD_SPECS.get(qty.type)
             if spec is None:
                 continue
+            # What the run observes, as opposed to what the model states.
+            self.graph.add((URIRef(qty.uri), RDF.type, SOSA.ObservableProperty))
             if qty.type == WorldQuantityType.Pose:
                 node = URIRef(qty.uri)
                 self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
                 self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
-                frames = _pose_frame_names(qty)
-                if frames is None:
-                    raise ConstraintViolation("geometry", f"Pose '{node}' has no frame endpoints")
-                of_frame, wrt_frame, as_seen_by = frames
+                of_frame, wrt_frame, as_seen_by = _pose_frame_names(qty)
                 of_node = self._owned_uri(of_frame, qty)
                 wrt_node = self._owned_uri(wrt_frame, qty)
                 seen_by_node = self._owned_uri(as_seen_by, qty)
@@ -2337,18 +2147,8 @@ class MotionSpecDatasetBuilder:
                     if props is not None
                     else None
                 )
-                if ft_sensor is not None and estimated_from is not None:
-                    raise ConstraintViolation(
-                        "dynamics",
-                        f"Wrench '{qty.name}' names both ft-sensor and estimated-from; "
-                        "a wrench is measured or estimated, not both.",
-                    )
                 sensor_frame_name = str(ft_sensor.frame.uri) if ft_sensor is not None else None
                 reference_name = _geo_prop(props, "ref-point") or sensor_frame_name
-                if reference_name is None and estimated_from is not None:
-                    raise ConstraintViolation(
-                        "dynamics", f"Wrench '{qty.name}' has no ref-point frame"
-                    )
                 reference_point = (
                     self._owned_uri(reference_name, qty)
                     if reference_name
@@ -2356,10 +2156,6 @@ class MotionSpecDatasetBuilder:
                 )
                 self.graph.add((reference_point, RDF.type, GEOM_ENT.Point))
                 seen_name = _geo_prop(props, "as-seen-by") or sensor_frame_name
-                if seen_name is None:
-                    raise ConstraintViolation(
-                        "dynamics", f"Wrench '{qty.name}' has no as-seen-by frame"
-                    )
                 acts_on_name = _geo_prop(props, "of")
                 self._emit_wrench_coordinate(
                     node,
@@ -2369,9 +2165,10 @@ class MotionSpecDatasetBuilder:
                 )
                 ft_ref = str(ft_sensor.uri) if ft_sensor is not None else None
                 if ft_ref:
-                    self.graph.add((node, RDF.type, SOSA.Observation))
-                    self.graph.add((node, SOSA.madeBySensor, URIRef(ft_ref)))
-                observer = None
+                    observation = URIRef(f"{node}-observation")
+                    self.graph.add((observation, RDF.type, SOSA.Observation))
+                    self.graph.add((observation, SOSA.observedProperty, node))
+                    self.graph.add((observation, SOSA.madeBySensor, URIRef(ft_ref)))
                 if estimated_from is not None:
                     observer = URIRef(f"{node}-observer")
                     self.graph.add((observer, RDF.type, EST.MomentumObserver))
@@ -2404,30 +2201,9 @@ class MotionSpecDatasetBuilder:
                             ),
                         )
                     )
-                tare_target = ft_ref or observer
-                retare_events = _geo_prop_events(props, "re-tare-on")
-                if retare_events and not tare_target:
-                    raise ConstraintViolation(
-                        "dynamics",
-                        f"Wrench '{qty.name}' names re-tare-on events but nothing to tare.",
-                    )
                 # The tare is a sampling of what the source reads unloaded: once at startup, and
-                # again on each named occurrence. There is no implicit "once at startup" left --
-                # an author who wants that names their model's own run-start event explicitly.
-                if tare_target and not retare_events:
-                    source = "an ft-sensor" if ft_ref else "estimated-from"
-                    raise ConstraintViolation(
-                        "dynamics",
-                        f"Wrench '{qty.name}' has {source} but names no re-tare-on events; "
-                        "name the model's run-start event to tare once at startup.",
-                    )
-                for event in retare_events:
-                    if event.event is None:
-                        raise ConstraintViolation(
-                            "dynamics",
-                            f"Wrench '{qty.name}' re-tare-on '{event.name}' carries no namespace, "
-                            "so it resolves to no declared event; write it as ns.EVENT.",
-                        )
+                # again on each named occurrence.
+                for event in _geo_prop_events(props, "re-tare-on"):
                     schedule_node = URIRef(f"{node}-retare-{event.name}-schedule")
                     self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_AFTER_EVT))
                     self.graph.add((schedule_node, RDF.type, URI_TIME_TYPE_TC))
@@ -2563,19 +2339,13 @@ class MotionSpecDatasetBuilder:
         """The scalar a `norm of <q>.<subspace> [across <d>]` view names, emitting the vector
         view it reads, the direction check, and the VectorNorm operator that fills it."""
         quantity = view.quantity
-        if (
-            not isinstance(quantity, WorldQuantity)
-            or view.subspace is None
-            or view.axis is not None
-        ):
-            raise ValueError(f"norm of '{_node_name(quantity)}' is not a 3-vector view")
         raw = str(getattr(view.subspace, "value", view.subspace))
         mapped = (
             raw
             if quantity.type == WorldQuantityType.Pose and raw == "position"
             else SUBSPACE_ALIAS.get(raw, raw)
         )
-        scalar_t = _norm_scalar_type(quantity, mapped)
+        scalar_t = _NORM_SCALAR_TYPES[_scalar_type(quantity, mapped, None)]
 
         vector_uri = self._owned_uri(_scalar_id(quantity, mapped, None), owner)
         if quantity.type == WorldQuantityType.Pose:
@@ -2589,18 +2359,6 @@ class MotionSpecDatasetBuilder:
         across_ref = view.norm.across
         if across_ref is not None:
             direction_qty = _resolved_context_quantity(_context_quantity(across_ref))
-            if direction_qty is None or direction_qty.type != QuantityType.Direction:
-                raise ValueError(
-                    f"norm of '{quantity.name}.{raw}' across "
-                    f"'{getattr(direction_qty, 'name', across_ref)}': not a direction"
-                )
-            vector_frame = _quantity_axis_frame(quantity)
-            direction_frame = _geo_prop(direction_qty.props, "as-seen-by")
-            if vector_frame != direction_frame:
-                raise ValueError(
-                    f"norm of '{quantity.name}.{raw}' across '{direction_qty.name}': direction is "
-                    f"seen by '{direction_frame}', the vector by '{vector_frame}'"
-                )
 
         norm_id = _norm_id(quantity, mapped, getattr(direction_qty, "name", None))
         norm_uri = self._owned_uri(norm_id, owner)
@@ -2762,8 +2520,6 @@ class MotionSpecDatasetBuilder:
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.M))
             self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.RAD))
             pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
-            if pose_relation is None:
-                raise ConstraintViolation("geometry", f"Pose '{node}' has no frame endpoints")
             self._emit_combined_pose_coordinate(node, pose_relation)
             return
 
@@ -2784,10 +2540,6 @@ class MotionSpecDatasetBuilder:
             )
             self.graph.add((reference_point, RDF.type, GEOM_ENT.Point))
             seen_name = _geo_prop(props, "as-seen-by")
-            if seen_name is None:
-                raise ConstraintViolation(
-                    "dynamics", f"Wrench '{quantity.name}' has no as-seen-by frame"
-                )
             acts_on_name = _geo_prop(props, "of")
             self._emit_wrench_coordinate(
                 node,
@@ -3043,20 +2795,6 @@ class MotionSpecDatasetBuilder:
                     )
                 continue
             if isinstance(quantity.value, ReferenceValue):
-                if quantity.type in {
-                    QuantityType.Pose,
-                    QuantityType.Position,
-                    QuantityType.Orientation,
-                    QuantityType.VelocityTwist,
-                    QuantityType.AccelerationTwist,
-                    QuantityType.Wrench,
-                    QuantityType.Direction,
-                }:
-                    raise ConstraintViolation(
-                        "geometry",
-                        f"Direct geometry alias '{quantity.name}' ({quantity.type}) is unsupported; "
-                        "reference pose components through their map views instead",
-                    )
                 expr_tree = quantity.value.expr.as_op_tree()
                 if isinstance(expr_tree, QOpNode):
                     self._emit_qexpr(expr_tree, quantity, node)
@@ -3267,24 +3005,6 @@ class MotionSpecDatasetBuilder:
         declaration must be a shared one: the file is read once before the loop, so a per-motion
         one would promise a value that changes with the state and never does.
         """
-        if not isinstance(getattr(quantity.parent, "parent", None), ContextSpec):
-            raise ConstraintViolation(
-                "geometry",
-                f"Pose '{quantity.name}' reads the deployment config, so it must be declared in "
-                "a shared context: it is read once for the run, not per motion.",
-            )
-        if quantity.type != QuantityType.Pose:
-            raise ConstraintViolation(
-                "geometry",
-                f"'{quantity.name}' reads the deployment config, which states poses; "
-                f"a {quantity.type} cannot come from one.",
-            )
-        if self._config_resource is None:
-            raise ConstraintViolation(
-                "platform",
-                f"Pose '{quantity.name}' reads the deployment config, but the exec-context "
-                'declares no `config: "<file>.toml"`.',
-            )
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         self.graph.add((node, RDF.type, URI_GEOM_TYPE_VECTOR_XYZ))
         self.graph.add((node, QUDT_SCHEMA.unit, QUDT_UNIT.UNITLESS))
@@ -3293,12 +3013,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((node, SDO.identifier, Literal(quantity.value.key)))
 
         pose_relation = self._emit_declared_pose_frame_metadata(node, quantity)
-        if pose_relation is None:
-            raise ConstraintViolation(
-                "geometry",
-                f"Pose '{quantity.name}' reads the deployment config, so the quantity it is "
-                "stated `for` must declare of/with-respect-to/as-seen-by frames.",
-            )
         position_node = URIRef(f"{quantity.uri}.position")
         orientation_node = URIRef(f"{quantity.uri}.orientation")
         self.graph.add((position_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -3368,7 +3082,7 @@ class MotionSpecDatasetBuilder:
                     sibling
                     for sibling in getattr(quantity.parent, "declaration", [])
                     if isinstance(getattr(sibling, "value", None), PathValue)
-                    and quantity in self._path_pose_endpoints(sibling)
+                    and quantity in _path_pose_endpoints(sibling)
                 ),
                 None,
             )
@@ -3394,10 +3108,6 @@ class MotionSpecDatasetBuilder:
                 for source in component_sources
                 if (frames := _pose_frame_names(source)) is not None
             }
-            if len(component_frames) > 1:
-                raise ConstraintViolation(
-                    "geometry", f"Pose '{node}' component references disagree on frame endpoints"
-                )
             if frame_nodes is None and component_frames:
                 frame_nodes = next(iter(component_frames))
             source_pose = next(
@@ -3450,28 +3160,6 @@ class MotionSpecDatasetBuilder:
         has_symbolic_orientation = authored_orientation_coords is not None and any(
             element.ref is not None for element in authored_orientation_coords.values
         )
-        if has_symbolic_orientation and (
-            orientation.quat is not None
-            or orientation.euler is not None
-            and len(set(orientation.euler.axes)) != 3
-        ):
-            raise ConstraintViolation(
-                "geometry",
-                f"Orientation coordinate '{orientation_node}' cannot use symbolic components",
-            )
-        if orientation.direction_cosine is not None and any(
-            element.ref is not None
-            for axis in (
-                orientation.direction_cosine.x_axis,
-                orientation.direction_cosine.y_axis,
-                orientation.direction_cosine.z_axis,
-            )
-            for element in axis.values
-        ):
-            raise ConstraintViolation(
-                "geometry",
-                f"Orientation coordinate '{orientation_node}' cannot use symbolic components",
-            )
 
         coords = self._frame_coords(node)
         pose_of, pose_wrt, pose_asb = coords if coords is not None else (None, None, None)
@@ -3591,24 +3279,8 @@ class MotionSpecDatasetBuilder:
         # Bind to the pose itself, not its orientation subobject: the backend reads the
         # composed rotation off the materialised frame.
         base_quantity = _context_quantity(relative.base)
-        base_node = (
-            URIRef(_resolved_context_quantity(base_quantity).uri)
-            if isinstance(base_quantity, ContextQuantity)
-            else self._emit_context_ref_node(relative.base, quantity, "orientation-base")
-        )
-
-        if not isinstance(base_quantity, ContextQuantity):
-            raise ValueError(
-                f"Relative orientation on '{quantity.uri}' needs a resolvable base pose to "
-                "derive its composition frames."
-            )
-        frames = _pose_frame_names(base_quantity)
-        if frames is None:
-            raise ValueError(
-                f"Relative orientation on '{quantity.uri}' cannot resolve its base pose's "
-                "of/with-respect-to/as-seen-by frames."
-            )
-        of_frame, _wrt_frame, base_as_seen_by = frames
+        base_node = URIRef(_resolved_context_quantity(base_quantity).uri)
+        of_frame, _wrt_frame, base_as_seen_by = _pose_frame_names(base_quantity)
         of_frame_node = self._owned_uri(of_frame, base_quantity)
         base_as_seen_by_node = self._owned_uri(base_as_seen_by, base_quantity)
         self.graph.add((orientation_node, GEOM_REL.of, of_frame_node))
@@ -3617,17 +3289,12 @@ class MotionSpecDatasetBuilder:
             delta_basis = self._owned_uri(
                 str(getattr(relative.frame, "uri", relative.frame)), quantity
             )
-        elif relative.euler is not None and relative.euler.extrinsic:
+        elif relative.euler.extrinsic:
             # Extrinsic Euler angles turn about the pose's fixed reference-frame axes.
             delta_basis = base_as_seen_by_node
-        elif relative.euler is not None:
+        else:
             # Intrinsic Euler angles turn about the moving body-frame axes.
             delta_basis = of_frame_node
-        else:
-            raise ValueError(
-                f"Relative orientation on '{quantity.uri}' needs an explicit basis frame for "
-                "a quaternion or direction-cosine delta."
-            )
 
         delta_node = URIRef(f"{quantity.uri}.orientation-delta")
         self.graph.add((delta_node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -3635,15 +3302,8 @@ class MotionSpecDatasetBuilder:
 
         if delta_basis == of_frame_node:
             in1, in2 = base_node, delta_node
-        elif delta_basis == base_as_seen_by_node:
-            in1, in2 = delta_node, base_node
         else:
-            raise ValueError(
-                f"Relative orientation on '{quantity.uri}' turns its delta in '{delta_basis}', "
-                f"which is neither the base's body frame '{of_frame_node}' nor its coordinate "
-                f"basis '{base_as_seen_by_node}'. Composing it needs a change of basis, which is "
-                "not supported."
-            )
+            in1, in2 = delta_node, base_node
         composition_node = URIRef(f"{quantity.uri}.orientation-composition")
         self.graph.add((composition_node, RDF.type, GEOM_OP_EXT.ComposeOrientation))
         self.graph.add((composition_node, GEOM_OP.in1, in1))
@@ -3666,11 +3326,6 @@ class MotionSpecDatasetBuilder:
                 (dc.y_axis, URI_GEOM_PRED_DIRECTION_COSINE_Y),
                 (dc.z_axis, URI_GEOM_PRED_DIRECTION_COSINE_Z),
             ):
-                if any(element.ref is not None for element in axis_coords.values):
-                    raise ConstraintViolation(
-                        "geometry",
-                        f"Relative orientation '{quantity.uri}' has a symbolic direction cosine",
-                    )
                 self._add_literal_list_once(
                     delta_node,
                     predicate,
@@ -3682,14 +3337,10 @@ class MotionSpecDatasetBuilder:
             coords = euler.angles
             predicates = (URI_GEOM_PRED_ALPHA, URI_GEOM_PRED_BETA, URI_GEOM_PRED_GAMMA)
             unit = _angle_unit(euler)
-        self._emit_delta_components(delta_node, coords, predicates, unit, quantity)
+        self._emit_delta_components(delta_node, coords, predicates, unit)
 
-    def _emit_delta_components(self, node, coords, predicates, unit, quantity) -> None:
+    def _emit_delta_components(self, node, coords, predicates, unit) -> None:
         """Emit one standalone literal rotation parameter consumed by RelativeOrientation."""
-        if any(element.ref is not None for element in coords.values):
-            raise ConstraintViolation(
-                "geometry", f"Relative orientation '{quantity.uri}' has symbolic components"
-            )
         if unit is not None:
             self.graph.remove((node, QUDT_SCHEMA.unit, None))
             self.graph.add((node, QUDT_SCHEMA.unit, _dsl_unit(unit)))
@@ -3797,24 +3448,6 @@ class MotionSpecDatasetBuilder:
                 f"{quantity.uri}.{label}",
             )
 
-    @staticmethod
-    def _lerp_value_kind(lerp) -> Any | None:
-        """The shared QUDT kind of a lerp's start and goal quantities; raises if they differ,
-        None if neither is typed.
-        """
-        start_qty = _context_quantity(lerp.start)
-        goal_qty = _context_quantity(lerp.goal)
-        start_kind = QUDT_KIND_BY_QUANTITY_TYPE.get(getattr(start_qty, "type", None))
-        goal_kind = QUDT_KIND_BY_QUANTITY_TYPE.get(getattr(goal_qty, "type", None))
-        if start_kind is None and goal_kind is None:
-            return None
-        if start_kind != goal_kind:
-            raise ValueError(
-                f"Lerp path start type '{getattr(start_qty, 'type', None)}' "
-                f"does not match goal type '{getattr(goal_qty, 'type', None)}'"
-            )
-        return start_kind
-
     def _emit_direction_quantity(
         self,
         node: URIRef,
@@ -3828,10 +3461,6 @@ class MotionSpecDatasetBuilder:
         as_seen_by_name = _geo_prop(quantity.props, "as-seen-by") or _geo_prop(
             quantity.props, "wrt"
         )
-        if as_seen_by_name is None:
-            raise ValueError(
-                f"Direction quantity '{quantity.name}' needs an 'as-seen-by: <frame>' prop."
-            )
         as_seen_by_node = self._owned_uri(as_seen_by_name, quantity)
         if isinstance(quantity.value, DirectionBetween):
             self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
@@ -3839,18 +3468,11 @@ class MotionSpecDatasetBuilder:
             self._emit_direction_coordinate(node, as_seen_by_node)
             self._emit_direction_between(node, quantity, as_seen_by_name, world_qtys or {})
             return
-        vector: tuple[float, float, float] | None = None
-        if isinstance(quantity.value, VectorXYZ):
-            elements = quantity.value.coords.values
-            if len(elements) != 3 or any(e.ref is not None for e in elements):
-                raise ValueError(
-                    f"Direction quantity '{quantity.name}' value must be 3 literal components."
-                )
-            vector = tuple(float(e.value) for e in elements)
-        elif quantity.value is not None:
-            raise ValueError(
-                f"Direction quantity '{quantity.name}' value must be a Vector literal."
-            )
+        vector = (
+            tuple(float(e.value) for e in quantity.value.coords.values)
+            if isinstance(quantity.value, VectorXYZ)
+            else None
+        )
         self.graph.add((node, RDF.type, QUDT_SCHEMA.Quantity))
         # An authored direction is itself the structural unit-vector entity (same node doubling
         # as line/plane's own along/normal direction does in `_emit_structural_primitive`).
@@ -3968,7 +3590,7 @@ class MotionSpecDatasetBuilder:
                 constraints,
                 world_qtys,
             )
-        elif value.figure8 is not None:
+        else:
             self._emit_geometric_path(
                 quantity,
                 GEOM_PATH.Figure8,
@@ -3982,8 +3604,6 @@ class MotionSpecDatasetBuilder:
                 world_qtys,
                 path_terms=[(GEOM_PATH.form, _ns_term(GEOM_PATH, value.figure8.form or "gerono"))],
             )
-        else:
-            raise ValueError(f"PathValue on '{quantity.name}' has no populated spec")
 
     def _emit_path_pose_metadata(
         self,
@@ -4023,7 +3643,10 @@ class MotionSpecDatasetBuilder:
     ) -> None:
         """Emit a geometric linear path and its eventual setpoint metadata."""
         lerp_node = self._declared_uri(f"lerp-{quantity.name}", quantity)
-        value_kind = self._lerp_value_kind(lerp)
+        # Start and goal share their kind; None when neither is typed.
+        value_kind = QUDT_KIND_BY_QUANTITY_TYPE.get(
+            getattr(_context_quantity(lerp.start), "type", None)
+        )
         self._emit_path_pose_metadata(quantity, value_kind, constraints, world_qtys)
         self.graph.add((lerp_node, RDF.type, GEOM_PATH.Path))
         self.graph.add((lerp_node, RDF.type, GEOM_PATH.LinearPath))
@@ -4059,11 +3682,11 @@ class MotionSpecDatasetBuilder:
     @staticmethod
     def _path_shape(quantity: ContextQuantity) -> str:
         """Return the populated geometric shape name of a Path quantity."""
-        value = quantity.value
-        for name in ("lerp", "circle", "arc", "helix", "figure8"):
-            if getattr(value, name, None) is not None:
-                return name
-        raise ValueError(f"PathValue on '{quantity.name}' has no populated spec")
+        return next(
+            name
+            for name in ("lerp", "circle", "arc", "helix", "figure8")
+            if getattr(quantity.value, name, None) is not None
+        )
 
     def _along_path_scalar(self, spec: ConstraintSpecification) -> tuple[str, Any] | None:
         """The scalar a driver or progress guard measures: the speed along its path."""
@@ -4095,10 +3718,6 @@ class MotionSpecDatasetBuilder:
         if spec.view.moving is not None:
             self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
             ctrl = self._controller_for_spec(spec)
-            if ctrl is None:
-                raise ValueError(
-                    f"Profiled path constraint '{spec.name}' needs a tracking controller."
-                )
             profile_qty = _resolved_context_quantity(_context_quantity(operand.profile))
             ref_node = self._emit_velocity_profile_reference(
                 ctrl,
@@ -4150,7 +3769,7 @@ class MotionSpecDatasetBuilder:
         of exactly the frame being followed rather than differentiating its pose.
         """
         context = f"Path following of '{moved.name}'"
-        of_frame, wrt_frame = self._pose_frames(moved, context)
+        of_frame, wrt_frame, _ = _pose_frame_names(moved)
         twist = next(
             (
                 quantity
@@ -4189,10 +3808,6 @@ class MotionSpecDatasetBuilder:
 
         path_node = self._path_geometry_node(path)
         as_seen_by_name = _geo_prop(moved.props, "as-seen-by") or _geo_prop(moved.props, "wrt")
-        if as_seen_by_name is None:
-            raise ValueError(
-                f"Path following of '{moved.name}' needs an 'as-seen-by' or 'wrt' frame."
-            )
         as_seen_by = self._owned_uri(as_seen_by_name, moved)
 
         parameter_node = self._declared_uri(f"{path.name}-s", path)
@@ -4252,10 +3867,7 @@ class MotionSpecDatasetBuilder:
             if operand is None:
                 continue
             path = _resolved_context_quantity(_context_quantity(operand.path))
-            moved = self._resolve_qty(operand.moved, world_qtys)
-            if moved is None:
-                raise ValueError(f"Constraint '{spec.name}' follows a path with an unknown frame.")
-            self._emit_path_projection(path, moved, world_qtys)
+            self._emit_path_projection(path, self._resolve_qty(operand.moved, world_qtys), world_qtys)
 
     def _emit_context_ref_node(
         self, ref: ContextRef, owner: Any, suffix: str, scalar_t: Any = None
@@ -4535,26 +4147,16 @@ class MotionSpecDatasetBuilder:
                 # written by a solver, not by forward kinematics -- so its component view is
                 # resolved the same way a world quantity's is.
                 subspace = (
-                    _view_subspace(spec) if context_qty is not None and spec.view.subspace else None
+                    constraint_view_subspace(spec) if context_qty is not None and spec.view.subspace else None
                 )
                 axis = semantic_axis_label(spec.view.axis) if context_qty is not None else None
                 qty_node, scalar_t = self._constraint_quantityless_view(
                     spec, motion, context_qty, spec.view.subspace, axis
                 )
             else:
-                subspace = _view_subspace(spec)
+                subspace = constraint_view_subspace(spec)
                 axis_raw = spec.view.axis
                 axis = semantic_axis_label(axis_raw)
-                if (
-                    qty.type == WorldQuantityType.Pose
-                    and subspace == "distance"
-                    and axis is None
-                    and not _is_distance_view(spec)
-                ):
-                    raise ValueError(
-                        f"Constraint '{spec.name}' must use explicit "
-                        "'distance between <pose-a> and <pose-b>' syntax."
-                    )
                 if (
                     qty.type == WorldQuantityType.Pose
                     and not _is_distance_view(spec)
@@ -4642,14 +4244,8 @@ class MotionSpecDatasetBuilder:
                     isinstance(admit_qty, ContextQuantity)
                     and admit_qty.type == ReferenceGeneratorType.Admittance
                 ):
-                    admit_ctrl = self._controller_for_spec(spec)
-                    if admit_ctrl is None:
-                        raise ValueError(
-                            f"Admittance constraint '{spec.name}' needs a tracking PID "
-                            "to host the filter's per-step integrator state."
-                        )
                     ref_node = self._emit_admittance_reference(
-                        admit_ctrl, spec, motion, admit_qty, scalar_t
+                        self._controller_for_spec(spec), spec, motion, admit_qty, scalar_t
                     )
                 self.graph.add((node, CSTR["reference-value"], ref_node))
                 self._reference_value_index[node] = ref_node
@@ -4713,9 +4309,6 @@ class MotionSpecDatasetBuilder:
         the reference-value node.
         """
         spec_val = admit_qty.value
-        if not isinstance(spec_val, AdmittanceSpec):
-            raise ValueError(f"Admittance quantity '{admit_qty.name}' has no filter spec.")
-
         out_node = self._declared_uri(f"{spec.name}-{ctrl.name}-admit-ref", ctrl)
         self._add_quantity(out_node, scalar_t)
 
@@ -4791,14 +4384,9 @@ class MotionSpecDatasetBuilder:
         """
         if measured_node is None:
             raise ValueError(f"Profiled controller '{ctrl.name}' needs a measured quantity.")
-        profile_qty = profile_qty or _context_quantity(ctrl.params.profile)
-        if not isinstance(profile_qty, ContextQuantity):
-            raise ValueError(f"Controller '{ctrl.name}' has an unresolved velocity profile.")
-        profile_qty = _resolved_context_quantity(profile_qty)
-        if not isinstance(profile_qty.value, ProfileSpec):
-            raise ValueError(
-                f"Controller '{ctrl.name}' profile '{profile_qty.name}' is not a Profile."
-            )
+        profile_qty = _resolved_context_quantity(
+            profile_qty or _context_quantity(ctrl.params.profile)
+        )
 
         # The profile emits a setpoint for the quantity it drives, so the output carries
         # that quantity's kind, not a velocity.
@@ -4990,26 +4578,15 @@ class MotionSpecDatasetBuilder:
                 expr.threshold, motion, f"{spec.name}-threshold"
             )
             self.graph.add((node, CSTR.threshold, thr_node))
-        elif isinstance(expr, EqualityConstraint):
+        else:
             self.graph.add((node, RDF.type, CSTR.EqualityConstraint))
             ref_node = self._emit_duration_threshold_node(
                 expr.reference, motion, f"{spec.name}-reference"
             )
             self.graph.add((node, CSTR["reference-value"], ref_node))
             band = spec.tolerance or self._tolerance_defaults.get(QuantityType.Duration)
-            if band is None:
-                raise ValueError(
-                    f"Elapsed equality '{spec.name}' states no band. A sampled clock never "
-                    "lands exactly on the reference, so it must say how close counts: "
-                    "'... equal to <t> within <band>'."
-                )
             tol_node = self._emit_duration_threshold_node(band, motion, f"{spec.name}-tolerance")
             self.graph.add((node, CSTR_EXT.tolerance, tol_node))
-        else:
-            raise ValueError(
-                f"Timing constraint '{spec.name}' must use 'greater than', 'less than', "
-                "or 'equal to'."
-            )
 
     def _emit_duration_threshold_node(self, ref: ContextRef, owner: Any, suffix: str) -> URIRef:
         """Resolve a timing threshold/reference/tolerance to a native OWL-Time Duration
@@ -5020,12 +4597,7 @@ class MotionSpecDatasetBuilder:
             node = self._owned_uri(suffix, owner)
             self._emit_duration_measure(node, bare)
             return node
-        quantity = _context_quantity(ref)
-        if isinstance(quantity, ContextQuantity):
-            return URIRef(_resolved_context_quantity(quantity).uri)
-        raise ValueError(
-            "Timing threshold must be a declared Duration quantity or an inline literal like `5.0 s`."
-        )
+        return URIRef(_resolved_context_quantity(_context_quantity(ref)).uri)
 
     def _emit_duration_measure(self, node: URIRef, value: Measure) -> None:
         """Emit a Measure (`5.0 s`, `10.0 ms`) as a time:Duration whose magnitude is carried
@@ -5129,12 +4701,25 @@ class MotionSpecDatasetBuilder:
         self.graph.add((ref_node, RDF.value, Literal(spec.status_constant)))
         self.graph.add((node, CSTR["reference-value"], ref_node))
 
+    def _emit_context_members(self, block_node: URIRef, block: Any) -> None:
+        """State the quantities a block declares in its context as members of it. A reference to
+        another block's declarations and an alias declare nothing of their own."""
+        self.graph.add((block_node, RDF.type, PROV.Collection))
+        for ctx in block.context:
+            if isinstance(ctx, ContextDeclReference):
+                continue
+            for item in ctx.declaration:
+                if isinstance(item, ContextQuantityAlias) or getattr(item, "uri", None) is None:
+                    continue
+                self.graph.add((block_node, PROV.hadMember, URIRef(item.uri)))
+
     def _emit_motion_spec(self, motion: GuardedMotion) -> None:
         """Emit the guarded-motion node linking its when/while/until constraints (with expression
         nodes for explicit `any`/`all` logic) and any path.
         """
         motion_node = self._owned_uri(f"motion-{motion.name}", motion)
         self.graph.add((motion_node, RDF.type, MOT.GuardedMotion))
+        self._emit_context_members(motion_node, motion)
         self.graph.add((motion_node, SDO.name, Literal(motion.name)))
         # textX leaves an unmatched optional STRING as '', not None.
         if motion.description:
@@ -5181,7 +4766,7 @@ class MotionSpecDatasetBuilder:
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None:
                 continue
-            subspace = _view_subspace(spec)
+            subspace = constraint_view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
 
@@ -5271,7 +4856,7 @@ class MotionSpecDatasetBuilder:
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None:
                 continue
-            subspace = _view_subspace(spec)
+            subspace = constraint_view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             if _scalar_type(qty, subspace, None) in (QuantityType.Angle, QuantityType.PlaneAngle):
@@ -5296,7 +4881,7 @@ class MotionSpecDatasetBuilder:
                 for spec in constraints
                 if not getattr(spec.view, "is_elapsed", False)
                 and self._resolve_constraint_quantity(spec, world_qtys) is not None
-                and _view_subspace(spec) == "rotation"
+                and constraint_view_subspace(spec) == "rotation"
                 and spec.view.axis is None
             ),
             None,
@@ -5319,7 +4904,7 @@ class MotionSpecDatasetBuilder:
             qty = self._resolve_constraint_quantity(spec, world_qtys)
             if qty is None or qty.type != WorldQuantityType.Pose:
                 continue
-            subspace = _view_subspace(spec)
+            subspace = constraint_view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             if subspace != "rotation" or axis is None:
@@ -5343,7 +4928,7 @@ class MotionSpecDatasetBuilder:
             axis = semantic_axis_label(axis_raw)
             if (
                 not _is_distance_view(spec)
-                or _view_subspace(spec) != "distance"
+                or constraint_view_subspace(spec) != "distance"
                 or axis is not None
             ):
                 continue
@@ -5466,7 +5051,7 @@ class MotionSpecDatasetBuilder:
             if not (_is_geometric_distance_view(spec) or _is_projection_view(spec)):
                 continue
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            subspace = _view_subspace(spec)
+            subspace = constraint_view_subspace(spec)
             distance_id = _scalar_id(qty, subspace, None)
             if distance_id in seen_geometric_ops:
                 continue
@@ -5593,13 +5178,8 @@ class MotionSpecDatasetBuilder:
                     (i_node, QUDT_SCHEMA.value, Literal(float(ctrl.params.ki), datatype=XSD.double))
                 )
                 self.graph.add((ctrl_node, CSTR_HDL["integral-gain"], i_node))
-        elif ctrl.type == ControllerType.FeedForward:
-            self.graph.add((ctrl_node, RDF.type, CSTR_HDL_EXT.FeedForwardController))
         else:
-            raise ValueError(
-                f"Controller '{ctrl.name}' uses {ctrl.type.value}, "
-                "which is not supported for graph emission."
-            )
+            self.graph.add((ctrl_node, RDF.type, CSTR_HDL_EXT.FeedForwardController))
 
     def _emit_saturation(
         self,
@@ -5854,6 +5434,7 @@ class MotionSpecDatasetBuilder:
         """
         handler_node = URIRef(handler.uri)
         self.graph.add((handler_node, RDF.type, CSTR_HDL.ConstraintHandler))
+        self._emit_context_members(handler_node, handler)
         self.graph.add((handler_node, APP.order, Literal(handler_order)))
         self.graph.add(
             (handler_node, CSTR_HDL.motion, self._owned_uri(f"motion-{motion.name}", motion))
@@ -5888,10 +5469,6 @@ class MotionSpecDatasetBuilder:
 
             along_path = self._along_path_scalar(spec)
             qty = self._resolve_constraint_quantity(spec, world_qtys)
-            if _is_norm_view(spec):
-                raise ValueError(
-                    f"controller '{ctrl.name}' constrains a norm view, which nothing can command"
-                )
             derived_t = (
                 self._quantityless_scalar_type(spec) if qty is None and along_path is None else None
             )
@@ -5899,7 +5476,7 @@ class MotionSpecDatasetBuilder:
                 raise ValueError(
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )
-            subspace = None if derived_t is not None else _view_subspace(spec)
+            subspace = None if derived_t is not None else constraint_view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             shared = spec in shared_spec_ids
@@ -5911,7 +5488,6 @@ class MotionSpecDatasetBuilder:
                 else (_constraint_scalar_type(qty, spec) if qty else subspace)
             )
             command = controller_command_record(ctrl)
-            _validate_command_subspace(ctrl, spec, command)
 
             authored_ctrl_node = URIRef(ctrl.uri)
             self._emit_controller_base(authored_ctrl_node, ctrl, command)
@@ -6035,11 +5611,6 @@ class MotionSpecDatasetBuilder:
         for mon in getattr(handler, "monitors", []):
             cref = mon.constraint
             trigger = mon.trigger
-            if mon.fallback is not None and trigger is None:
-                raise ValueError(
-                    f"Monitor '{mon.name}' holds a fallback motion but triggers no event; "
-                    "the fallback is only taken on the edge that fires."
-                )
             is_event = trigger is not None
             signal_kind = "event" if is_event else "flag" if mon.flag else "publish-only"
             signal_node = (
@@ -6298,38 +5869,17 @@ class MotionSpecDatasetBuilder:
                 seen_eval_ids,
             )
 
-    @staticmethod
-    def _perturbation_quantity(ref: ContextRef, perturbation: Any) -> ContextQuantity:
-        """The named quantity a perturbation's magnitude or direction slot points at.
-
-        Only a name is admitted: a force pattern richer than a constant arrives as a new kind of
-        quantity, and an inline number in the handler would leave nowhere for it to go.
-        """
-        quantity = _context_quantity(ref)
-        if not isinstance(quantity, ContextQuantity):
-            raise ValueError(
-                f"Perturbation '{perturbation.name}' must name a declared quantity for its "
-                "magnitude and its direction."
-            )
-        return _resolved_context_quantity(quantity)
-
-    def _perturbation_frame(self, perturbation: Any) -> tuple[URIRef, str]:
-        """The frame a perturbation's wrench is stated in: the one its direction is seen by."""
-        direction = self._perturbation_quantity(
-            perturbation.force_direction or perturbation.moment_direction, perturbation
-        )
-        frame_name = _geo_prop(direction.props, "as-seen-by") or _geo_prop(direction.props, "wrt")
-        if frame_name is None:
-            raise ValueError(
-                f"Perturbation '{perturbation.name}' direction '{direction.name}' needs an "
-                "'as-seen-by: <frame>' prop: it is the frame the applied wrench is stated in."
-            )
-        return self._owned_uri(frame_name, direction), frame_name
-
     def _emit_perturbation_wrench(self, perturbation: Any) -> URIRef:
         """The wrench a perturbation's named magnitudes and directions compose to, by the same
         ops a force or moment command is built from."""
-        as_seen_by_node, _frame_name = self._perturbation_frame(perturbation)
+        # Stated in the frame its direction is seen by.
+        direction = _resolved_context_quantity(
+            _context_quantity(perturbation.force_direction or perturbation.moment_direction)
+        )
+        as_seen_by_node = self._owned_uri(
+            _geo_prop(direction.props, "as-seen-by") or _geo_prop(direction.props, "wrt"),
+            direction,
+        )
         point_node = self._declared_uri(f"point-{perturbation.name}", perturbation)
         position_node = self._declared_uri(f"position-{perturbation.name}", perturbation)
         self._emit_zero_position_coordinate(position_node, point_node, as_seen_by_node)
@@ -6344,7 +5894,7 @@ class MotionSpecDatasetBuilder:
                 (
                     op_node,
                     RBDYN_OP.magnitude,
-                    URIRef(self._perturbation_quantity(perturbation.force, perturbation).uri),
+                    URIRef(_resolved_context_quantity(_context_quantity(perturbation.force)).uri),
                 )
             )
             self.graph.add(
@@ -6352,7 +5902,9 @@ class MotionSpecDatasetBuilder:
                     op_node,
                     RBDYN_OP.direction,
                     URIRef(
-                        self._perturbation_quantity(perturbation.force_direction, perturbation).uri
+                        _resolved_context_quantity(
+                            _context_quantity(perturbation.force_direction)
+                        ).uri
                     ),
                 )
             )
@@ -6369,7 +5921,7 @@ class MotionSpecDatasetBuilder:
                 (
                     op_node,
                     RBDYN_OP_EXT.moment,
-                    URIRef(self._perturbation_quantity(perturbation.moment, perturbation).uri),
+                    URIRef(_resolved_context_quantity(_context_quantity(perturbation.moment)).uri),
                 )
             )
             self.graph.add(
@@ -6377,17 +5929,15 @@ class MotionSpecDatasetBuilder:
                     op_node,
                     RBDYN_OP.direction,
                     URIRef(
-                        self._perturbation_quantity(perturbation.moment_direction, perturbation).uri
+                        _resolved_context_quantity(
+                            _context_quantity(perturbation.moment_direction)
+                        ).uri
                     ),
                 )
             )
             self.graph.add((op_node, RBDYN_OP.wrench, wrench_node))
             wrench_nodes.append(wrench_node)
 
-        if not wrench_nodes:
-            raise ValueError(
-                f"Perturbation '{perturbation.name}' applies neither a force nor a torque."
-            )
         if len(wrench_nodes) == 1:
             return wrench_nodes[0]
 
@@ -6529,6 +6079,7 @@ class MotionSpecDatasetBuilder:
 
             driver_node = self._owned_uri(f"driver-{driver_stem}", handler)
             self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
+            self.graph.add((driver_node, PROV.wasDerivedFrom, URIRef(handler.uri)))
 
             if isinstance(solver, CommandForwardingSolver):
                 self.graph.add((solver_node, RDF.type, SLV_EXT.CommandForwardingSolver))
@@ -6632,7 +6183,7 @@ class MotionSpecDatasetBuilder:
                     f"Controller '{ctrl.name}' constraint '{spec.name}' does not resolve to a world quantity."
                 )
 
-            subspace = None if quantityless else _view_subspace(spec)
+            subspace = None if quantityless else constraint_view_subspace(spec)
             axis_raw = spec.view.axis
             axis = semantic_axis_label(axis_raw)
             command = controller_command_record(ctrl)
@@ -6666,6 +6217,7 @@ class MotionSpecDatasetBuilder:
             ):
                 torque_id = f"tau-{ctrl.name}"
                 torque_node = self._owned_uri(torque_id, handler)
+                self.graph.add((URIRef(ctrl.uri), CSTR_HDL["control-signal"], torque_node))
                 self.graph.add((torque_node, RDF.type, QUDT_SCHEMA.Quantity))
                 self.graph.add((torque_node, RDF.type, KC_STAT.JointReference))
                 self.graph.add((torque_node, RDF.type, KC_STAT.JointForce))
@@ -6673,15 +6225,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((torque_node, QUDT_SCHEMA.hasQuantityKind, QUDT_QKIND.Torque))
                 self.graph.add((torque_node, QUDT_SCHEMA.unit, QUDT_UNIT["N-M"]))
 
-                joint_name = _geo_prop(
-                    qty.props if isinstance(qty.props, GeometricProps) else None, "joint"
-                )
-                if joint_name is None:
-                    raise ConstraintViolation(
-                        "kinematic-chain",
-                        f"Joint torque command '{torque_id}' has no target joint",
-                    )
-                joint_node = self._owned_uri(joint_name, qty)
+                joint_node = self._owned_uri(_geo_prop(qty.props, "joint"), qty)
                 self.graph.add((torque_node, KC_STAT["of-joint"], joint_node))
 
                 spec_node = self._declared_uri(f"jf-spec-{ctrl.name}", ctrl)
@@ -6710,6 +6254,7 @@ class MotionSpecDatasetBuilder:
         """
         driver_node = self._owned_uri(f"driver-{solver.name}-{handler.name}", handler)
         self.graph.add((driver_node, RDF.type, SLV.MotionDrivers))
+        self.graph.add((driver_node, PROV.wasDerivedFrom, URIRef(handler.uri)))
         self.graph.add((solver_node, SLV["motion-drivers"], driver_node))
 
         for ctrl_item in getattr(handler, "controllers", []):
@@ -6731,12 +6276,6 @@ class MotionSpecDatasetBuilder:
                 context_qty = self._constraint_context_quantity(spec)
                 if context_qty is not None and isinstance(context_qty.props, GeometricProps):
                     qty = context_qty
-            if qty is None and not command.is_moment_command:
-                raise ValueError(
-                    f"Controller '{ctrl.name}' routes a force to platform solver "
-                    f"'{solver.name}', but its constraint '{spec.name}' names no quantity with "
-                    f"frames, so no direction can be taken for the wrench."
-                )
             # A distribution takes a couple as readily as a force -- it is the same wrench, and
             # the yaw a platform is steered by is exactly what a moment command states.
             if command.is_moment_command:

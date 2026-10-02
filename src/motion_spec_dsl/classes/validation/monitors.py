@@ -46,6 +46,12 @@ def _validate_blocks(monitor) -> None:
 
 
 def _validate_actions(monitor) -> None:
+    if monitor.fallback is not None and monitor.trigger is None:
+        raise semantic_error(
+            f"Monitor '{monitor.name}' holds a fallback motion but triggers no event; "
+            "the fallback is only taken on the edge that fires.",
+            monitor,
+        )
     for block in monitor.states:
         for action in block.actions:
             allowed = _ALLOWED_STATES[action.kind]

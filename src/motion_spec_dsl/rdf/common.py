@@ -67,6 +67,42 @@ def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
     return None
 
 
+def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
+    """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
+    source quantity when the pose declares none. None when they are not resolvable."""
+    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
+    if _geo_prop(props, "of") is None:
+        source = getattr(getattr(quantity, "value", None), "source", None)
+        source_props = getattr(getattr(source, "quantity", None), "props", None)
+        props = source_props if isinstance(source_props, GeometricProps) else None
+    of_frame = _geo_prop(props, "of")
+    wrt_frame = _geo_prop(props, "wrt")
+    if of_frame is None or wrt_frame is None:
+        return None
+    return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
+
+
+def _path_pose_endpoints(quantity) -> tuple:
+    """Pose-valued endpoints whose frame relation defines a geometric path."""
+    value = quantity.value
+    for spec_name, endpoint_names in (
+        ("lerp", ("start", "goal")),
+        ("arc", ("start", "end")),
+        ("circle", ("start",)),
+        ("helix", ("start",)),
+        ("figure8", ("anchor",)),
+    ):
+        spec = getattr(value, spec_name, None)
+        if spec is None:
+            continue
+        return tuple(
+            endpoint
+            for name in endpoint_names
+            if (endpoint := _context_quantity(getattr(spec, name, None))) is not None
+        )
+    return ()
+
+
 def _angle_bound(bound) -> float:
     """An authored angle bound as a number: any constant expression over literals and pi."""
     return const_value(getattr(bound, "value", bound))
@@ -205,14 +241,6 @@ def _alignment_id(quantity: WorldQuantity, constraint: ConstraintSpecification) 
     return _scalar_id(quantity, stem, None)
 
 
-def _view_subspace(constraint: ConstraintSpecification) -> str:
-    """The constraint's resolved view subspace; raises if it declares none."""
-    subspace = constraint_view_subspace(constraint)
-    if subspace is None:
-        raise ValueError(f"Constraint '{constraint.name}' must define a view subspace.")
-    return subspace
-
-
 def _scalar_id(quantity: WorldQuantity, subspace: str, axis: str | None) -> str:
     """Id stem for a scalar view of `quantity`: `<name>.<subspace>[.<axis>]`
     (bare `<name>` for joint positions)."""
@@ -236,7 +264,7 @@ def _norm_id(quantity: WorldQuantity, subspace: str, across: str | None) -> str:
 
 def _constraint_scalar_id(quantity: WorldQuantity, constraint: ConstraintSpecification) -> str:
     """The scalar id a plain or norm view resolves to; alignment/angle views are the caller's."""
-    subspace = _view_subspace(constraint)
+    subspace = constraint_view_subspace(constraint)
     if _is_norm_view(constraint):
         # Resolve through an alias so this id matches the one the emitter builds.
         across = _resolved_context_quantity(_context_quantity(constraint.view.norm.across))
@@ -255,7 +283,7 @@ def _gradient_scalar_id(quantity: WorldQuantity, constraint: ConstraintSpecifica
             return None
         base = _alignment_id(quantity, constraint)
     elif _is_geometric_distance_view(constraint) or _is_projection_view(constraint):
-        base = _scalar_id(quantity, _view_subspace(constraint), None)
+        base = _scalar_id(quantity, constraint_view_subspace(constraint), None)
     elif _is_incident_angle_view(constraint) or _is_plane_angle_view(constraint):
         base = _alignment_id(quantity, constraint)
     else:
@@ -336,20 +364,11 @@ _NORM_SCALAR_TYPES = {
 }
 
 
-def _norm_scalar_type(quantity: WorldQuantity, subspace: str) -> Any:
-    """QuantityType of `norm of quantity.subspace`; rejects anything that is not a 3-vector."""
-    vector_t = _scalar_type(quantity, subspace, None)
-    scalar_t = _NORM_SCALAR_TYPES.get(vector_t)
-    if scalar_t is None:
-        raise ValueError(f"norm of '{quantity.name}.{subspace}' is not a 3-vector view")
-    return scalar_t
-
-
 def _constraint_scalar_type(quantity: WorldQuantity, constraint: ConstraintSpecification) -> Any:
     """The scalar kind a plain or norm view resolves to."""
-    subspace = _view_subspace(constraint)
+    subspace = constraint_view_subspace(constraint)
     if _is_norm_view(constraint):
-        return _norm_scalar_type(quantity, subspace)
+        return _NORM_SCALAR_TYPES[_scalar_type(quantity, subspace, None)]
     return _scalar_type(quantity, subspace, semantic_axis_label(constraint.view.axis))
 
 

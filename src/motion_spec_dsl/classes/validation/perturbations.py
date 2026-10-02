@@ -12,6 +12,7 @@ from motion_spec_dsl.classes.context import (
 )
 from motion_spec_dsl.classes.motion_spec import ExecutionContext, Model
 from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
+from motion_spec_dsl.rdf.common import _geo_prop
 
 # What each authored slot of a perturbation's apply clause must name.
 _SLOT_TYPES = (
@@ -62,6 +63,15 @@ def validate_perturbations(model: Model) -> None:
                     raise semantic_error(
                         f"Perturbation '{perturbation.name}' names '{quantity.name}' "
                         f"({quantity.type}) as its {role}, which must be a {expected} quantity.",
+                        perturbation,
+                    )
+                if expected == QuantityType.Direction and not (
+                    _geo_prop(quantity.props, "as-seen-by") or _geo_prop(quantity.props, "wrt")
+                ):
+                    raise semantic_error(
+                        f"Perturbation '{perturbation.name}' direction '{quantity.name}' needs an "
+                        "'as-seen-by: <frame>' prop: it is the frame the applied wrench is stated "
+                        "in.",
                         perturbation,
                     )
             if perturbation.duration is None:

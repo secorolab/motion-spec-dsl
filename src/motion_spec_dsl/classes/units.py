@@ -18,7 +18,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from rdf_utils.namespace import NS_MM_QUDT_QTY as QUDT_KIND
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+
+from motion_spec_dsl.rdf_parser.vocab import QKIND_EXT
 
 DSL_UNIT: dict[str, Any] = {
     "m": QUDT_UNIT.M,
@@ -42,6 +45,35 @@ DSL_UNIT: dict[str, Any] = {
     "1": QUDT_UNIT.UNITLESS,
     "kg": QUDT_UNIT["KiloGM"],
     "A": QUDT_UNIT.A,
+}
+
+_LENGTH_KINDS = frozenset({QUDT_KIND.Length, QUDT_KIND.Distance, QUDT_KIND.PositionVector})
+_ANGLE_KINDS = frozenset({QUDT_KIND.Angle, QUDT_KIND.PlaneAngle})
+
+# The quantity kinds each token's unit serves: QUDT's hasQuantityKind (v3.5.2), Distance and
+# PositionVector by their skos:broader Length, plus the DSL's own kinds QUDT has no unit for.
+UNIT_KINDS: dict[str, frozenset] = {
+    "m": _LENGTH_KINDS,
+    "cm": _LENGTH_KINDS,
+    "mm": _LENGTH_KINDS,
+    "rad": _ANGLE_KINDS,
+    "deg": _ANGLE_KINDS,
+    "m/s": frozenset({QUDT_KIND.LinearVelocity}),
+    "cm/s": frozenset({QUDT_KIND.LinearVelocity}),
+    "rad/s": frozenset({QUDT_KIND.AngularVelocity}),
+    "deg/s": frozenset({QUDT_KIND.AngularVelocity}),
+    "m/s^2": frozenset({QUDT_KIND.LinearAcceleration}),
+    "rad/s^2": frozenset({QUDT_KIND.AngularAcceleration}),
+    "deg/s^2": frozenset({QUDT_KIND.AngularAcceleration}),
+    "m/s^3": frozenset({QKIND_EXT.LinearJerk}),
+    "N": frozenset({QUDT_KIND.Force}),
+    "Nm": frozenset({QUDT_KIND.Torque}),
+    "s": frozenset({QUDT_KIND.Time}),
+    "ms": frozenset({QUDT_KIND.Time}),
+    "Hz": frozenset({QUDT_KIND.Frequency}),
+    "1": frozenset({QUDT_KIND.Dimensionless, QUDT_KIND.FreeVector}),
+    "kg": frozenset({QUDT_KIND.Mass}),
+    "A": frozenset({QUDT_KIND.ElectricCurrent}),
 }
 
 ANGLE_UNITS: tuple[Any, ...] = (DSL_UNIT["rad"], DSL_UNIT["deg"])
