@@ -60,30 +60,30 @@ constraint-handler (ns=app) handler-home {
     }
     solvers {
         arm-solver: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: achd,
             gravity: (0.0, 0.0, 9.81) m/s^2
         },
         platform-velocity-solver: mobile-platform {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: velocity-composition,
             configuration: "hddc2b_example_vel",
             quantity: <shared.spec.platform-velocity>
         },
         platform-force-solver: mobile-platform {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: force-distribution,
             configuration: "hddc2b_example_frc_sc1",
             quantity: <shared.spec.platform-force>
         },
         platform-velocity-dist-solver: mobile-platform {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: velocity-distribution,
             configuration: "hddc2b_example_vel_dist",
             quantity: <shared.spec.platform-velocity>
         },
         platform-force-comp-solver: mobile-platform {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: force-composition,
             configuration: "hddc2b_example_frc",
             quantity: <shared.spec.platform-force>

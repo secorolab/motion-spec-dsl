@@ -192,7 +192,7 @@ SECOND_MOTION = (
     "    }\n"
     "    solvers {\n"
     "        arm-solver2: serial-chain {\n"
-    "            agent: <agents.kinova_ft_2f85>,\n"
+    "            agent: <agents.arm1>,\n"
     "            algorithm: achd,\n"
     "            gravity: (0.0, 0.0, 9.81) m/s^2\n"
     "        }\n"

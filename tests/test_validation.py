@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import pytest
-from rdf_utils.constraints import ConstraintViolation
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError
@@ -51,7 +50,7 @@ REJECTIONS = [
     ),
     pytest.param(
         "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "satisfied { flag: settled, hold: <home> },",
+        "satisfied { trigger: event <aas.E_HOME_SETTLED>, hold: <home> },",
         "belongs in violated",
         id="validate_monitor_hold_placement",
     ),
@@ -82,7 +81,8 @@ MEASURED = """,
         wrench press-wrench {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by: <kinova.base_link.base_link_origin>,
-            ft-sensor:  <wrist_ft>
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <aas.E_HOME_SETTLED> }
         }"""
 COMMANDED = """,
         wrench press-wrench {
@@ -94,7 +94,7 @@ ESTIMATED = """,
         wrench press-wrench {
             ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by:     <kinova.base_link.base_link_origin>,
-            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
+            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 },
             re-tare-on:     { <aas.E_HOME_SETTLED> }
         }"""
 ESTIMATED_AND_MEASURED = """,
@@ -102,14 +102,14 @@ ESTIMATED_AND_MEASURED = """,
             ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by:     <kinova.base_link.base_link_origin>,
             ft-sensor:      <wrist_ft>,
-            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
+            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 },
             re-tare-on:     { <aas.E_HOME_SETTLED> }
         }"""
 ESTIMATED_UNTARED = """,
         wrench press-wrench {
             ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by:     <kinova.base_link.base_link_origin>,
-            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 }
+            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 }
         }"""
 
 
@@ -159,12 +159,12 @@ def _wrench_graph(base_source: str, parse_source, wrench: str):
 
 
 def test_a_wrench_is_measured_or_estimated_not_both(parse_source, base_source):
-    with pytest.raises(ConstraintViolation, match="measured or estimated, not both"):
+    with pytest.raises(TextXSemanticError, match="measured or estimated, not both"):
         _wrench_graph(base_source, parse_source, ESTIMATED_AND_MEASURED)
 
 
 def test_an_estimated_wrench_needs_retare_events(parse_source, base_source):
-    with pytest.raises(ConstraintViolation, match="has estimated-from but names no re-tare-on"):
+    with pytest.raises(TextXSemanticError, match="has estimated-from but names no re-tare-on"):
         _wrench_graph(base_source, parse_source, ESTIMATED_UNTARED)
 
 
@@ -176,7 +176,7 @@ def test_an_estimated_wrench_names_its_observer(parse_source, base_source):
 
     assert observer is not None
     assert (observer, RDF.type, EST.MomentumObserver) in graph
-    assert str(graph.value(observer, AGN["of-agent"])).endswith("/kinova_ft_2f85")
+    assert str(graph.value(observer, AGN["of-agent"])).endswith("/arm1")
     gain = graph.value(observer, EST["estimation-gain"])
     assert graph.value(gain, QUDT_SCHEMA.value).toPython() == 30.0
     assert graph.value(gain, QUDT_SCHEMA.unit) == QUDT_UNIT.HZ

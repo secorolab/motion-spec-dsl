@@ -14,56 +14,35 @@ from pathlib import Path
 
 import pytest
 
+from conftest import load_authored
 from motion_spec.rdf_parser.ir import generate_ir
-from motion_spec_dsl.gens import _gen_graph
 from motion_spec_dsl.langs import motion_spec_metamodel
 
 
 MODELS = Path(__file__).parents[1] / "src" / "motion_spec_dsl" / "models"
-METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 
 
-@pytest.fixture(scope="module")
-def admittance_arc_manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Generate the force-interaction model once per module (admittance, arc re-entry,
-    until groups); consumers derive their own fresh IR from the immutable manifest."""
-    tmp_path = tmp_path_factory.mktemp("arc_tracing_with_admittance")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", str(METAMODELS))
-        metamodel = motion_spec_metamodel()
-        model = metamodel.model_from_file(
-            MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
-        )
-        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return tmp_path / "arc_tracing_with_admittance-app.ld.json"
+def _ir(robmot: Path, out: Path) -> dict:
+    """The IR of ROBMOT, loaded fresh, so no test can leak mutations of the IR into another."""
+    return generate_ir(*load_authored(motion_spec_metamodel().model_from_file(robmot), out))
 
 
 @pytest.fixture
-def interaction_ir(admittance_arc_manifest: Path) -> dict:
-    """Fresh IR per test: derived from the immutable manifest so no test can leak
-    mutations of the IR's dataclasses/lists into another."""
-    return generate_ir(admittance_arc_manifest)
+def interaction_ir(tmp_path: Path) -> dict:
+    """The force-interaction model: admittance, arc re-entry, until groups."""
+    return _ir(
+        MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot", tmp_path
+    )
 
 
-@pytest.fixture(scope="module")
-def table_ii_manifest(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Generate the model that drives every Borghesan Table II operator, once per module.
+@pytest.fixture
+def table_ii_ir(tmp_path: Path) -> dict:
+    """The model that drives every Borghesan Table II operator.
 
     Borghesan's own worked example (sec. VII) is the drawer, so the operators are exercised by
     the task that motivates them rather than by a probe model that does nothing else.
     """
-    tmp_path = tmp_path_factory.mktemp("drawer_opening")
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", str(METAMODELS))
-        metamodel = motion_spec_metamodel()
-        model = metamodel.model_from_file(MODELS / "04_drawer_opening" / "drawer_opening.robmot")
-        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    return tmp_path / "drawer_opening-app.ld.json"
-
-
-@pytest.fixture
-def table_ii_ir(table_ii_manifest: Path) -> dict:
-    return generate_ir(table_ii_manifest)
+    return _ir(MODELS / "04_drawer_opening" / "drawer_opening.robmot", tmp_path)
 
 
 def _motion(ir: dict, motion_id: str):
@@ -131,10 +110,8 @@ def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -
         "",
         1,
     )
-    metamodel = motion_spec_metamodel()
-    model = metamodel.model_from_str(source, file_name=str(source_path))
-    _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    ir = generate_ir(tmp_path / "arc_tracing_with_admittance-app.ld.json")
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(source_path))
+    ir = generate_ir(*load_authored(model, tmp_path))
     outputs = [
         output
         for solver in ir["resources"]["by_kind"]["serial_chain"]
@@ -152,8 +129,8 @@ def test_measured_wrench_defaults_to_its_physical_sensor_frame(tmp_path: Path) -
 _ESTIMATED_WRENCH = """        wrench ext-force-est {
             ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
             as-seen-by:     <kinova.base_link.base_link_origin>,
-            estimated-from: <agents.kinova_ft_2f85> { gain: 30.0 Hz, filter: 0.5 },
-            re-tare-on:     { <aas.E_RUN_STARTED> }
+            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 },
+            re-tare-on:     { <fsm.E_RUN_STARTED> }
         },
         wrench ext-force {"""
 
@@ -163,12 +140,8 @@ def test_estimated_wrench_reaches_the_ir(tmp_path: Path) -> None:
     and none of the sensor path: nothing measures it, so it has no sensor to name."""
     source_path = MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     source = source_path.read_text().replace("        wrench ext-force {", _ESTIMATED_WRENCH, 1)
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("METAMODELS_PATH", str(METAMODELS))
-        metamodel = motion_spec_metamodel()
-        model = metamodel.model_from_str(source, file_name=str(source_path))
-        _gen_graph(metamodel, model, tmp_path, overwrite=True, debug=False)
-    ir = generate_ir(tmp_path / "arc_tracing_with_admittance-app.ld.json")
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(source_path))
+    ir = generate_ir(*load_authored(model, tmp_path))
     estimated = [
         output
         for solver in ir["resources"]["by_kind"]["serial_chain"]
@@ -181,7 +154,7 @@ def test_estimated_wrench_reaches_the_ir(tmp_path: Path) -> None:
     assert out.sensor_name == ""
     assert out.estimator.estimation_gain_hz == 30.0
     assert out.estimator.filter_constant == 0.5
-    assert out.estimator.agent.endswith("kinova_ft_2f85")
+    assert out.estimator.agent.endswith("arm1")
     assert (out.reference_point.id, out.as_seen_by.id) == ("wrist_ft_site", "base_link")
 
 
@@ -194,7 +167,7 @@ def test_admittance_reference_is_produced_before_it_is_consumed(interaction_ir: 
     """
     compliance = _motion(interaction_ir, "motion_compliance")
     closures = interaction_ir["computation"]["closures"]
-    admit = [c for c in closures if c.startswith("admit_")]
+    admit = [name for name, closure in closures.items() if closure["type"] == "Admittance"]
     assert admit, "model declares admittance references"
     assert set(admit) <= set(compliance.while_pre_schedule), (
         f"admittance closures unscheduled: {sorted(set(admit) - set(compliance.while_pre_schedule))}"
@@ -205,8 +178,7 @@ def test_admittance_release_threshold_cannot_exceed_deadband() -> None:
     source_path = MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
     source = source_path.read_text().replace(
         "                deadband: 1.0 N\n",
-        "                deadband: 1.0 N,\n"
-        "                release-threshold: 2.0 N\n",
+        "                deadband: 1.0 N,\n                release-threshold: 2.0 N\n",
         1,
     )
 

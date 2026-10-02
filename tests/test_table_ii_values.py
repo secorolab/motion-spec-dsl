@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from motion_spec.introspection.frame_log_pb import frame_records, read_contract
+from motion_spec.telemetry.frame_log_pb import frame_records, read_contract
 
 
 RUN_ENV = "MOTION_SPEC_DRAWER_OPEN_RUN"

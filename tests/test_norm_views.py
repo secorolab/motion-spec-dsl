@@ -7,6 +7,7 @@ one `geom-op-ext:VectorNorm` operator, with the vector's own kind and unit.
 from __future__ import annotations
 
 import pytest
+from textx.exceptions import TextXSemanticError
 from rdflib.namespace import RDF
 
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
@@ -129,7 +130,7 @@ def test_norm_of_an_orientation_is_rejected(parse_source, base_source) -> None:
             "        twisted: norm of <shared.world.pose-ee-base>.orientation less than 0.5 rad"
         ),
     )
-    with pytest.raises(ValueError, match="not a 3-vector view"):
+    with pytest.raises(TextXSemanticError, match="not a 3-vector view"):
         _graph(parse_source, source)
 
 
@@ -142,7 +143,7 @@ def test_direction_in_another_frame_is_rejected(parse_source, base_source) -> No
             "<shared.spec.gripper-normal> greater than 0.05 m/s"
         ),
     )
-    with pytest.raises(ValueError, match="seen by"):
+    with pytest.raises(TextXSemanticError, match="seen by"):
         _graph(parse_source, source)
 
 
@@ -156,5 +157,5 @@ def test_controller_on_a_norm_view_is_rejected(parse_source, base_source) -> Non
             ",\n        pid ctrl-speed { constraint: <home.speed>, Kp: 1, Ki: 0, Kd: 0, decay: 0 }"
         ),
     )
-    with pytest.raises(ValueError, match="nothing can command"):
+    with pytest.raises(TextXSemanticError, match="nothing can command"):
         _graph(parse_source, source)

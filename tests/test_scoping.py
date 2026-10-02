@@ -68,17 +68,17 @@ def test_frame_refs_through_two_instances():
 
 def test_unique_suffix_reaches_into_the_kinematic_graph():
     model = parse(
-        "pose p2 {\n    of: <pick_place_graph.cube.cube_origin>,\n    wrt: <cube.cube_origin>\n}"
+        "pose p2 {\n    of: <pick_and_place_graph.cube.cube_origin>,\n    wrt: <cube.cube_origin>\n}"
     )
     declaration = model.specs[0].context[0].declaration[0]
     fqns = {_fqn(pair.frame) for pair in declaration.props.pairs}
-    assert fqns == {"pick_place_scene_mjc.pick_place_graph.cube.cube_origin"}
+    assert fqns == {"pick_and_place_scene_mjc.pick_and_place_graph.cube.cube_origin"}
 
 
 def test_body_ref_coerces_to_its_default_frame():
     model = parse(
         "pose p3 {\n"
-        "    of: <pick_place_graph.cube>,\n"
+        "    of: <pick_and_place_graph.cube>,\n"
         "    wrt: <kinova.base_link>,\n"
         "    as-seen-by: <world_tree.world_body>\n"
         "}"
@@ -86,7 +86,7 @@ def test_body_ref_coerces_to_its_default_frame():
     declaration = model.specs[0].context[0].declaration[0]
     fqns = [_fqn(pair.frame) for pair in declaration.props.pairs]
     assert fqns == [
-        "pick_place_scene_mjc.pick_place_graph.cube.cube_origin",
+        "pick_and_place_scene_mjc.pick_and_place_graph.cube.cube_origin",
         "kinova.base_link.base_link_origin",
         "world_tree.world_body.world",
     ]
@@ -140,7 +140,7 @@ def test_constraint_fqn_resolves_specs_and_groups():
     handler = next(
         spec
         for spec in model.specs
-        if isinstance(spec, ConstraintHandler) and spec.name == "handler-admittance"
+        if isinstance(spec, ConstraintHandler) and spec.name == "handler-compliance"
     )
     constraint_ref = handler.controllers[0].params.constraint
     group_ref = handler.monitors[0].constraint

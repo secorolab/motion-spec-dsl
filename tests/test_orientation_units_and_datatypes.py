@@ -21,6 +21,7 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_ORIENT_COORD,
     URI_GEOM_TYPE_QUATERNION,
 )
+import rdflib
 from rdflib.namespace import RDF
 from textx.exceptions import TextXSemanticError, TextXSyntaxError
 
@@ -510,12 +511,10 @@ def test_relative_orientation_composes_instead_of_decomposing(parse_mutated) -> 
     # The composition result is representation-independent, so it has no Euler unit of its
     # own. The IR reader must retain the delta's radians without requiring a result unit.
     # The motion-spec readers take a Model, not a bare graph.
-    ir_model = Model(
-        graph=graph,
-        app_path=Path("model-app.ld.json"),
-        imported_models=[],
-        imported_provenance=[],
-    )
+    dataset = rdflib.Dataset(default_union=True)
+    for triple in graph:
+        dataset.add(triple)
+    ir_model = Model(graph=dataset, app_path=Path("model-app.ld.json"))
     assert read_orientation(ir_model, orientation).unit.id == "UNITLESS"
 
     operands = _relative_orientation(ir_model, orientation)
@@ -534,15 +533,14 @@ def test_relative_orientation_requires_an_explicit_basis_for_quaternions(parse_m
     anchor = (
         "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
     )
-    model = parse_mutated(
-        anchor,
-        f"{anchor},\n            pose turned-pose = "
-        "{ position: (0.1, 0.2, 0.3) m,"
-        " orientation: <spec.home-pose>.orientation rotated by"
-        " quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
-    )
-    with pytest.raises(ValueError, match="explicit basis frame"):
-        MotionSpecDatasetBuilder(model).build()
+    with pytest.raises(TextXSemanticError, match="explicit basis frame"):
+        parse_mutated(
+            anchor,
+            f"{anchor},\n            pose turned-pose = "
+            "{ position: (0.1, 0.2, 0.3) m,"
+            " orientation: <spec.home-pose>.orientation rotated by"
+            " quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
+        )
 
 
 def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:
@@ -551,12 +549,12 @@ def test_relative_orientation_rejects_a_third_frame(parse_mutated) -> None:
     anchor = (
         "pose home-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>"
     )
-    model = parse_mutated(
-        anchor,
-        f"{anchor},\n            pose turned-pose = "
-        "{ position: (0.1, 0.2, 0.3) m,"
-        " orientation: <spec.home-pose>.orientation rotated in <kinova.bracelet_link.pinch_site> by"
-        " euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad } }",
-    )
-    with pytest.raises(ValueError, match="neither the base's body frame"):
-        MotionSpecDatasetBuilder(model).build()
+    with pytest.raises(TextXSemanticError, match="neither the base's body frame"):
+        parse_mutated(
+            anchor,
+            f"{anchor},\n            pose turned-pose = "
+            "{ position: (0.1, 0.2, 0.3) m,"
+            " orientation: <spec.home-pose>.orientation rotated in "
+            "<kinova.bracelet_link.pinch_site> by"
+            " euler { axes: xyz extrinsic, angles: (-0.75, 0.0, 0.0) rad } }",
+        )

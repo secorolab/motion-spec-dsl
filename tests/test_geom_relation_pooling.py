@@ -25,10 +25,11 @@ def _pick_and_place_graph():
 
 
 def test_one_relation_per_frame_pair():
-    """16 Pose coordinates over 4 distinct (of, wrt) frame pairs now yield 4 Pose relations."""
+    """10 Pose coordinates over 2 distinct (of, wrt) frame pairs yield 2 Pose relations."""
     graph = _pick_and_place_graph()
     poses = set(graph.subjects(RDF.type, URI_GEOM_TYPE_POSE))
-    assert len(poses) == 4
+    assert len(set(graph.subjects(URI_GEOM_PRED_OF_POSE, None))) == 10
+    assert len(poses) == 2
 
 
 def test_coordinates_of_one_frame_pair_share_their_relation():

@@ -10,6 +10,7 @@ warned. The commanded quantity now follows the constrained subspace.
 from __future__ import annotations
 
 import pytest
+from textx.exceptions import TextXSemanticError
 from rdflib.namespace import RDF
 
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
@@ -98,7 +99,7 @@ def test_force_command_on_angular_subspace_is_rejected(parse_source, base_source
         "pid ctrl-hold-ori { constraint: <home.hold-ori>, Kp: 40, Ki: 0, Kd: 8, decay: 0 }"
         " as force apply at <gripper.g_base>"
     )
-    with pytest.raises(ValueError, match="commands a force on the angular subspace"):
+    with pytest.raises(TextXSemanticError, match="commands a force on the angular subspace"):
         _graph(parse_source, _orientation_source(base_source, "orientation.z", controller))
 
 

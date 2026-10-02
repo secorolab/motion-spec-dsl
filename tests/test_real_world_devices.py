@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from textx.exceptions import TextXSemanticError
 import rdflib
 
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
@@ -22,7 +23,7 @@ from motion_spec_dsl.rdf_parser.vocab import EXEC, SSN
 SIM = 'platform:   simulation { name: "MuJoCo" }'
 
 REAL = """platform:   real-world {
-                    <agents.kinova_ft_2f85> realized by KinovaGen3-2F85,
+                    <agents.arm1> realized by KinovaGen3-2F85,
                     <wrist_ft> realized by RobotiqFT300s
                 }
     config:     "robot.toml\""""
@@ -46,7 +47,7 @@ def test_a_real_world_context_deploys_one_system_per_element(parse_mutated) -> N
         ).rsplit("/", 1)[-1]
         for device in g.objects(context, SSN.deployedSystem)
     }
-    assert deployed == {"KinovaGen3-2F85": "kinova_ft_2f85", "RobotiqFT300s": "wrist_ft"}
+    assert deployed == {"KinovaGen3-2F85": "arm1", "RobotiqFT300s": "wrist_ft"}
 
 
 def test_the_scene_element_carries_nothing_the_deployment_knows(parse_mutated) -> None:
@@ -91,7 +92,7 @@ def test_an_unknown_device_is_rejected_while_parsing(parse_mutated) -> None:
     with pytest.raises(Exception):
         _graph(
             parse_mutated,
-            'platform:   real-world { <agents.kinova_ft_2f85> realized by KinovaGen4 }\n'
+            'platform:   real-world { <agents.arm1> realized by KinovaGen4 }\n'
             '    config:     "robot.toml"',
         )
 
@@ -107,20 +108,20 @@ def test_a_simulation_platform_may_carry_a_config(parse_mutated) -> None:
 
 
 def test_binding_a_device_without_a_config_is_rejected(parse_mutated) -> None:
-    with pytest.raises(ValueError, match="no 'config'"):
+    with pytest.raises(TextXSemanticError, match="no 'config'"):
         _graph(
             parse_mutated,
-            "platform:   real-world { <agents.kinova_ft_2f85> realized by KinovaGen3-2F85 }",
+            "platform:   real-world { <agents.arm1> realized by KinovaGen3-2F85 }",
         )
 
 
 def test_binding_one_element_twice_is_rejected(parse_mutated) -> None:
-    with pytest.raises(ValueError, match="twice"):
+    with pytest.raises(TextXSemanticError, match="twice"):
         _graph(
             parse_mutated,
             "platform:   real-world {\n"
-            "                    <agents.kinova_ft_2f85> realized by KinovaGen3-2F85,\n"
-            "                    <agents.kinova_ft_2f85> realized by KinovaGen3\n"
+            "                    <agents.arm1> realized by KinovaGen3-2F85,\n"
+            "                    <agents.arm1> realized by KinovaGen3\n"
             "                }\n"
             '    config:     "robot.toml"',
         )

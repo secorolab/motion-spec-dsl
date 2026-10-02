@@ -5,7 +5,7 @@ coordinate subobjects a constraint compares against -- it has no values, but it 
 from __future__ import annotations
 
 import pytest
-from rdf_utils.constraints import ConstraintViolation
+from textx.exceptions import TextXSemanticError
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_OF,
     URI_GEOM_PRED_OF_POSE,
@@ -121,5 +121,5 @@ def test_the_frames_come_from_the_quantity_it_is_stated_for(base_source, parse_s
 def test_a_pose_read_from_a_config_no_exec_context_declares_is_rejected(
     base_source, parse_source
 ) -> None:
-    with pytest.raises(ConstraintViolation, match="declares no"):
+    with pytest.raises(TextXSemanticError, match="declares no"):
         _graph(base_source, parse_source, declare_config=False)
