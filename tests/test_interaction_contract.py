@@ -36,13 +36,10 @@ def interaction_ir(tmp_path: Path) -> dict:
 
 
 @pytest.fixture
-def table_ii_ir(tmp_path: Path) -> dict:
-    """The model that drives every Borghesan Table II operator.
-
-    Borghesan's own worked example (sec. VII) is the drawer, so the operators are exercised by
-    the task that motivates them rather than by a probe model that does nothing else.
-    """
-    return _ir(MODELS / "04_drawer_opening" / "drawer_opening.robmot", tmp_path)
+def geometric_operators_ir(tmp_path: Path) -> dict:
+    """A table-edge reach over Table II of Borghesan et al., "Introducing Geometric Constraint
+    Expressions Into Robot Constrained Motion Specification and Control", IEEE RA-L 1(2), 2016."""
+    return _ir(Path(__file__).parent / "fixtures" / "table_edge_reach.robmot", tmp_path)
 
 
 def _motion(ir: dict, motion_id: str):
@@ -309,14 +306,14 @@ def _scheduled(motion) -> set[str]:
     }
 
 
-def test_every_driven_geometric_operator_gets_its_gradient_row(table_ii_ir: dict) -> None:
+def test_every_driven_geometric_operator_gets_its_gradient_row(geometric_operators_ir: dict) -> None:
     """A controlled geometric constraint must reach the solver along its own gradient.
 
     Nothing downstream of the controller checks this: the closure runs, the PID computes an
     output, and with no row to carry it the axis is uncommanded while the FSM still reaches
     S_DONE. A direction pair held off zero failed exactly here.
     """
-    closures = table_ii_ir["computation"]["closures"]
+    closures = geometric_operators_ir["computation"]["closures"]
     operators = _operators_by_scalar(closures)
     evaluators = {
         closure["error"]: closure
@@ -335,7 +332,7 @@ def test_every_driven_geometric_operator_gets_its_gradient_row(table_ii_ir: dict
 
     # What the task spends its six solver axes on. The line-line and direction-plane operators
     # are watched rather than driven here -- there is no axis left to drive them, and
-    # `test_every_table_ii_operator_is_complete_and_called` is what covers that path.
+    # `test_every_geometric_operator_is_complete_and_called` is what covers that path.
     assert {operator["type"] for operator, _ in driven.values()} == {
         "PointPlaneToLinearDistance",
         "PointOnLineProjection",
@@ -344,7 +341,7 @@ def test_every_driven_geometric_operator_gets_its_gradient_row(table_ii_ir: dict
 
     rows = {
         row.acceleration_energy.id: row
-        for motion in table_ii_ir["coordination"]["motions"]
+        for motion in geometric_operators_ir["coordination"]["motions"]
         for solver in motion.serial_chain_solvers
         for row in solver.motion_driver.acceleration_constraint
         if row.acceleration_energy is not None
@@ -357,19 +354,19 @@ def test_every_driven_geometric_operator_gets_its_gradient_row(table_ii_ir: dict
         assert row.direction.id == _gradient_signal(closures, operator)
 
 
-def test_a_row_reads_only_a_gradient_its_own_motion_computes(table_ii_ir: dict) -> None:
+def test_a_row_reads_only_a_gradient_its_own_motion_computes(geometric_operators_ir: dict) -> None:
     """A gradient row names a shared vector, so the closure filling it must run first.
 
     An unscheduled gradient leaves the row a zero vector every tick: the constraint is inert and
     the solver takes a degenerate row, both silently.
     """
-    closures = table_ii_ir["computation"]["closures"]
+    closures = geometric_operators_ir["computation"]["closures"]
     writers: dict[str, set[str]] = {}
     for closure in closures.values():
         if closure.get("gradient"):
             writers.setdefault(closure["gradient"], set()).add(closure["id"])
 
-    for motion in table_ii_ir["coordination"]["motions"]:
+    for motion in geometric_operators_ir["coordination"]["motions"]:
         scheduled = _scheduled(motion)
         for solver in motion.serial_chain_solvers:
             for row in solver.motion_driver.acceleration_constraint:
@@ -381,13 +378,13 @@ def test_a_row_reads_only_a_gradient_its_own_motion_computes(table_ii_ir: dict) 
                 )
 
 
-def test_every_table_ii_operator_is_complete_and_called(table_ii_ir: dict) -> None:
+def test_every_geometric_operator_is_complete_and_called(geometric_operators_ir: dict) -> None:
     """The probe covers all eight Table II operators, and none is computed into the void.
 
     Monitored-only operators have no controller to pull them into the schedule, so they are the
     ones that go missing: the monitor then reads a slot nobody ever wrote.
     """
-    closures = table_ii_ir["computation"]["closures"]
+    closures = geometric_operators_ir["computation"]["closures"]
     by_type: dict[str, list] = {}
     for closure in closures.values():
         by_type.setdefault(closure.get("type"), []).append(closure)
@@ -398,7 +395,7 @@ def test_every_table_ii_operator_is_complete_and_called(table_ii_ir: dict) -> No
             missing = [field for field in fields if not closure.get(field)]
             assert not missing, f"{closure['id']} ({type_}) is missing {missing}"
 
-    scheduled = set().union(*(_scheduled(m) for m in table_ii_ir["coordination"]["motions"]))
+    scheduled = set().union(*(_scheduled(m) for m in geometric_operators_ir["coordination"]["motions"]))
     uncalled = sorted(
         closure["id"]
         for type_ in OPERATOR_FIELDS
