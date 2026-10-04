@@ -89,7 +89,7 @@ REJECTIONS = [
     pytest.param(
         ARC,
         [("deadband: 1.0 N\n", "deadband: 1.0 N,\n                release-threshold: 2.0 N\n")],
-        "release-threshold must not exceed deadband",
+        "release-threshold 2.0 must not exceed deadband 1.0",
         id="admittance_release_above_deadband",
     ),
     pytest.param(
@@ -106,7 +106,7 @@ REJECTIONS = [
                 " as force apply at <gripper.g_base>"
             ),
         ],
-        "which 'wrist_ft' measures or estimates",
+        "'wrist_ft' measures or estimates it",
         id="sensed_wrench_commanded",
     ),
     pytest.param(
@@ -198,7 +198,7 @@ REJECTIONS = [
                 " orientation: quat { xyzw: (0.0, 0.0, 0.0) } }"
             )
         ],
-        "Quaternion",
+        "quaternion 'xyzw' has 3 components -- it takes 4",
         id="orientation_arity",
     ),
     pytest.param(
@@ -213,7 +213,7 @@ REJECTIONS = [
                 " orientation: <spec.home-pose>.orientation rotated by quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
             )
         ],
-        "explicit basis frame",
+        "states no basis frame",
         id="relative_quaternion_without_basis",
     ),
     pytest.param(
@@ -318,11 +318,11 @@ REJECTIONS = [
                 " <shared.spec.table> equal to 0 m"
             ),
         ],
-        "projects onto a line",
+        "projects a point on a plane",
         id="projection_on_a_plane",
     ),
     pytest.param(
-        BASE, [(SPEC, AFTER_SPEC + "plane flat { of: <gripper.g_base.g_pinch> }")], "needs exactly one 'normal'", id="plane_without_normal"
+        BASE, [(SPEC, AFTER_SPEC + "plane flat { of: <gripper.g_base.g_pinch> }")], "takes exactly one 'normal'", id="plane_without_normal"
     ),
     pytest.param(
         BASE,
@@ -365,7 +365,7 @@ REJECTIONS = [
     pytest.param(
         BASE,
         [("guarded-motion", "tolerances { linear-velocity: 0.02 m }\n\nguarded-motion")],
-        "not measured in 'm'",
+        "LinearVelocity is measured in 'm'",
         id="default_band_of_wrong_kind",
     ),
     pytest.param(
@@ -408,7 +408,7 @@ REJECTIONS = [
             (TWIST, f"{TWIST},\n        joint-current finger {{ joint: <gripper.g_left_driver_joint> }}"),
             (SPEC, f"{AFTER_SPEC}current idle = 0.02 A"),
             (UNTIL, f"{UNTIL},\n        stopped: <shared.world.finger> less than <shared.spec.idle>"),
-            (CTRL, f"{AFTER_CTRL}pid ctrl-finger {{ constraint: <home.stopped>, Kp: 1 }}"),
+            (CTRL, f"{AFTER_CTRL}pid ctrl-finger {{ constraint: <home.stopped>, Kp: 1, Ki: 0, Kd: 0 }}"),
         ],
         "is measured, no controller commands it",
         id="commanded_joint_current",
@@ -422,7 +422,7 @@ REJECTIONS = [
                 ",\n        joint-position right { joint: <gripper.g_left_driver_joint> }",
             ),
             (HOLD, f"{AFTER_HOLD}gap: keeping (<shared.world.left> - <shared.world.right>) greater than 0.05 rad"),
-            (CTRL, f"{AFTER_CTRL}pid ctrl-gap {{ constraint: <home.gap>, Kp: 1 }}"),
+            (CTRL, f"{AFTER_CTRL}pid ctrl-gap {{ constraint: <home.gap>, Kp: 1, Ki: 0, Kd: 0 }}"),
         ],
         "is a joint, which moves in no Cartesian direction",
         id="controlled_expression_over_joints",

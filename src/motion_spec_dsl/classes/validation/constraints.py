@@ -314,9 +314,9 @@ def validate_path_following(model: Model) -> None:
                 reference = reference.ref
             if reference is not None and reference in followed:
                 raise TextXSemanticError(
-                    f"'{spec.name}' pins '{motion.name}' to a setpoint on path "
-                    f"'{followed[reference].name}' follows -- a path constrains geometry, not "
-                    "timing; drop the equality",
+                    f"'{spec.name}' pins '{motion.name}' to a setpoint on the path "
+                    f"'{followed[reference].name}' it already follows -- a path constrains "
+                    "geometry, not timing; drop the equality",
                     **get_location(spec),
                 )
 

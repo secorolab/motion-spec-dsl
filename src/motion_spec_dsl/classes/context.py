@@ -353,8 +353,8 @@ def geo_prop(props: GeometricProps | None, key: str) -> str | None:
         return None
     for pair in props.pairs:
         if pair.key == key:
-            value = pair.frame or pair.joint or pair.sensor or pair.value
-            return str(value.uri) if isinstance(value, NamedNamespaceObject) else str(value)
+            target = pair.frame or pair.joint or pair.sensor or pair.agent or pair.quantity
+            return str(target.uri) if target is not None else None
     return None
 
 

@@ -158,10 +158,12 @@ def existing_world_pose(world_quantities: dict, of_frame, wrt_frame) -> WorldQua
 
 def owning_motion(constraint: ConstraintSpecification):
     """The motion whose section holds a constraint; for a derived scalar, the context declaring it."""
+    if isinstance(constraint.parent, ContextQuantity):
+        return constraint.parent.parent
     section = constraint.parent
-    while section is not None and not isinstance(section, ConstraintSection):
+    while not isinstance(section, ConstraintSection):
         section = section.parent
-    return constraint.parent.parent if section is None else section.parent
+    return section.parent
 
 
 def derived_view_constraint(quantity: ContextQuantity) -> ConstraintSpecification:

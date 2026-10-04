@@ -455,7 +455,6 @@ class SolverRef:
     def __init__(self, parent, solver) -> None:
         self.parent = parent
         self.solver = solver
-        self.name = solver.name
 
     def __str__(self) -> str:
         return self.solver.name

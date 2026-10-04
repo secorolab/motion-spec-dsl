@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from textx import get_location, get_model, textx_isinstance
 from textx.exceptions import TextXSemanticError
-from textx.scoping import Postponed
 
 from scene_dsl.classes.geom import Frame, IDefaultFrame
 from scene_dsl.classes.ktree import KinematicTreeTemplate
@@ -76,7 +75,7 @@ class SceneRefProvider(InstancedRefScopeProvider):
 
     def __call__(self, obj, attr, obj_ref):
         target = super().__call__(obj, attr, obj_ref)
-        if isinstance(target, Postponed) or (target is not None and not _in_template(target)):
+        if target is not None:
             return target
         return self._resolve_suffix(obj, obj_ref)
 
@@ -86,10 +85,10 @@ class SceneRefProvider(InstancedRefScopeProvider):
         matched_nodes = []
         target = None
         for model in _all_models(obj):
-            stack = [model]
-            while stack:
-                node = stack.pop()
-                stack.extend(_contained(node))
+            # Grown while walked, so matches come in document order.
+            nodes = [model]
+            for node in nodes:
+                nodes.extend(_contained(node))
                 fqn = _fqn(node)
                 if not (fqn == name or fqn.endswith(tail)) or _in_template(node):
                     continue

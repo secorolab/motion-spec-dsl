@@ -126,7 +126,7 @@ def test_a_controlled_difference_of_derived_scalars_runs_along_their_gradients_d
             " greater than 0.05 m",
             1,
         )
-        .replace(CTRL, f"{CTRL},\n        pid ctrl-gap {{ constraint: <home.gap>, Kp: 1 }}", 1)
+        .replace(CTRL, f"{CTRL},\n        pid ctrl-gap {{ constraint: <home.gap>, Kp: 1, Ki: 0, Kd: 0 }}", 1)
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
     graph = build_dataset(model)[0].default_graph
@@ -207,5 +207,5 @@ def test_a_sampled_scalar_draws_from_a_one_dimensional_distribution(tmp_path: Pa
             "dimension: 3\n        lower: (0.0, 0.0, 0.0)\n        upper: (0.1, 0.1, 0.1)",
         )
     )
-    with pytest.raises(TextXSemanticError, match="samples a scalar quantity"):
+    with pytest.raises(TextXSemanticError, match="samples a scalar from a distribution that is no 1-D uniform or normal"):
         motion_spec_metamodel().model_from_file(str(robmot))
