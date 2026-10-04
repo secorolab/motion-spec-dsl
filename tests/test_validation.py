@@ -442,6 +442,17 @@ REJECTIONS = [
         BASE,
         [
             (
+                "equal to <shared.spec.zero-linvel>",
+                "equal to (<shared.world.pose-ee-base> + <shared.world.pose-ee-base>)",
+            )
+        ],
+        "a whole Pose is not supported in a quantity expression",
+        id="geometric_expression",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
                 SNAPSHOT,
                 f"{SNAPSHOT},\n            pose loose-pose = {{ position: (0.1, 0.2, 0.3) m,"
                 " orientation: euler { axes: xyz extrinsic, angles: (0.0, 0.0, 0.0) } }",

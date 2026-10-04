@@ -1,5 +1,5 @@
 <mujoco model="table_asset">
-  <!-- mj_kdl_wrapper's table.xml with a slippery top: MuJoCo takes the max contact friction. -->
+  <!-- mjkdl's table.xml with a slippery top: MuJoCo takes the max contact friction. -->
   <worldbody>
     <!-- Root body origin is the table top surface center. Place this asset at z=surface_z. -->
     <body name="root">

@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 from rdflib.namespace import RDF
 from scene_dsl.classes.geom import Frame
+from scene_dsl.classes.ktree import KinematicTreeTemplate
 from scene_dsl.langs import build_instance_trees, lower_frame_refs
-from textx import get_children_of_type, metamodel_from_file
+from textx import get_children_of_type, get_parent_of_type, metamodel_from_file
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.scoping import SceneRefProvider, _in_template
+from motion_spec_dsl.classes.scoping import SceneRefProvider
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import GEOM_PATH
@@ -89,7 +90,7 @@ context (ns=app) shared {{
 
     assert isinstance(of.frame, Frame)
     assert of.frame.name == frame
-    assert not _in_template(of.frame)
+    assert get_parent_of_type(KinematicTreeTemplate, of.frame) is None
     assert (of.frame is wrt.frame) == (frame == "base_link_origin")
 
 

@@ -87,6 +87,8 @@ from motion_spec_dsl.classes.context import (
 )
 from motion_spec_dsl.classes.coordinates import (
     AccelerationTwistCoordinate,
+    ConstAtom,
+    ConstFactor,
     CoordinateElement,
     Coordinates,
     DirectionCosineXYZ,
@@ -147,6 +149,8 @@ LANGUAGE_CLASSES = [
     ContextSpec,
     ToleranceDefaults,
     ToleranceDefault,
+    ConstFactor,
+    ConstAtom,
     Coordinates,
     CoordinateElement,
     PositionCoordinate,

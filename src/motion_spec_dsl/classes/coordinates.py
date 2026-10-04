@@ -11,25 +11,37 @@ import operator
 CONST_OPS = {"+": operator.add, "-": operator.sub, "*": operator.mul, "/": operator.truediv}
 
 
+class ConstFactor:
+    def __init__(self, parent, neg, atom) -> None:
+        self.parent = parent
+        self.neg = neg
+        self.atom = atom
+
+
+class ConstAtom:
+    def __init__(self, parent, pi, value, group) -> None:
+        self.parent = parent
+        self.pi = pi
+        self.value = value
+        self.group = group
+
+
 def const_value(node) -> float:
     """An authored constant expression as a number: literals and `pi` under `+ - * /`."""
     if isinstance(node, (int, float)):
         return float(node)
-    # ConstExpr and ConstTerm: a head and (op, operand) steps.
-    if hasattr(node, "head"):
-        value = const_value(node.head)
-        for step in node.tail:
-            value = CONST_OPS[step.op](value, const_value(step.operand))
-        return value
-    # ConstFactor: an atom under an optional unary minus.
-    if hasattr(node, "atom"):
+    if isinstance(node, ConstFactor):
         value = const_value(node.atom)
         return -value if node.neg else value
-    if node.group is not None:
-        return const_value(node.group)
-    if node.pi:
-        return math.pi
-    return float(node.value)
+    if isinstance(node, ConstAtom):
+        if node.group is not None:
+            return const_value(node.group)
+        return math.pi if node.pi else float(node.value)
+    # ConstExpr and ConstTerm: a head and (op, operand) steps.
+    value = const_value(node.head)
+    for step in node.tail:
+        value = CONST_OPS[step.op](value, const_value(step.operand))
+    return value
 
 
 class CoordinateElement:

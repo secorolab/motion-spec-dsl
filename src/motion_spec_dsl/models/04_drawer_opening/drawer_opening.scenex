@@ -195,20 +195,20 @@ scene inst (ns=dro_mjc) drawer_opening_scene_mjc {
     }
 
     obj <ws_objects.cabinet1> {
-        model cabinet1-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cabinet/cabinet.xml'
+        model cabinet1-mjc as mjcf { sys path = 'src/mjkdl/assets/cabinet/cabinet.xml'
             map body <drawer_opening_graph.cabinet1> to "root"
         }
     }
 
     obj <ws_objects.cabinet2> {
-        model cabinet2-mjc as mjcf { sys path = 'src/mj_kdl_wrapper/assets/cabinet/cabinet.xml'
+        model cabinet2-mjc as mjcf { sys path = 'src/mjkdl/assets/cabinet/cabinet.xml'
             map body <drawer_opening_graph.cabinet2> to "root"
         }
     }
 
     agn <agents.arm1> {
         model arm1-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            sys path = 'src/mjkdl/assets/kinova_gen3/gen3.xml'
             map tree <kinova1> to "base_link"
         }
 
@@ -234,14 +234,14 @@ scene inst (ns=dro_mjc) drawer_opening_scene_mjc {
 
     agn <agents.gripper1> {
         model gripper1-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
+            sys path = 'src/mjkdl/assets/robotiq_2f85/2f85.xml'
             map tree <gripper1> to "base_mount"
         }
     }
 
     agn <agents.arm2> {
         model arm2-mjc as mjcf {
-            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            sys path = 'src/mjkdl/assets/kinova_gen3/gen3.xml'
             map tree <kinova2> to "base_link"
         }
     }

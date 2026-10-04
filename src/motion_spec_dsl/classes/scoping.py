@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from textx import get_location, get_model, textx_isinstance
+from textx import get_children, get_location, get_model, get_parent_of_type, textx_isinstance
 from textx.exceptions import TextXSemanticError
 
 from scene_dsl.classes.ktree import KinematicTreeTemplate
@@ -23,29 +23,9 @@ def _fqn(obj) -> str:
     return ".".join(reversed(parts))
 
 
-def _in_template(obj) -> bool:
-    """Template internals are blueprints: instances carry the world identity."""
-    while obj is not None:
-        if isinstance(obj, KinematicTreeTemplate):
-            return True
-        obj = getattr(obj, "parent", None)
-    return False
-
-
-def _contained(node):
-    for tx_attr in getattr(node.__class__, "_tx_attrs", {}).values():
-        if not tx_attr.cont:
-            continue
-        value = getattr(node, tx_attr.name, None)
-        for child in value if isinstance(value, list) else [value]:
-            if child is not None and hasattr(child, "_tx_attrs"):
-                yield child
-
-
 def _all_models(obj) -> list:
     model = get_model(obj)
-    repo = getattr(model, "_tx_model_repository", None)
-    models = list(repo.all_models) if repo is not None else []
+    models = list(model._tx_model_repository.all_models)
     if not any(m is model for m in models):
         models.append(model)
     return models
@@ -67,17 +47,14 @@ class SceneRefProvider(InstancedRefScopeProvider):
     def _resolve_suffix(self, obj, obj_ref):
         name = obj_ref.obj_name
         tail = "." + name
-        matched_nodes = []
-        for model in _all_models(obj):
-            # Grown while walked, so matches come in document order.
-            nodes = [model]
-            for node in nodes:
-                nodes.extend(_contained(node))
-                fqn = _fqn(node)
-                if not (fqn == name or fqn.endswith(tail)) or _in_template(node):
-                    continue
-                if textx_isinstance(node, obj_ref.cls):
-                    matched_nodes.append(node)
+        # Template internals are blueprints: instances carry the world identity.
+        matched_nodes = [
+            node
+            for model in _all_models(obj)
+            for node in get_children(lambda node: textx_isinstance(node, obj_ref.cls), model)
+            if (_fqn(node) == name or _fqn(node).endswith(tail))
+            and get_parent_of_type(KinematicTreeTemplate, node) is None
+        ]
         if not matched_nodes:
             return None
         if len(matched_nodes) > 1:
