@@ -460,6 +460,150 @@ def _resolved_context_quantity(item: ContextQuantity | ContextQuantityAlias) -> 
     return item.ref if isinstance(item, ContextQuantityAlias) else item
 
 
+def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
+    """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
+    if not isinstance(props, GeometricProps):
+        return None
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            value = pair.frame or pair.joint or pair.sensor or pair.value
+            return str(getattr(value, "uri", value))
+    return None
+
+
+def _geo_prop_events(props: GeometricProps | None, key: str) -> list:
+    """The event list carried by geometric prop `key`, or empty."""
+    if not isinstance(props, GeometricProps):
+        return []
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            return list(pair.events or [])
+    return []
+
+
+def _geo_prop_value(props: GeometricProps | None, key: str):
+    """The raw value of geometric prop `key`, for a prop carrying a structure rather than a
+    reference to something already named in the graph."""
+    if not isinstance(props, GeometricProps):
+        return None
+    for pair in props.pairs:
+        if isinstance(pair, GeoPropPair) and pair.key == key:
+            return pair.normalization or pair.value
+    return None
+
+
+def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
+    """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
+    source quantity when the pose declares none. None when they are not resolvable."""
+    props = quantity.props
+    if _geo_prop(props, "of") is None:
+        source = getattr(getattr(quantity, "value", None), "source", None)
+        props = getattr(getattr(source, "quantity", None), "props", None)
+    of_frame = _geo_prop(props, "of")
+    wrt_frame = _geo_prop(props, "wrt")
+    if of_frame is None or wrt_frame is None:
+        return None
+    return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
+
+
+def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
+    """Frame the quantity's axes are expressed in: its `as-seen-by`, or `wrt` for a Pose."""
+    axis_frame = _geo_prop(quantity.props, "as-seen-by")
+    if axis_frame is not None:
+        return axis_frame
+    if quantity.type == WorldQuantityType.Pose:
+        return _geo_prop(quantity.props, "wrt")
+    return None
+
+
+def _context_quantity(ref) -> ContextQuantity | None:
+    """The ContextQuantity a ref points at, whether named or declared inline."""
+    return getattr(ref, "quantity", None)
+
+
+def _path_pose_endpoints(quantity) -> tuple:
+    """Pose-valued endpoints whose frame relation defines a geometric path."""
+    value = quantity.value
+    for spec_name, endpoint_names in (
+        ("lerp", ("start", "goal")),
+        ("arc", ("start", "end")),
+        ("circle", ("start",)),
+        ("helix", ("start",)),
+        ("figure8", ("anchor",)),
+    ):
+        spec = getattr(value, spec_name, None)
+        if spec is None:
+            continue
+        return tuple(
+            endpoint
+            for name in endpoint_names
+            if (endpoint := _context_quantity(getattr(spec, name, None))) is not None
+        )
+    return ()
+
+
+def _node_name(value) -> str:
+    """The `name` attribute of `value`, falling back to `str(value)`."""
+    return value.name if hasattr(value, "name") else str(value)
+
+
+# Table IIa constraint-view subspace tokens: every one of them is a length, signed or
+# not, so they all resolve to QuantityType.Distance -- same as the existing "distance" subspace.
+_GEOMETRIC_DISTANCE_SUBSPACES = frozenset(
+    {
+        "point-plane-distance",
+        "point-line-distance",
+        "point-line-projection",
+        "line-line-distance",
+        "line-line-projection",
+        "scalar-difference",
+    }
+)
+
+# The scalar kind of a twist or wrench subspace's axes.
+_WORLD_SUBSPACE_SCALAR_TYPES = {
+    (WorldQuantityType.VelocityTwist, "angular"): QuantityType.AngularVelocity,
+    (WorldQuantityType.VelocityTwist, "linear"): QuantityType.LinearVelocity,
+    (WorldQuantityType.Wrench, "torque"): QuantityType.Torque,
+    (WorldQuantityType.Wrench, "force"): QuantityType.Force,
+}
+
+
+def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None):
+    """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
+    (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
+    if quantity.type == WorldQuantityType.JointPosition:
+        return QuantityType.Angle
+    if quantity.type == WorldQuantityType.JointVelocity:
+        return QuantityType.AngularVelocity
+    if quantity.type == WorldQuantityType.JointCurrent:
+        return QuantityType.ElectricCurrent
+    if quantity.type == WorldQuantityType.Pose:
+        if subspace == "pose":
+            return QuantityType.Pose
+        if subspace == "position":
+            return QuantityType.Position if axis is None else QuantityType.Distance
+        if subspace == "orientation":
+            return QuantityType.Orientation if axis is None else QuantityType.Angle
+        if subspace == "distance" or subspace in _GEOMETRIC_DISTANCE_SUBSPACES:
+            return QuantityType.Distance
+        if subspace == "rotation":
+            return QuantityType.PlaneAngle
+        if subspace in ("alignment", "incident-angle", "plane-angle"):
+            return QuantityType.Angle
+    return _WORLD_SUBSPACE_SCALAR_TYPES.get((quantity.type, subspace), subspace)
+
+
+# Vector views a norm applies to, and the scalar kind their length has.
+_NORM_SCALAR_TYPES = {
+    QuantityType.Position: QuantityType.Distance,
+    QuantityType.LinearVelocity: QuantityType.LinearVelocity,
+    QuantityType.AngularVelocity: QuantityType.AngularVelocity,
+    QuantityType.Force: QuantityType.Force,
+    QuantityType.Torque: QuantityType.Torque,
+}
+
+
 def is_body_line_distance(binary) -> bool:
     """Whether a point-from-line view's line rides the frame the point is measured against:
     the line's `of` frame equals the point pose's `wrt` frame, so the line moves with the
@@ -468,18 +612,10 @@ def is_body_line_distance(binary) -> bool:
     left, right = binary.left, binary.right
     if _geometric_operand_kind(left) != "point" or _geometric_operand_kind(right) != "line":
         return False
-
-    def prop(props, key):
-        for pair in getattr(props, "pairs", ()):
-            if isinstance(pair, GeoPropPair) and pair.key == key:
-                value = pair.frame or pair.joint or pair.sensor or pair.value
-                return str(getattr(value, "uri", value))
-        return None
-
     point = _resolved_world_quantity(left)
     line = _resolved_context_quantity(right)
-    wrt = prop(point.props, GeometricPropKey.Wrt)
-    of = prop(line.props, GeometricPropKey.Of)
+    wrt = _geo_prop(point.props, GeometricPropKey.Wrt)
+    of = _geo_prop(line.props, GeometricPropKey.Of)
     return wrt is not None and wrt == of
 
 
@@ -501,7 +637,7 @@ def _geometric_operand_kind(operand: object) -> str | None:
 
 # Table IIa distance/projection operators, keyed by (first operand kind, second operand kind).
 # Line-line operand order is not a dispatch key: both directions carry the same op, and which
-# line is `in1`/`in2` is what makes `LineOnLineProjection` compute s1 vs s2 (see plan 08 ruling 2).
+# line is `in1`/`in2` is what makes `LineOnLineProjection` compute s1 vs s2.
 GEOMETRIC_DISTANCE_OPS: dict[tuple[str, str], str] = {
     ("point", "plane"): "PointPlaneToLinearDistance",
     ("point", "line"): "PointLineToLinearDistance",

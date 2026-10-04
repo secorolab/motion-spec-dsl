@@ -313,7 +313,7 @@ def _gen_graph(metamodel, model, output_path, overwrite, debug, **kwargs) -> Non
         format="json-ld", context=PROVENANCE_CONTEXT, auto_compact=True, indent=2
     )
     document = json.loads(serialized.decode() if isinstance(serialized, bytes) else serialized)
-    path.write_text(json.dumps({"schema_version": 1, **document}, indent=2) + "\n")
+    path.write_text(json.dumps(document, indent=2) + "\n")
     log.info("wrote %s", path)
 
 

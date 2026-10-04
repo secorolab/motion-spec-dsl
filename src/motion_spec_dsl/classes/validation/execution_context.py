@@ -6,10 +6,14 @@ from __future__ import annotations
 
 from textx import get_children_of_type
 
-from motion_spec_dsl.classes.context import ConfigValue, ContextQuantity, QuantityType
+from motion_spec_dsl.classes.context import (
+    ConfigValue,
+    ContextQuantity,
+    QuantityType,
+    _pose_frame_names,
+)
 from motion_spec_dsl.classes.motion_spec import ContextSpec, ExecutionContext, Model
 from motion_spec_dsl.classes.validation.common import semantic_error
-from motion_spec_dsl.rdf.common import _pose_frame_names
 
 # What a device can realize: an agent, its kinematic tree, or a sensor.
 _DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}

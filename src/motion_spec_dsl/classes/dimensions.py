@@ -18,6 +18,7 @@ from motion_spec_dsl.classes.context import (
     WorldQuantityType,
     _resolved_context_quantity,
 )
+from motion_spec_dsl.classes.units import DSL_UNITS
 
 Vector = tuple[int, int, int, int, int]  # (mass, length, time, angle, current)
 
@@ -68,31 +69,6 @@ _VECTOR_PRIORITY = (
 )
 VECTOR_QUANTITY_TYPE: dict[Vector, QuantityType] = {
     DIMENSION_VECTOR[qty_type]: qty_type for qty_type in _VECTOR_PRIORITY
-}
-
-# A bare measure's authored unit, by dimension -- the DSL token set from `classes/units.py`.
-# `Hz` is left out: no QuantityType names a frequency, so it was never a valid quantity value.
-_UNIT_VECTOR: dict[str, Vector] = {
-    "m": (0, 1, 0, 0, 0),
-    "cm": (0, 1, 0, 0, 0),
-    "mm": (0, 1, 0, 0, 0),
-    "rad": (0, 0, 0, 1, 0),
-    "deg": (0, 0, 0, 1, 0),
-    "m/s": (0, 1, -1, 0, 0),
-    "cm/s": (0, 1, -1, 0, 0),
-    "rad/s": (0, 0, -1, 1, 0),
-    "deg/s": (0, 0, -1, 1, 0),
-    "m/s^2": (0, 1, -2, 0, 0),
-    "rad/s^2": (0, 0, -2, 1, 0),
-    "deg/s^2": (0, 0, -2, 1, 0),
-    "m/s^3": (0, 1, -3, 0, 0),
-    "N": (1, 1, -2, 0, 0),
-    "Nm": (1, 2, -2, 0, 0),
-    "s": (0, 0, 1, 0, 0),
-    "ms": (0, 0, 1, 0, 0),
-    "1": (0, 0, 0, 0, 0),
-    "kg": (1, 0, 0, 0, 0),
-    "A": (0, 0, 0, 0, 1),
 }
 
 # Position/Pose/Orientation are points and rotations, not scalars: `+`/`-` between two of the
@@ -205,7 +181,8 @@ def resolve_leaf(leaf) -> QuantityType:
     """
     bare = getattr(leaf, "bare", None)
     if bare is not None:
-        vector = _UNIT_VECTOR.get(bare.unit)
+        unit = DSL_UNITS.get(bare.unit)
+        vector = unit.vector if unit is not None else None
         if vector is None:
             raise DimensionError(f"'{bare.unit}' has no known dimension.", leaf)
         return VECTOR_QUANTITY_TYPE.get(vector, QuantityType.Dimensionless)

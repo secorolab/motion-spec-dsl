@@ -8,11 +8,11 @@ from motion_spec_dsl.classes.context import (
     ContextQuantity,
     Measure,
     QuantityType,
+    _geo_prop,
     _resolved_context_quantity,
 )
 from motion_spec_dsl.classes.motion_spec import ExecutionContext, Model
 from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
-from motion_spec_dsl.rdf.common import _geo_prop
 
 # What each authored slot of a perturbation's apply clause must name.
 _SLOT_TYPES = (

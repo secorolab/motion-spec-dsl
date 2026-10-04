@@ -20,13 +20,13 @@ from motion_spec_dsl.classes.context import (
     SnapshotValue,
     View,
     WorldQuantity,
+    _quantity_axis_frame,
     _resolved_context_quantity,
     _resolved_world_quantity,
 )
 from motion_spec_dsl.classes.dimensions import DimensionError, infer, same_scalar_dimension
 from motion_spec_dsl.classes.motion_spec import Model
 from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
-from motion_spec_dsl.rdf.common import _quantity_axis_frame
 
 # Geometry is stated through map views of its components, never aliased whole.
 _GEOMETRIC_TYPES = frozenset(

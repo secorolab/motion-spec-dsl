@@ -13,19 +13,22 @@ from rdflib.term import URIRef
 
 from motion_spec_dsl.classes.constraints import (
     ConstraintSpecification,
-    GoalStatusConstraint,
-    _flatten_constraint_items,
-    _resolved_spec,
+    _binary_view,
+    _is_alignment_view,
+    _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_norm_view,
+    _is_plane_angle_view,
+    _is_projection_view,
 )
 from motion_spec_dsl.classes.context import (
+    _NORM_SCALAR_TYPES,
     ContextQuantity,
-    ContextRef,
-    GeometricProps,
-    GeoPropPair,
-    QuantityType,
     WorldQuantity,
     WorldQuantityType,
+    _context_quantity,
     _resolved_context_quantity,
+    _scalar_type,
 )
 from motion_spec_dsl.classes.controller_semantics import (
     _alignment_is_pointwise,
@@ -33,7 +36,6 @@ from motion_spec_dsl.classes.controller_semantics import (
     constraint_view_subspace,
 )
 from motion_spec_dsl.classes.coordinates import const_value
-from motion_spec_dsl.classes.motion_spec import GuardedMotion
 from motion_spec_dsl.classes.units import (
     ANGLE_UNITS as ANGLE_UNITS,
 )
@@ -43,7 +45,6 @@ from motion_spec_dsl.classes.units import (
 from motion_spec_dsl.classes.units import (
     _dsl_unit as _dsl_unit,
 )
-from motion_spec_dsl.rdf.model import WORLD_SPECS
 
 
 def _ns_term(namespace: Any, name: str) -> URIRef:
@@ -51,161 +52,15 @@ def _ns_term(namespace: Any, name: str) -> URIRef:
     return URIRef(str(namespace._NS) + name)
 
 
-def _node_name(value: Any) -> str:
-    """The `name` attribute of `value`, falling back to `str(value)`."""
-    return value.name if hasattr(value, "name") else str(value)
-
-
-def _geo_prop(props: GeometricProps | None, key: str) -> str | None:
-    """Value of geometric prop `key` (of/wrt/as-seen-by/ref-point/...) in `props`, or None."""
-    if props is None:
-        return None
-    for pair in props.pairs:
-        if isinstance(pair, GeoPropPair) and pair.key == key:
-            value = pair.frame or pair.joint or pair.sensor or pair.value
-            return str(getattr(value, "uri", value))
-    return None
-
-
-def _pose_frame_names(quantity) -> tuple[str, str, str] | None:
-    """(of, wrt, as-seen-by) frame URIs of a pose quantity, resolved through a snapshot's
-    source quantity when the pose declares none. None when they are not resolvable."""
-    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-    if _geo_prop(props, "of") is None:
-        source = getattr(getattr(quantity, "value", None), "source", None)
-        source_props = getattr(getattr(source, "quantity", None), "props", None)
-        props = source_props if isinstance(source_props, GeometricProps) else None
-    of_frame = _geo_prop(props, "of")
-    wrt_frame = _geo_prop(props, "wrt")
-    if of_frame is None or wrt_frame is None:
-        return None
-    return of_frame, wrt_frame, _geo_prop(props, "as-seen-by") or wrt_frame
-
-
-def _path_pose_endpoints(quantity) -> tuple:
-    """Pose-valued endpoints whose frame relation defines a geometric path."""
-    value = quantity.value
-    for spec_name, endpoint_names in (
-        ("lerp", ("start", "goal")),
-        ("arc", ("start", "end")),
-        ("circle", ("start",)),
-        ("helix", ("start",)),
-        ("figure8", ("anchor",)),
-    ):
-        spec = getattr(value, spec_name, None)
-        if spec is None:
-            continue
-        return tuple(
-            endpoint
-            for name in endpoint_names
-            if (endpoint := _context_quantity(getattr(spec, name, None))) is not None
-        )
-    return ()
-
-
 def _angle_bound(bound) -> float:
     """An authored angle bound as a number: any constant expression over literals and pi."""
     return const_value(getattr(bound, "value", bound))
 
 
-def _geo_prop_events(props: GeometricProps | None, key: str) -> list:
-    """The event list carried by geometric prop `key`, or empty."""
-    if props is None:
-        return []
-    for pair in props.pairs:
-        if isinstance(pair, GeoPropPair) and pair.key == key:
-            return list(pair.events or [])
-    return []
-
-
-def _geo_prop_value(props: GeometricProps | None, key: str):
-    """The raw value of geometric prop `key`, for a prop carrying a structure rather than a
-    reference to something already named in the graph."""
-    if props is None:
-        return None
-    for pair in props.pairs:
-        if isinstance(pair, GeoPropPair) and pair.key == key:
-            return pair.normalization or pair.value
-    return None
-
-
-def _binary_view(constraint: ConstraintSpecification):
-    """The constraint's view as its `BinaryView` instance (any of the 4 binary forms), or None."""
-    return getattr(constraint.view, "binary", None)
-
-
-def _binary_view_kind(constraint: ConstraintSpecification) -> str | None:
-    """The grammar rule name of the constraint's binary view, or None."""
-    binary = _binary_view(constraint)
-    return type(binary).__name__ if binary is not None else None
-
-
-def _is_distance_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `distance between A and B` form."""
-    return _binary_view_kind(constraint) == "DistanceBetweenView"
-
-
-def _is_difference_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `difference of A and B` form."""
-    return _binary_view_kind(constraint) == "DifferenceOfView"
-
-
-def _is_norm_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `norm of <q>.<subspace> [across <d>]` form."""
-    return getattr(constraint.view, "norm", None) is not None
-
-
-def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is any `angle between A and B` form."""
-    return _binary_view_kind(constraint) == "AngleBetweenView"
-
-
-def _is_geometric_distance_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `distance of A from B` (Table IIa) form."""
-    return _binary_view_kind(constraint) == "DistanceFromView"
-
-
-def _is_projection_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `projection of A on B` (Table IIa) form."""
-    return _binary_view_kind(constraint) == "ProjectionOnView"
-
-
-def _is_plane_operand(operand: ContextQuantity) -> bool:
-    """Whether an `angle between` operand is a plane rather than a versor direction."""
-    return _resolved_context_quantity(operand).type == QuantityType.Plane
-
-
-def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the versor-versor `angle between A and B` form. Any new
-    call site must decide explicitly whether it wants this (versor-versor only) or the broader
-    `_is_angle_between_view`.
-    """
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return not _is_plane_operand(binary.left) and not _is_plane_operand(binary.right)
-
-
-def _is_incident_angle_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the versor-plane `angle between A and B` form."""
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return not _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
-
-
-def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the plane-plane `angle between A and B` form."""
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
-
-
 def _alignment_bound_token(ref: Any) -> str | None:
     """Id fragment for one target/bound ref of an alignment's relation, or None for a literal
     zero -- every zero-target alignment means the same geometry, so a zero must not fragment the
-    shared op chain (plan 10 STOP 1).
+    shared op chain.
     """
     bare = getattr(ref, "bare", None)
     if bare is not None:
@@ -300,70 +155,6 @@ def _axis_vector(axis: str) -> tuple[float, float, float]:
     }[axis]
 
 
-def _quantity_axis_frame(quantity: WorldQuantity) -> str | None:
-    """Frame the quantity's axes are expressed in: its `as-seen-by`, or `wrt` for a Pose."""
-    props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-    axis_frame = _geo_prop(props, "as-seen-by")
-    if axis_frame is not None:
-        return axis_frame
-    if quantity.type == WorldQuantityType.Pose:
-        return _geo_prop(props, "wrt")
-    return None
-
-
-# Table IIa (plan 08) constraint-view subspace tokens: every one of them is a length, signed or
-# not, so they all resolve to QuantityType.Distance -- same as the existing "distance" subspace.
-_GEOMETRIC_DISTANCE_SUBSPACES = frozenset(
-    {
-        "point-plane-distance",
-        "point-line-distance",
-        "point-line-projection",
-        "line-line-distance",
-        "line-line-projection",
-        "scalar-difference",
-    }
-)
-
-
-def _scalar_type(quantity: WorldQuantity, subspace: str, axis: str | None) -> Any:
-    """QuantityType of the scalar/vector a `quantity.subspace[.axis]` view resolves to
-    (e.g. Pose.position -> Position, Pose.position.x -> Distance)."""
-    if quantity.type == WorldQuantityType.JointPosition:
-        return QuantityType.Angle
-    if quantity.type == WorldQuantityType.JointVelocity:
-        return QuantityType.AngularVelocity
-    if quantity.type == WorldQuantityType.JointCurrent:
-        return QuantityType.ElectricCurrent
-    if quantity.type == WorldQuantityType.Pose:
-        if subspace == "pose":
-            return QuantityType.Pose
-        if subspace == "position":
-            return QuantityType.Position if axis is None else QuantityType.Distance
-        if subspace == "orientation":
-            return QuantityType.Orientation if axis is None else QuantityType.Angle
-        if subspace == "distance" or subspace in _GEOMETRIC_DISTANCE_SUBSPACES:
-            return QuantityType.Distance
-        if subspace == "rotation":
-            return QuantityType.PlaneAngle
-        if subspace in ("alignment", "incident-angle", "plane-angle"):
-            return QuantityType.Angle
-    spec = WORLD_SPECS.get(quantity.type)
-    if spec is None:
-        return subspace
-    prop = spec[3].get(subspace)
-    return prop[3] if prop else subspace
-
-
-# Vector views a norm applies to, and the scalar kind their length has.
-_NORM_SCALAR_TYPES = {
-    QuantityType.Position: QuantityType.Distance,
-    QuantityType.LinearVelocity: QuantityType.LinearVelocity,
-    QuantityType.AngularVelocity: QuantityType.AngularVelocity,
-    QuantityType.Force: QuantityType.Force,
-    QuantityType.Torque: QuantityType.Torque,
-}
-
-
 def _constraint_scalar_type(quantity: WorldQuantity, constraint: ConstraintSpecification) -> Any:
     """The scalar kind a plain or norm view resolves to."""
     subspace = constraint_view_subspace(constraint)
@@ -398,26 +189,6 @@ def _evaluator_id(spec: ConstraintSpecification) -> str:
     if motion_name and section_kind:
         return f"eval-{motion_name}-{section_kind}-{spec.name}"
     return f"eval-{spec.name}"
-
-
-def _context_quantity(ref: ContextRef) -> ContextQuantity | None:
-    """The ContextQuantity a ref points at, whether named or declared inline."""
-    return getattr(ref, "quantity", None)
-
-
-def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecification]:
-    """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
-    out = []
-    for section in (motion.when, motion.while_, motion.until):
-        for item in _flatten_constraint_items(section.constraints):
-            spec = _resolved_spec(item)
-            # A goal-status item compares an action's outcome, not a world quantity: it has no
-            # view, no reference quantity and no scalar to project.
-            if isinstance(spec, GoalStatusConstraint):
-                continue
-            if not spec.disabled:
-                out.append(spec)
-    return out
 
 
 @dataclass(frozen=True)
@@ -455,7 +226,7 @@ class _AlignmentPlan:
 @dataclass(frozen=True)
 class _GeometricDistancePlan:
     """Resolved operands and scalar-view carrier for an authored Table IIa distance/projection
-    view (plan 08): a point-plane/point-line/point-on-line expression, or a line-line one.
+    view: a point-plane/point-line/point-on-line expression, or a line-line one.
 
     `direction`/`pose` are mutually exclusive with `diff_in1`/`diff_in2`: the first three ops
     (point vs. primitive) carry a direction role; the line-line pair instead composes a

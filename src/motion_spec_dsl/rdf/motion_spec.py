@@ -21,7 +21,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from rdf_utils.collection import add_literal_list_pred
-from rdf_utils.constraints import ConstraintViolation
 from rdf_utils.models.geom_rel import PoseModel
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_ALPHA,
@@ -85,7 +84,11 @@ from motion_spec_dsl.classes.constraint_handler import (
     SaturationSpec,
     UntilMonitorRef,
     WhenMonitorRef,
+    _perturbation_conditions,
+    _resolved_constraint_items,
     _resolved_solver,
+    motion_context_quantities,
+    motion_world_quantities,
 )
 from motion_spec_dsl.classes.constraints import (
     BilateralConstraint,
@@ -97,9 +100,18 @@ from motion_spec_dsl.classes.constraints import (
     LessThanConstraint,
     OutsideConstraint,
     _flatten_constraint_items,
+    _is_alignment_view,
+    _is_difference_view,
+    _is_distance_view,
+    _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_norm_view,
+    _is_plane_angle_view,
+    _is_projection_view,
     _resolved_spec,
 )
 from motion_spec_dsl.classes.context import (
+    _NORM_SCALAR_TYPES,
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_DISTANCE_RELATION,
     GEOMETRIC_PROJECTION_OPS,
@@ -121,9 +133,17 @@ from motion_spec_dsl.classes.context import (
     VectorXYZ,
     WorldQuantity,
     WorldQuantityType,
+    _context_quantity,
+    _geo_prop,
+    _geo_prop_events,
+    _geo_prop_value,
     _geometric_operand_kind,
+    _node_name,
+    _path_pose_endpoints,
+    _pose_frame_names,
     _resolved_context_quantity,
     _resolved_world_quantity,
+    _scalar_type,
 )
 from motion_spec_dsl.classes.controller_semantics import (
     SUBSPACE_ALIAS,
@@ -162,11 +182,7 @@ from motion_spec_dsl.classes.motion_spec import (
     ExecutionContext,
     GuardedMotion,
     Model,
-    PostContextDecl,
-    PreContextDecl,
-    SpecContextDecl,
     ToleranceDefaults,
-    WorldContextDecl,
 )
 from motion_spec_dsl.classes.path import (
     AdmittanceSpec,
@@ -178,6 +194,7 @@ from motion_spec_dsl.classes.ros import (
     RosActionServerDecl,
     RosSubscriptionDecl,
 )
+from motion_spec_dsl.classes.units import QUDT_KIND_BY_QUANTITY_TYPE, _qudt_kind
 from motion_spec_dsl.rdf.common import (
     ANGLE_UNITS,
     _alignment_id,
@@ -187,43 +204,23 @@ from motion_spec_dsl.rdf.common import (
     _axis_vector,
     _constraint_scalar_id,
     _constraint_scalar_type,
-    _context_quantity,
     _DistancePlan,
     _dsl_unit,
     _evaluator_id,
-    _geo_prop,
-    _geo_prop_events,
-    _geo_prop_value,
     _GeometricDistancePlan,
     _gradient_scalar_id,
-    _is_alignment_view,
-    _is_difference_view,
-    _is_distance_view,
-    _is_geometric_distance_view,
-    _is_incident_angle_view,
-    _is_norm_view,
-    _is_plane_angle_view,
-    _is_projection_view,
-    _node_name,
     _norm_id,
-    _NORM_SCALAR_TYPES,
     _ns_term,
     _owning_motion,
-    _path_pose_endpoints,
-    _pose_frame_names,
-    _resolved_constraint_items,
     _scalar_id,
-    _scalar_type,
 )
 from motion_spec_dsl.rdf.model import (
     _QKIND_PREFIXES,
-    _qudt_kind,
     CONSTRAINT_TYPE_OVERRIDE,
     CONTEXT_COMPOSITE_WORLD_TYPE,
     CSTR_TYPE_NAME,
     GEOM_DOMAIN_SPLIT,
     GRAPH_BINDINGS,
-    QUDT_KIND_BY_QUANTITY_TYPE,
     ROS,
     SCALAR_UNIT,
     WORLD_SPECS,
@@ -365,21 +362,6 @@ def _section_expression_type(logic, member_count: int):
     if logic == "all" and member_count > 1:
         return CSTR_EXT.ConstraintConjunction
     return None
-
-
-def _perturbation_conditions(handler: ConstraintHandler) -> list[ConstraintSpecification]:
-    """Enabled, alias-resolved constraints the handler's perturbation gates hold.
-
-    They are authored in the handler rather than in the motion, so every pass that walks a
-    motion's constraints has to be told about them or their views reach the graph unemitted.
-    """
-    out = []
-    for perturbation in getattr(handler, "perturbations", []) or []:
-        for item in _flatten_constraint_items(perturbation.conditions):
-            spec = _resolved_spec(item)
-            if not isinstance(spec, GoalStatusConstraint) and not spec.disabled:
-                out.append(spec)
-    return out
 
 
 def _authored_fqn(target) -> str:
@@ -554,8 +536,8 @@ class MotionSpecDatasetBuilder:
             context[handler.ns_prefix] = handler.ns.uri
             context[motion.ns_prefix] = motion.ns.uri
 
-            context_quantities = self._collect_context_quantities(motion, handler)
-            world_qtys = self._collect_world_quantities(motion, handler, context_quantities)
+            context_quantities = motion_context_quantities(self.models, motion, handler)
+            world_qtys = motion_world_quantities(self.models, motion, handler, context_quantities)
             constraints = _resolved_constraint_items(motion) + _perturbation_conditions(handler)
 
             self._emit_world_quantities(world_qtys)
@@ -929,10 +911,9 @@ class MotionSpecDatasetBuilder:
         -- that one is shared by every coordinate over the same frame pair."""
         view_node = self._component_view_index.get((coord_node, domain))
         if view_node is None:
-            raise ConstraintViolation(
-                "geometry",
+            raise ValueError(
                 f"Coordinate '{coord_node}' has no {domain} view, so nothing can name it as a "
-                "constraint operand.",
+                "constraint operand."
             )
         return view_node
 
@@ -969,144 +950,6 @@ class MotionSpecDatasetBuilder:
         self.graph.add((pose_relation, RDF.type, URI_GEOM_TYPE_ORIENT_REF))
         self.graph.add((pose_relation, URI_GEOM_PRED_OF_POSITION, position_relation))
         self.graph.add((pose_relation, URI_GEOM_PRED_OF_ORIENT, orientation_relation))
-
-    @staticmethod
-    def _add_world_quantity(
-        qtys: dict[str, WorldQuantity], quantity: Any, *, overwrite: bool = False
-    ) -> None:
-        """Resolve `quantity` and insert it into `qtys` keyed by name (setdefault unless `overwrite`)."""
-        if isinstance(quantity, WorldQuantity):
-            quantity = _resolved_world_quantity(quantity)
-            if overwrite:
-                qtys[quantity.name] = quantity
-            else:
-                qtys.setdefault(quantity.name, quantity)
-
-    def _add_view_world_quantities(self, qtys: dict[str, WorldQuantity], view: Any) -> None:
-        """Collect the WorldQuantities a view references (quantity, and the binary view's
-        left/right operands, when the operand in question is a pose) into `qtys`. An
-        angle-between or line/plane operand resolves to a ContextQuantity and is a no-op here.
-        """
-        if view is None:
-            return
-        self._add_world_quantity(qtys, getattr(view, "quantity", None))
-        binary = getattr(view, "binary", None)
-        if binary is not None:
-            self._add_world_quantity(qtys, getattr(binary, "left", None))
-            self._add_world_quantity(qtys, getattr(binary, "right", None))
-
-    def _add_value_world_quantities(self, qtys: dict[str, WorldQuantity], value: Any) -> None:
-        """Collect WorldQuantities referenced by a context value's source (snapshot/profile/admittance)."""
-        if isinstance(value, SnapshotValue):
-            self._add_view_world_quantities(qtys, value.source)
-        elif isinstance(value, ProfileSpec):
-            self._add_view_world_quantities(qtys, value.measured_velocity)
-        elif isinstance(value, AdmittanceSpec):
-            self._add_view_world_quantities(qtys, value.force)
-
-    def _collect_world_quantities(
-        self,
-        motion: GuardedMotion,
-        handler: ConstraintHandler,
-        context_quantities: dict[str, ContextQuantity] | None = None,
-    ) -> dict[str, WorldQuantity]:
-        """Gather every world quantity in scope for a motion: context declarations, constraint
-        views, context-quantity sources, controller measured-derivatives and solver gravity.
-        """
-        context_quantities = context_quantities or self._collect_context_quantities(motion, handler)
-        qtys: dict[str, WorldQuantity] = {}
-        for model in self.models:
-            for spec in getattr(model, "specs", []):
-                if not isinstance(spec, ContextSpec):
-                    continue
-                for ctx in spec.context:
-                    if isinstance(ctx, WorldContextDecl):
-                        for item in ctx.declaration:
-                            self._add_world_quantity(qtys, item)
-        for ctx in motion.context:
-            ctx = self._resolved_context_decl(ctx)
-            if isinstance(ctx, WorldContextDecl):
-                for item in ctx.declaration:
-                    self._add_world_quantity(qtys, item, overwrite=True)
-        for ctx in getattr(handler, "context", []):
-            ctx = self._resolved_context_decl(ctx)
-            if isinstance(ctx, WorldContextDecl):
-                for item in ctx.declaration:
-                    self._add_world_quantity(qtys, item)
-        for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
-            self._add_view_world_quantities(qtys, constraint.view)
-        for quantity in context_quantities.values():
-            self._add_value_world_quantities(qtys, getattr(quantity, "value", None))
-        for ctrl_item in getattr(handler, "controllers", []):
-            ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
-            self._add_view_world_quantities(qtys, getattr(ctrl.params, "measured_derivative", None))
-            self._add_world_quantity(qtys, getattr(ctrl, "apply_at", None))
-        for solver in getattr(handler, "solvers", []):
-            solver = _resolved_solver(solver)
-            self._add_world_quantity(qtys, getattr(solver, "gravity", None))
-        return qtys
-
-    @staticmethod
-    def _resolved_context_decl(ctx: Any) -> Any:
-        """Dereference a context-decl reference to its target, or return `ctx` unchanged."""
-        if isinstance(ctx, ContextDeclReference):
-            return ctx.ref
-        return ctx
-
-    def _collect_context_quantities(
-        self, motion: GuardedMotion, handler: ConstraintHandler
-    ) -> dict[str, ContextQuantity]:
-        """Gather every context quantity in scope for a motion: context declarations, constraint
-        references/thresholds, solver gravity values and controller profiles.
-        """
-        quantities: dict[str, ContextQuantity] = {}
-        for model in self.models:
-            for spec in getattr(model, "specs", []):
-                if not isinstance(spec, ContextSpec):
-                    continue
-                for ctx in spec.context:
-                    if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
-                        for item in ctx.declaration:
-                            if isinstance(item, ContextQuantity):
-                                quantities.setdefault(item.name, _resolved_context_quantity(item))
-        for ctx in motion.context:
-            ctx = self._resolved_context_decl(ctx)
-            if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
-                for item in ctx.declaration:
-                    if isinstance(item, ContextQuantity):
-                        quantities[item.name] = item
-        for ctx in getattr(handler, "context", []):
-            ctx = self._resolved_context_decl(ctx)
-            if isinstance(ctx, SpecContextDecl):
-                for item in ctx.declaration:
-                    if isinstance(item, ContextQuantity):
-                        quantities.setdefault(item.name, item)
-        for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
-            expr = constraint.expr
-            refs: list[ContextRef] = []
-            if isinstance(expr, EqualityConstraint):
-                refs = [expr.reference]
-            elif isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
-                refs = [expr.threshold]
-            elif isinstance(expr, (BilateralConstraint, OutsideConstraint)):
-                refs = [expr.lower, expr.upper]
-            for ref in refs:
-                quantity = _context_quantity(ref)
-                if isinstance(quantity, ContextQuantity):
-                    quantities.setdefault(quantity.name, quantity)
-        for solver in getattr(handler, "solvers", []):
-            s = _resolved_solver(solver)
-            gv = getattr(s, "gravity_value", None)
-            if gv is not None:
-                quantity = _context_quantity(getattr(gv, "ref", None))
-                if isinstance(quantity, ContextQuantity):
-                    quantities.setdefault(quantity.name, quantity)
-        for ctrl_item in getattr(handler, "controllers", []):
-            ctrl = ctrl_item.ref.controller if hasattr(ctrl_item, "ref") else ctrl_item
-            quantity = _context_quantity(getattr(ctrl.params, "profile", None))
-            if isinstance(quantity, ContextQuantity):
-                quantities.setdefault(quantity.name, _resolved_context_quantity(quantity))
-        return quantities
 
     def _resolve_qty(self, ref: Any, world_qtys: dict[str, WorldQuantity]) -> WorldQuantity | None:
         """Resolve a quantity reference to its WorldQuantity via `world_qtys`, or pass one through."""
@@ -1411,7 +1254,6 @@ class MotionSpecDatasetBuilder:
         self,
         moving: ContextQuantity,
         reference: ContextQuantity,
-        context: str,
         world_qtys: dict[str, WorldQuantity],
         relation_a: str | None = None,
         relation_b: str | None = None,
@@ -1442,19 +1284,6 @@ class MotionSpecDatasetBuilder:
             ),
             None,
         )
-        if target is None:
-            raise ValueError(
-                f"{context} needs a declared 'world' pose of '{moving_frame}' wrt "
-                f"'{reference_frame}': alignment reads an already-computed pose, it does "
-                "not derive one."
-            )
-        # The rotation carries the moving direction into the frame the pose is seen by, and the
-        # reference direction is read in `wrt`; a third frame would compare two unrelated vectors.
-        if _geo_prop(target.props, "as-seen-by") not in (None, reference_frame):
-            raise ValueError(
-                f"{context} needs '{target.name}' seen by '{reference_frame}', the frame its "
-                "reference direction is stated in."
-            )
         return _AlignmentPlan(
             moving,
             reference,
@@ -1490,16 +1319,13 @@ class MotionSpecDatasetBuilder:
             operand = _resolved_context_quantity(ref)
             directions.append(self._plane_normal(operand) if is_plane else operand)
             relations.append(str(operand.uri))
-        kind = "Plane-angle" if planes[0] else "Incident-angle" if planes[1] else "Alignment"
-        plan = self._direction_pair_plan(
-            *directions, f"{kind} constraint '{spec.name}'", world_qtys, *relations
-        )
+        plan = self._direction_pair_plan(*directions, world_qtys, *relations)
         self._plans[spec] = plan
         return plan
 
     def _primitive_direction(self, primitive: ContextQuantity) -> ContextQuantity:
         """The direction context quantity a `line`/`plane` primitive composes (its `along` or
-        `normal`); plan 06 validation guarantees it exists and resolves to a well-formed
+        `normal`); validation guarantees it exists and resolves to a well-formed
         direction by the time RDF emission runs.
         """
         key = (
@@ -1507,8 +1333,7 @@ class MotionSpecDatasetBuilder:
             if primitive.type == QuantityType.Plane
             else GeometricPropKey.Along
         )
-        referent = next(pair.value for pair in primitive.props.pairs if pair.key == key)
-        return _resolved_context_quantity(referent)
+        return _resolved_context_quantity(_geo_prop_value(primitive.props, key))
 
     def _existing_world_pose(
         self, world_qtys: dict[str, WorldQuantity], of_frame: str, wrt_frame: str
@@ -1555,7 +1380,7 @@ class MotionSpecDatasetBuilder:
         spec: ConstraintSpecification,
         world_qtys: dict[str, WorldQuantity],
     ) -> _GeometricDistancePlan:
-        """Resolve an authored Table IIa `distance of`/`projection of` view (plan 08): which of
+        """Resolve an authored Table IIa `distance of`/`projection of` view: which of
         the five operators it dispatches to, its operand poses/directions, and the scalar-view
         carrier `_resolve_constraint_quantity` returns for it.
 
@@ -1576,7 +1401,6 @@ class MotionSpecDatasetBuilder:
             else GEOMETRIC_PROJECTION_OPS
         )
         op_type = table[(_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref))]
-        context = f"Constraint '{spec.name}'"
         motion = _owning_motion(spec)
         stem = f"geo-distance-{getattr(motion, 'name', '')}-{spec.name}"
 
@@ -1588,13 +1412,6 @@ class MotionSpecDatasetBuilder:
             frame = _geo_prop(dir_a.props, "as-seen-by")
             origin_a = self._existing_world_pose(world_qtys, _geo_prop(line_a.props, "of"), frame)
             origin_b = self._existing_world_pose(world_qtys, _geo_prop(line_b.props, "of"), frame)
-            for line, origin in ((line_a, origin_a), (line_b, origin_b)):
-                if origin is None:
-                    raise ValueError(
-                        f"{context} needs a declared 'world' pose of '{_geo_prop(line.props, 'of')}' "
-                        f"wrt '{frame}': a Table IIa expression reads an already-computed pose, "
-                        "it does not derive one."
-                    )
             pose_diff = self._owned_uri(f"{stem}-pose-diff", motion)
             diff_op = self._owned_uri(f"compute-{stem}-pose-diff", motion)
             self.graph.add((diff_op, RDF.type, GEOM_OP_EXT.PoseDiffEvaluator))
@@ -1656,12 +1473,6 @@ class MotionSpecDatasetBuilder:
                 self._plans[spec] = plan
                 return plan
             origin = self._existing_world_pose(world_qtys, primitive_frame, point_wrt)
-            if origin is None:
-                raise ValueError(
-                    f"{context} needs a declared 'world' pose of '{primitive_frame}' wrt "
-                    f"'{point_wrt}': a Table IIa expression reads an already-computed pose, it "
-                    "does not derive one."
-                )
             target = WorldQuantity(
                 parent=motion, name=stem, type=WorldQuantityType.Pose, props=origin.props
             )
@@ -2119,20 +1930,7 @@ class MotionSpecDatasetBuilder:
             if qty.type == WorldQuantityType.Wrench:
                 node = URIRef(qty.uri)
                 props = qty.props if isinstance(qty.props, GeometricProps) else None
-                ft_sensor = (
-                    next(
-                        (
-                            pair.sensor
-                            for pair in props.pairs
-                            if isinstance(pair, GeoPropPair)
-                            and pair.key == "ft-sensor"
-                            and pair.sensor is not None
-                        ),
-                        None,
-                    )
-                    if props is not None
-                    else None
-                )
+                ft_sensor = _geo_prop_value(props, "ft-sensor")
                 estimated_from = (
                     next(
                         (
@@ -2424,13 +2222,11 @@ class MotionSpecDatasetBuilder:
         view_uri = self._owned_uri(f"view-{sid}", owner)
         if view_uri in self._emitted_views:
             return
-        pose_specs = WORLD_SPECS[WorldQuantityType.Pose][3]
-        props = pose_specs.get(mapped_subspace)
-        if props is None:
+        view = WORLD_SPECS[WorldQuantityType.Pose].views.get(mapped_subspace)
+        if view is None:
             return
-        view_subspace_uri, _, _, scalar_t, _ = props
-        self._add_quantity(scalar_uri, scalar_t)
-        subspace = MAP_EXT.orientation if view_subspace_uri == "rotation" else MAP_EXT.position
+        self._add_quantity(scalar_uri, _scalar_type(quantity, mapped_subspace, axis))
+        subspace = MAP_EXT.orientation if view.subspace == "rotation" else MAP_EXT.position
         self._map_view(view_uri, None, URIRef(quantity.uri), scalar_uri, subspace, axis)
 
     @staticmethod
@@ -2489,16 +2285,16 @@ class MotionSpecDatasetBuilder:
         owner: Any,
     ) -> None:
         """Register a non-pose world-quantity subspace view: one axis, or the whole 3-vector."""
-        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(mapped_subspace)
-        if prop is None or prop[4] is None:
+        spec = WORLD_SPECS.get(quantity.type)
+        view = spec.views.get(mapped_subspace) if spec is not None else None
+        if view is None:
             return
-        view_subspace_uri, _, _, scalar_t, view_type = prop
-        self._add_quantity(scalar_uri, scalar_t)
+        self._add_quantity(scalar_uri, _scalar_type(quantity, mapped_subspace, axis))
         view_uri = self._owned_uri(f"view-{_scalar_id(quantity, mapped_subspace, axis)}", owner)
         if view_uri in self._emitted_views:
             return
         self._map_view(
-            view_uri, view_type, URIRef(quantity.uri), scalar_uri, MAP[view_subspace_uri], axis
+            view_uri, view.view_type, URIRef(quantity.uri), scalar_uri, MAP[view.subspace], axis
         )
 
     def _emit_context_composite_metadata(
@@ -3046,7 +2842,7 @@ class MotionSpecDatasetBuilder:
             (orientation_node, orientation_relation, MAP_EXT.orientation, "orientation"),
         ):
             # Named from `node` (this quantity), not `subobject`: the relation pools by frame
-            # pair since plan 11 phase B, so several quantities can share one, and each still
+            # pair, so several quantities can share one, and each still
             # needs its own view -- one map:superobject per view (map-ext:PoseCoordinateView).
             view_node = URIRef(f"{node}-{label}-view")
             self._emit_view(view_node)
@@ -3127,7 +2923,7 @@ class MotionSpecDatasetBuilder:
                 if frames is not None:
                     frame_nodes = tuple(self._owned_uri(name, source_pose) for name in frames)
             if frame_nodes is None:
-                raise ConstraintViolation("geometry", f"Pose '{node}' has no frame endpoints")
+                raise ValueError(f"Pose '{node}' has no frame endpoints")
             of_node, wrt_node, seen_by_node = frame_nodes
             self._frame_coords_index[node] = (of_node, wrt_node, seen_by_node)
             pose_relation = self._emit_geom_relation(
@@ -3496,19 +3292,6 @@ class MotionSpecDatasetBuilder:
         of_name = str(value.to_frame.uri)
         wrt_name = str(value.from_frame.uri)
         pose = self._existing_world_pose(world_qtys, of_name, wrt_name)
-        if pose is None:
-            raise ValueError(
-                f"Direction quantity '{quantity.name}' is computed from the pose of "
-                f"'{_authored_fqn(value.to_frame)}' with respect to "
-                f"'{_authored_fqn(value.from_frame)}', which no `world` block declares."
-            )
-        pose_seen_by = _geo_prop(pose.props, "as-seen-by") or _geo_prop(pose.props, "wrt")
-        if pose_seen_by != as_seen_by_name:
-            raise ValueError(
-                f"Direction quantity '{quantity.name}' is seen by a different frame than the "
-                f"pose '{pose.name}' it is computed from; normalizing that pose would answer "
-                "in the pose's frame, not this one."
-            )
         op_node = self._declared_uri("compute-direction", quantity)
         self.graph.add((op_node, RDF.type, GEOM_OP.PoseToDirection))
         self.graph.add((op_node, GEOM_OP.pose, URIRef(pose.uri)))
@@ -3768,25 +3551,15 @@ class MotionSpecDatasetBuilder:
         Speed along a path is a measured speed at the attachment point, so it reads the twist
         of exactly the frame being followed rather than differentiating its pose.
         """
-        context = f"Path following of '{moved.name}'"
         of_frame, wrt_frame, _ = _pose_frame_names(moved)
-        twist = next(
-            (
-                quantity
-                for quantity in world_qtys.values()
-                if quantity.type == WorldQuantityType.VelocityTwist
-                and isinstance(quantity.props, GeometricProps)
-                and _geo_prop(quantity.props, "of") == of_frame
-                and _geo_prop(quantity.props, "wrt") == wrt_frame
-            ),
-            None,
+        return next(
+            quantity
+            for quantity in world_qtys.values()
+            if quantity.type == WorldQuantityType.VelocityTwist
+            and isinstance(quantity.props, GeometricProps)
+            and _geo_prop(quantity.props, "of") == of_frame
+            and _geo_prop(quantity.props, "wrt") == wrt_frame
         )
-        if twist is None:
-            raise ValueError(
-                f"{context} needs a declared 'velocity-twist' of <{of_frame}> "
-                f"wrt <{wrt_frame}> to measure the speed along the path."
-            )
-        return twist
 
     def _emit_path_projection(
         self,
@@ -3969,13 +3742,6 @@ class MotionSpecDatasetBuilder:
             # constraint that takes it pointing at the same band.
             band = self._tolerance_defaults.get(default_kind)
             owner, suffix = self._default_ns_owner, f"default-tolerance-{scalar_t}"
-        whole_pose = qty is not None and qty.type == WorldQuantityType.Pose
-        if band is not None and whole_pose and axis is None and subspace == "pose":
-            raise ValueError(
-                f"Constraint '{spec.name}' tolerances a whole pose, whose error mixes a "
-                "position and an orientation. State the band on '.position' and on "
-                "'.orientation' separately, each in its own unit."
-            )
         if band is None:
             if is_equality:
                 raise ValueError(
@@ -4477,17 +4243,17 @@ class MotionSpecDatasetBuilder:
             str(getattr(view, "subspace", "")), str(getattr(view, "subspace", ""))
         )
         axis = semantic_axis_label(getattr(view, "axis", None))
-        prop = WORLD_SPECS.get(quantity.type, (None, None, None, {}))[3].get(subspace)
-        if axis is None or prop is None or prop[4] is None:
+        spec = WORLD_SPECS.get(quantity.type)
+        world_view = spec.views.get(subspace) if spec is not None else None
+        if axis is None or world_view is None:
             return node
-        view_subspace_uri, _, _, scalar_t, view_type = prop
-        self._add_quantity(node, scalar_t)
+        self._add_quantity(node, _scalar_type(quantity, subspace, axis))
         view_node = self._owned_uri(f"view-{_scalar_id(quantity, subspace, axis)}", owner)
         if view_node in self._emitted_views:
             return node
         self._emit_view(view_node)
         if quantity.type != WorldQuantityType.Pose:
-            self.graph.add((view_node, RDF.type, view_type))
+            self.graph.add((view_node, RDF.type, world_view.view_type))
         self.graph.add((view_node, MAP.superobject, URIRef(quantity.uri)))
         self.graph.add((view_node, MAP.subobject, node))
         subspace_value = (
@@ -4495,7 +4261,7 @@ class MotionSpecDatasetBuilder:
             if quantity.type == WorldQuantityType.Pose and subspace == "rotation"
             else MAP_EXT.position
             if quantity.type == WorldQuantityType.Pose
-            else MAP[view_subspace_uri]
+            else MAP[world_view.subspace]
         )
         self.graph.add((view_node, MAP.subspace, subspace_value))
         self.graph.add((view_node, MAP.axis, MAP[axis]))
@@ -4782,7 +4548,7 @@ class MotionSpecDatasetBuilder:
             ws_spec = WORLD_SPECS.get(qty.type)
             if ws_spec is None:
                 continue
-            prop = ws_spec[3].get(subspace)
+            world_view = ws_spec.views.get(subspace)
 
             if qty.type == WorldQuantityType.Pose and subspace == "rotation" and axis is None:
                 rotation_motions.add(motion.name)
@@ -4823,7 +4589,7 @@ class MotionSpecDatasetBuilder:
                     self._view_node(spec.view, motion)
                 continue
 
-            if axis is None or prop is None or prop[4] is None:
+            if axis is None or world_view is None:
                 continue
 
             key = (qty.name, subspace, axis)
@@ -4831,15 +4597,14 @@ class MotionSpecDatasetBuilder:
                 continue
             seen.add(key)
 
-            view_subspace_uri, _, _, scalar_t, view_type = prop
             sid = _scalar_id(qty, subspace, axis)
             scalar_node = self._owned_uri(sid, motion)
-            self._add_quantity(scalar_node, scalar_t)
+            self._add_quantity(scalar_node, _scalar_type(qty, subspace, axis))
 
             view_node = self._owned_uri(f"view-{sid}", motion)
             self._emit_view(view_node)
             if qty.type != WorldQuantityType.Pose:
-                self.graph.add((view_node, RDF.type, view_type))
+                self.graph.add((view_node, RDF.type, world_view.view_type))
             self.graph.add((view_node, MAP.superobject, URIRef(qty.uri)))
             self.graph.add((view_node, MAP.subobject, scalar_node))
             subspace_value = (
@@ -4847,7 +4612,7 @@ class MotionSpecDatasetBuilder:
                 if qty.type == WorldQuantityType.Pose and subspace == "rotation"
                 else MAP_EXT.position
                 if qty.type == WorldQuantityType.Pose
-                else MAP[view_subspace_uri]
+                else MAP[world_view.subspace]
             )
             self.graph.add((view_node, MAP.subspace, subspace_value))
             self.graph.add((view_node, MAP.axis, MAP[axis]))
@@ -5043,7 +4808,7 @@ class MotionSpecDatasetBuilder:
                 self.graph.add((grad_op, GEOM_OP.in2, URIRef(plan.reference.uri)))
                 self.graph.add((grad_op, GEOM_OP_EXT.gradient, gradient_node))
 
-        # Table IIa (plan 08): point-plane/point-line/point-on-line distance, and line-line
+        # Table IIa: point-plane/point-line/point-on-line distance, and line-line
         # distance/projection. One operator node per expression, wired to its already-resolved
         # in1/in2/direction (or pose-difference) operands.
         seen_geometric_ops = self._emitted_geometric_distance_ops

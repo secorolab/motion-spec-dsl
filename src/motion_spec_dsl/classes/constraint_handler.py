@@ -16,21 +16,42 @@ from motion_spec_dsl.classes.common import (
     NamedNamespaceObject,
     NamespaceDeclLike,
 )
-from motion_spec_dsl.classes.constraints import ConstraintRef
+from motion_spec_dsl.classes.constraints import (
+    BilateralConstraint,
+    ConstraintRef,
+    ConstraintSpecification,
+    EqualityConstraint,
+    GoalStatusConstraint,
+    GreaterThanConstraint,
+    LessThanConstraint,
+    OutsideConstraint,
+    _flatten_constraint_items,
+    _resolved_spec,
+)
 from motion_spec_dsl.classes.context import (
+    ContextQuantity,
     ContextRef,
     Measure,
     QuantityType,
+    SnapshotValue,
     View,
+    WorldQuantity,
     _authored_enum,
+    _context_quantity,
+    _resolved_context_quantity,
+    _resolved_world_quantity,
 )
 from motion_spec_dsl.classes.coordinates import Coordinates, const_value
 from motion_spec_dsl.classes.motion_spec import (
     ContextDeclReference,
+    ContextSpec,
     GuardedMotion,
+    PostContextDecl,
+    PreContextDecl,
     SpecContextDecl,
     WorldContextDecl,
 )
+from motion_spec_dsl.classes.path import AdmittanceSpec, ProfileSpec
 
 
 class ControllerType(StrEnum):
@@ -597,3 +618,160 @@ def _resolved_controller(item: ControllerEntry | ControllerAlias) -> ControllerE
 
 def _resolved_solver(item: SolverEntry | SolverAlias) -> SolverEntry:
     return item.ref.solver if isinstance(item, SolverAlias) else item
+
+
+def _resolved_constraint_items(motion: GuardedMotion) -> list[ConstraintSpecification]:
+    """Enabled, alias-resolved constraint specs from the motion's when/while/until sections."""
+    out = []
+    for section in (motion.when, motion.while_, motion.until):
+        for item in _flatten_constraint_items(section.constraints):
+            spec = _resolved_spec(item)
+            # A goal-status item compares an action's outcome, not a world quantity: it has no
+            # view, no reference quantity and no scalar to project.
+            if isinstance(spec, GoalStatusConstraint):
+                continue
+            if not spec.disabled:
+                out.append(spec)
+    return out
+
+
+def _perturbation_conditions(handler: ConstraintHandler) -> list[ConstraintSpecification]:
+    """Enabled, alias-resolved constraints the handler's perturbation gates hold.
+
+    They are authored in the handler rather than in the motion, so every pass that walks a
+    motion's constraints has to be told about them.
+    """
+    out = []
+    for perturbation in getattr(handler, "perturbations", []) or []:
+        for item in _flatten_constraint_items(perturbation.conditions):
+            spec = _resolved_spec(item)
+            if not isinstance(spec, GoalStatusConstraint) and not spec.disabled:
+                out.append(spec)
+    return out
+
+
+def _add_world_quantity(qtys: dict, quantity, *, overwrite: bool = False) -> None:
+    """Resolve `quantity` and insert it into `qtys` keyed by name (setdefault unless `overwrite`)."""
+    if isinstance(quantity, WorldQuantity):
+        quantity = _resolved_world_quantity(quantity)
+        if overwrite:
+            qtys[quantity.name] = quantity
+        else:
+            qtys.setdefault(quantity.name, quantity)
+
+
+def _add_view_world_quantities(qtys: dict, view) -> None:
+    """Collect the WorldQuantities a view references: its quantity, and a binary view's pose
+    operands. An angle-between or line/plane operand is a ContextQuantity and is a no-op here.
+    """
+    if view is None:
+        return
+    _add_world_quantity(qtys, getattr(view, "quantity", None))
+    binary = getattr(view, "binary", None)
+    if binary is not None:
+        _add_world_quantity(qtys, getattr(binary, "left", None))
+        _add_world_quantity(qtys, getattr(binary, "right", None))
+
+
+def _add_value_world_quantities(qtys: dict, value) -> None:
+    """Collect WorldQuantities referenced by a context value's source (snapshot/profile/admittance)."""
+    if isinstance(value, SnapshotValue):
+        _add_view_world_quantities(qtys, value.source)
+    elif isinstance(value, ProfileSpec):
+        _add_view_world_quantities(qtys, value.measured_velocity)
+    elif isinstance(value, AdmittanceSpec):
+        _add_view_world_quantities(qtys, value.force)
+
+
+def motion_context_quantities(
+    models, motion: GuardedMotion, handler: ConstraintHandler
+) -> dict[str, ContextQuantity]:
+    """Every context quantity in scope for a motion: context declarations across MODELS,
+    constraint references/thresholds, solver gravity values and controller profiles."""
+    quantities: dict[str, ContextQuantity] = {}
+    for model in models:
+        for spec in getattr(model, "specs", []):
+            if not isinstance(spec, ContextSpec):
+                continue
+            for ctx in spec.context:
+                if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
+                    for item in ctx.declaration:
+                        if isinstance(item, ContextQuantity):
+                            quantities.setdefault(item.name, _resolved_context_quantity(item))
+    for ctx in motion.context:
+        ctx = ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
+        if isinstance(ctx, (PreContextDecl, SpecContextDecl, PostContextDecl)):
+            for item in ctx.declaration:
+                if isinstance(item, ContextQuantity):
+                    quantities[item.name] = item
+    for ctx in getattr(handler, "context", []):
+        ctx = ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
+        if isinstance(ctx, SpecContextDecl):
+            for item in ctx.declaration:
+                if isinstance(item, ContextQuantity):
+                    quantities.setdefault(item.name, item)
+    for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
+        expr = constraint.expr
+        refs: list[ContextRef] = []
+        if isinstance(expr, EqualityConstraint):
+            refs = [expr.reference]
+        elif isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
+            refs = [expr.threshold]
+        elif isinstance(expr, (BilateralConstraint, OutsideConstraint)):
+            refs = [expr.lower, expr.upper]
+        for ref in refs:
+            quantity = _context_quantity(ref)
+            if isinstance(quantity, ContextQuantity):
+                quantities.setdefault(quantity.name, quantity)
+    for solver in getattr(handler, "solvers", []):
+        gravity_value = getattr(_resolved_solver(solver), "gravity_value", None)
+        if gravity_value is not None:
+            quantity = _context_quantity(getattr(gravity_value, "ref", None))
+            if isinstance(quantity, ContextQuantity):
+                quantities.setdefault(quantity.name, quantity)
+    for ctrl_item in getattr(handler, "controllers", []):
+        ctrl = _resolved_controller(ctrl_item)
+        quantity = _context_quantity(getattr(ctrl.params, "profile", None))
+        if isinstance(quantity, ContextQuantity):
+            quantities.setdefault(quantity.name, _resolved_context_quantity(quantity))
+    return quantities
+
+
+def motion_world_quantities(
+    models,
+    motion: GuardedMotion,
+    handler: ConstraintHandler,
+    context_quantities: dict[str, ContextQuantity],
+) -> dict[str, WorldQuantity]:
+    """Every world quantity in scope for a motion: context declarations across MODELS,
+    constraint views, context-quantity sources, controller measured-derivatives and gravity."""
+    qtys: dict[str, WorldQuantity] = {}
+    for model in models:
+        for spec in getattr(model, "specs", []):
+            if not isinstance(spec, ContextSpec):
+                continue
+            for ctx in spec.context:
+                if isinstance(ctx, WorldContextDecl):
+                    for item in ctx.declaration:
+                        _add_world_quantity(qtys, item)
+    for ctx in motion.context:
+        ctx = ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
+        if isinstance(ctx, WorldContextDecl):
+            for item in ctx.declaration:
+                _add_world_quantity(qtys, item, overwrite=True)
+    for ctx in getattr(handler, "context", []):
+        ctx = ctx.ref if isinstance(ctx, ContextDeclReference) else ctx
+        if isinstance(ctx, WorldContextDecl):
+            for item in ctx.declaration:
+                _add_world_quantity(qtys, item)
+    for constraint in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
+        _add_view_world_quantities(qtys, constraint.view)
+    for quantity in context_quantities.values():
+        _add_value_world_quantities(qtys, getattr(quantity, "value", None))
+    for ctrl_item in getattr(handler, "controllers", []):
+        ctrl = _resolved_controller(ctrl_item)
+        _add_view_world_quantities(qtys, getattr(ctrl.params, "measured_derivative", None))
+        _add_world_quantity(qtys, getattr(ctrl, "apply_at", None))
+    for solver in getattr(handler, "solvers", []):
+        _add_world_quantity(qtys, getattr(_resolved_solver(solver), "gravity", None))
+    return qtys

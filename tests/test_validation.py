@@ -14,6 +14,7 @@ from motion_spec_dsl.rdf_parser.vocab import AGN, EST, QUDT_SCHEMA
 from support import (
     ACTIONS,
     BASE,
+    BASE_TEXT,
     CTRL,
     EXEC,
     HOLD,
@@ -170,6 +171,12 @@ REJECTIONS = [
     ),
     pytest.param(
         BASE,
+        [(SPEC, AFTER_SPEC + "length bad-mul = <shared.world.pose-ee-base>.position * 2.0 1")],
+        "geometry kind",
+        id="expression_multiplies_a_geometry_kind",
+    ),
+    pytest.param(
+        BASE,
         [
             (TWIST, TWIST + PRESS_WRENCH),
             (SPEC, AFTER_SPEC + "torque tq-lo = -1.0 Nm,\n        torque tq-hi = 1.0 Nm"),
@@ -222,8 +229,55 @@ REJECTIONS = [
                 " greater than 0.05 m/s"
             ),
         ],
-        "which no `world` block declares",
+        "does not declare",
         id="direction_between_unrelated_frames",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                TWIST,
+                TWIST + ",\n        pose pose-ee-table {\n"
+                "            of:         <gripper.g_base.g_pinch>,\n"
+                "            wrt:        <table.table_top>,\n"
+                "            as-seen-by: <gripper.g_base.g_pinch>\n        }",
+            ),
+            (SPEC, AFTER_SPEC +
+                "direction tool-up { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, -1),\n"
+                "        direction table-up { as-seen-by: <table.table_top> } = (0, 0, 1),\n"
+                "        angle align-band = 0.05 rad"
+            ),
+            (HOLD, AFTER_HOLD +
+                "align: keeping angle between <shared.spec.tool-up> and <shared.spec.table-up>"
+                " equal to 0 rad within <shared.spec.align-band>"
+            ),
+            (CTRL, AFTER_CTRL + "pid ctrl-align { constraint: <home.align>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }"),
+        ],
+        "answers in the frame the pose is seen by",
+        id="angle_reads_a_pose_seen_by_another_frame",
+    ),
+    pytest.param(
+        PICK,
+        [
+            (
+                "velocity-twist twist-ee-base {\n            of:         <gripper.g_base.g_pinch>,",
+                "velocity-twist twist-ee-base {\n            of:         <pick_and_place_graph.cube>,",
+            )
+        ],
+        "declares no velocity-twist",
+        id="path_speed_without_its_twist",
+    ),
+    pytest.param(
+        BASE,
+        [(HOLD, "hold-position: keeping <shared.world.pose-ee-base> equal to <spec.home-pose> within <shared.spec.satisfied-band>")],
+        "band on a whole pose",
+        id="band_on_a_whole_pose",
+    ),
+    pytest.param(
+        BASE,
+        [(HOLD, "hold-position: keeping <spec.home-pose> equal to <spec.home-pose>")],
+        "constrains a whole pose",
+        id="constraint_on_a_whole_context_pose",
     ),
     pytest.param(
         BASE,
@@ -322,12 +376,6 @@ REJECTIONS = [
     ),
     pytest.param(
         BASE,
-        [(HOLD, HOLD.replace(" within <shared.spec.satisfied-band>", ""))],
-        "states no band",
-        id="equality_without_band",
-    ),
-    pytest.param(
-        BASE,
         [("guarded-motion", "tolerances { linear-velocity: 0.02 m }\n\nguarded-motion")],
         "not measured in 'm'",
         id="default_band_of_wrong_kind",
@@ -347,9 +395,18 @@ def test_an_invalid_model_is_rejected(model, edits, message) -> None:
     for old, new in edits:
         assert old in source, old
         source = source.replace(old, new, 1)
-    with pytest.raises((TextXError, ValueError), match=message):
-        authored = motion_spec_metamodel().model_from_str(source, file_name=str(model))
-        MotionSpecDatasetBuilder(authored).build()
+    with pytest.raises(TextXError, match=message):
+        motion_spec_metamodel().model_from_str(source, file_name=str(model))
+
+
+def test_an_equality_without_a_band_is_not_emitted() -> None:
+    """The emitter refuses it: the default band depends on the kind its plans resolve."""
+    model = motion_spec_metamodel().model_from_str(
+        BASE_TEXT.replace(HOLD, HOLD.replace(" within <shared.spec.satisfied-band>", ""), 1),
+        file_name=str(BASE),
+    )
+    with pytest.raises(ValueError, match="states no band"):
+        MotionSpecDatasetBuilder(model).build()
 
 
 def test_an_estimated_wrench_names_its_observer() -> None:

@@ -116,7 +116,7 @@ def _alignment_is_pointwise(constraint: ConstraintSpecification) -> bool:
     on the sphere) rather than a cone around it: equality to a bare zero, a band opening at zero,
     or `less than` (the same cone stated as a bound). A point target removes two rotational DOF;
     a cone removes one. Shared by validation and RDF emission so the two never disagree on which
-    row a target drives -- see plan 10.
+    row a target drives.
     """
     expr = constraint.expr
     if isinstance(expr, EqualityConstraint):
@@ -187,7 +187,7 @@ def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
         return None
     # A `distance between <A> and <B>` view has no raw SubSpace enum (it resolves
     # via constraint_view_subspace to the string "distance"); it is control-wise a
-    # linear command, the same as SubSpace.Position. Every Table IIa expression (plan 08) is
+    # linear command, the same as SubSpace.Position. Every Table IIa expression is
     # linear-subspace too -- a length, signed or not, never an angle.
     if subspace == "distance" or subspace in GEOMETRIC_DISTANCE_SUBSPACE.values():
         return QuantityType.LinearVelocity

@@ -11,7 +11,13 @@ from typing import TYPE_CHECKING
 from textx import get_parent_of_type
 
 from motion_spec_dsl.classes.common import NamedNamespaceObject
-from motion_spec_dsl.classes.context import ContextRef, View
+from motion_spec_dsl.classes.context import (
+    ContextQuantity,
+    ContextRef,
+    QuantityType,
+    View,
+    _resolved_context_quantity,
+)
 
 if TYPE_CHECKING:
     from motion_spec_dsl.classes.motion_spec import GuardedMotion
@@ -154,6 +160,79 @@ def _flatten_constraint_items(items) -> list:
 def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> ConstraintSpecification:
     """Return the underlying ConstraintSpecification, resolving aliases."""
     return item.ref.constraint if isinstance(item, ConstraintAlias) else item
+
+
+def _binary_view(constraint: ConstraintSpecification):
+    """The constraint's view as its `BinaryView` instance (any of the 4 binary forms), or None."""
+    return getattr(constraint.view, "binary", None)
+
+
+def _binary_view_kind(constraint: ConstraintSpecification) -> str | None:
+    """The grammar rule name of the constraint's binary view, or None."""
+    binary = _binary_view(constraint)
+    return type(binary).__name__ if binary is not None else None
+
+
+def _is_distance_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `distance between A and B` form."""
+    return _binary_view_kind(constraint) == "DistanceBetweenView"
+
+
+def _is_difference_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `difference of A and B` form."""
+    return _binary_view_kind(constraint) == "DifferenceOfView"
+
+
+def _is_norm_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `norm of <q>.<subspace> [across <d>]` form."""
+    return getattr(constraint.view, "norm", None) is not None
+
+
+def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is any `angle between A and B` form."""
+    return _binary_view_kind(constraint) == "AngleBetweenView"
+
+
+def _is_geometric_distance_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `distance of A from B` (Table IIa) form."""
+    return _binary_view_kind(constraint) == "DistanceFromView"
+
+
+def _is_projection_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is a `projection of A on B` (Table IIa) form."""
+    return _binary_view_kind(constraint) == "ProjectionOnView"
+
+
+def _is_plane_operand(operand: ContextQuantity) -> bool:
+    """Whether an `angle between` operand is a plane rather than a versor direction."""
+    return _resolved_context_quantity(operand).type == QuantityType.Plane
+
+
+def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the versor-versor `angle between A and B` form. Any new
+    call site must decide explicitly whether it wants this (versor-versor only) or the broader
+    `_is_angle_between_view`.
+    """
+    if not _is_angle_between_view(constraint):
+        return False
+    binary = _binary_view(constraint)
+    return not _is_plane_operand(binary.left) and not _is_plane_operand(binary.right)
+
+
+def _is_incident_angle_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the versor-plane `angle between A and B` form."""
+    if not _is_angle_between_view(constraint):
+        return False
+    binary = _binary_view(constraint)
+    return not _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
+
+
+def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
+    """Whether the constraint's view is the plane-plane `angle between A and B` form."""
+    if not _is_angle_between_view(constraint):
+        return False
+    binary = _binary_view(constraint)
+    return _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
 
 
 @dataclass

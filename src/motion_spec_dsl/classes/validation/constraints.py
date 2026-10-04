@@ -9,7 +9,14 @@ import math
 from collections import defaultdict
 
 from textx import get_children_of_type
+from textx.scoping import get_included_models
 
+from motion_spec_dsl.classes.constraint_handler import (
+    _perturbation_conditions,
+    _resolved_constraint_items,
+    motion_context_quantities,
+    motion_world_quantities,
+)
 from motion_spec_dsl.classes.constraints import (
     BilateralConstraint,
     ConstraintSpecification,
@@ -17,6 +24,14 @@ from motion_spec_dsl.classes.constraints import (
     GreaterThanConstraint,
     LessThanConstraint,
     OutsideConstraint,
+    _binary_view,
+    _is_angle_between_view,
+    _is_difference_view,
+    _is_distance_view,
+    _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_plane_angle_view,
+    _is_projection_view,
 )
 from motion_spec_dsl.classes.controller_semantics import (
     SUBSPACE_ALIAS,
@@ -35,7 +50,6 @@ from motion_spec_dsl.classes.context import (
     DirectionBetween,
     GeometricPropKey,
     GeometricProps,
-    GeoPropPair,
     Measure,
     QuantityLeaf,
     QuantityType,
@@ -45,9 +59,19 @@ from motion_spec_dsl.classes.context import (
     View,
     WorldQuantity,
     WorldQuantityType,
+    _NORM_SCALAR_TYPES,
+    _context_quantity,
+    _geo_prop,
+    _geo_prop_events,
+    _geo_prop_value,
     _geometric_operand_kind,
+    _node_name,
+    _path_pose_endpoints,
+    _pose_frame_names,
+    _quantity_axis_frame,
     _resolved_context_quantity,
     _resolved_world_quantity,
+    _scalar_type,
 )
 from motion_spec_dsl.classes.coordinates import (
     AccelerationTwistCoordinate,
@@ -59,34 +83,17 @@ from motion_spec_dsl.classes.coordinates import (
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
-from motion_spec_dsl.classes.dimensions import VECTOR_COMPONENT_TYPE
-from motion_spec_dsl.classes.motion_spec import Model, ToleranceDefault
+from motion_spec_dsl.classes.dimensions import DIMENSION_VECTOR, VECTOR_COMPONENT_TYPE, infer
+from motion_spec_dsl.classes.motion_spec import GuardedMotion, Model, ToleranceDefault
 from motion_spec_dsl.classes.path import PathValue, ProfileSpec
-from motion_spec_dsl.classes.units import UNIT_KINDS
+from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE, _qudt_kind
 from motion_spec_dsl.classes.validation.common import (
+    constraint_handlers,
     motion_constraint_items,
     motion_constraints,
     motion_specs,
     semantic_error,
 )
-from motion_spec_dsl.rdf.common import (
-    _NORM_SCALAR_TYPES,
-    _binary_view,
-    _context_quantity,
-    _geo_prop,
-    _geo_prop_events,
-    _is_angle_between_view,
-    _is_difference_view,
-    _is_distance_view,
-    _is_geometric_distance_view,
-    _is_projection_view,
-    _node_name,
-    _path_pose_endpoints,
-    _pose_frame_names,
-    _quantity_axis_frame,
-    _scalar_type,
-)
-from motion_spec_dsl.rdf.model import QUDT_KIND_BY_QUANTITY_TYPE, _qudt_kind
 
 
 def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
@@ -339,7 +346,7 @@ def validate_unit_kinds(model: Model) -> None:
         if not isinstance(value, (Measure, VectorXYZ)) or unit is None:
             continue
         kind = _qudt_kind(quantity.type)
-        allowed = [token for token, kinds in UNIT_KINDS.items() if kind in kinds]
+        allowed = [token for token, dsl_unit in DSL_UNITS.items() if kind in dsl_unit.kinds]
         if unit in allowed:
             continue
         raise semantic_error(
@@ -396,16 +403,6 @@ def validate_scalar_order_relations(model: Model) -> None:
                 )
 
 
-def _direction_frame(quantity: ContextQuantity) -> object | None:
-    """The as-seen-by (or wrt) frame of a direction context quantity, if stated."""
-    if quantity.props is None:
-        return None
-    for pair in quantity.props.pairs:
-        if pair.key in (GeometricPropKey.AsSeenBy, GeometricPropKey.Wrt):
-            return pair.value
-    return None
-
-
 def _alignment_operand(
     quantity: ContextQuantity, label: str, owner: object
 ) -> tuple[float, float, float]:
@@ -413,7 +410,10 @@ def _alignment_operand(
     quantity = _resolved_context_quantity(quantity)
     if quantity.type != QuantityType.Direction:
         raise semantic_error(f"{label} must be a 'direction' context quantity.", owner)
-    if _direction_frame(quantity) is None:
+    if (
+        _geo_prop_value(quantity.props, GeometricPropKey.AsSeenBy)
+        or _geo_prop_value(quantity.props, GeometricPropKey.Wrt)
+    ) is None:
         raise semantic_error(f"{label} '{quantity.name}' needs an 'as-seen-by' frame.", owner)
     vector = quantity.value
     vector = (
@@ -592,7 +592,7 @@ def validate_line_plane_primitives(model: Model) -> None:
                     f"'{quantity.name}' is a {quantity.type} and needs exactly one '{key}'.",
                     quantity,
                 )
-        referent = next(pair.value for pair in quantity.props.pairs if pair.key == direction_key)
+        referent = _geo_prop_value(quantity.props, direction_key)
         _alignment_operand(referent, f"'{quantity.name}' {direction_key}", quantity)
 
 
@@ -623,7 +623,7 @@ def _reject_unsigned_distance_to_zero(spec) -> None:
 
 
 def validate_geometric_distance_views(model: Model) -> None:
-    """Check Table IIa `distance of <A> from <B>` / `projection of <A> on <B>` views (plan 08):
+    """Check Table IIa `distance of <A> from <B>` / `projection of <A> on <B>` views:
     operand typing, the point-first operand order, projection's line-only second operand, and
     the unsigned-zero rule -- which also applies to the pre-existing point-point
     `distance between`, since its scalar is the same kind of unsigned magnitude.
@@ -687,7 +687,7 @@ def validate_tolerance_defaults(model: Model) -> None:
         if unit is None:
             continue
         kind = _qudt_kind(entry.kind)
-        allowed = [token for token, kinds in UNIT_KINDS.items() if kind in kinds]
+        allowed = [token for token, dsl_unit in DSL_UNITS.items() if kind in dsl_unit.kinds]
         if unit in allowed:
             continue
         raise semantic_error(
@@ -763,12 +763,9 @@ def validate_world_quantities(model: Model) -> None:
             raise semantic_error(f"Pose '{quantity.uri}' has no frame endpoints", quantity)
         if quantity.type != WorldQuantityType.Wrench:
             continue
-        props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-        pairs = [pair for pair in (props.pairs if props else []) if isinstance(pair, GeoPropPair)]
-        ft_sensor = next(
-            (p.sensor for p in pairs if p.key == "ft-sensor" and p.sensor is not None), None
-        )
-        estimated = any(p.key == "estimated-from" and p.agent is not None for p in pairs)
+        props = quantity.props
+        ft_sensor = _geo_prop_value(props, "ft-sensor")
+        estimated = _geo_prop_value(props, "estimated-from") is not None
         if ft_sensor is not None and estimated:
             raise semantic_error(
                 f"Wrench '{quantity.name}' names both ft-sensor and estimated-from; "
@@ -1102,7 +1099,7 @@ def _validate_table_iia_operands(spec: ConstraintSpecification) -> None:
             if primitive.type == QuantityType.Plane
             else GeometricPropKey.Along
         )
-        referent = next(pair.value for pair in primitive.props.pairs if pair.key == key)
+        referent = _geo_prop_value(primitive.props, key)
         seen_by.append(_geo_prop(_resolved_context_quantity(referent).props, "as-seen-by"))
 
     if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
@@ -1175,3 +1172,160 @@ def validate_unique_constraint_names(model: Model) -> None:
                 f"Motion '{motion.name}' has duplicate constraint name(s): {names}.",
                 next(iter(duplicates.values()))[1],
             )
+
+
+def validate_motion_world_scope(model: Model) -> None:
+    """What a motion reads must be declared in its own scope: the pose an angle, a Table II
+    expression or a `from/to` direction reads, and the twist a followed path's speed reads; and
+    a constraint names one scalar kind, never a whole pose or a mass."""
+    models = get_included_models(model)
+    for handler in constraint_handlers(model):
+        motion = handler.motion
+        if not isinstance(motion, GuardedMotion):
+            continue
+        context_quantities = motion_context_quantities(models, motion, handler)
+        world = motion_world_quantities(models, motion, handler, context_quantities)
+        # First declaration wins, as it does for the emitter reading the scope.
+        poses: dict[tuple, WorldQuantity] = {}
+        twists: dict[tuple, WorldQuantity] = {}
+        for quantity in world.values():
+            frames = (_geo_prop(quantity.props, "of"), _geo_prop(quantity.props, "wrt"))
+            if quantity.type == WorldQuantityType.Pose:
+                poses.setdefault(frames, quantity)
+            elif quantity.type == WorldQuantityType.VelocityTwist:
+                twists.setdefault(frames, quantity)
+        # (reader, pose frames it reads, frame the pose must be seen by or None, reason)
+        pose_reads = []
+        twist_reads = []
+        for spec in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
+            view = spec.view
+            if _is_angle_between_view(spec):
+                plane_angle = _is_plane_angle_view(spec)
+                directions = [
+                    _resolved_context_quantity(
+                        _geo_prop_value(_resolved_context_quantity(ref).props, GeometricPropKey.Normal)
+                    )
+                    if is_plane
+                    else _resolved_context_quantity(ref)
+                    for ref, is_plane in zip(
+                        (view.binary.left, view.binary.right),
+                        (plane_angle, plane_angle or _is_incident_angle_view(spec)),
+                    )
+                ]
+                moving_frame, reference_frame = (
+                    _geo_prop(direction.props, "as-seen-by") or _geo_prop(direction.props, "wrt")
+                    for direction in directions
+                )
+                pose_reads.append(
+                    (spec, (moving_frame, reference_frame), reference_frame, "an angle")
+                )
+            elif _is_geometric_distance_view(spec) or _is_projection_view(spec):
+                a_ref, b_ref = view.binary.left, view.binary.right
+                table = (
+                    GEOMETRIC_DISTANCE_OPS
+                    if _is_geometric_distance_view(spec)
+                    else GEOMETRIC_PROJECTION_OPS
+                )
+                op_type = table.get((_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref)))
+                primitive = _resolved_context_quantity(b_ref)
+                if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
+                    line_a = _resolved_context_quantity(a_ref)
+                    along = _geo_prop_value(line_a.props, GeometricPropKey.Along)
+                    frame = _geo_prop(_resolved_context_quantity(along).props, "as-seen-by")
+                    for line in (line_a, primitive):
+                        pose_reads.append(
+                            (spec, (_geo_prop(line.props, "of"), frame), None, "a Table II expression")
+                        )
+                elif op_type is not None:
+                    point = (
+                        a_ref if isinstance(a_ref, WorldQuantity) else world.get(_node_name(a_ref))
+                    ) or a_ref
+                    frames = _pose_frame_names(point)
+                    primitive_frame = _geo_prop(primitive.props, "of")
+                    # A line through the frame the point is measured against needs no origin pose.
+                    body_line = (
+                        op_type == "PointLineToLinearDistance"
+                        and frames is not None
+                        and primitive_frame == frames[1]
+                    )
+                    if frames is not None and not body_line:
+                        pose_reads.append(
+                            (spec, (primitive_frame, frames[1]), None, "a Table II expression")
+                        )
+            operand = _path_operand(view)
+            if operand is not None:
+                moved = operand.moved
+                moved = (
+                    moved if isinstance(moved, WorldQuantity) else world.get(_node_name(moved))
+                )
+                frames = _pose_frame_names(moved) if moved is not None else None
+                if frames is not None:
+                    twist_reads.append((spec, moved, frames[:2]))
+            quantity = getattr(view, "quantity", None)
+            subspace = constraint_view_subspace(spec) if quantity is not None else None
+            if (
+                spec.tolerance is not None
+                and isinstance(quantity, WorldQuantity)
+                and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
+                and subspace == "pose"
+                and axis_label(view.axis) is None
+            ):
+                raise semantic_error(
+                    f"constraint '{spec.name}' states a band on a whole pose -- its error mixes a "
+                    "position and an orientation; state one band on '.position' and one on "
+                    "'.orientation'",
+                    spec,
+                )
+            kind = None
+            if isinstance(quantity, ContextQuantity) and view.subspace is None and view.on is None:
+                kind = _resolved_context_quantity(quantity).type
+            elif view.expr is not None and quantity is None and not view.is_elapsed:
+                kind = infer(view.expr)
+            whole_kinds = {
+                QuantityType.Pose: "a whole pose -- select '.position' or '.orientation', each "
+                "with its own tolerance",
+                QuantityType.Mass: "a mass -- no constraint type exists for that kind",
+            }
+            if kind in whole_kinds:
+                raise semantic_error(f"constraint '{spec.name}' constrains {whole_kinds[kind]}", spec)
+            if kind is not None and kind not in DIMENSION_VECTOR:
+                raise semantic_error(
+                    f"constraint '{spec.name}' names '{kind}', which is no scalar kind -- select a "
+                    "scalar quantity",
+                    spec,
+                )
+        for quantity in context_quantities.values():
+            value = quantity.value
+            if isinstance(value, DirectionBetween):
+                pose_reads.append(
+                    (
+                        quantity,
+                        (str(value.to_frame.uri), str(value.from_frame.uri)),
+                        _geo_prop(quantity.props, "as-seen-by") or _geo_prop(quantity.props, "wrt"),
+                        "a direction between two frames",
+                    )
+                )
+        for reader, (of_frame, wrt_frame), seen_by, what in pose_reads:
+            pose = poses.get((of_frame, wrt_frame))
+            if pose is None:
+                raise semantic_error(
+                    f"'{reader.name}' reads a world pose of '{of_frame}' wrt '{wrt_frame}' that "
+                    f"motion '{motion.name}' does not declare -- {what} reads an already "
+                    "computed pose, it does not derive one",
+                    reader,
+                )
+            pose_seen_by = _geo_prop(pose.props, "as-seen-by") or wrt_frame
+            if seen_by is not None and pose_seen_by != seen_by:
+                raise semantic_error(
+                    f"'{reader.name}' reads '{pose.name}', seen by '{pose_seen_by}', from "
+                    f"'{seen_by}' -- {what} answers in the frame the pose is seen by",
+                    reader,
+                )
+        for spec, moved, (of_frame, wrt_frame) in twist_reads:
+            if (of_frame, wrt_frame) not in twists:
+                raise semantic_error(
+                    f"constraint '{spec.name}' follows a path with '{moved.name}', but motion "
+                    f"'{motion.name}' declares no velocity-twist of '{of_frame}' wrt "
+                    f"'{wrt_frame}' -- the speed along a path is the measured twist of that frame",
+                    spec,
+                )

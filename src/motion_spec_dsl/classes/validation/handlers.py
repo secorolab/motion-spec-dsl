@@ -19,7 +19,18 @@ from motion_spec_dsl.classes.constraints import (
     _flatten_constraint_items,
     _resolved_spec,
 )
-from motion_spec_dsl.classes.constraints import EqualityConstraint
+from motion_spec_dsl.classes.constraints import (
+    EqualityConstraint,
+    _binary_view,
+    _is_alignment_view,
+    _is_difference_view,
+    _is_distance_view,
+    _is_geometric_distance_view,
+    _is_incident_angle_view,
+    _is_norm_view,
+    _is_plane_angle_view,
+    _is_projection_view,
+)
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
     GeometricPropKey,
@@ -27,6 +38,8 @@ from motion_spec_dsl.classes.context import (
     QuantityType,
     ReferenceGeneratorType,
     WorldQuantityType,
+    _context_quantity,
+    _geo_prop,
     _resolved_context_quantity,
 )
 from motion_spec_dsl.classes.motion_spec import Model
@@ -46,19 +59,6 @@ from motion_spec_dsl.classes.validation.common import (
     motion_constraints,
     motion_specs,
     semantic_error,
-)
-from motion_spec_dsl.rdf.common import (
-    _binary_view,
-    _context_quantity,
-    _geo_prop,
-    _is_alignment_view,
-    _is_difference_view,
-    _is_distance_view,
-    _is_geometric_distance_view,
-    _is_incident_angle_view,
-    _is_norm_view,
-    _is_plane_angle_view,
-    _is_projection_view,
 )
 
 # Resolved view subspaces whose command is a force, not a moment.
