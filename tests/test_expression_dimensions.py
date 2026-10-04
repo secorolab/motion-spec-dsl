@@ -1,96 +1,72 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Dimension inference over quantity-expression trees: `classes.dimensions.infer` decides what
-`+`/`-`/`*`/`/` produce, and validation raises before the RDF emitter ever sees a bad tree.
-"""
+"""Quantity expressions: their ALGO op chain, inferred dimension, and where a product may stand."""
 
 from __future__ import annotations
 
-import pytest
-from textx.exceptions import TextXSemanticError
+from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdflib.namespace import RDF
 
-SPEC_ANCHOR = "linear-velocity zero-linvel = 0.0 m/s"
-
-
-def _mutate(parse_mutated, declaration: str):
-    return parse_mutated(SPEC_ANCHOR, f"{SPEC_ANCHOR},\n        {declaration}")
-
-
-def test_same_kind_addition_is_accepted(parse_mutated) -> None:
-    _mutate(
-        parse_mutated,
-        "length sum-ok = <shared.spec.satisfied-band> + <shared.spec.satisfied-band>",
-    )
+from motion_spec_dsl.langs import motion_spec_metamodel
+from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf_parser.vocab import ALGO_EXT, QUDT_QKIND, QUDT_SCHEMA
+from support import BASE, BASE_TEXT, SNAPSHOT, SPEC, TWIST, UNTIL
 
 
-def test_mismatched_kind_addition_is_rejected(parse_mutated) -> None:
-    with pytest.raises(TextXSemanticError, match="different kinds of quantity"):
-        _mutate(
-            parse_mutated,
-            "length sum-bad = <shared.spec.satisfied-band> + <shared.world.twist-ee-base>.linvel.z",
-        )
-
-
-def test_a_product_that_maps_to_a_known_kind_is_accepted(parse_mutated) -> None:
-    _mutate(
-        parse_mutated,
-        "mass k = 1.2 kg,\n"
+def test_precedence_nests_a_product_inside_a_difference_with_an_inferred_force() -> None:
+    source = BASE_TEXT.replace(
+        SPEC,
+        f"{SPEC},\n        force f = 10.0 N,\n        mass k = 1.2 kg,\n"
         "        linear-acceleration a = 9.81 m/s^2,\n"
-        "        force computed = <spec.k> * <spec.a>",
+        "        force residual = <spec.f> - <spec.k> * <spec.a>",
+        1,
     )
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
+    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+
+    [subtraction] = graph.subjects(RDF.type, ALGO_EXT.Subtraction)
+    [multiplication] = graph.subjects(RDF.type, ALGO_EXT.Multiplication)
+    product = graph.value(multiplication, ALGO_EXT.out)
+    assert graph.value(subtraction, ALGO_EXT.subtrahend) == product
+    assert graph.value(product, QUDT_SCHEMA.hasQuantityKind) == QUDT_QKIND.Force
+    assert graph.value(product, QUDT_SCHEMA.unit) == QUDT_UNIT.N
 
 
-def test_a_product_with_no_known_kind_is_rejected(parse_mutated) -> None:
-    with pytest.raises(TextXSemanticError, match="names no known"):
-        _mutate(
-            parse_mutated,
-            "mass k = 1.2 kg,\n        dimensionless bad = <spec.k> * <spec.k>",
-        )
-
-
-def test_geometry_kind_addition_of_the_same_kind_is_accepted(parse_mutated) -> None:
-    _mutate(
-        parse_mutated,
-        "position sum-pos = <shared.world.pose-ee-base>.position "
-        "+ <shared.world.pose-ee-base>.position",
+def test_a_minus_offset_names_the_operand_it_takes_away() -> None:
+    """`-` does not commute, so the sampled value is the minuend and the offset the subtrahend."""
+    source = BASE_TEXT.replace(
+        SNAPSHOT,
+        f"{SNAPSHOT},\n            length lift = 0.05 m,\n"
+        "            length support-z = snapshot of <shared.world.pose-ee-base>.position.z "
+        "- <spec.lift> on event <aas.E_HOME_ENTERED>",
+        1,
     )
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
+    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+
+    [subtraction] = graph.subjects(RDF.type, ALGO_EXT.Subtraction)
+    assert str(graph.value(subtraction, ALGO_EXT.subtrahend)).endswith("/lift")
+    assert str(graph.value(subtraction, ALGO_EXT.minuend)).endswith("pose-ee-base.distance.z")
 
 
-def test_geometry_kind_multiplication_is_rejected(parse_mutated) -> None:
-    with pytest.raises(TextXSemanticError, match="geometry kind"):
-        _mutate(
-            parse_mutated,
-            "position bad-mul = <shared.world.pose-ee-base>.position * 2.0 1",
+def test_a_product_of_measured_views_is_accepted_where_only_a_monitor_reads_it() -> None:
+    """A controller needs the gradient such a product lacks; a monitor only compares it."""
+    source = (
+        BASE_TEXT.replace(
+            TWIST,
+            TWIST + ",\n        wrench press-wrench {\n"
+            "            of:         <gripper.g_base.g_pinch>,\n"
+            "            ref-point:  <gripper.g_base.g_pinch>,\n"
+            "            as-seen-by: <kinova.base_link.base_link_origin>\n        }",
+            1,
         )
-
-
-def test_a_composite_leaf_with_no_selected_axis_is_rejected_in_multiplication(
-    parse_mutated,
-) -> None:
-    with pytest.raises(TextXSemanticError, match="select a scalar subspace axis"):
-        _mutate(
-            parse_mutated,
-            "linear-velocity bad-axis = <shared.world.twist-ee-base>.linvel * 2.0 1",
+        .replace(SPEC, f"{SPEC},\n        torque tq-lo = -1.0 Nm,\n        torque tq-hi = 1.0 Nm", 1)
+        .replace(
+            UNTIL,
+            f"{UNTIL},\n        torque-load: (<shared.world.press-wrench>.force.z * "
+            "<shared.world.pose-ee-base>.position.x) outside <spec.tq-lo> and <spec.tq-hi>",
+            1,
         )
-
-
-def test_a_declared_type_must_equal_the_expressions_inferred_type(parse_mutated) -> None:
-    with pytest.raises(TextXSemanticError, match="declared"):
-        _mutate(parse_mutated, "duration mismatch = <shared.spec.satisfied-band>")
-
-
-def test_literal_division_by_zero_is_rejected(parse_mutated) -> None:
-    with pytest.raises(TextXSemanticError, match="division by zero"):
-        _mutate(
-            parse_mutated,
-            "mass k = 1.2 kg,\n        mass bad-div = <spec.k> / 0.0 kg",
-        )
-
-
-def test_a_scalar_spelling_of_the_same_dimension_is_accepted(parse_mutated) -> None:
-    """A length and a projected distance are both metres; the declared spelling need not
-    match inference's canonical one."""
-    _mutate(
-        parse_mutated,
-        "distance gap = <shared.spec.satisfied-band> + <shared.spec.satisfied-band>",
     )
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
+    MotionSpecDatasetBuilder(model).build()

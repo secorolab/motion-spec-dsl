@@ -1,82 +1,50 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Valid fixtures parse; mutating one clause of the base fixture makes validate_model reject it."""
+"""One rejection per concept: an edit to a valid model that validation must refuse."""
 
 from __future__ import annotations
 
 import pytest
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 from rdflib.namespace import RDF
-from textx.exceptions import TextXSemanticError
+from textx.exceptions import TextXError
 
+from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
 from motion_spec_dsl.rdf_parser.vocab import AGN, EST, QUDT_SCHEMA
+from support import (
+    ACTIONS,
+    BASE,
+    CTRL,
+    EXEC,
+    HOLD,
+    LOCATED,
+    MODELS,
+    MONITOR,
+    MOTION,
+    OCCURRENCE,
+    PERTURBATION,
+    POSE_TABLE_TOP,
+    PUSH,
+    SERVER,
+    SIM,
+    SNAPSHOT,
+    SOLVERS_END,
+    SPEC,
+    TABLE_PLANE,
+    TOPICS,
+    TWIST,
+    UNTIL,
+)
 
-REJECTIONS = [
-    pytest.param(
-        "settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>",
-        "hold-position: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel>",
-        "hold-position",
-        id="validate_unique_constraint_names",
-    ),
-    pytest.param(
-        'ns app = "https://secorolab.github.io/models/base/"',
-        'ns app = "https://secorolab.github.io/models/base"',
-        "must end with",
-        id="validate_namespace_uris_missing_separator",
-    ),
-    pytest.param(
-        'ns app = "https://secorolab.github.io/models/base/"',
-        'ns app = "https://secorolab.github.io/models//base/"',
-        "empty path segment",
-        id="validate_namespace_uris_empty_segment",
-    ),
-    pytest.param(
-        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "violated { flag: settled },",
-        "belongs in satisfied",
-        id="validate_monitor_flag_placement",
-    ),
-    pytest.param(
-        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "satisfied { flag: settled }, violated { hold: <home> }, violated { hold: <home> },",
-        "'violated' state twice",
-        id="validate_monitor_duplicate_state",
-    ),
-    pytest.param(
-        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "satisfied { trigger: event <aas.E_HOME_SETTLED>, trigger: event <aas.E_HOME_SETTLED> },",
-        "more than one 'trigger'",
-        id="validate_monitor_duplicate_trigger",
-    ),
-    pytest.param(
-        "satisfied for 0.3 s { trigger: event <aas.E_HOME_SETTLED> },",
-        "satisfied { trigger: event <aas.E_HOME_SETTLED>, hold: <home> },",
-        "belongs in violated",
-        id="validate_monitor_hold_placement",
-    ),
-]
-
-
-@pytest.mark.parametrize(("old", "new", "message"), REJECTIONS)
-def test_invalid_model_is_rejected(parse_mutated, old, new, message):
-    with pytest.raises(TextXSemanticError, match=message):
-        parse_mutated(old, new)
-
-
-TWIST_ANCHOR = """        velocity-twist twist-ee-base {
-            of:         <gripper.g_base.g_pinch>,
-            wrt:        <kinova.base_link.base_link_origin>,
-            as-seen-by: <kinova.base_link.base_link_origin>
+PICK = MODELS / "01_pick_and_place" / "pick_and_place.robmot"
+ARC = MODELS / "06_arc_tracing_with_admittance" / "arc_tracing_with_admittance.robmot"
+REAL = 'platform:   real-world { <agents.arm1> realized by KinovaGen3-2F85 }'
+ESTIMATED = """,
+        wrench press-wrench {
+            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by:     <kinova.base_link.base_link_origin>,
+            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 }%s
         }"""
-SPEC_ANCHOR = "        linear-velocity zero-linvel = 0.0 m/s"
-WHILE_ANCHOR = (
-    "        hold-position: keeping <shared.world.pose-ee-base>.position equal to "
-    "<spec.home-pose>.position within <shared.spec.satisfied-band>"
-)
-CTRL_ANCHOR = (
-    "        pid ctrl-hold-position { constraint: <home.hold-position>, "
-    "Kp: 200, Ki: 100, Kd: 40, decay: 0 }"
-)
 MEASURED = """,
         wrench press-wrench {
             ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
@@ -84,102 +52,325 @@ MEASURED = """,
             ft-sensor:  <wrist_ft>,
             re-tare-on: { <aas.E_HOME_SETTLED> }
         }"""
-COMMANDED = """,
+PRESS_WRENCH = """,
         wrench press-wrench {
             of:         <gripper.g_base.g_pinch>,
             ref-point:  <gripper.g_base.g_pinch>,
             as-seen-by: <kinova.base_link.base_link_origin>
         }"""
-ESTIMATED = """,
-        wrench press-wrench {
-            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
-            as-seen-by:     <kinova.base_link.base_link_origin>,
-            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 },
-            re-tare-on:     { <aas.E_HOME_SETTLED> }
-        }"""
-ESTIMATED_AND_MEASURED = """,
-        wrench press-wrench {
-            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
-            as-seen-by:     <kinova.base_link.base_link_origin>,
-            ft-sensor:      <wrist_ft>,
-            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 },
-            re-tare-on:     { <aas.E_HOME_SETTLED> }
-        }"""
-ESTIMATED_UNTARED = """,
-        wrench press-wrench {
-            ref-point:      <ft_tree.wrist_ft_body.wrist_ft_site>,
-            as-seen-by:     <kinova.base_link.base_link_origin>,
-            estimated-from: <agents.arm1> { gain: 30.0 Hz, filter: 0.5 }
-        }"""
 
 
-def _press_source(base_source: str, wrench: str) -> str:
-    """The base model with `wrench` declared and a feed-forward force command assigning it."""
-    for old, new in (
-        (TWIST_ANCHOR, TWIST_ANCHOR + wrench),
-        (
-            SPEC_ANCHOR,
-            SPEC_ANCHOR + ",\n        force press-force = -5.0 N"
-            ",\n        force satisfied-band-force = 0.5 N",
-        ),
-        (
-            WHILE_ANCHOR,
-            WHILE_ANCHOR + ",\n        press-down: keeping <shared.world.press-wrench>.force.z"
-            " equal to <shared.spec.press-force> within <shared.spec.satisfied-band-force>",
-        ),
-        (
-            CTRL_ANCHOR,
-            CTRL_ANCHOR + ",\n        feed-forward ctrl-press-down"
-            " { constraint: <home.press-down> } as force apply at <gripper.g_base>",
-        ),
-    ):
-        assert old in base_source, old
-        base_source = base_source.replace(old, new, 1)
-    return base_source
+AFTER_SPEC = f"{SPEC},\n        "
+AFTER_HOLD = f"{HOLD},\n        "
+AFTER_CTRL = f"{CTRL},\n        "
 
 
-def test_a_sensor_observed_wrench_cannot_be_commanded(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="which 'wrist_ft' measures or estimates"):
-        parse_source(_press_source(base_source, MEASURED))
+REJECTIONS = [
+    pytest.param(BASE, [("settled-z:", "hold-position:")], "hold-position", id="constraint_name_reused"),
+    pytest.param(
+        BASE,
+        [('models/base/"', 'models/base"')],
+        "must end with",
+        id="namespace_without_separator",
+    ),
+    pytest.param(
+        BASE, [(MONITOR, "violated { flag: settled },")], "belongs in satisfied", id="monitor_flag"
+    ),
+    pytest.param(BASE, [(SIM, REAL)], "no 'config'", id="device_binding_without_config"),
+    pytest.param(
+        BASE,
+        [
+            (SPEC, AFTER_SPEC + "pose look-at-table = [config.poses.table] for <shared.world.pose-ee-base>"),
+            ("<spec.home-pose>.position within", "<shared.spec.look-at-table>.position within"),
+        ],
+        "declares no",
+        id="config_pose_without_config",
+    ),
+    pytest.param(
+        ARC,
+        [("deadband: 1.0 N\n", "deadband: 1.0 N,\n                release-threshold: 2.0 N\n")],
+        "release-threshold must not exceed deadband",
+        id="admittance_release_above_deadband",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (TWIST, TWIST + MEASURED),
+            (SPEC, AFTER_SPEC + "force press-force = -5.0 N,\n        force satisfied-band-force = 0.5 N"),
+            (HOLD, AFTER_HOLD + 
+                "press-down: keeping <shared.world.press-wrench>.force.z equal to "
+                "<shared.spec.press-force> within <shared.spec.satisfied-band-force>"
+            ),
+            (CTRL, AFTER_CTRL + 
+                "feed-forward ctrl-press-down { constraint: <home.press-down> }"
+                " as force apply at <gripper.g_base>"
+            ),
+        ],
+        "which 'wrist_ft' measures or estimates",
+        id="sensed_wrench_commanded",
+    ),
+    pytest.param(
+        BASE, [(TWIST, TWIST + ESTIMATED % "")], "names no re-tare-on", id="estimate_never_retared"
+    ),
+    pytest.param(
+        BASE,
+        [(MOTION, SERVER + SERVER.replace("arc-behaviour", "other-behaviour") + MOTION)],
+        "2 'ros' blocks",
+        id="second_ros_block",
+    ),
+    pytest.param(
+        BASE,
+        [(MOTION, SERVER.replace("<aas.E_HOME_SETTLED>", "<aas.E_ARC_ENTERED>") + MOTION)],
+        "declares no reaction to it",
+        id="goal_event_nothing_reacts_to",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (MOTION, SERVER + MOTION),
+            (
+                "trigger: event <aas.E_HOME_SETTLED>",
+                "trigger: event <aas.E_HOME_SETTLED>, "
+                "result: canceled <ros.action-servers.arc-behaviour> { position: 0.5 }",
+            ),
+        ],
+        "a cancel is the client's",
+        id="server_cancels_its_own_goal",
+    ),
+    pytest.param(
+        BASE,
+        [(EXEC, TOPICS + EXEC), (MONITOR, "violated { publish: FALSE to <ros.publishers.settled> },")],
+        "author the satisfied publish too",
+        id="violated_only_publish",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (EXEC, TOPICS + EXEC),
+            (MONITOR, OCCURRENCE.replace("<aas.E_HOME_SETTLED> }", "<aas.E_HOME_SETTLED>, <aas.E_HOME_SETTLED> }")),
+        ],
+        "more than once",
+        id="event_announced_twice",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (EXEC, ACTIONS + EXEC),
+            ("    when {}", "    find-ee: detect <world_tree.table> using <ros.action-clients.locate>\n\n    when {}"),
+            (UNTIL, LOCATED),
+        ],
+        "nowhere to land",
+        id="detect_target_without_world_pose",
+    ),
+    pytest.param(
+        BASE,
+        [(SPEC, AFTER_SPEC + "length sum-bad = <shared.spec.satisfied-band> + <shared.world.twist-ee-base>.linvel.z")],
+        "different kinds of quantity",
+        id="expression_adds_two_kinds",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (TWIST, TWIST + PRESS_WRENCH),
+            (SPEC, AFTER_SPEC + "torque tq-lo = -1.0 Nm,\n        torque tq-hi = 1.0 Nm"),
+            (
+                HOLD,
+                "hold-position: keeping (<shared.world.press-wrench>.force.z * "
+                "<shared.world.pose-ee-base>.position.x) outside <spec.tq-lo> and <spec.tq-hi>",
+            ),
+        ],
+        "multiplies two measured views",
+        id="controlled_expression_without_gradient",
+    ),
+    pytest.param(BASE, [(SPEC, AFTER_SPEC + "force zero-force = (0.0, 0.0, 0.0) m")], "Force", id="unit_of_wrong_kind"),
+    pytest.param(
+        BASE,
+        [
+            (SPEC, AFTER_SPEC + 
+                "pose test-pose { of: <gripper.g_base.g_pinch>, wrt: <kinova.base_link.base_link_origin>,"
+                " as-seen-by: <kinova.base_link.base_link_origin> } = { position: (0.1, 0.2, 0.3) m,"
+                " orientation: quat { xyzw: (0.0, 0.0, 0.0) } }"
+            )
+        ],
+        "Quaternion",
+        id="orientation_arity",
+    ),
+    pytest.param(
+        BASE, [(SPEC, AFTER_SPEC + "velocity-twist vt = (0.0, 0.0, 0.0) rad/s")], "two-subspace", id="bare_twist_vector"
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                SNAPSHOT,
+                f"{SNAPSHOT},\n            pose turned-pose = {{ position: (0.1, 0.2, 0.3) m,"
+                " orientation: <spec.home-pose>.orientation rotated by quat { xyzw: (0.0, 0.0, 0.0, 1.0) } }",
+            )
+        ],
+        "explicit basis frame",
+        id="relative_quaternion_without_basis",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (SPEC, AFTER_SPEC + 
+                "direction to-table { as-seen-by: <kinova.base_link.base_link_origin> } ="
+                " from <kinova.base_link.base_link_origin> to <table.table_top>"
+            ),
+            (HOLD, AFTER_HOLD + 
+                "speed: norm of <shared.world.twist-ee-base>.linvel across <shared.spec.to-table>"
+                " greater than 0.05 m/s"
+            ),
+        ],
+        "which no `world` block declares",
+        id="direction_between_unrelated_frames",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (HOLD, AFTER_HOLD + 
+                "gap: keeping difference of <shared.spec.satisfied-band> and"
+                " <shared.spec.satisfied-band> greater than 0.05 m"
+            )
+        ],
+        "neither a declared quantity nor a scalar",
+        id="difference_of_plain_values",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (SPEC, AFTER_SPEC + 
+                "direction tool-up { as-seen-by: <gripper.g_base.g_pinch> } = (0, 0, -1),\n"
+                "        direction diag-up { as-seen-by: <kinova.base_link.base_link_origin> }"
+                " = (0.7071, 0.7071, 0),\n        angle align-band = 0.05 rad"
+            ),
+            (HOLD, AFTER_HOLD + 
+                "align: keeping angle between <shared.spec.tool-up> and <shared.spec.diag-up>"
+                " equal to 0 rad within <shared.spec.align-band>"
+            ),
+            (CTRL, AFTER_CTRL + "pid ctrl-align { constraint: <home.align>, Kp: 120, Ki: 50, Kd: 80, decay: 0 }"),
+        ],
+        "signed unit frame axis",
+        id="zero_angle_off_a_frame_axis",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (TWIST, TWIST + POSE_TABLE_TOP),
+            (SPEC, AFTER_SPEC + 
+                "direction rail-axis { as-seen-by: <kinova.base_link.base_link_origin> } = (1, 0, 0),\n"
+                "        line rail { of: <table.table_top>, along: <shared.spec.rail-axis> }"
+            ),
+            (HOLD, AFTER_HOLD + "on-rail: keeping distance of <shared.world.pose-ee-base> from <shared.spec.rail> equal to 0 m"),
+        ],
+        "drives an unsigned distance to zero",
+        id="unsigned_distance_to_zero",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (TWIST, TWIST + POSE_TABLE_TOP),
+            (SPEC, SPEC + TABLE_PLANE),
+            (HOLD, AFTER_HOLD + 
+                "bad-projection: keeping projection of <shared.world.pose-ee-base> on"
+                " <shared.spec.table> equal to 0 m"
+            ),
+        ],
+        "projects onto a line",
+        id="projection_on_a_plane",
+    ),
+    pytest.param(
+        BASE, [(SPEC, AFTER_SPEC + "plane flat { of: <gripper.g_base.g_pinch> }")], "needs exactly one 'normal'", id="plane_without_normal"
+    ),
+    pytest.param(
+        BASE,
+        [
+            (SPEC, AFTER_SPEC + "angle satisfied-band-rot = 0.01 rad"),
+            (HOLD, AFTER_HOLD + 
+                "held: keeping <shared.world.pose-ee-base>.orientation.z equal to"
+                " <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>"
+            ),
+            (CTRL, AFTER_CTRL + 
+                "pid ctrl-held { constraint: <home.held>, Kp: 40, Ki: 0, Kd: 8, decay: 0 }"
+                " as force apply at <gripper.g_base>"
+            ),
+        ],
+        "commands a force on the angular subspace",
+        id="force_on_angular_subspace",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (HOLD, AFTER_HOLD + "speed: norm of <shared.world.twist-ee-base>.linvel greater than 0.05 m/s"),
+            (CTRL, AFTER_CTRL + "pid ctrl-speed { constraint: <home.speed>, Kp: 1, Ki: 0, Kd: 0, decay: 0 }"),
+        ],
+        "nothing can command",
+        id="controller_on_a_norm",
+    ),
+    pytest.param(
+        PICK,
+        [
+            (
+                "<spec.approach-path> more than <spec.min-approach-speed>",
+                "<spec.approach-path> more than <spec.min-approach-speed>,\n"
+                "        pinned: keeping <shared.world.pose-ee-base>.position equal to"
+                " <spec.approach-path>.position",
+            )
+        ],
+        "already follows",
+        id="path_restated_as_setpoint",
+    ),
+    pytest.param(
+        BASE,
+        [(HOLD, HOLD.replace(" within <shared.spec.satisfied-band>", ""))],
+        "states no band",
+        id="equality_without_band",
+    ),
+    pytest.param(
+        BASE,
+        [("guarded-motion", "tolerances { linear-velocity: 0.02 m }\n\nguarded-motion")],
+        "not measured in 'm'",
+        id="default_band_of_wrong_kind",
+    ),
+    pytest.param(
+        BASE,
+        [(SPEC, SPEC + PUSH), (SOLVERS_END, PERTURBATION), (SIM, f'{REAL}\n    config:     "robot.toml"')],
+        "nothing on hardware can apply them",
+        id="perturbation_on_hardware",
+    ),
+]
 
 
-def test_an_estimated_wrench_cannot_be_commanded(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="measures or estimates"):
-        parse_source(_press_source(base_source, ESTIMATED))
+@pytest.mark.parametrize(("model", "edits", "message"), REJECTIONS)
+def test_an_invalid_model_is_rejected(model, edits, message) -> None:
+    source = model.read_text()
+    for old, new in edits:
+        assert old in source, old
+        source = source.replace(old, new, 1)
+    with pytest.raises((TextXError, ValueError), match=message):
+        authored = motion_spec_metamodel().model_from_str(source, file_name=str(model))
+        MotionSpecDatasetBuilder(authored).build()
 
 
-def test_a_wrench_without_a_sensor_can_be_commanded(parse_source, base_source):
-    parse_source(_press_source(base_source, COMMANDED))
-
-
-def _wrench_graph(base_source: str, parse_source, wrench: str):
-    """The dataset built from the base model with `wrench` declared beside the twist."""
-    source = base_source.replace(TWIST_ANCHOR, TWIST_ANCHOR + wrench, 1)
-    return MotionSpecDatasetBuilder(parse_source(source)).build()[0].default_graph
-
-
-def test_a_wrench_is_measured_or_estimated_not_both(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="measured or estimated, not both"):
-        _wrench_graph(base_source, parse_source, ESTIMATED_AND_MEASURED)
-
-
-def test_an_estimated_wrench_needs_retare_events(parse_source, base_source):
-    with pytest.raises(TextXSemanticError, match="has estimated-from but names no re-tare-on"):
-        _wrench_graph(base_source, parse_source, ESTIMATED_UNTARED)
-
-
-def test_an_estimated_wrench_names_its_observer(parse_source, base_source):
+def test_an_estimated_wrench_names_its_observer() -> None:
     """The observer is a node of its own: one agent, a gain in Hz, a dimensionless filter."""
-    graph = _wrench_graph(base_source, parse_source, ESTIMATED)
+    source = BASE.read_text().replace(
+        TWIST, TWIST + ESTIMATED % ",\n            re-tare-on:     { <aas.E_HOME_SETTLED> }", 1
+    )
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
+    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
     wrench = next(s for s in graph.subjects() if str(s).endswith("/world/press-wrench"))
     observer = graph.value(wrench, EST["estimated-by"])
 
-    assert observer is not None
     assert (observer, RDF.type, EST.MomentumObserver) in graph
     assert str(graph.value(observer, AGN["of-agent"])).endswith("/arm1")
     gain = graph.value(observer, EST["estimation-gain"])
-    assert graph.value(gain, QUDT_SCHEMA.value).toPython() == 30.0
-    assert graph.value(gain, QUDT_SCHEMA.unit) == QUDT_UNIT.HZ
+    assert (graph.value(gain, QUDT_SCHEMA.value).toPython(), graph.value(gain, QUDT_SCHEMA.unit)) == (
+        30.0,
+        QUDT_UNIT.HZ,
+    )
     filter_ = graph.value(observer, EST["filter-constant"])
-    assert graph.value(filter_, QUDT_SCHEMA.value).toPython() == 0.5
-    assert graph.value(filter_, QUDT_SCHEMA.unit) == QUDT_UNIT.UNITLESS
+    assert (
+        graph.value(filter_, QUDT_SCHEMA.value).toPython(),
+        graph.value(filter_, QUDT_SCHEMA.unit),
+    ) == (0.5, QUDT_UNIT.UNITLESS)
