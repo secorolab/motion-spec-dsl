@@ -119,6 +119,12 @@ context (ns=app) shared {
         linear-acceleration press-integral-limit = 4.0 m/s^2,
         // Moving sideways swings joints 1 and 5 together; faster than this they pass 2 rad/s.
         linear-acceleration transfer-acc-limit = 0.3 m/s^2,
+        // Per axis: the acceleration cap alone lets a 0.6 m transfer reach 0.43 m/s.
+        velocity-profile transfer-profile = profile {
+            max-velocity: 0.1 m/s,
+            max-acceleration: 0.3 m/s^2,
+            shape: trapezoidal
+        },
 
         angle gripper-open    = 0.0 rad,
         angle gripper-closed  = 0.8 rad,
@@ -709,9 +715,9 @@ constraint-handler (ns=app) handler-retreat1 {
         } as torque via <handler-stage1.arm1-solver>,
         pid ctrl-retreat1-normal { constraint: <retreat1.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <handler-stage1.arm1-solver>,
         pid ctrl-retreat1-align { constraint: <retreat1.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-retreat1-x { constraint: <retreat1.back-out-x>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-retreat1-y { constraint: <retreat1.at-handle-y>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-retreat1-z { constraint: <retreat1.at-handle-z>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-retreat1-x { constraint: <retreat1.back-out-x>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-retreat1-y { constraint: <retreat1.at-handle-y>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-retreat1-z { constraint: <retreat1.at-handle-z>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
         feed-forward ctrl-retreat1-gripper { constraint: <retreat1.open-gripper> } via <handler-stage1.gripper1-solver>,
 
         pid ctrl-retreat1-elbow2 {
@@ -746,9 +752,9 @@ constraint-handler (ns=app) handler-stage2 {
         } as torque via <handler-stage1.arm1-solver>,
         pid ctrl-stage2-normal { constraint: <stage2.normal-to-handle>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <handler-stage1.arm1-solver>,
         pid ctrl-stage2-align { constraint: <stage2.align-approach>, output-saturation: saturation { max: <shared.spec.ori-acc-limit> }, integral-saturation: saturation { max: <shared.spec.ori-integral-limit> }, Kp: 150, Ki: 15, Kd: 45, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-stage2-x { constraint: <stage2.at-pre-x>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-stage2-y { constraint: <stage2.at-handle-y>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
-        pid ctrl-stage2-z { constraint: <stage2.at-handle-z>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-stage2-x { constraint: <stage2.at-pre-x>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-stage2-y { constraint: <stage2.at-handle-y>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
+        pid ctrl-stage2-z { constraint: <stage2.at-handle-z>, profile: <shared.spec.transfer-profile>, output-saturation: saturation { max: <shared.spec.transfer-acc-limit> }, Kp: 80, Ki: 10, Kd: 24, decay: 0 } via <handler-stage1.arm1-solver>,
         feed-forward ctrl-stage2-gripper { constraint: <stage2.preclose-gripper> } via <handler-stage1.gripper1-solver>,
 
         pid ctrl-stage2-elbow2 {
