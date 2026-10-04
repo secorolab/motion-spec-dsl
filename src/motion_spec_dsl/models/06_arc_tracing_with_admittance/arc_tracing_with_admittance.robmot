@@ -69,11 +69,8 @@ context (ns=app) shared {
         // The pinch site rests 0.041 m above the table top when the wrist touches it.
         length contact-z = 0.045 m,
         force force-threshold = 10.0 N,
-        force neg-force-threshold = -10.0 N,
         force release-threshold = 3.0 N,
-        force neg-release-threshold = -3.0 N,
-        length comply-int-max = 0.02 m,
-        length neg-comply-int-max = -0.02 m
+        length comply-int-max = 0.02 m
     }
 }
 
@@ -218,8 +215,8 @@ guarded-motion (ns=app) arc-motion {
         follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
         align-forearm:      keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
         advance:            progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
-        force-x:            <shared.world.ext-force>.force.x outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
-        force-y:            <shared.world.ext-force>.force.y outside <shared.spec.neg-force-threshold> and <shared.spec.force-threshold>,
+        force-x:            <shared.world.ext-force>.force.x outside (-<shared.spec.force-threshold>) and <shared.spec.force-threshold>,
+        force-y:            <shared.world.ext-force>.force.y outside (-<shared.spec.force-threshold>) and <shared.spec.force-threshold>,
         hold-elbow-angle:   keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
         open-gripper:       keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
     }
@@ -280,9 +277,9 @@ guarded-motion (ns=app) compliance {
 
     until {
         released all {
-            released-x: <shared.world.ext-force>.force.x between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
-            released-y: <shared.world.ext-force>.force.y between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>,
-            released-z: <shared.world.ext-force>.force.z between <shared.spec.neg-release-threshold> and <shared.spec.release-threshold>
+            released-x: <shared.world.ext-force>.force.x between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>,
+            released-y: <shared.world.ext-force>.force.y between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>,
+            released-z: <shared.world.ext-force>.force.z between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>
         },
         table-contact all {
             near-table:    <shared.world.pose-ee-base>.position.z less than <shared.spec.contact-z>,
@@ -411,9 +408,9 @@ constraint-handler (ns=app) handler-compliance {
         }
     }
     controllers {
-        pid ctrl-compliance-comply-x   { constraint: <compliance.comply-x>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
-        pid ctrl-compliance-comply-y   { constraint: <compliance.comply-y>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
-        pid ctrl-compliance-comply-z   { constraint: <compliance.comply-z>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { lower: <shared.spec.neg-comply-int-max>, upper: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-x   { constraint: <compliance.comply-x>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-y   { constraint: <compliance.comply-y>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-z   { constraint: <compliance.comply-z>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
         pid ctrl-compliance-comply-ori { constraint: <compliance.comply-ori>, measured-derivative: <shared.world.twist-ee-base>.angvel, output-saturation: saturation { max: <compliance.spec.comply-angular-accel-max> }, Kp: 240, Ki: 0, Kd: 160, decay: 0 },
         pid ctrl-compliance-hold-elbow-angle {
             constraint: <compliance.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
