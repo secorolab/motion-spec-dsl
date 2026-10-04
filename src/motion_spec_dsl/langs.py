@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from importlib.resources import files
 
-from scene_dsl.langs import build_instance_trees
+from scene_dsl.langs import build_instance_trees, lower_frame_refs
 from textx import metamodel_from_file
 
 from motion_spec_dsl.classes.base import Import, NamespaceDeclare
@@ -278,5 +278,6 @@ def motion_spec_metamodel():
     )
     # Fill imported scene instance trees before anything walks scene objects.
     metamodel.register_model_processor(build_instance_trees)
+    metamodel.register_model_processor(lower_frame_refs)
     metamodel.register_model_processor(validate_model)
     return metamodel

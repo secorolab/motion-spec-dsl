@@ -8,7 +8,6 @@ from __future__ import annotations
 from textx import get_location, get_model, textx_isinstance
 from textx.exceptions import TextXSemanticError
 
-from scene_dsl.classes.geom import Frame, IDefaultFrame
 from scene_dsl.classes.ktree import KinematicTreeTemplate
 from scene_dsl.langs import InstancedRefScopeProvider
 
@@ -43,20 +42,6 @@ def _contained(node):
                 yield child
 
 
-def _as_expected(target, cls):
-    """TARGET if of class CLS, a body's or tree's default frame where a frame is expected, else None."""
-    if target is None:
-        return None
-    if textx_isinstance(target, cls):
-        return target
-    if cls is Frame and isinstance(target, IDefaultFrame):
-        try:
-            return target.default_frame
-        except ValueError:
-            return None
-    return None
-
-
 def _all_models(obj) -> list:
     model = get_model(obj)
     repo = getattr(model, "_tx_model_repository", None)
@@ -83,7 +68,6 @@ class SceneRefProvider(InstancedRefScopeProvider):
         name = obj_ref.obj_name
         tail = "." + name
         matched_nodes = []
-        target = None
         for model in _all_models(obj):
             # Grown while walked, so matches come in document order.
             nodes = [model]
@@ -92,14 +76,15 @@ class SceneRefProvider(InstancedRefScopeProvider):
                 fqn = _fqn(node)
                 if not (fqn == name or fqn.endswith(tail)) or _in_template(node):
                     continue
-                coerced = _as_expected(node, obj_ref.cls)
-                if coerced is not None:
+                if textx_isinstance(node, obj_ref.cls):
                     matched_nodes.append(node)
-                    target = coerced
+        if not matched_nodes:
+            return None
         if len(matched_nodes) > 1:
             names = ", ".join(_fqn(node) for node in matched_nodes)
             raise TextXSemanticError(
                 f"'{name}' is ambiguous, qualify it further: {names}",
                 **get_location(obj),
             )
+        (target,) = matched_nodes
         return target

@@ -121,7 +121,6 @@ class GeoPropPair:
         self.events = events or []
         self.normalization = normalization
         self.quantity = quantity
-        self.value = frame or joint or sensor or agent or quantity or normalization
 
 
 class QuantityType(StrEnum):
@@ -374,7 +373,14 @@ def geo_prop_value(props: GeometricProps | None, key: str) -> object | None:
         return None
     for pair in props.pairs:
         if pair.key == key:
-            return pair.normalization or pair.value
+            return (
+                pair.frame
+                or pair.joint
+                or pair.sensor
+                or pair.agent
+                or pair.quantity
+                or pair.normalization
+            )
     return None
 
 

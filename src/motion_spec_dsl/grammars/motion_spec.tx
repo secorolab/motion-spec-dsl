@@ -32,7 +32,7 @@ DetectDecl:
     "using" "<" action=[RosActionDecl|FQN] ">"
 ;
 
-SceneObjRef: "<" ref=[scene.Frame|FQN] ">" ;
+SceneObjRef: "<" ref=[scene.FrameLike|FQN] ">" ;
 
 ConstraintSection:
       kind="when" (logic=SectionLogic)? "{" constraints*=ConstraintItem[","]? "}"
