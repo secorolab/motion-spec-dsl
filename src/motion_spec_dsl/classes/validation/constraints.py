@@ -1,51 +1,44 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 # Author: Vamsi Kalagaturu
-"""Validate constraint and path invariants not expressible in textX or SHACL."""
+"""Validate constraint, view and path invariants the grammar and SHACL cannot state."""
 
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 
-from textx import get_children_of_type
+from textx import get_children_of_type, get_location
+from textx.exceptions import TextXSemanticError
 from textx.scoping import get_included_models
 
 from motion_spec_dsl.classes.constraint_handler import (
-    _perturbation_conditions,
-    _resolved_constraint_items,
+    ConstraintHandler,
     motion_context_quantities,
     motion_world_quantities,
+    perturbation_conditions,
+    resolved_constraint_items,
 )
 from motion_spec_dsl.classes.constraints import (
+    ANGLE_VIEW_FORMS,
     BilateralConstraint,
     ConstraintSpecification,
     EqualityConstraint,
     GreaterThanConstraint,
     LessThanConstraint,
     OutsideConstraint,
-    _binary_view,
-    _is_angle_between_view,
-    _is_difference_view,
-    _is_distance_view,
-    _is_geometric_distance_view,
-    _is_incident_angle_view,
-    _is_plane_angle_view,
-    _is_projection_view,
-)
-from motion_spec_dsl.classes.controller_semantics import (
-    SUBSPACE_ALIAS,
-    _alignment_is_pointwise,
-    axis_label,
-    constraint_view_subspace,
-    resolved_constraint_quantity,
+    ViewForm,
+    flatten_constraint_items,
+    view_form,
 )
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_PROJECTION_OPS,
+    NORM_SCALAR_TYPES,
     UNSIGNED_GEOMETRIC_DISTANCE_OPS,
+    AngleBetweenView,
     ConfigValue,
     ContextQuantity,
+    ContextQuantityAlias,
     ContextRef,
     DirectionBetween,
     GeometricPropKey,
@@ -55,27 +48,30 @@ from motion_spec_dsl.classes.context import (
     QuantityType,
     ReferenceGeneratorType,
     SampledValue,
+    SnapshotValue,
     VectorXYZ,
     View,
     WorldQuantity,
+    WorldQuantityAlias,
     WorldQuantityType,
-    _NORM_SCALAR_TYPES,
-    _context_quantity,
-    _geo_prop,
-    _geo_prop_events,
-    _geo_prop_value,
-    _geometric_operand_kind,
-    _node_name,
-    _path_pose_endpoints,
-    _pose_frame_names,
-    _quantity_axis_frame,
-    _resolved_context_quantity,
-    _resolved_world_quantity,
-    _scalar_type,
+    geo_prop,
+    geo_prop_events,
+    geo_prop_value,
+    geometric_operand_kind,
+    op_tree,
+    path_pose_endpoints,
+    pose_frame_names,
+    quantity_axis_frame,
+    scalar_type,
+)
+from motion_spec_dsl.classes.controller_semantics import (
+    SUBSPACE_ALIAS,
+    alignment_is_pointwise,
+    constraint_view_subspace,
+    resolved_constraint_quantity,
 )
 from motion_spec_dsl.classes.coordinates import (
     AccelerationTwistCoordinate,
-    Coordinates,
     DirectionCosineXYZ,
     EulerAngles,
     PoseCoordinate,
@@ -83,1165 +79,902 @@ from motion_spec_dsl.classes.coordinates import (
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
-from motion_spec_dsl.classes.dimensions import DIMENSION_VECTOR, VECTOR_COMPONENT_TYPE, infer
+from motion_spec_dsl.classes.dimensions import DIMENSION_VECTOR, VECTOR_COMPONENT_TYPE, infer, same_scalar_dimension
 from motion_spec_dsl.classes.motion_spec import GuardedMotion, Model, ToleranceDefault
-from motion_spec_dsl.classes.path import PathValue, ProfileSpec
-from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE, _qudt_kind
-from motion_spec_dsl.classes.validation.common import (
-    constraint_handlers,
-    motion_constraint_items,
-    motion_constraints,
-    motion_specs,
-    semantic_error,
+from motion_spec_dsl.classes.path import AdmittanceSpec, PathValue, ProfileSpec
+from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE
+from motion_spec_dsl.classes.validation.common import motion_constraints
+from motion_spec_dsl.classes.views import (
+    TOLERANCE_DEFAULT_KIND,
+    constraint_kind,
+    pose_frame_source,
 )
-
-
-def context_ref_value(ref: ContextRef) -> ContextQuantity | None:
-    """Return the context quantity selected by `ref`."""
-    if getattr(ref, "bare", None) is not None:
-        return None
-    value = getattr(ref, "quantity", None)
-    return value if isinstance(value, ContextQuantity) else None
-
-
-def _resolved_ref_quantity(ref: ContextRef) -> ContextQuantity | None:
-    quantity = context_ref_value(ref)
-    return _resolved_context_quantity(quantity) if quantity is not None else None
-
-
-def _static_scalar(ref: ContextRef) -> Measure | None:
-    bare = getattr(ref, "bare", None)
-    if isinstance(bare, Measure):
-        return bare
-    quantity = _resolved_ref_quantity(ref)
-    scalar = getattr(quantity, "value", None)
-    return scalar if isinstance(scalar, Measure) else None
-
-
-def _literal_xyz(coords: Coordinates) -> tuple[float, float, float] | None:
-    """The 3 literal floats of `coords`, or None if it has the wrong arity or any
-    element is a reference rather than a literal."""
-    if len(coords.values) != 3:
-        return None
-    if any(element.ref is not None for element in coords.values):
-        return None
-    return tuple(float(element.value) for element in coords.values)
-
-
-def _static_vector(ref: ContextRef) -> tuple[float, float, float] | None:
-    quantity = _resolved_ref_quantity(ref)
-    value = getattr(quantity, "value", None)
-    if isinstance(value, VectorXYZ) and value.coords is not None:
-        return _literal_xyz(value.coords)
-    return None
-
-
-def _require_direction(ref: ContextRef, label: str, owner: object) -> None:
-    """Reject a statically authored direction that is non-finite, zero, or non-unit."""
-    vector = _static_vector(ref)
-    if vector is None:
-        return
-    if not all(math.isfinite(value) for value in vector):
-        raise semantic_error(f"{label} must be finite.", owner)
-    norm = math.sqrt(sum(value * value for value in vector))
-    if norm < 1e-6:
-        raise semantic_error(f"{label} must be a non-zero vector.", owner)
-    if abs(norm - 1.0) > 1e-3:
-        raise semantic_error(f"{label} must be a unit-length direction.", owner)
-
-
-def _validate_path_geometry(quantity: ContextQuantity) -> None:
-    """Validate only unit-independent degeneracies of statically authored path inputs."""
-    value = quantity.value
-    if not isinstance(value, PathValue):
-        return
-    if value.circle is not None:
-        _require_direction(
-            value.circle.plane_normal, f"Circle '{quantity.name}' plane-normal", value.circle
-        )
-    elif value.arc is not None:
-        _require_direction(value.arc.plane_normal, f"Arc '{quantity.name}' plane-normal", value.arc)
-    elif value.helix is not None:
-        _require_direction(value.helix.axis, f"Helix '{quantity.name}' axis", value.helix)
-        pitch = _static_scalar(value.helix.pitch)
-        if pitch is not None and not math.isfinite(pitch.value):
-            raise semantic_error(f"Helix '{quantity.name}' pitch must be finite.", value.helix)
-    elif value.figure8 is not None:
-        _require_direction(
-            value.figure8.plane_normal,
-            f"Figure8 '{quantity.name}' plane-normal",
-            value.figure8,
-        )
-
-
-def validate_static_path_geometry(model: Model) -> None:
-    """Check static path degeneracies across every context, including reusable contexts."""
-    checked: set[ContextQuantity] = set()
-    for item in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(item)
-        if quantity in checked:
-            continue
-        checked.add(quantity)
-        _validate_path_geometry(quantity)
-
-
-def _require_arity(coords: Coordinates, expected: int, label: str, owner: object) -> None:
-    if len(coords.values) != expected:
-        raise semantic_error(
-            f"{label} needs exactly {expected} component(s), got {len(coords.values)}.", owner
-        )
-
-
-def validate_euler_components(model: Model) -> None:
-    """Require exactly 3 angle components per Euler orientation block.
-
-    The sequence itself is unconstrained: any of the six composes, intrinsic or extrinsic,
-    because the backend builds a rotation as a product of per-axis quaternions in the
-    authored order rather than through one fixed constructor.
-    """
-    for orientation in get_children_of_type(EulerAngles, model):
-        _require_arity(orientation.angles, 3, "Euler 'angles'", orientation)
-
-
-def validate_quaternion_components(model: Model) -> None:
-    """Require exactly 4 xyzw components per quaternion orientation block."""
-    for orientation in get_children_of_type(Quaternion, model):
-        _require_arity(orientation.xyzw, 4, "Quaternion 'xyzw'", orientation)
-
-
-def validate_direction_cosine_components(model: Model) -> None:
-    """Require exactly 3 components per direction-cosine axis."""
-    for orientation in get_children_of_type(DirectionCosineXYZ, model):
-        _require_arity(orientation.x_axis, 3, "Direction-cosine 'x'", orientation)
-        _require_arity(orientation.y_axis, 3, "Direction-cosine 'y'", orientation)
-        _require_arity(orientation.z_axis, 3, "Direction-cosine 'z'", orientation)
-
-
-def _path_operand(view) -> object | None:
-    """The driver, geometry or guard operand of a view that names a path."""
-    return (
-        getattr(view, "moving", None)
-        or getattr(view, "on", None)
-        or getattr(view, "progress", None)
-    )
-
-
-def _path_of(view) -> object | None:
-    """The context path a path-following view names, if it resolves to one."""
-    operand = _path_operand(view)
-    quantity = getattr(getattr(operand, "path", None), "quantity", None)
-    return _resolved_context_quantity(quantity) if quantity is not None else None
-
-
-_ON_PATH_SUBSPACES = ("position", "orientation")
-
-
-def _require_path_reference(spec: ConstraintSpecification, operand) -> None:
-    """Require the operand's `path` to name a declared geometric path."""
-    path = _path_of(spec.view)
-    if path is None or path.type != ReferenceGeneratorType.Path:
-        raise semantic_error(
-            f"'{spec.name}' follows a path, so its reference must be a declared 'path'.",
-            operand,
-        )
-
-
-def _require_speed_reference(spec: ConstraintSpecification, ref: ContextRef, role: str) -> None:
-    """Require a speed operand to be a linear-velocity quantity rather than a bare number."""
-    quantity = _resolved_ref_quantity(ref)
-    if quantity is None or quantity.type != QuantityType.LinearVelocity:
-        raise semantic_error(
-            f"'{spec.name}' states a {role} along a path, which is a linear velocity.",
-            spec,
-        )
-
-
-def _require_profile_reference(spec: ConstraintSpecification, ref: ContextRef) -> None:
-    """Require a path driver to name a velocity profile."""
-    quantity = _resolved_ref_quantity(ref)
-    if quantity is None or not isinstance(quantity.value, ProfileSpec):
-        raise semantic_error(
-            f"'{spec.name}' drives a path, so 'with' must name a velocity profile.",
-            spec,
-        )
-
-
-def validate_path_following(model: Model) -> None:
-    """Check the driver/geometry/guard split a path specification rests on.
-
-    A path constrains geometry but not timing, so `moving ... along ... with ...` drives the
-    motion and `keeping ... on ...` holds it on the geometry -- neither compares anything, so
-    neither carries a relation -- while `progress ... along ...` only guards continuation and
-    must. Every other view still compares something, and the grammar can no longer require it.
-    """
-    for spec in get_children_of_type(ConstraintSpecification, model):
-        view = spec.view
-        driver = getattr(view, "moving", None)
-        geometry = getattr(view, "on", None)
-        guard = getattr(view, "progress", None)
-        if driver is not None or geometry is not None:
-            if spec.expr is not None:
-                raise semantic_error(
-                    f"'{spec.name}' constrains motion to a path's geometry, so the path is its "
-                    "reference; drop the comparison.",
-                    spec,
-                )
-        elif spec.expr is None:
-            raise semantic_error(f"Constraint '{spec.name}' is missing its relation.", spec)
-        elif guard is not None and not isinstance(spec.expr, GreaterThanConstraint):
-            raise semantic_error(
-                f"'{spec.name}' guards progress along a path, which is one-sided: use 'more than'.",
-                spec,
-            )
-
-        operand = driver or geometry or guard
-        if operand is None:
-            continue
-        _require_path_reference(spec, operand)
-        if driver is not None:
-            _require_profile_reference(spec, driver.profile)
-        elif guard is not None:
-            _require_speed_reference(spec, spec.expr.threshold, "minimum speed")
-        else:
-            subspace = str(getattr(view.subspace, "value", view.subspace or ""))
-            if subspace not in _ON_PATH_SUBSPACES or view.axis is not None:
-                raise semantic_error(
-                    f"'{spec.name}' must hold either '.position' or '.orientation' on the path: "
-                    "the two are separate control laws and the tangent belongs to the driver.",
-                    spec,
-                )
-
-    for motion in motion_specs(model):
-        followed = {
-            _path_of(spec.view): spec
-            for spec in motion_constraints(motion)
-            if getattr(spec.view, "moving", None) is not None
-            or getattr(spec.view, "on", None) is not None
-        }
-        followed.pop(None, None)
-        if not followed:
-            continue
-        for spec in motion_constraints(motion):
-            if not isinstance(spec.expr, EqualityConstraint):
-                continue
-            reference = _resolved_ref_quantity(spec.expr.reference)
-            if reference in followed:
-                raise semantic_error(
-                    f"'{spec.name}' pins '{motion.name}' to a setpoint on the same path "
-                    f"'{followed[reference].name}' already follows. A path constrains geometry, "
-                    "not timing; drop the equality.",
-                    spec,
-                )
-
-
-def validate_unit_kinds(model: Model) -> None:
-    """Reject a unit that does not belong to its quantity's kind. The grammar cannot decide
-    this -- the value rule is shared across every quantity type -- so it is checked here,
-    where the message can name the quantity and the units it does accept.
-    """
-    for item in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(item)
-        value = quantity.value
-        unit = getattr(value, "unit", None)
-        if not isinstance(value, (Measure, VectorXYZ)) or unit is None:
-            continue
-        kind = _qudt_kind(quantity.type)
-        allowed = [token for token, dsl_unit in DSL_UNITS.items() if kind in dsl_unit.kinds]
-        if unit in allowed:
-            continue
-        raise semantic_error(
-            f"'{quantity.name}' is a {quantity.type} quantity: '{unit}' is not one of its "
-            f"units ({', '.join(allowed)}).",
-            quantity,
-        )
-
-
-_ORDER_RELATIONS = (
-    GreaterThanConstraint,
-    LessThanConstraint,
-    BilateralConstraint,
-    OutsideConstraint,
-)
-_COMPOSITE_WORLD_TYPES = {
-    WorldQuantityType.Pose,
-    WorldQuantityType.VelocityTwist,
-    WorldQuantityType.Wrench,
-}
-
-
-def validate_scalar_order_relations(model: Model) -> None:
-    """Reject order relations (greater/less/between/outside) on multi-dimensional views.
-
-    Nothing physical orders 3-D quantities; such a comparison needs a scalar view — an
-    axis component or a `distance between` two poses.
-    """
-    for motion in motion_specs(model):
-        for spec in motion_constraints(motion):
-            if not isinstance(spec.expr, _ORDER_RELATIONS):
-                continue
-            view = spec.view
-            if (
-                getattr(view, "is_elapsed", False)
-                or _is_distance_view(spec)
-                or getattr(view, "progress", None) is not None
-                or getattr(view, "moving", None) is not None
-                or getattr(view, "on", None) is not None
-                # A norm collapses the 3-vector it reads to one number, so it orders.
-                or getattr(view, "norm", None) is not None
-                or getattr(view, "axis", None) is not None
-            ):
-                continue
-            quantity = getattr(view, "quantity", None)
-            if (
-                getattr(view, "subspace", None) is not None
-                or getattr(quantity, "type", None) in _COMPOSITE_WORLD_TYPES
-            ):
-                raise semantic_error(
-                    f"Constraint '{spec.name}': an order relation needs a scalar view; "
-                    "select a single axis or author `distance between` two poses.",
-                    spec,
-                )
-
-
-def _alignment_operand(
-    quantity: ContextQuantity, label: str, owner: object
-) -> tuple[float, float, float]:
-    """Require `quantity` to be a `direction` with a frame and literal 3-vector; return it."""
-    quantity = _resolved_context_quantity(quantity)
-    if quantity.type != QuantityType.Direction:
-        raise semantic_error(f"{label} must be a 'direction' context quantity.", owner)
-    if (
-        _geo_prop_value(quantity.props, GeometricPropKey.AsSeenBy)
-        or _geo_prop_value(quantity.props, GeometricPropKey.Wrt)
-    ) is None:
-        raise semantic_error(f"{label} '{quantity.name}' needs an 'as-seen-by' frame.", owner)
-    vector = quantity.value
-    vector = (
-        _literal_xyz(vector.coords) if isinstance(vector, VectorXYZ) and vector.coords else None
-    )
-    if vector is None:
-        raise semantic_error(f"{label} '{quantity.name}' needs a literal 3-vector value.", owner)
-    return vector
-
-
-def _validate_cone_bound(ref: ContextRef, spec, *, positive_required: bool) -> None:
-    """A cone-width bound: a bare Measure (positive, when `positive_required`), or a named
-    quantity resolving to `QuantityType.Angle`. Shared by the bilateral upper bound and the
-    `less than` threshold -- the same cone, stated two ways.
-    """
-    bare = ref.bare
-    if bare is not None:
-        if positive_required and bare.value <= 0.0:
-            raise semantic_error(f"'{spec.name}' needs a positive upper bound on its band.", spec)
-        return
-    quantity = _resolved_ref_quantity(ref)
-    if quantity is None or quantity.type != QuantityType.Angle:
-        raise semantic_error(
-            f"'{spec.name}' needs its band's upper bound stated as an angle.", spec
-        )
-
-
-def _alignment_bound_radians(ref: ContextRef, spec, what: str) -> float | None:
-    """Radian value of a cone-target bound if statically known; raises unless `ref` resolves to
-    an angle. Returns None for a named quantity with no literal value -- its range cannot be
-    checked at authoring time, but its type already was.
-    """
-    measure = _static_scalar(ref)
-    if measure is not None:
-        if measure.unit not in ("rad", "deg", ""):
-            raise semantic_error(f"'{spec.name}' needs {what} stated as an angle.", spec)
-        scale = math.pi / 180.0 if measure.unit == "deg" else 1.0
-        return measure.value * scale
-    quantity = _resolved_ref_quantity(ref)
-    if quantity is None or quantity.type != QuantityType.Angle:
-        raise semantic_error(f"'{spec.name}' needs {what} stated as an angle.", spec)
-    return None
-
-
-def _require_angle_in_range(ref: ContextRef, spec, what: str) -> None:
-    """A cone target's bound must be an angle in [0, pi] -- the angle between two directions
-    cannot exceed pi, so anything past it is unsatisfiable and gets rejected at authoring time.
-    """
-    value = _alignment_bound_radians(ref, spec, what)
-    if value is not None and not (0.0 <= value <= math.pi):
-        raise semantic_error(
-            f"'{spec.name}' targets {value} rad; the angle between two directions lies in [0, pi].",
-            spec,
-        )
-
-
-def _cone_alignment_target(spec) -> None:
-    """A cone target -- 1 rotational DOF: `equal to <nonzero>`, `greater than`, a band not
-    opening at zero, or `outside`. Every bound must be a statically-in-range angle, and a band's
-    lower bound must sit below its upper.
-    """
-    expr = spec.expr
-    if isinstance(expr, EqualityConstraint):
-        _require_angle_in_range(expr.reference, spec, "its target")
-        return
-    if isinstance(expr, GreaterThanConstraint):
-        _require_angle_in_range(expr.threshold, spec, "its threshold")
-        return
-    if isinstance(expr, (BilateralConstraint, OutsideConstraint)):
-        _require_angle_in_range(expr.lower, spec, "its lower bound")
-        _require_angle_in_range(expr.upper, spec, "its upper bound")
-        lower_v = _alignment_bound_radians(expr.lower, spec, "its lower bound")
-        upper_v = _alignment_bound_radians(expr.upper, spec, "its upper bound")
-        if lower_v is not None and upper_v is not None and not lower_v < upper_v:
-            raise semantic_error(f"'{spec.name}' needs a lower bound below its upper bound.", spec)
-        return
-    raise semantic_error(
-        f"'{spec.name}' aligns two directions, which supports equality, an inequality, or a "
-        "band on the angle between them.",
-        spec,
-    )
-
-
-def _alignment_target(spec) -> None:
-    """An alignment either drives the angle to a point on the sphere (2 DOF) or tolerates/targets
-    a cone around it (1 DOF); see `_alignment_is_pointwise`. The point-target checks are the
-    original zero-target rule, plus `less than` validated exactly like the bilateral upper bound
-    it is the same cone as. The cone-target checks are new: every bound is a statically-in-range
-    angle, and a band's lower sits below its upper.
-    """
-    expr = spec.expr
-    if not _alignment_is_pointwise(spec):
-        _cone_alignment_target(spec)
-        return
-    if isinstance(expr, EqualityConstraint):
-        # _alignment_is_pointwise already confirmed a bare zero.
-        return
-    if isinstance(expr, LessThanConstraint):
-        _validate_cone_bound(expr.threshold, spec, positive_required=True)
-        return
-    # BilateralConstraint with a lower bound of zero.
-    upper = expr.upper.bare
-    if upper is not None:
-        if upper.value <= 0.0:
-            raise semantic_error(f"'{spec.name}' needs a positive upper bound on its band.", spec)
-        return
-    _validate_cone_bound(expr.upper, spec, positive_required=False)
-
-
-def validate_alignment_views(model: Model) -> None:
-    """Check `angle between <a> and <b>` views, dispatched on operand type (Borghesan Table IIb):
-    versor-versor keeps the signed-unit-frame-axis rule on its reference operand for a point
-    target only, since that is the only case still driving the 2-axis rotation-vector row;
-    versor-plane and plane-plane place no frame-axis requirement on their plane operand(s), since
-    their rows are always runtime gradients. All three share the point/cone target rule.
-    """
-    for spec in get_children_of_type(ConstraintSpecification, model):
-        if not _is_angle_between_view(spec):
-            continue
-        binary = _binary_view(spec)
-        left, right = binary.left, binary.right
-        from_is_plane = _resolved_context_quantity(left).type == QuantityType.Plane
-        to_is_plane = _resolved_context_quantity(right).type == QuantityType.Plane
-        if from_is_plane and not to_is_plane:
-            raise semantic_error(
-                f"'{spec.name}' does not support `angle between <plane> and <direction>`; "
-                "author it as `angle between <direction> and <plane>`.",
-                spec,
-            )
-        if not to_is_plane:
-            _alignment_operand(left, f"'{spec.name}' first operand", spec)
-            reference = _alignment_operand(right, f"'{spec.name}' reference operand", spec)
-            # The signed-unit-frame-axis requirement only exists for the 2-axis rotation-vector
-            # row: a cone target's row is a runtime gradient and cares nothing about the
-            # reference's orientation.
-            if _alignment_is_pointwise(spec):
-                nonzero = [v for v in reference if abs(v) > 1e-9]
-                if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
-                    raise semantic_error(
-                        f"'{spec.name}' reference operand must be a signed unit frame axis "
-                        "(exactly one component, +-1).",
-                        spec,
-                    )
-        elif not from_is_plane:
-            _alignment_operand(left, f"'{spec.name}' first operand", spec)
-        _alignment_target(spec)
-
-
-_PRIMITIVE_DIRECTION_KEY = {
-    QuantityType.Plane: GeometricPropKey.Normal,
-    QuantityType.Line: GeometricPropKey.Along,
-}
-
-
-def validate_line_plane_primitives(model: Model) -> None:
-    """A line or plane composes a frame origin with a declared unit direction: both roles are
-    required, and the direction role must name a `direction` quantity, not an arbitrary one.
-    """
-    for item in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(item)
-        direction_key = _PRIMITIVE_DIRECTION_KEY.get(quantity.type)
-        if direction_key is None:
-            continue
-        keys = [pair.key for pair in quantity.props.pairs]
-        allowed = {GeometricPropKey.Of, direction_key}
-        for key in keys:
-            if key not in allowed:
-                raise semantic_error(
-                    f"'{quantity.name}' is a {quantity.type} and takes only "
-                    f"'of' and '{direction_key}'; '{key}' is not one of them.",
-                    quantity,
-                )
-        for key in sorted(allowed):
-            if keys.count(key) != 1:
-                raise semantic_error(
-                    f"'{quantity.name}' is a {quantity.type} and needs exactly one '{key}'.",
-                    quantity,
-                )
-        referent = _geo_prop_value(quantity.props, direction_key)
-        _alignment_operand(referent, f"'{quantity.name}' {direction_key}", quantity)
-
-
-def _drives_unsigned_distance_to_zero(spec) -> bool:
-    """Whether `spec`'s expression pins an unsigned distance to exactly zero: a bare-zero
-    equality, or a band whose bounds are both zero. Its derivative is undefined there.
-    """
-    expr = spec.expr
-    if isinstance(expr, EqualityConstraint):
-        measure = expr.reference.bare
-        return measure is not None and measure.value == 0.0
-    if isinstance(expr, BilateralConstraint):
-        lower = expr.lower.bare
-        upper = expr.upper.bare
-        return lower is not None and upper is not None and lower.value == 0.0 and upper.value == 0.0
-    return False
-
-
-def _reject_unsigned_distance_to_zero(spec) -> None:
-    if not _drives_unsigned_distance_to_zero(spec):
-        return
-    raise semantic_error(
-        f"'{spec.name}' drives an unsigned distance to zero, where its derivative is undefined "
-        "and control goes locally unstable. State the coincidence as signed projections instead "
-        "(Borghesan et al. 2016, section VII-B).",
-        spec,
-    )
-
-
-def validate_geometric_distance_views(model: Model) -> None:
-    """Check Table IIa `distance of <A> from <B>` / `projection of <A> on <B>` views:
-    operand typing, the point-first operand order, projection's line-only second operand, and
-    the unsigned-zero rule -- which also applies to the pre-existing point-point
-    `distance between`, since its scalar is the same kind of unsigned magnitude.
-    """
-    for spec in get_children_of_type(ConstraintSpecification, model):
-        if _is_distance_view(spec):
-            _reject_unsigned_distance_to_zero(spec)
-            continue
-
-        if _is_geometric_distance_view(spec):
-            binary = _binary_view(spec)
-            a_kind = _geometric_operand_kind(binary.left)
-            b_kind = _geometric_operand_kind(binary.right)
-            op_type = GEOMETRIC_DISTANCE_OPS.get((a_kind, b_kind))
-            if op_type is None:
-                if a_kind != b_kind and GEOMETRIC_DISTANCE_OPS.get((b_kind, a_kind)):
-                    raise semantic_error(
-                        f"'{spec.name}' takes a distance of a pose from a plane, a pose from a "
-                        "line, or a line from a line; the point (or line) must come first, since "
-                        "the sign is stated in terms of the primitive's normal/direction.",
-                        spec,
-                    )
-                raise semantic_error(
-                    f"'{spec.name}' takes a distance of a pose from a plane, a pose from a line, "
-                    f"or a line from a line; got {a_kind or 'unknown'} from {b_kind or 'unknown'}.",
-                    spec,
-                )
-            if op_type in UNSIGNED_GEOMETRIC_DISTANCE_OPS:
-                _reject_unsigned_distance_to_zero(spec)
-            continue
-
-        if _is_projection_view(spec):
-            binary = _binary_view(spec)
-            a_kind = _geometric_operand_kind(binary.left)
-            b_kind = _geometric_operand_kind(binary.right)
-            if b_kind != "line":
-                raise semantic_error(
-                    f"'{spec.name}' projects onto a line; got {b_kind or 'unknown'}.", spec
-                )
-            if a_kind not in ("point", "line"):
-                raise semantic_error(
-                    f"'{spec.name}' projects a pose or a line onto a line; got "
-                    f"{a_kind or 'unknown'}.",
-                    spec,
-                )
-
-
-def validate_tolerance_defaults(model: Model) -> None:
-    """A model-wide band applies to every constraint of its kind, so it has to be stated in
-    that kind's units and stated once. Neither is decidable in the grammar: the value rule is
-    shared across kinds, and the entries are a list, which admits a repeated key.
-    """
-    seen: dict[QuantityType, ToleranceDefault] = {}
-    for entry in get_children_of_type(ToleranceDefault, model):
-        if entry.kind in seen:
-            raise semantic_error(
-                f"'{entry.kind}' already has a default band; a kind takes one.", entry
-            )
-        seen[entry.kind] = entry
-        unit = getattr(entry.band.bare, "unit", None)
-        if unit is None:
-            continue
-        kind = _qudt_kind(entry.kind)
-        allowed = [token for token, dsl_unit in DSL_UNITS.items() if kind in dsl_unit.kinds]
-        if unit in allowed:
-            continue
-        raise semantic_error(
-            f"a default band for {entry.kind} is not measured in '{unit}' ({', '.join(allowed)}).",
-            entry,
-        )
-
 
 _TWO_SUBSPACE_TYPE_NAMES = {
     QuantityType.VelocityTwist: "velocity-twist",
     QuantityType.AccelerationTwist: "acceleration-twist",
     QuantityType.Wrench: "wrench",
 }
+_ORDER_RELATIONS = (GreaterThanConstraint, LessThanConstraint, BilateralConstraint, OutsideConstraint)
+_COMPOSITE_WORLD_TYPES = {WorldQuantityType.Pose, WorldQuantityType.VelocityTwist, WorldQuantityType.Wrench}
+_PRIMITIVE_DIRECTION_KEY = {
+    QuantityType.Plane: GeometricPropKey.Normal,
+    QuantityType.Line: GeometricPropKey.Along,
+}
+_LINE_LINE_OPS = ("LineLineToLinearDistance", "LineOnLineProjection")
 
 
-def validate_two_subspace_coordinates(model: Model) -> None:
-    """A velocity-twist/acceleration-twist/wrench value has two named subspaces; a bare
-    vector literal cannot express which one it is, so reject it, and require each
-    subspace's Coordinates to carry exactly 3 components.
-    """
-    for item in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(item)
-        type_name = _TWO_SUBSPACE_TYPE_NAMES.get(quantity.type)
-        if type_name is None:
-            continue
-        if isinstance(quantity.value, VectorXYZ):
-            raise semantic_error(
-                f"'{quantity.name}' is a {type_name}: a single vector literal cannot say "
-                f"which subspace it is. Use the two-subspace form instead.",
-                quantity,
+def _literal_xyz(coords) -> tuple[float, float, float] | None:
+    """The three literal numbers of COORDS, or None for another arity or a reference."""
+    if len(coords.values) != 3 or any(element.ref is not None for element in coords.values):
+        return None
+    return tuple(float(element.value) for element in coords.values)
+
+
+def validate_motion_sections(model: Model) -> None:
+    """A motion states each of when, while and until once, and holds at least one while constraint."""
+    for motion in get_children_of_type(GuardedMotion, model):
+        kinds = [section.kind for section in motion.sections]
+        for kind in ("when", "while", "until"):
+            if kinds.count(kind) != 1:
+                raise TextXSemanticError(
+                    f"motion '{motion.name}' states {kinds.count(kind)} '{kind}' sections -- a "
+                    "motion states each of when, while and until once",
+                    **get_location(motion),
+                )
+        if not motion.while_.constraints:
+            raise TextXSemanticError(
+                f"motion '{motion.name}' holds no while constraint -- a motion is held by at "
+                "least one",
+                **get_location(motion),
             )
-        if isinstance(quantity.value, (VelocityTwistCoordinate, AccelerationTwistCoordinate)):
-            _require_arity(quantity.value.angular, 3, f"{type_name} 'angular' subspace", quantity)
-            _require_arity(quantity.value.linear, 3, f"{type_name} 'linear' subspace", quantity)
-        elif isinstance(quantity.value, WrenchCoordinate):
-            _require_arity(quantity.value.torque, 3, "wrench 'torque' subspace", quantity)
-            _require_arity(quantity.value.force, 3, "wrench 'force' subspace", quantity)
+
+
+def validate_unique_constraint_names(model: Model) -> None:
+    """Local constraint names are unambiguous within a motion."""
+    for motion in get_children_of_type(GuardedMotion, model):
+        items = flatten_constraint_items(
+            [item for section in motion.sections for item in section.constraints]
+        )
+        seen = {}
+        for item in items:
+            if item.name in seen:
+                raise TextXSemanticError(
+                    f"motion '{motion.name}' names two constraints '{item.name}'",
+                    **get_location(item),
+                )
+            seen[item.name] = item
+
+
+def validate_coordinate_components(model: Model) -> None:
+    """Every orientation, twist and wrench literal has the components its form takes."""
+    # (coordinates, components expected, what they are, object reported on)
+    arities = []
+    for euler in get_children_of_type(EulerAngles, model):
+        arities.append((euler.angles, 3, "Euler 'angles'", euler))
+    for quaternion in get_children_of_type(Quaternion, model):
+        arities.append((quaternion.xyzw, 4, "quaternion 'xyzw'", quaternion))
+    for cosine in get_children_of_type(DirectionCosineXYZ, model):
+        arities += [
+            (cosine.x_axis, 3, "direction-cosine 'x'", cosine),
+            (cosine.y_axis, 3, "direction-cosine 'y'", cosine),
+            (cosine.z_axis, 3, "direction-cosine 'z'", cosine),
+        ]
+    for quantity in get_children_of_type(ContextQuantity, model):
+        if isinstance(quantity, ContextQuantityAlias) or quantity.type not in _TWO_SUBSPACE_TYPE_NAMES:
+            continue
+        type_name = _TWO_SUBSPACE_TYPE_NAMES[quantity.type]
+        value = quantity.value
+        if isinstance(value, VectorXYZ):
+            raise TextXSemanticError(
+                f"'{quantity.name}' is a {type_name} stated as one vector -- a single literal "
+                "cannot say which subspace it is; use the two-subspace form",
+                **get_location(quantity),
+            )
+        if isinstance(value, (VelocityTwistCoordinate, AccelerationTwistCoordinate)):
+            arities += [
+                (value.angular, 3, f"{type_name} 'angular' subspace", quantity),
+                (value.linear, 3, f"{type_name} 'linear' subspace", quantity),
+            ]
+        elif isinstance(value, WrenchCoordinate):
+            arities += [
+                (value.torque, 3, "wrench 'torque' subspace", quantity),
+                (value.force, 3, "wrench 'force' subspace", quantity),
+            ]
+    for coords, expected, label, owner in arities:
+        if len(coords.values) != expected:
+            raise TextXSemanticError(
+                f"{label} has {len(coords.values)} components -- it takes {expected}",
+                **get_location(owner),
+            )
+
+
+def validate_static_path_geometry(model: Model) -> None:
+    """A path's literal normals and axes are finite unit vectors, and a helix pitch is finite."""
+    # (direction ref, what it is, object reported on)
+    directions = []
+    for quantity in get_children_of_type(ContextQuantity, model):
+        value = quantity.value
+        if isinstance(quantity, ContextQuantityAlias) or not isinstance(value, PathValue):
+            continue
+        if value.circle is not None:
+            directions.append((value.circle.plane_normal, f"circle '{quantity.name}' plane-normal", value.circle))
+        elif value.arc is not None:
+            directions.append((value.arc.plane_normal, f"arc '{quantity.name}' plane-normal", value.arc))
+        elif value.figure8 is not None:
+            directions.append(
+                (value.figure8.plane_normal, f"figure8 '{quantity.name}' plane-normal", value.figure8)
+            )
+        elif value.helix is not None:
+            directions.append((value.helix.axis, f"helix '{quantity.name}' axis", value.helix))
+            pitch = value.helix.pitch.bare
+            pitch_quantity = value.helix.pitch.quantity
+            if isinstance(pitch_quantity, ContextQuantityAlias):
+                pitch_quantity = pitch_quantity.ref
+            if pitch is None and isinstance(pitch_quantity, ContextQuantity):
+                pitch = pitch_quantity.value
+            if isinstance(pitch, Measure) and not math.isfinite(pitch.value):
+                raise TextXSemanticError(
+                    f"helix '{quantity.name}' pitch is not finite", **get_location(value.helix)
+                )
+    for ref, label, owner in directions:
+        quantity = ref.quantity
+        if isinstance(quantity, ContextQuantityAlias):
+            quantity = quantity.ref
+        if not isinstance(quantity, ContextQuantity) or not isinstance(quantity.value, VectorXYZ):
+            continue
+        vector = _literal_xyz(quantity.value.coords)
+        if vector is None:
+            continue
+        norm = math.sqrt(sum(component * component for component in vector))
+        if not all(math.isfinite(component) for component in vector):
+            problem = "is not finite"
+        elif norm < 1e-6:
+            problem = "is a zero vector"
+        elif abs(norm - 1.0) > 1e-3:
+            problem = "is not of unit length"
+        else:
+            continue
+        raise TextXSemanticError(f"{label} {problem} -- it is a direction", **get_location(owner))
+
+
+def validate_path_following(model: Model) -> None:
+    """A path driver and a geometry hold compare nothing; a progress guard is one-sided.
+
+    A path constrains geometry, not timing: `moving ... along ... with` drives the motion and
+    `keeping ... on` holds it on the geometry, while `progress ... along` only guards continuation.
+    """
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        view = spec.view
+        location = get_location(spec)
+        driver, geometry, guard = view.moving, view.on, view.progress
+        if driver is not None or geometry is not None:
+            if spec.expr is not None:
+                raise TextXSemanticError(
+                    f"'{spec.name}' holds a path's geometry, which is its reference -- drop the "
+                    "comparison",
+                    **location,
+                )
+        elif spec.expr is None:
+            raise TextXSemanticError(f"constraint '{spec.name}' states no relation", **location)
+        elif guard is not None and not isinstance(spec.expr, GreaterThanConstraint):
+            raise TextXSemanticError(
+                f"'{spec.name}' guards progress along a path -- a guard is one-sided, use 'more "
+                "than'",
+                **location,
+            )
+        operand = driver or geometry or guard
+        if operand is None:
+            continue
+        path = operand.path.quantity
+        if isinstance(path, ContextQuantityAlias):
+            path = path.ref
+        if not isinstance(path, ContextQuantity) or path.type != ReferenceGeneratorType.Path:
+            raise TextXSemanticError(
+                f"'{spec.name}' follows a path -- its reference must be a declared 'path'",
+                **get_location(operand),
+            )
+        if driver is not None:
+            profile = driver.profile.quantity
+            if isinstance(profile, ContextQuantityAlias):
+                profile = profile.ref
+            if not isinstance(profile, ContextQuantity) or not isinstance(profile.value, ProfileSpec):
+                raise TextXSemanticError(
+                    f"'{spec.name}' drives along a path -- 'with' must name a velocity profile",
+                    **location,
+                )
+        elif guard is not None:
+            speed = spec.expr.threshold.quantity
+            if isinstance(speed, ContextQuantityAlias):
+                speed = speed.ref
+            if not isinstance(speed, ContextQuantity) or speed.type != QuantityType.LinearVelocity:
+                raise TextXSemanticError(
+                    f"'{spec.name}' states a minimum speed along a path that is no linear velocity",
+                    **location,
+                )
+        elif str(view.subspace) not in ("position", "orientation") or view.axis is not None:
+            raise TextXSemanticError(
+                f"'{spec.name}' holds neither '.position' nor '.orientation' on the path -- they "
+                "are separate control laws, and the tangent belongs to the driver",
+                **location,
+            )
+    for motion in get_children_of_type(GuardedMotion, model):
+        specs = [spec for spec in motion_constraints(motion) if isinstance(spec, ConstraintSpecification)]
+        followed = {}
+        for spec in specs:
+            operand = spec.view.moving or spec.view.on
+            if operand is not None:
+                path = operand.path.quantity
+                followed[path.ref if isinstance(path, ContextQuantityAlias) else path] = spec
+        for spec in specs:
+            if not followed or not isinstance(spec.expr, EqualityConstraint):
+                continue
+            reference = spec.expr.reference.quantity
+            if isinstance(reference, ContextQuantityAlias):
+                reference = reference.ref
+            if reference is not None and reference in followed:
+                raise TextXSemanticError(
+                    f"'{spec.name}' pins '{motion.name}' to a setpoint on path "
+                    f"'{followed[reference].name}' follows -- a path constrains geometry, not "
+                    "timing; drop the equality",
+                    **get_location(spec),
+                )
+
+
+def validate_unit_kinds(model: Model) -> None:
+    """A value and a default band are measured in units of their kind; a kind has one default."""
+    # (unit token, kind, quantity name, object reported on)
+    authored = []
+    for quantity in get_children_of_type(ContextQuantity, model):
+        value = quantity.value
+        if isinstance(quantity, ContextQuantityAlias) or not isinstance(value, (Measure, VectorXYZ)):
+            continue
+        if value.unit:
+            authored.append((value.unit, quantity.type, f"'{quantity.name}'", quantity))
+    defaults = set()
+    for entry in get_children_of_type(ToleranceDefault, model):
+        if entry.kind in defaults:
+            raise TextXSemanticError(
+                f"'{entry.kind}' has two default bands -- a kind takes one", **get_location(entry)
+            )
+        defaults.add(entry.kind)
+        if entry.band.bare is not None:
+            authored.append((entry.band.bare.unit, entry.kind, "the default band", entry))
+    for unit, quantity_type, what, owner in authored:
+        kind = QUDT_KIND_BY_QUANTITY_TYPE.get(quantity_type)
+        allowed = [token for token, dsl_unit in DSL_UNITS.items() if kind in dsl_unit.kinds]
+        if unit not in allowed:
+            raise TextXSemanticError(
+                f"{what} of a {quantity_type} is measured in '{unit}' -- its units are "
+                f"{', '.join(allowed)}",
+                **get_location(owner),
+            )
+
+
+def validate_admittance(model: Model) -> None:
+    """An admittance releases at or below the force that engages it."""
+    for admittance in get_children_of_type(AdmittanceSpec, model):
+        if admittance.release_threshold > admittance.deadband:
+            raise TextXSemanticError(
+                f"admittance release-threshold {admittance.release_threshold} must not exceed "
+                f"deadband {admittance.deadband} -- the yield would never release",
+                **get_location(admittance),
+            )
+
+
+def validate_scalar_order_relations(model: Model) -> None:
+    """An order relation compares one number: an axis, a distance, a norm, or a path or clock view."""
+    for motion in get_children_of_type(GuardedMotion, model):
+        for spec in motion_constraints(motion):
+            if not isinstance(spec, ConstraintSpecification) or not isinstance(spec.expr, _ORDER_RELATIONS):
+                continue
+            view = spec.view
+            # A norm collapses the 3-vector it reads to one number.
+            if (
+                view.elapsed is not None
+                or view_form(spec) == ViewForm.DistanceBetween
+                or view.progress is not None
+                or view.moving is not None
+                or view.on is not None
+                or view.norm is not None
+                or view.axis is not None
+            ):
+                continue
+            # A context pose, twist or wrench is as multi-dimensional as a world one.
+            composite = view.quantity is not None and view.quantity.type in _COMPOSITE_WORLD_TYPES
+            if view.subspace is not None or composite:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' orders a multi-dimensional view -- select one axis "
+                    "or author `distance between` two poses",
+                    **get_location(spec),
+                )
+
+
+def validate_direction_operands(model: Model) -> None:
+    """Angle operands and line or plane directions are framed literal 3-vector directions."""
+    # (direction quantity, what it is, object reported on)
+    operands = []
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        binary = spec.view.binary
+        if not isinstance(binary, AngleBetweenView):
+            continue
+        location = get_location(spec)
+        form = view_form(spec)
+        if form is None:
+            raise TextXSemanticError(
+                f"'{spec.name}' takes the angle from a plane to a direction -- author it as "
+                "`angle between <direction> and <plane>`",
+                **location,
+            )
+        if form != ViewForm.PlaneAngle:
+            operands.append((binary.left, f"'{spec.name}' first operand", spec))
+        if form == ViewForm.Alignment:
+            operands.append((binary.right, f"'{spec.name}' reference operand", spec))
+    for quantity in get_children_of_type(ContextQuantity, model):
+        if isinstance(quantity, ContextQuantityAlias) or quantity.type not in _PRIMITIVE_DIRECTION_KEY:
+            continue
+        direction_key = _PRIMITIVE_DIRECTION_KEY[quantity.type]
+        keys = [pair.key for pair in quantity.props.pairs]
+        for key in keys:
+            if key not in (GeometricPropKey.Of, direction_key):
+                raise TextXSemanticError(
+                    f"'{quantity.name}' is a {quantity.type} -- it takes 'of' and "
+                    f"'{direction_key}', not '{key}'",
+                    **get_location(quantity),
+                )
+        for key in (GeometricPropKey.Of, direction_key):
+            if keys.count(key) != 1:
+                raise TextXSemanticError(
+                    f"'{quantity.name}' is a {quantity.type} -- it takes exactly one '{key}'",
+                    **get_location(quantity),
+                )
+        operands.append(
+            (geo_prop_value(quantity.props, direction_key), f"'{quantity.name}' {direction_key}", quantity)
+        )
+    for operand, label, owner in operands:
+        location = get_location(owner)
+        direction = operand.ref if isinstance(operand, ContextQuantityAlias) else operand
+        if direction.type != QuantityType.Direction:
+            raise TextXSemanticError(f"{label} is no 'direction' quantity", **location)
+        if (
+            geo_prop_value(direction.props, GeometricPropKey.AsSeenBy)
+            or geo_prop_value(direction.props, GeometricPropKey.Wrt)
+        ) is None:
+            raise TextXSemanticError(
+                f"{label} '{direction.name}' states no 'as-seen-by' frame", **location
+            )
+        value = direction.value
+        if not isinstance(value, VectorXYZ) or _literal_xyz(value.coords) is None:
+            raise TextXSemanticError(
+                f"{label} '{direction.name}' is no literal 3-vector", **location
+            )
+
+
+def validate_alignment_targets(model: Model) -> None:
+    """An angle drives to a direction (two DOF) or to a cone around it (one), with bounds in [0, pi]."""
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        if view_form(spec) not in ANGLE_VIEW_FORMS:
+            continue
+        location = get_location(spec)
+        expr = spec.expr
+        if alignment_is_pointwise(spec):
+            # Only the point target drives the two-axis rotation-vector row.
+            if view_form(spec) == ViewForm.Alignment:
+                reference = spec.view.binary.right
+                reference = reference.ref if isinstance(reference, ContextQuantityAlias) else reference
+                nonzero = [v for v in _literal_xyz(reference.value.coords) if abs(v) > 1e-9]
+                if len(nonzero) != 1 or abs(abs(nonzero[0]) - 1.0) > 1e-6:
+                    raise TextXSemanticError(
+                        f"'{spec.name}' reference operand is no signed unit frame axis -- a point "
+                        "target aligns with exactly one axis, +-1",
+                        **location,
+                    )
+            cone = expr.threshold if isinstance(expr, LessThanConstraint) else None
+            cone = expr.upper if isinstance(expr, BilateralConstraint) else cone
+            if cone is None:
+                continue
+            named = cone.quantity.ref if isinstance(cone.quantity, ContextQuantityAlias) else cone.quantity
+            if cone.bare is not None and cone.bare.value <= 0.0:
+                raise TextXSemanticError(
+                    f"'{spec.name}' bounds its band at {cone.bare.value} -- the bound is positive",
+                    **location,
+                )
+            if cone.bare is None and (not isinstance(named, ContextQuantity) or named.type != QuantityType.Angle):
+                raise TextXSemanticError(
+                    f"'{spec.name}' bounds its band with no angle", **location
+                )
+            continue
+        if isinstance(expr, EqualityConstraint):
+            bounds = [(expr.reference, "target")]
+        elif isinstance(expr, GreaterThanConstraint):
+            bounds = [(expr.threshold, "threshold")]
+        elif isinstance(expr, (BilateralConstraint, OutsideConstraint)):
+            bounds = [(expr.lower, "lower bound"), (expr.upper, "upper bound")]
+        else:
+            raise TextXSemanticError(
+                f"'{spec.name}' relates the angle between two directions by neither equality, an "
+                "inequality, nor a band",
+                **location,
+            )
+        radians = []
+        for ref, what in bounds:
+            named = ref.quantity.ref if isinstance(ref.quantity, ContextQuantityAlias) else ref.quantity
+            measure = ref.bare
+            if measure is None and isinstance(named, ContextQuantity) and isinstance(named.value, Measure):
+                measure = named.value
+            if measure is None:
+                # A named angle with no literal value: its type is all that can be checked.
+                if not isinstance(named, ContextQuantity) or named.type != QuantityType.Angle:
+                    raise TextXSemanticError(f"'{spec.name}' states its {what} as no angle", **location)
+                radians.append(None)
+                continue
+            if measure.unit not in ("rad", "deg", ""):
+                raise TextXSemanticError(f"'{spec.name}' states its {what} as no angle", **location)
+            value = measure.value * (math.pi / 180.0 if measure.unit == "deg" else 1.0)
+            if not 0.0 <= value <= math.pi:
+                raise TextXSemanticError(
+                    f"'{spec.name}' {what} is {value} rad -- the angle between two directions "
+                    "lies in [0, pi]",
+                    **location,
+                )
+            radians.append(value)
+        if len(radians) == 2 and None not in radians and not radians[0] < radians[1]:
+            raise TextXSemanticError(
+                f"'{spec.name}' lower bound is not below its upper bound", **location
+            )
+
+
+def validate_geometric_distance_views(model: Model) -> None:
+    """Table II operands come in a supported kind and order; no unsigned distance is driven to zero.
+
+    Its derivative is undefined at zero (Borghesan et al. 2016, section VII-B).
+    """
+    for spec in get_children_of_type(ConstraintSpecification, model):
+        form = view_form(spec)
+        if form not in (ViewForm.DistanceBetween, ViewForm.DistanceFrom, ViewForm.ProjectionOn):
+            continue
+        location = get_location(spec)
+        binary = spec.view.binary
+        a_kind = geometric_operand_kind(binary.left)
+        b_kind = geometric_operand_kind(binary.right)
+        unsigned = form == ViewForm.DistanceBetween
+        if form == ViewForm.DistanceFrom:
+            op_type = GEOMETRIC_DISTANCE_OPS.get((a_kind, b_kind))
+            if op_type is None and a_kind != b_kind and GEOMETRIC_DISTANCE_OPS.get((b_kind, a_kind)):
+                raise TextXSemanticError(
+                    f"'{spec.name}' takes the distance of a {a_kind} from a {b_kind} -- the point "
+                    "or line comes first, since the sign follows the primitive's direction",
+                    **location,
+                )
+            if op_type is None:
+                raise TextXSemanticError(
+                    f"'{spec.name}' takes the distance of a {a_kind or 'unknown'} from a "
+                    f"{b_kind or 'unknown'} -- a distance is of a pose from a plane or line, or of "
+                    "a line from a line",
+                    **location,
+                )
+            unsigned = op_type in UNSIGNED_GEOMETRIC_DISTANCE_OPS
+        elif form == ViewForm.ProjectionOn and (b_kind != "line" or a_kind not in ("point", "line")):
+            raise TextXSemanticError(
+                f"'{spec.name}' projects a {a_kind or 'unknown'} on a {b_kind or 'unknown'} -- a "
+                "projection is of a pose or a line on a line",
+                **location,
+            )
+        expr = spec.expr
+        to_zero = (
+            isinstance(expr, EqualityConstraint)
+            and expr.reference.bare is not None
+            and expr.reference.bare.value == 0.0
+        ) or (
+            isinstance(expr, BilateralConstraint)
+            and expr.lower.bare is not None
+            and expr.upper.bare is not None
+            and expr.lower.bare.value == 0.0
+            and expr.upper.bare.value == 0.0
+        )
+        if unsigned and to_zero:
+            raise TextXSemanticError(
+                f"'{spec.name}' drives an unsigned distance to zero, where its derivative is "
+                "undefined -- state the coincidence as signed projections",
+                **location,
+            )
 
 
 def validate_bare_axis_selectors(model: Model) -> None:
-    """A bare `.x` names one component of a quantity that is itself a 3-vector. A world
-    quantity always names its subspace first, and a scalar has no components at all.
-    """
-    for holder in (View, ContextRef, QuantityLeaf):
-        for item in get_children_of_type(holder, model):
-            if item.axis is None or item.subspace is not None:
-                continue
-            quantity = getattr(item, "quantity", None)
-            if isinstance(quantity, ContextQuantity):
-                resolved = _resolved_context_quantity(quantity)
-                if resolved.type in VECTOR_COMPONENT_TYPE:
-                    continue
-                raise semantic_error(
-                    f"'{resolved.name}' is a {resolved.type}, which has no axis components; "
-                    f"a bare '.{item.axis}' selects one axis of a 3-vector context quantity "
-                    "(direction, free-vector, position, linear-velocity, force, torque).",
-                    item,
-                )
-            name = getattr(quantity, "name", None)
-            raise semantic_error(
-                f"'{name}' names its subspace before an axis, as in '.linvel.{item.axis}'; "
-                f"a bare '.{item.axis}' belongs only on a 3-vector context quantity.",
-                item,
+    """A bare `.x` selects one component of a 3-vector context quantity; others name a subspace."""
+    holders = [
+        *get_children_of_type(View, model),
+        *get_children_of_type(ContextRef, model),
+        *get_children_of_type(QuantityLeaf, model),
+    ]
+    for item in holders:
+        if item.axis is None or item.subspace is not None:
+            continue
+        quantity = item.quantity.ref if isinstance(item.quantity, ContextQuantityAlias) else item.quantity
+        if not isinstance(quantity, ContextQuantity):
+            raise TextXSemanticError(
+                f"'{quantity.name}' names no subspace before '.{item.axis}' -- as in "
+                f"'.linvel.{item.axis}'; a bare axis belongs on a 3-vector context quantity",
+                **get_location(item),
+            )
+        if quantity.type not in VECTOR_COMPONENT_TYPE:
+            raise TextXSemanticError(
+                f"'{quantity.name}' is a {quantity.type} with no axis components -- a bare "
+                f"'.{item.axis}' selects one axis of a direction, free-vector, position, "
+                "linear-velocity, force or torque",
+                **get_location(item),
             )
 
 
 def validate_world_quantities(model: Model) -> None:
-    """Raise if a world pose names no frames, or a world wrench lacks what its source needs:
-    the frames it is read in, and the events that tare it."""
+    """A world pose has frames; a world wrench has its frames, its source, and events that tare it."""
     for quantity in get_children_of_type(WorldQuantity, model):
-        quantity = _resolved_world_quantity(quantity)
-        if quantity.type == WorldQuantityType.Pose and _pose_frame_names(quantity) is None:
-            raise semantic_error(f"Pose '{quantity.uri}' has no frame endpoints", quantity)
+        if isinstance(quantity, WorldQuantityAlias):
+            continue
+        location = get_location(quantity)
+        if quantity.type == WorldQuantityType.Pose and pose_frame_names(quantity) is None:
+            raise TextXSemanticError(f"pose '{quantity.name}' states no of and wrt frames", **location)
         if quantity.type != WorldQuantityType.Wrench:
             continue
         props = quantity.props
-        ft_sensor = _geo_prop_value(props, "ft-sensor")
-        estimated = _geo_prop_value(props, "estimated-from") is not None
+        ft_sensor = geo_prop_value(props, "ft-sensor")
+        estimated = geo_prop_value(props, "estimated-from") is not None
         if ft_sensor is not None and estimated:
-            raise semantic_error(
-                f"Wrench '{quantity.name}' names both ft-sensor and estimated-from; "
-                "a wrench is measured or estimated, not both.",
-                quantity,
+            raise TextXSemanticError(
+                f"wrench '{quantity.name}' names both ft-sensor and estimated-from -- a wrench is "
+                "measured or estimated, not both",
+                **location,
             )
+        if estimated and geo_prop(props, "ref-point") is None:
+            raise TextXSemanticError(f"wrench '{quantity.name}' states no ref-point frame", **location)
         sensor_frame = str(ft_sensor.frame.uri) if ft_sensor is not None else None
-        if estimated and _geo_prop(props, "ref-point") is None:
-            raise semantic_error(f"Wrench '{quantity.name}' has no ref-point frame", quantity)
-        if (_geo_prop(props, "as-seen-by") or sensor_frame) is None:
-            raise semantic_error(f"Wrench '{quantity.name}' has no as-seen-by frame", quantity)
-        events = _geo_prop_events(props, "re-tare-on")
+        if (geo_prop(props, "as-seen-by") or sensor_frame) is None:
+            raise TextXSemanticError(f"wrench '{quantity.name}' states no as-seen-by frame", **location)
+        events = geo_prop_events(props, "re-tare-on")
         tared = ft_sensor is not None or estimated
         if events and not tared:
-            raise semantic_error(
-                f"Wrench '{quantity.name}' names re-tare-on events but nothing to tare.",
-                quantity,
+            raise TextXSemanticError(
+                f"wrench '{quantity.name}' names re-tare-on events -- nothing measures it to tare",
+                **location,
             )
-        # There is no implicit "once at startup": the model names its own run-start event.
+        # No implicit tare at startup: the model names its own run-start event.
         if tared and not events:
-            source = "an ft-sensor" if ft_sensor is not None else "estimated-from"
-            raise semantic_error(
-                f"Wrench '{quantity.name}' has {source} but names no re-tare-on events; "
-                "name the model's run-start event to tare once at startup.",
-                quantity,
+            raise TextXSemanticError(
+                f"wrench '{quantity.name}' names no re-tare-on events -- name the run-start event "
+                "to tare once at startup",
+                **location,
             )
         for event in events:
             if event.event is None:
-                raise semantic_error(
-                    f"Wrench '{quantity.name}' re-tare-on '{event.name}' carries no namespace, "
-                    "so it resolves to no declared event; write it as ns.EVENT.",
-                    quantity,
+                raise TextXSemanticError(
+                    f"wrench '{quantity.name}' re-tares on '{event.name}', which carries no "
+                    "namespace -- write it as ns.EVENT",
+                    **location,
                 )
 
 
 def validate_context_geometry(model: Model) -> None:
-    """Raise if a declared pose, wrench, orientation, direction or path cannot be placed:
-    no frames to state it in, components that disagree on them, or a rotation the backend
-    cannot compose."""
+    """Poses, wrenches, orientations, directions and paths have frames and literal rotations."""
     for quantity in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(quantity)
+        if isinstance(quantity, ContextQuantityAlias):
+            continue
+        location = get_location(quantity)
         value = quantity.value
-        if quantity.type == QuantityType.Pose and not isinstance(
-            value, (PoseCoordinate, ConfigValue, SampledValue)
+        if (
+            quantity.type == QuantityType.Pose
+            and not isinstance(value, (PoseCoordinate, ConfigValue, SampledValue))
+            and pose_frame_names(quantity) is None
         ):
-            if _pose_frame_names(quantity) is None:
-                raise semantic_error(f"Pose '{quantity.uri}' has no frame endpoints", quantity)
+            raise TextXSemanticError(f"pose '{quantity.name}' states no of and wrt frames", **location)
         if quantity.type == QuantityType.Wrench and not isinstance(value, SampledValue):
-            props = quantity.props if isinstance(quantity.props, GeometricProps) else None
-            source = getattr(getattr(value, "source", None), "quantity", None)
-            if props is None and isinstance(source, WorldQuantity):
-                props = source.props if isinstance(source.props, GeometricProps) else None
-            if _geo_prop(props, "as-seen-by") is None:
-                raise semantic_error(f"Wrench '{quantity.name}' has no as-seen-by frame", quantity)
-        if isinstance(value, PoseCoordinate):
-            _validate_pose_value(quantity)
+            props = quantity.props
+            if not isinstance(props, GeometricProps) and isinstance(value, SnapshotValue):
+                source = value.source.quantity
+                props = source.props if isinstance(source, WorldQuantity) else None
+            if geo_prop(props, "as-seen-by") is None:
+                raise TextXSemanticError(
+                    f"wrench '{quantity.name}' states no as-seen-by frame", **location
+                )
         if quantity.type == QuantityType.Direction:
-            _validate_direction_value(quantity)
-        if quantity.type == ReferenceGeneratorType.Path:
-            _validate_path_endpoints(quantity)
-
-
-def _validate_pose_value(quantity: ContextQuantity) -> None:
-    """A literal pose: components agreeing on frames, and literal rotations the backend takes."""
-    value = quantity.value
-    if _pose_frame_names(quantity) is None:
-        sources = {
-            source
-            for source in (
-                _context_quantity(value.position.ref),
-                _context_quantity(value.orientation.ref),
+            if (geo_prop(quantity.props, "as-seen-by") or geo_prop(quantity.props, "wrt")) is None:
+                raise TextXSemanticError(
+                    f"direction '{quantity.name}' states no 'as-seen-by' frame", **location
+                )
+            if isinstance(value, VectorXYZ) and _literal_xyz(value.coords) is None:
+                raise TextXSemanticError(
+                    f"direction '{quantity.name}' is no three literal components", **location
+                )
+            if value is not None and not isinstance(value, (VectorXYZ, DirectionBetween)):
+                raise TextXSemanticError(
+                    f"direction '{quantity.name}' is no vector literal", **location
+                )
+        if isinstance(value, PoseCoordinate):
+            orientation = value.orientation
+            if pose_frame_names(quantity) is None:
+                sources = [
+                    ref.quantity
+                    for ref in (value.position.ref, orientation.ref)
+                    if ref is not None and ref.quantity is not None
+                ]
+                frames = {names for source in sources if (names := pose_frame_names(source))}
+                if len(frames) > 1:
+                    raise TextXSemanticError(
+                        f"pose '{quantity.name}' components disagree on their frames", **location
+                    )
+            relative = orientation.relative
+            # (coordinates, whether a symbolic component is allowed there)
+            literal = []
+            if orientation.quat is not None:
+                literal.append(orientation.quat.xyzw)
+            if orientation.euler is not None and len(set(orientation.euler.axes)) != 3:
+                literal.append(orientation.euler.angles)
+            for cosine in (orientation.direction_cosine, relative.direction_cosine if relative else None):
+                if cosine is not None:
+                    literal += [cosine.x_axis, cosine.y_axis, cosine.z_axis]
+            if relative is not None and relative.direction_cosine is None:
+                literal.append(relative.quat.xyzw if relative.quat is not None else relative.euler.angles)
+            if any(element.ref is not None for coords in literal for element in coords.values):
+                raise TextXSemanticError(
+                    f"orientation of '{quantity.name}' has symbolic components -- the backend "
+                    "composes literal rotations",
+                    **location,
+                )
+            if relative is not None:
+                base = relative.base.quantity
+                frames = pose_frame_names(base) if isinstance(base, ContextQuantity) else None
+                if frames is None:
+                    raise TextXSemanticError(
+                        f"relative orientation on '{quantity.name}' has no base pose with of, wrt "
+                        "and as-seen-by frames to compose in",
+                        **location,
+                    )
+                of_frame, _wrt_frame, base_as_seen_by = frames
+                if relative.frame is not None:
+                    basis = str(relative.frame.uri)
+                elif relative.euler is None:
+                    raise TextXSemanticError(
+                        f"relative orientation on '{quantity.name}' states no basis frame -- a "
+                        "quaternion or direction-cosine delta needs one",
+                        **location,
+                    )
+                else:
+                    basis = base_as_seen_by if relative.euler.extrinsic else of_frame
+                if basis not in (of_frame, base_as_seen_by):
+                    raise TextXSemanticError(
+                        f"relative orientation on '{quantity.name}' turns in '{basis}' -- it is "
+                        f"neither the base's body frame '{of_frame}' nor its basis "
+                        f"'{base_as_seen_by}', and a change of basis is not supported",
+                        **location,
+                    )
+        if quantity.type != ReferenceGeneratorType.Path:
+            continue
+        if value.lerp is not None:
+            start, goal = value.lerp.start.quantity, value.lerp.goal.quantity
+            start_type = start.type if isinstance(start, ContextQuantity) else None
+            goal_type = goal.type if isinstance(goal, ContextQuantity) else None
+            if QUDT_KIND_BY_QUANTITY_TYPE.get(start_type) != QUDT_KIND_BY_QUANTITY_TYPE.get(goal_type):
+                raise TextXSemanticError(
+                    f"lerp path '{quantity.name}' runs from a {start_type} to a {goal_type} -- "
+                    "both ends are one kind",
+                    **location,
+                )
+            if start_type != QuantityType.Pose:
+                continue
+        if pose_frame_names(quantity) is not None:
+            continue
+        endpoint_frames = [
+            (endpoint, frames)
+            for endpoint in path_pose_endpoints(quantity)
+            if (frames := pose_frame_names(endpoint)) is not None
+        ]
+        if not endpoint_frames:
+            raise TextXSemanticError(
+                f"path '{quantity.name}' has no endpoint with frames", **location
             )
-            if source is not None
-        }
-        frames = {names for source in sources if (names := _pose_frame_names(source))}
-        if len(frames) > 1:
-            raise semantic_error(
-                f"Pose '{quantity.uri}' component references disagree on frame endpoints",
-                quantity,
+        if len({frames for _endpoint, frames in endpoint_frames}) != 1:
+            details = ", ".join(
+                f"{endpoint.name}={tuple(map(str, frames))}" for endpoint, frames in endpoint_frames
             )
-    orientation = value.orientation
-    symbolic = f"Orientation coordinate '{quantity.uri}.orientation' cannot use symbolic components"
-    coords = (
-        orientation.quat.xyzw
-        if orientation.quat is not None
-        else orientation.euler.angles
-        if orientation.euler is not None
-        else None
-    )
-    if (
-        coords is not None
-        and any(element.ref is not None for element in coords.values)
-        and (orientation.quat is not None or len(set(orientation.euler.axes)) != 3)
-    ):
-        raise semantic_error(symbolic, quantity)
-    cosine = orientation.direction_cosine
-    if cosine is not None and any(
-        element.ref is not None
-        for axis in (cosine.x_axis, cosine.y_axis, cosine.z_axis)
-        for element in axis.values
-    ):
-        raise semantic_error(symbolic, quantity)
-
-    relative = orientation.relative
-    if relative is None:
-        return
-    base = _context_quantity(relative.base)
-    if not isinstance(base, ContextQuantity):
-        raise semantic_error(
-            f"Relative orientation on '{quantity.uri}' needs a resolvable base pose to "
-            "derive its composition frames.",
-            quantity,
-        )
-    frames = _pose_frame_names(base)
-    if frames is None:
-        raise semantic_error(
-            f"Relative orientation on '{quantity.uri}' cannot resolve its base pose's "
-            "of/with-respect-to/as-seen-by frames.",
-            quantity,
-        )
-    of_frame, _wrt_frame, base_as_seen_by = frames
-    if relative.frame is not None:
-        basis = str(getattr(relative.frame, "uri", relative.frame))
-    elif relative.euler is None:
-        raise semantic_error(
-            f"Relative orientation on '{quantity.uri}' needs an explicit basis frame for "
-            "a quaternion or direction-cosine delta.",
-            quantity,
-        )
-    else:
-        basis = base_as_seen_by if relative.euler.extrinsic else of_frame
-    if basis not in (of_frame, base_as_seen_by):
-        raise semantic_error(
-            f"Relative orientation on '{quantity.uri}' turns its delta in '{basis}', "
-            f"which is neither the base's body frame '{of_frame}' nor its coordinate "
-            f"basis '{base_as_seen_by}'. Composing it needs a change of basis, which is "
-            "not supported.",
-            quantity,
-        )
-    cosine = relative.direction_cosine
-    if cosine is not None:
-        if any(
-            element.ref is not None
-            for axis in (cosine.x_axis, cosine.y_axis, cosine.z_axis)
-            for element in axis.values
-        ):
-            raise semantic_error(
-                f"Relative orientation '{quantity.uri}' has a symbolic direction cosine",
-                quantity,
+            raise TextXSemanticError(
+                f"path '{quantity.name}' endpoints disagree on their frames: {details}", **location
             )
-        return
-    coords = relative.quat.xyzw if relative.quat is not None else relative.euler.angles
-    if any(element.ref is not None for element in coords.values):
-        raise semantic_error(
-            f"Relative orientation '{quantity.uri}' has symbolic components", quantity
-        )
-
-
-def _validate_direction_value(quantity: ContextQuantity) -> None:
-    """A direction: the frame it is seen in, and a literal unit vector or a pose to compute from."""
-    if (_geo_prop(quantity.props, "as-seen-by") or _geo_prop(quantity.props, "wrt")) is None:
-        raise semantic_error(
-            f"Direction quantity '{quantity.name}' needs an 'as-seen-by: <frame>' prop.", quantity
-        )
-    value = quantity.value
-    if isinstance(value, VectorXYZ):
-        elements = value.coords.values
-        if len(elements) != 3 or any(element.ref is not None for element in elements):
-            raise semantic_error(
-                f"Direction quantity '{quantity.name}' value must be 3 literal components.",
-                quantity,
-            )
-    elif value is not None and not isinstance(value, DirectionBetween):
-        raise semantic_error(
-            f"Direction quantity '{quantity.name}' value must be a Vector literal.", quantity
-        )
-
-
-def _validate_path_endpoints(quantity: ContextQuantity) -> None:
-    """A path's pose endpoints: one kind for a lerp, one frame tuple when the path has none."""
-    value = quantity.value
-    lerp = getattr(value, "lerp", None)
-    if lerp is not None:
-        start = _context_quantity(lerp.start)
-        goal = _context_quantity(lerp.goal)
-        start_kind = QUDT_KIND_BY_QUANTITY_TYPE.get(getattr(start, "type", None))
-        goal_kind = QUDT_KIND_BY_QUANTITY_TYPE.get(getattr(goal, "type", None))
-        if start_kind != goal_kind:
-            raise semantic_error(
-                f"Lerp path start type '{getattr(start, 'type', None)}' "
-                f"does not match goal type '{getattr(goal, 'type', None)}'",
-                quantity,
-            )
-        if getattr(start, "type", None) != QuantityType.Pose:
-            return
-    if _pose_frame_names(quantity) is not None:
-        return
-    endpoint_frames = [
-        (endpoint, frames)
-        for endpoint in _path_pose_endpoints(quantity)
-        if (frames := _pose_frame_names(endpoint)) is not None
-    ]
-    if not endpoint_frames:
-        raise semantic_error(
-            f"Path '{quantity.name}' has no endpoint with frame metadata", quantity
-        )
-    if len({frames for _, frames in endpoint_frames}) != 1:
-        details = ", ".join(
-            f"{endpoint.name}={tuple(map(str, frames))}" for endpoint, frames in endpoint_frames
-        )
-        raise semantic_error(
-            f"Path '{quantity.name}' endpoint frames disagree: {details}", quantity
-        )
 
 
 def validate_view_operands(model: Model) -> None:
-    """Raise if a constraint's view names operands its kind cannot be read from: a world
-    quantity with no subspace, a norm of no 3-vector, a difference or distance of the wrong
-    kind of operand, Table IIa primitives in frames that do not meet, or a timing view with
-    no clock to compare."""
-    defaults = {entry.kind for entry in get_children_of_type(ToleranceDefault, model)}
+    """A view's operands can be read: a subspace, a clock, poses, framed primitives, a 3-vector."""
+    duration_default = QuantityType.Duration in {
+        entry.kind for entry in get_children_of_type(ToleranceDefault, model)
+    }
     for spec in get_children_of_type(ConstraintSpecification, model):
         if spec.disabled:
             continue
+        location = get_location(spec)
         view = spec.view
-        binary = _binary_view(spec)
-        if getattr(view, "is_elapsed", False):
-            _validate_timing(spec, QuantityType.Duration in defaults)
+        binary = view.binary
+        form = view_form(spec)
+        if view.elapsed is not None:
+            expr = spec.expr
+            if isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
+                refs = [expr.threshold]
+            elif isinstance(expr, EqualityConstraint):
+                # A sampled clock never lands exactly on the reference.
+                if spec.tolerance is None and not duration_default:
+                    raise TextXSemanticError(
+                        f"elapsed equality '{spec.name}' states no band -- a sampled clock never "
+                        "lands exactly on the reference; write '... equal to <t> within <band>'",
+                        **location,
+                    )
+                refs = [expr.reference, spec.tolerance]
+            else:
+                raise TextXSemanticError(
+                    f"timing constraint '{spec.name}' relates the clock by neither 'greater than', "
+                    "'less than' nor 'equal to'",
+                    **location,
+                )
+            for ref in refs:
+                if ref is not None and ref.bare is None and not isinstance(ref.quantity, ContextQuantity):
+                    raise TextXSemanticError(
+                        f"timing constraint '{spec.name}' compares with no declared duration or "
+                        "inline literal like `5.0 s`",
+                        **location,
+                    )
             continue
         quantity = resolved_constraint_quantity(spec)
         if binary is None and quantity is not None:
             subspace = constraint_view_subspace(spec)
             if subspace is None:
-                raise semantic_error(f"Constraint '{spec.name}' must define a view subspace.", spec)
-            if (
-                quantity.type == WorldQuantityType.Pose
-                and subspace == "distance"
-                and axis_label(view.axis) is None
-            ):
-                raise semantic_error(
-                    f"Constraint '{spec.name}' must use explicit "
-                    "'distance between <pose-a> and <pose-b>' syntax.",
-                    spec,
+                raise TextXSemanticError(f"constraint '{spec.name}' selects no subspace", **location)
+            if quantity.type == WorldQuantityType.Pose and subspace == "distance" and view.axis is None:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' takes a distance of one pose -- write "
+                    "'distance between <pose-a> and <pose-b>'",
+                    **location,
                 )
-        if _is_difference_view(spec):
+        if form == ViewForm.DistanceBetween:
             for ref in (binary.left, binary.right):
-                resolved = (
-                    _resolved_context_quantity(ref) if isinstance(ref, ContextQuantity) else ref
-                )
-                derived = type(getattr(resolved, "value", None)).__name__ == "DerivedScalarValue"
-                if not derived and not isinstance(ref, WorldQuantity):
-                    raise semantic_error(
-                        f"Constraint '{spec.name}' takes a difference of '{_node_name(ref)}', "
-                        "which is neither a declared quantity nor a scalar defined by a view.",
-                        spec,
+                pose = ref.ref if isinstance(ref, (WorldQuantityAlias, ContextQuantityAlias)) else ref
+                framed = isinstance(pose, ContextQuantity) or isinstance(pose.props, GeometricProps)
+                if pose.type not in (WorldQuantityType.Pose, QuantityType.Pose) or not framed:
+                    raise TextXSemanticError(
+                        f"distance constraint '{spec.name}' takes '{ref.name}' -- it is no pose "
+                        "with frames",
+                        **location,
                     )
-        if _is_distance_view(spec):
-            for ref in (binary.left, binary.right):
-                _validate_distance_endpoint(ref, f"Distance constraint '{spec.name}'", spec)
-        if _is_geometric_distance_view(spec) or _is_projection_view(spec):
-            _validate_table_iia_operands(spec)
+                if pose_frame_names(ref) is None:
+                    raise TextXSemanticError(
+                        f"distance constraint '{spec.name}' takes '{ref.name}', which states no "
+                        "of and wrt frames",
+                        **location,
+                    )
+        if form not in (ViewForm.DistanceFrom, ViewForm.ProjectionOn):
+            continue
+        table = GEOMETRIC_DISTANCE_OPS if form == ViewForm.DistanceFrom else GEOMETRIC_PROJECTION_OPS
+        op_type = table.get((geometric_operand_kind(binary.left), geometric_operand_kind(binary.right)))
+        # The frame each primitive's own direction is seen in: a line's `along`, a plane's `normal`.
+        seen_by = []
+        for ref in (binary.left, binary.right):
+            primitive = ref.ref if isinstance(ref, ContextQuantityAlias) else ref
+            if not isinstance(primitive, ContextQuantity) or primitive.type not in _PRIMITIVE_DIRECTION_KEY:
+                seen_by.append(None)
+                continue
+            direction = geo_prop_value(primitive.props, _PRIMITIVE_DIRECTION_KEY[primitive.type])
+            direction = direction.ref if isinstance(direction, ContextQuantityAlias) else direction
+            seen_by.append(geo_prop(direction.props, "as-seen-by"))
+        if op_type in _LINE_LINE_OPS:
+            if seen_by[0] is None or seen_by[1] != seen_by[0]:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' states its lines' directions in different frames "
+                    "-- both are seen by one",
+                    **location,
+                )
+            continue
+        frames = pose_frame_names(binary.left)
+        if frames is None:
+            raise TextXSemanticError(
+                f"constraint '{spec.name}' takes a pose operand with no frames", **location
+            )
+        if seen_by[1] != frames[1]:
+            primitive = binary.right.ref if isinstance(binary.right, ContextQuantityAlias) else binary.right
+            role = "normal" if primitive.type == QuantityType.Plane else "direction"
+            raise TextXSemanticError(
+                f"constraint '{spec.name}' states '{primitive.name}' {role} as seen by "
+                f"'{seen_by[1]}' -- it is seen by '{frames[1]}', the point's reference frame",
+                **location,
+            )
     for view in get_children_of_type(View, model):
-        if view.norm is not None:
-            _validate_norm_view(view)
-
-
-def _validate_timing(spec: ConstraintSpecification, duration_default: bool) -> None:
-    """An elapsed view compares the clock one-sidedly or within a band, against durations."""
-    expr = spec.expr
-    if isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
-        refs = [expr.threshold]
-    elif isinstance(expr, EqualityConstraint):
-        if spec.tolerance is None and not duration_default:
-            raise semantic_error(
-                f"Elapsed equality '{spec.name}' states no band. A sampled clock never lands "
-                "exactly on the reference, so it must say how close counts: "
-                "'... equal to <t> within <band>'.",
-                spec,
-            )
-        refs = [expr.reference, spec.tolerance]
-    else:
-        raise semantic_error(
-            f"Timing constraint '{spec.name}' must use 'greater than', 'less than', or 'equal to'.",
-            spec,
-        )
-    for ref in refs:
-        if ref is None or getattr(ref, "bare", None) is not None:
+        if view.norm is None:
             continue
-        if not isinstance(_context_quantity(ref), ContextQuantity):
-            raise semantic_error(
-                "Timing threshold must be a declared Duration quantity or an inline literal "
-                "like `5.0 s`.",
-                spec,
+        location = get_location(view)
+        quantity = view.quantity.ref if isinstance(view.quantity, WorldQuantityAlias) else view.quantity
+        if not isinstance(quantity, WorldQuantity) or view.subspace is None or view.axis is not None:
+            raise TextXSemanticError(f"norm of '{quantity.name}' is no 3-vector view", **location)
+        raw = str(view.subspace)
+        mapped = (
+            raw
+            if quantity.type == WorldQuantityType.Pose and raw == "position"
+            else SUBSPACE_ALIAS.get(raw, raw)
+        )
+        if scalar_type(quantity, mapped, None) not in NORM_SCALAR_TYPES:
+            raise TextXSemanticError(
+                f"norm of '{quantity.name}.{mapped}' is no 3-vector view", **location
             )
-
-
-def _validate_distance_endpoint(ref, context: str, spec: ConstraintSpecification) -> None:
-    """A `distance between` endpoint is a pose whose of/wrt frames are stated."""
-    if isinstance(ref, WorldQuantity):
-        quantity = _resolved_world_quantity(ref)
-        if quantity.type != WorldQuantityType.Pose or not isinstance(
-            quantity.props, GeometricProps
-        ):
-            raise semantic_error(f"{context} needs Pose quantities with explicit endpoints.", spec)
-    elif getattr(ref, "type", None) != QuantityType.Pose:
-        raise semantic_error(f"{context} must reference Pose quantities.", spec)
-    if _pose_frame_names(ref) is None:
-        raise semantic_error(f"{context} needs explicit 'of' and 'wrt' frames.", spec)
-
-
-def _validate_table_iia_operands(spec: ConstraintSpecification) -> None:
-    """Table IIa operands meet in one frame: both lines' directions, or the point's reference
-    frame and the primitive's direction."""
-    binary = _binary_view(spec)
-    table = (
-        GEOMETRIC_DISTANCE_OPS if _is_geometric_distance_view(spec) else GEOMETRIC_PROJECTION_OPS
-    )
-    op_type = table.get(
-        (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
-    )
-    context = f"Constraint '{spec.name}'"
-    # The frame each primitive's own direction is seen in: a line's `along`, a plane's `normal`.
-    seen_by = []
-    for ref in (binary.left, binary.right):
-        primitive = _resolved_context_quantity(ref) if isinstance(ref, ContextQuantity) else None
-        if primitive is None or primitive.type not in (QuantityType.Line, QuantityType.Plane):
-            seen_by.append(None)
+        across = view.norm.across
+        if across is None:
             continue
-        key = (
-            GeometricPropKey.Normal
-            if primitive.type == QuantityType.Plane
-            else GeometricPropKey.Along
-        )
-        referent = _geo_prop_value(primitive.props, key)
-        seen_by.append(_geo_prop(_resolved_context_quantity(referent).props, "as-seen-by"))
-
-    if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
-        if seen_by[0] is None or seen_by[1] != seen_by[0]:
-            raise semantic_error(
-                f"{context} needs both lines' directions stated 'as-seen-by' the same frame.",
-                spec,
+        direction = across.quantity.ref if isinstance(across.quantity, ContextQuantityAlias) else across.quantity
+        if not isinstance(direction, ContextQuantity) or direction.type != QuantityType.Direction:
+            raise TextXSemanticError(
+                f"norm of '{quantity.name}.{raw}' is taken across no direction", **location
             )
-        return
-    point = binary.left
-    point = _resolved_world_quantity(point) if isinstance(point, WorldQuantity) else point
-    frames = _pose_frame_names(point)
-    if frames is None:
-        raise semantic_error(f"{context} needs an explicit-frame pose operand.", spec)
-    primitive = _resolved_context_quantity(binary.right)
-    if seen_by[1] != frames[1]:
-        role = "normal" if primitive.type == QuantityType.Plane else "direction"
-        raise semantic_error(
-            f"{context} needs '{primitive.name}' {role} stated 'as-seen-by' "
-            f"'{frames[1]}', the point operand's own reference frame.",
-            spec,
-        )
-
-
-def _validate_norm_view(view: View) -> None:
-    """A norm reads a whole 3-vector, across a direction seen in the vector's own frame."""
-    quantity = view.quantity
-    if not isinstance(quantity, WorldQuantity) or view.subspace is None or view.axis is not None:
-        raise semantic_error(f"norm of '{_node_name(quantity)}' is not a 3-vector view", view)
-    quantity = _resolved_world_quantity(quantity)
-    raw = str(getattr(view.subspace, "value", view.subspace))
-    mapped = (
-        raw
-        if quantity.type == WorldQuantityType.Pose and raw == "position"
-        else SUBSPACE_ALIAS.get(raw, raw)
-    )
-    if _scalar_type(quantity, mapped, None) not in _NORM_SCALAR_TYPES:
-        raise semantic_error(f"norm of '{quantity.name}.{mapped}' is not a 3-vector view", view)
-    across = view.norm.across
-    if across is None:
-        return
-    direction = _context_quantity(across)
-    direction = _resolved_context_quantity(direction) if direction is not None else None
-    if direction is None or direction.type != QuantityType.Direction:
-        raise semantic_error(
-            f"norm of '{quantity.name}.{raw}' across "
-            f"'{getattr(direction, 'name', across)}': not a direction",
-            view,
-        )
-    vector_frame = _quantity_axis_frame(quantity)
-    direction_frame = _geo_prop(direction.props, "as-seen-by")
-    if vector_frame != direction_frame:
-        raise semantic_error(
-            f"norm of '{quantity.name}.{raw}' across '{direction.name}': direction is "
-            f"seen by '{direction_frame}', the vector by '{vector_frame}'",
-            view,
-        )
-
-
-def validate_unique_constraint_names(model: Model) -> None:
-    """Require unambiguous local constraint names within each guarded motion."""
-    for motion in motion_specs(model):
-        by_name: dict[str, list[object]] = defaultdict(list)
-        for item in motion_constraint_items(motion):
-            by_name[item.name].append(item)
-        duplicates = {name: items for name, items in by_name.items() if len(items) > 1}
-        if duplicates:
-            names = ", ".join(sorted(duplicates))
-            raise semantic_error(
-                f"Motion '{motion.name}' has duplicate constraint name(s): {names}.",
-                next(iter(duplicates.values()))[1],
+        vector_frame = quantity_axis_frame(quantity)
+        direction_frame = geo_prop(direction.props, "as-seen-by")
+        if vector_frame != direction_frame:
+            raise TextXSemanticError(
+                f"norm of '{quantity.name}.{raw}' across '{direction.name}' -- the direction is "
+                f"seen by '{direction_frame}', the vector by '{vector_frame}'",
+                **location,
             )
 
 
 def validate_motion_world_scope(model: Model) -> None:
-    """What a motion reads must be declared in its own scope: the pose an angle, a Table II
-    expression or a `from/to` direction reads, and the twist a followed path's speed reads; and
-    a constraint names one scalar kind, never a whole pose or a mass."""
+    """What a motion reads is declared in its own scope, and a constraint names one scalar kind.
+
+    An angle, a Table II expression and a `from/to` direction read a declared pose; a followed
+    path's speed reads a declared twist; no constraint names a whole pose or a mass.
+    """
     models = get_included_models(model)
-    for handler in constraint_handlers(model):
+    whole_kinds = {
+        QuantityType.Pose: "a whole pose -- select '.position' or '.orientation', each with its "
+        "own tolerance",
+        QuantityType.Mass: "a mass -- no constraint type exists for that kind",
+    }
+    for handler in get_children_of_type(ConstraintHandler, model):
         motion = handler.motion
-        if not isinstance(motion, GuardedMotion):
-            continue
         context_quantities = motion_context_quantities(models, motion, handler)
         world = motion_world_quantities(models, motion, handler, context_quantities)
         # First declaration wins, as it does for the emitter reading the scope.
         poses: dict[tuple, WorldQuantity] = {}
         twists: dict[tuple, WorldQuantity] = {}
         for quantity in world.values():
-            frames = (_geo_prop(quantity.props, "of"), _geo_prop(quantity.props, "wrt"))
+            frames = (geo_prop(quantity.props, "of"), geo_prop(quantity.props, "wrt"))
             if quantity.type == WorldQuantityType.Pose:
                 poses.setdefault(frames, quantity)
             elif quantity.type == WorldQuantityType.VelocityTwist:
                 twists.setdefault(frames, quantity)
-        # (reader, pose frames it reads, frame the pose must be seen by or None, reason)
+        # (reader, (of, wrt) frames of the pose it reads, frame it must be seen by or None, reader kind)
         pose_reads = []
+        # (constraint, moved quantity, (of, wrt) frames of the twist it reads)
         twist_reads = []
-        for spec in _resolved_constraint_items(motion) + _perturbation_conditions(handler):
+        for spec in resolved_constraint_items(motion) + perturbation_conditions(handler):
+            location = get_location(spec)
             view = spec.view
-            if _is_angle_between_view(spec):
-                plane_angle = _is_plane_angle_view(spec)
-                directions = [
-                    _resolved_context_quantity(
-                        _geo_prop_value(_resolved_context_quantity(ref).props, GeometricPropKey.Normal)
-                    )
-                    if is_plane
-                    else _resolved_context_quantity(ref)
-                    for ref, is_plane in zip(
-                        (view.binary.left, view.binary.right),
-                        (plane_angle, plane_angle or _is_incident_angle_view(spec)),
-                    )
-                ]
-                moving_frame, reference_frame = (
-                    _geo_prop(direction.props, "as-seen-by") or _geo_prop(direction.props, "wrt")
-                    for direction in directions
-                )
-                pose_reads.append(
-                    (spec, (moving_frame, reference_frame), reference_frame, "an angle")
-                )
-            elif _is_geometric_distance_view(spec) or _is_projection_view(spec):
+            form = view_form(spec)
+            if form in ANGLE_VIEW_FORMS:
+                operands = (view.binary.left, view.binary.right)
+                planes = (form == ViewForm.PlaneAngle, form != ViewForm.Alignment)
+                frames = []
+                for operand, is_plane in zip(operands, planes):
+                    operand = operand.ref if isinstance(operand, ContextQuantityAlias) else operand
+                    direction = geo_prop_value(operand.props, GeometricPropKey.Normal) if is_plane else operand
+                    direction = direction.ref if isinstance(direction, ContextQuantityAlias) else direction
+                    frames.append(geo_prop(direction.props, "as-seen-by") or geo_prop(direction.props, "wrt"))
+                pose_reads.append((spec, tuple(frames), frames[1], "an angle"))
+            elif form in (ViewForm.DistanceFrom, ViewForm.ProjectionOn):
                 a_ref, b_ref = view.binary.left, view.binary.right
-                table = (
-                    GEOMETRIC_DISTANCE_OPS
-                    if _is_geometric_distance_view(spec)
-                    else GEOMETRIC_PROJECTION_OPS
-                )
-                op_type = table.get((_geometric_operand_kind(a_ref), _geometric_operand_kind(b_ref)))
-                primitive = _resolved_context_quantity(b_ref)
-                if op_type in ("LineLineToLinearDistance", "LineOnLineProjection"):
-                    line_a = _resolved_context_quantity(a_ref)
-                    along = _geo_prop_value(line_a.props, GeometricPropKey.Along)
-                    frame = _geo_prop(_resolved_context_quantity(along).props, "as-seen-by")
+                table = GEOMETRIC_DISTANCE_OPS if form == ViewForm.DistanceFrom else GEOMETRIC_PROJECTION_OPS
+                op_type = table.get((geometric_operand_kind(a_ref), geometric_operand_kind(b_ref)))
+                primitive = b_ref.ref if isinstance(b_ref, ContextQuantityAlias) else b_ref
+                if op_type in _LINE_LINE_OPS:
+                    line_a = a_ref.ref if isinstance(a_ref, ContextQuantityAlias) else a_ref
+                    along = geo_prop_value(line_a.props, GeometricPropKey.Along)
+                    along = along.ref if isinstance(along, ContextQuantityAlias) else along
+                    frame = geo_prop(along.props, "as-seen-by")
                     for line in (line_a, primitive):
-                        pose_reads.append(
-                            (spec, (_geo_prop(line.props, "of"), frame), None, "a Table II expression")
-                        )
+                        pose_reads.append((spec, (geo_prop(line.props, "of"), frame), None, "a Table II expression"))
                 elif op_type is not None:
-                    point = (
-                        a_ref if isinstance(a_ref, WorldQuantity) else world.get(_node_name(a_ref))
-                    ) or a_ref
-                    frames = _pose_frame_names(point)
-                    primitive_frame = _geo_prop(primitive.props, "of")
+                    point = a_ref if isinstance(a_ref, WorldQuantity) else world.get(a_ref.name, a_ref)
+                    frames = pose_frame_names(point)
+                    primitive_frame = geo_prop(primitive.props, "of")
                     # A line through the frame the point is measured against needs no origin pose.
                     body_line = (
                         op_type == "PointLineToLinearDistance"
@@ -1249,83 +982,127 @@ def validate_motion_world_scope(model: Model) -> None:
                         and primitive_frame == frames[1]
                     )
                     if frames is not None and not body_line:
-                        pose_reads.append(
-                            (spec, (primitive_frame, frames[1]), None, "a Table II expression")
-                        )
-            operand = _path_operand(view)
+                        pose_reads.append((spec, (primitive_frame, frames[1]), None, "a Table II expression"))
+            operand = view.moving or view.on or view.progress
             if operand is not None:
-                moved = operand.moved
-                moved = (
-                    moved if isinstance(moved, WorldQuantity) else world.get(_node_name(moved))
-                )
-                frames = _pose_frame_names(moved) if moved is not None else None
+                moved = operand.moved if isinstance(operand.moved, WorldQuantity) else world.get(operand.moved.name)
+                frames = pose_frame_names(moved) if moved is not None else None
                 if frames is not None:
                     twist_reads.append((spec, moved, frames[:2]))
-            quantity = getattr(view, "quantity", None)
-            subspace = constraint_view_subspace(spec) if quantity is not None else None
+            quantity = view.quantity
             if (
                 spec.tolerance is not None
                 and isinstance(quantity, WorldQuantity)
-                and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
-                and subspace == "pose"
-                and axis_label(view.axis) is None
+                and quantity.type == WorldQuantityType.Pose
+                and constraint_view_subspace(spec) == "pose"
+                and view.axis is None
             ):
-                raise semantic_error(
+                raise TextXSemanticError(
                     f"constraint '{spec.name}' states a band on a whole pose -- its error mixes a "
                     "position and an orientation; state one band on '.position' and one on "
                     "'.orientation'",
-                    spec,
+                    **location,
                 )
             kind = None
             if isinstance(quantity, ContextQuantity) and view.subspace is None and view.on is None:
-                kind = _resolved_context_quantity(quantity).type
-            elif view.expr is not None and quantity is None and not view.is_elapsed:
+                kind = quantity.type
+            elif view.expr is not None and quantity is None and view.elapsed is None:
                 kind = infer(view.expr)
-            whole_kinds = {
-                QuantityType.Pose: "a whole pose -- select '.position' or '.orientation', each "
-                "with its own tolerance",
-                QuantityType.Mass: "a mass -- no constraint type exists for that kind",
-            }
             if kind in whole_kinds:
-                raise semantic_error(f"constraint '{spec.name}' constrains {whole_kinds[kind]}", spec)
+                raise TextXSemanticError(f"constraint '{spec.name}' constrains {whole_kinds[kind]}", **location)
             if kind is not None and kind not in DIMENSION_VECTOR:
-                raise semantic_error(
-                    f"constraint '{spec.name}' names '{kind}', which is no scalar kind -- select a "
-                    "scalar quantity",
-                    spec,
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' names '{kind}' -- it is no scalar kind", **location
                 )
         for quantity in context_quantities.values():
-            value = quantity.value
-            if isinstance(value, DirectionBetween):
+            if isinstance(quantity.value, DirectionBetween):
                 pose_reads.append(
                     (
                         quantity,
-                        (str(value.to_frame.uri), str(value.from_frame.uri)),
-                        _geo_prop(quantity.props, "as-seen-by") or _geo_prop(quantity.props, "wrt"),
+                        (str(quantity.value.to_frame.uri), str(quantity.value.from_frame.uri)),
+                        geo_prop(quantity.props, "as-seen-by") or geo_prop(quantity.props, "wrt"),
                         "a direction between two frames",
                     )
                 )
         for reader, (of_frame, wrt_frame), seen_by, what in pose_reads:
             pose = poses.get((of_frame, wrt_frame))
             if pose is None:
-                raise semantic_error(
+                raise TextXSemanticError(
                     f"'{reader.name}' reads a world pose of '{of_frame}' wrt '{wrt_frame}' that "
-                    f"motion '{motion.name}' does not declare -- {what} reads an already "
-                    "computed pose, it does not derive one",
-                    reader,
+                    f"motion '{motion.name}' does not declare -- {what} reads an already computed "
+                    "pose, it does not derive one",
+                    **get_location(reader),
                 )
-            pose_seen_by = _geo_prop(pose.props, "as-seen-by") or wrt_frame
+            pose_seen_by = geo_prop(pose.props, "as-seen-by") or wrt_frame
             if seen_by is not None and pose_seen_by != seen_by:
-                raise semantic_error(
+                raise TextXSemanticError(
                     f"'{reader.name}' reads '{pose.name}', seen by '{pose_seen_by}', from "
                     f"'{seen_by}' -- {what} answers in the frame the pose is seen by",
-                    reader,
+                    **get_location(reader),
                 )
         for spec, moved, (of_frame, wrt_frame) in twist_reads:
             if (of_frame, wrt_frame) not in twists:
-                raise semantic_error(
-                    f"constraint '{spec.name}' follows a path with '{moved.name}', but motion "
-                    f"'{motion.name}' declares no velocity-twist of '{of_frame}' wrt "
-                    f"'{wrt_frame}' -- the speed along a path is the measured twist of that frame",
-                    spec,
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' follows a path with '{moved.name}' -- motion "
+                    f"'{motion.name}' declares no velocity-twist of '{of_frame}' wrt '{wrt_frame}', "
+                    "the measured speed along the path",
+                    **get_location(spec),
+                )
+
+
+def validate_resolved_views(model: Model) -> None:
+    """What a view resolves to in its motion's scope can be emitted: a band, a frame, a kind, a pose's frames."""
+    models = get_included_models(model)
+    defaults = {entry.kind for included in models for entry in get_children_of_type(ToleranceDefault, included)}
+    for handler in get_children_of_type(ConstraintHandler, model):
+        motion = handler.motion
+        context_quantities = motion_context_quantities(models, motion, handler)
+        world = motion_world_quantities(models, motion, handler, context_quantities)
+        constraints = resolved_constraint_items(motion) + perturbation_conditions(handler)
+        for spec in constraints:
+            location = get_location(spec)
+            view = spec.view
+            if view.elapsed is not None:
+                continue
+            kind = constraint_kind(spec)
+            expr = spec.expr
+            # An equality is never met exactly, so it ends with a band.
+            equality = isinstance(expr, EqualityConstraint) or view.on is not None or view.moving is not None
+            default_kind = TOLERANCE_DEFAULT_KIND.get(kind, kind)
+            if equality and spec.tolerance is None and default_kind not in defaults:
+                raise TextXSemanticError(
+                    f"equality constraint '{spec.name}' states no band -- an equality is only ever met "
+                    f"within one; write '... within <band>' or declare a default for '{default_kind}' "
+                    "in a 'tolerances' block",
+                    **location,
+                )
+            if view.progress is not None:
+                continue
+            if isinstance(expr, EqualityConstraint):
+                slots = [expr.reference]
+            elif isinstance(expr, (GreaterThanConstraint, LessThanConstraint)):
+                slots = [expr.threshold]
+            elif isinstance(expr, (BilateralConstraint, OutsideConstraint)):
+                slots = [expr.lower, expr.upper]
+            else:
+                slots = []
+            for ref in slots:
+                if ref.expr is None:
+                    continue
+                inferred = infer(op_tree(ref.expr))
+                if not same_scalar_dimension(kind, inferred):
+                    raise TextXSemanticError(
+                        f"constraint '{spec.name}' compares a {kind} with an expression that infers "
+                        f"{inferred}",
+                        **location,
+                    )
+        for quantity in context_quantities.values():
+            if not isinstance(quantity.value, PoseCoordinate) or pose_frame_names(quantity) is not None:
+                continue
+            if pose_frame_source(quantity, constraints, world) is None:
+                raise TextXSemanticError(
+                    f"pose '{quantity.name}' states no frames -- give it of, wrt and as-seen-by, or "
+                    "make it a path endpoint, a relative orientation, a component reference, or an "
+                    "equality constraint's reference",
+                    **get_location(quantity),
                 )

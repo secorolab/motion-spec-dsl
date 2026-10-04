@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 // Author: Vamsi Kalagaturu
-// World quantities, geometric properties, views, and context quantities: values,
-// snapshots, poses, references, and reference-generator specs (admittance, velocity profile).
 
 import base
 
@@ -18,16 +16,11 @@ GeometricProps:
     pairs+=GeoPropPair[","]
 ;
 
-// Geometric props reference scenex elements directly: frames for the
-// pose/twist/wrench slots, a joint for joint-space quantities, an FT sensor
-// for measured wrenches.
 GeoPropPair:
       key=FrameProp ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
     | key="estimated-from" ":" "<" agent=[scene.Agent|FQN] ">" observer=ObserverSpec
-    // Re-take the tare on each of these: the load below the sensor changes when the robot picks
-    // something up, and the startup bias then reports that payload as an external push.
     | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
     | key="normalization" ":" normalization=AngleRange
     | key=PrimitiveDirectionProp ":" "<" quantity=[ContextQuantity|ScopedName] ">"
@@ -47,8 +40,6 @@ ObserverSpec: "{" "gain" ":" gain=FLOAT gain_unit=FrequencyUnit "," "filter" ":"
 
 AngleBound: value=ConstExpr ;
 
-// Arithmetic over literals and pi. Folded to a number by the DSL, so nothing downstream sees
-// an expression -- quantity arithmetic is a different thing and travels as an RDF operation.
 ConstExpr: head=ConstTerm tail*=AddTail ;
 AddTail: op=AddOp operand=ConstTerm ;
 ConstTerm: head=ConstFactor tail*=MulTail ;
@@ -131,14 +122,6 @@ View:
 
 BinaryView:
     DistanceBetweenView | AngleBetweenView | DistanceFromView | ProjectionOnView
-    | DifferenceOfView
-;
-
-DifferenceOfView:
-    "difference" "of"
-    "<" left=[ConstraintViewQuantity|FQN] ">"
-    "and"
-    "<" right=[ConstraintViewQuantity|FQN] ">"
 ;
 
 DistanceBetweenView:
@@ -240,8 +223,6 @@ Unit:
     DimensionlessUnit | MassUnit | CurrentUnit
 ;
 
-// Context quantities: values, poses, snapshots, and references.
-
 PositionCoordinate:
     ref=ContextRef | coords=Coordinates unit=LengthUnit
 ;
@@ -295,8 +276,6 @@ PlainContextQuantityValue:
     | DerivedScalarValue
 ;
 
-// A scalar the run computes rather than one the model states: the same binary views a
-// constraint may hold, named so another view can take them as operands.
 DerivedScalarValue:
     "=" view=BinaryView
 ;
@@ -334,11 +313,7 @@ AdmittanceSpec:
         "damping" ":" damping=ConstExpr ","
         "stiffness" ":" stiffness=ConstExpr
         "," "max-velocity" ":" max_velocity=ConstExpr (max_velocity_unit=LinearVelocityUnit)?
-        // How far the yield may travel from where the motion started. A limit, not a spring:
-        // outward motion stops at the bound, and letting go leaves the arm where it is.
         ("," "max-excursion" ":" max_excursion=ConstExpr (max_excursion_unit=LengthUnit)?)?
-        // How much force counts as none. Subtracted from the magnitude, not zeroed inside the
-        // band, so the force stays continuous as a push crosses it.
         ("," "deadband" ":" deadband=ConstExpr (deadband_unit=ForceUnit)?)?
         ("," "release-threshold" ":" release_threshold=ConstExpr (release_threshold_unit=ForceUnit)?)?
     "}"

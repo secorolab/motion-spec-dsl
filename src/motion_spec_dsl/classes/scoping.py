@@ -8,11 +8,10 @@ from __future__ import annotations
 from textx import get_location, get_model, textx_isinstance
 from textx.exceptions import TextXSemanticError
 from textx.scoping import Postponed
-from textx.scoping.providers import FQNImportURI
 
 from scene_dsl.classes.geom import Frame, IDefaultFrame
 from scene_dsl.classes.ktree import KinematicTreeTemplate
-from scene_dsl.langs import _pending_refs, build_instance_trees
+from scene_dsl.langs import InstancedRefScopeProvider
 
 
 def _fqn(obj) -> str:
@@ -45,29 +44,8 @@ def _contained(node):
                 yield child
 
 
-def _named_child(scope, segment):
-    stack = list(_contained(scope))
-    while stack:
-        node = stack.pop()
-        name = getattr(node, "name", None)
-        if name == segment:
-            return node
-        if not (isinstance(name, str) and name):
-            stack.extend(_contained(node))
-    return None
-
-
-def _lookup(scope, path):
-    for segment in path.split("."):
-        scope = _named_child(scope, segment)
-        if scope is None:
-            return None
-    return scope
-
-
 def _as_expected(target, cls):
-    """`target` if it is of the expected class; its default frame when a frame is
-    expected of a body/tree (scene-dsl IDefaultFrame); None otherwise."""
+    """TARGET if of class CLS, a body's or tree's default frame where a frame is expected, else None."""
     if target is None:
         return None
     if textx_isinstance(target, cls):
@@ -89,39 +67,18 @@ def _all_models(obj) -> list:
     return models
 
 
-class SceneRefProvider(FQNImportURI):
-    """Resolve short references from motion specs into imported executable scenes."""
+class SceneRefProvider(InstancedRefScopeProvider):
+    """Resolve short references from motion specs into imported executable scenes.
+
+    scene-dsl resolves a fully qualified or instanced-tree reference; a short name falls back to
+    the one element anywhere in the loaded scenes whose qualified name ends with it.
+    """
 
     def __call__(self, obj, attr, obj_ref):
-        target = self._resolve_instanced(obj, attr, obj_ref)
-        if target is not None:
-            return target
-
-        target = FQNImportURI.__call__(self, obj, attr, obj_ref)
-        if target is not None and not _in_template(target):
+        target = super().__call__(obj, attr, obj_ref)
+        if isinstance(target, Postponed) or (target is not None and not _in_template(target)):
             return target
         return self._resolve_suffix(obj, obj_ref)
-
-    def _resolve_instanced(self, obj, attr, obj_ref):
-        head, _, path = obj_ref.obj_name.partition(".")
-        if not path:
-            return None
-        for model in _all_models(obj):
-            for tree in getattr(model, "ktrees", []) or []:
-                if getattr(tree, "name", None) != head:
-                    continue
-                template = getattr(tree, "template", None)
-                if template is None:
-                    if getattr(tree, "bodies", None):
-                        continue
-                    return Postponed()
-                if not isinstance(template, KinematicTreeTemplate):
-                    return Postponed()
-                target = _as_expected(_lookup(template, path), obj_ref.cls)
-                if target is not None:
-                    _pending_refs(model).append((obj, attr.name, tree, target))
-                return target
-        return None
 
     def _resolve_suffix(self, obj, obj_ref):
         name = obj_ref.obj_name
@@ -141,31 +98,9 @@ class SceneRefProvider(FQNImportURI):
                     matched_nodes.append(node)
                     target = coerced
         if len(matched_nodes) > 1:
-            names = ", ".join(sorted(_fqn(node) for node in matched_nodes))
+            names = ", ".join(_fqn(node) for node in matched_nodes)
             raise TextXSemanticError(
                 f"'{name}' is ambiguous, qualify it further: {names}",
                 **get_location(obj),
             )
         return target
-
-
-def finalize_imported_scenes(model, metamodel):
-    """Build instance-tree copies in imported scene models and land recorded refs.
-
-    textX runs an imported model's processors before its references resolve, so a
-    `.scenex` reached from a `.robmot` never gets its instance trees filled -- do it
-    here, once the whole repository is resolved. Must run before any processor that
-    walks scene objects.
-    """
-    del metamodel
-    repo = getattr(model, "_tx_model_repository", None)
-    if repo is None:
-        return
-    for imported in repo.all_models:
-        trees = getattr(imported, "ktrees", None)
-        unfilled = any(
-            getattr(t, "template", None) is not None and not getattr(t, "bodies", None)
-            for t in trees or []
-        )
-        if unfilled or getattr(imported, "_instanced_refs", None):
-            build_instance_trees(imported, None)

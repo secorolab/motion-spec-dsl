@@ -5,247 +5,120 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-
-from motion_spec_dsl.classes.base import Import, NamespaceDeclare
-from motion_spec_dsl.classes.common import (
-    IHasNamespaceDeclare,
-    NamedNamespaceObject,
-    NamespaceDeclLike,
-)
-from motion_spec_dsl.classes.constraints import (
-    ConstraintAlias,
-    ConstraintSpecification,
-)
-from motion_spec_dsl.classes.context import (
-    ContextQuantity,
-    ContextRef,
-    QuantityType,
-    WorldQuantity,
-    _authored_enum,
-)
+from motion_spec_dsl.classes.common import IHasNamespaceDeclare, NamedNamespaceObject
+from motion_spec_dsl.classes.context import QuantityType, authored_enum
 from motion_spec_dsl.classes.coordinates import const_value
-
-if TYPE_CHECKING:
-    from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
 
 
 class Model:
     """Root of a parsed motion-spec model: its imports, namespaces and top-level specs."""
 
-    def __init__(
-        self,
-        imports: list[Import] | None = None,
-        namespaces: list[NamespaceDeclare] | None = None,
-        specs: list[
-            ExecutionContext | ContextSpec | ToleranceDefaults | GuardedMotion | ConstraintHandler
-        ]
-        | None = None,
-        **_,
-    ):
-        self.imports = imports or []
-        self.namespaces = namespaces or []
-        self.specs = specs or []
+    def __init__(self, imports, namespaces, specs) -> None:
+        self.imports = imports
+        self.namespaces = namespaces
+        self.specs = specs
 
 
-@dataclass
 class ExecutionContext(IHasNamespaceDeclare):
-    """Select the scene and platform on which this motion specification runs."""
+    """The scene and platform a motion specification runs on."""
 
-    parent: object
-    ns: NamespaceDeclLike
-    name: str
-    scene: object
-    platform: object
-    timestep: float
-    timestep_unit: str
-    config: str | None = None
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        self.timestep = const_value(self.timestep)
+    def __init__(self, parent, ns, name, scene, platform, config, timestep, timestep_unit) -> None:
+        super().__init__(parent=parent, ns=ns, name=name)
+        self.scene = scene
+        self.platform = platform
+        self.config = config or None
+        self.timestep = const_value(timestep)
+        self.timestep_unit = timestep_unit
 
 
-@dataclass
 class ToleranceDefaults:
-    """Model-wide satisfaction bands, keyed by the quantity kind a constraint's error carries.
+    """Model-wide satisfaction bands, resolved onto each constraint as it is emitted."""
 
-    Authoring sugar: the band is resolved onto each constraint as it is emitted, so the graph
-    still states one per constraint and nothing has to know a default existed.
-    """
-
-    parent: object
-    defaults: list[ToleranceDefault] = field(default_factory=list)
+    def __init__(self, parent, defaults) -> None:
+        self.parent = parent
+        self.defaults = defaults
 
 
-@dataclass
 class ToleranceDefault:
-    """The band every constraint over `kind` is satisfied within, unless it authors its own."""
+    """The band a constraint over `kind` is satisfied within unless it authors its own."""
 
-    parent: object
-    kind: QuantityType
-    band: ContextRef
-
-    def __post_init__(self):
-        raw_kind = str(self.kind)
-        self.kind = _authored_enum(QuantityType, raw_kind)
+    def __init__(self, parent, kind, band) -> None:
+        self.parent = parent
+        self.kind = authored_enum(QuantityType, str(kind))
+        self.band = band
 
 
-@dataclass
 class ContextSpec(IHasNamespaceDeclare):
     """A named context block declaring world and context quantities."""
 
-    parent: object
-    ns: NamespaceDeclLike
-    name: str
-    context: list[WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl]
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
+    def __init__(self, parent, ns, name, context) -> None:
+        super().__init__(parent=parent, ns=ns, name=name)
+        self.context = context
 
 
-@dataclass
 class GuardedMotion(IHasNamespaceDeclare):
-    """A guarded motion: its when/while/until constraint sections and context."""
+    """A guarded motion: its context and its when, while and until sections."""
 
-    parent: object
-    ns: NamespaceDeclLike
-    name: str
-    description: str | None
-    context: list[
-        WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl | ContextDeclReference
-    ]
-    sections: list[WhenSection | WhileSection | UntilSection]
-    detects: list[DetectDecl] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, ns=self.ns, name=self.name)
-        self.when = self._section("when")
-        self.while_ = self._section("while")
-        self.until = self._section("until")
-        assert len(self.while_.constraints) > 0, (
-            "GuardedMotion must have at least one 'while' constraint"
-        )
-
-    def _section(self, name: str) -> WhenSection | WhileSection | UntilSection:
-        for section in self.sections:
-            if section.name == name:
-                return section
-        raise ValueError(f"GuardedMotion '{self.name}' is missing required {name.upper()} section")
+    def __init__(self, parent, ns, name, description, context, detects, sections) -> None:
+        super().__init__(parent=parent, ns=ns, name=name)
+        self.description = description or None
+        self.context = context
+        self.detects = detects
+        self.sections = sections
+        by_kind = {section.kind: section for section in sections}
+        self.when = by_kind.get("when")
+        self.while_ = by_kind.get("while")
+        self.until = by_kind.get("until")
 
 
-@dataclass
 class RosActionDecl(NamedNamespaceObject):
-    """A declared ROS action: the channel goals are sent on, the action it carries, and where in
-    a result the pose a detection reports is found."""
+    """A ROS action a motion sends goals on, and where a result holds a detection's pose."""
 
-    parent: object
-    name: str
-    channel_name: str
-    type_name: str
-    # `<field> from <container>`: the repeated field each detection carries its hypotheses in,
-    # and the field of one hypothesis that holds the pose. What the result offers besides these
-    # -- which detections it holds, which target each is, which frame it arrived in -- the
-    # message type answers on its own.
-    pose_field: str = ""
-    pose_container: str = ""
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def pose_path(self) -> str:
-        """The dotted path from one detection to the pose it reports, empty when unstated."""
-        if not self.pose_field:
-            return ""
-        return f"{self.pose_container}.{self.pose_field}"
+    def __init__(self, parent, name, channel_name, type_name, pose_field, pose_container) -> None:
+        super().__init__(parent=parent, name=name)
+        self.channel_name = channel_name
+        self.type_name = type_name
+        self.pose_field = pose_field
+        self.pose_container = pose_container
+        self.pose_path = f"{pose_container}.{pose_field}" if pose_field else ""
 
 
-@dataclass
 class SceneObjRef:
-    """A reference to a scene object, as a detect target names it."""
+    """A scene object a detect act targets."""
 
-    parent: object
-    ref: object
+    def __init__(self, parent, ref) -> None:
+        self.parent = parent
+        self.ref = ref
 
 
-@dataclass(eq=False)
 class DetectDecl(NamedNamespaceObject):
     """A detect act: the scene objects a motion locates on entry, and the action it asks."""
 
-    parent: object
-    name: str
-    action: object
-    targets: list[SceneObjRef] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def status_uri(self) -> str:
-        """The goal-status slot the act's outcome lands in."""
-        return f"{self.uri}.status"
+    def __init__(self, parent, name, targets, action) -> None:
+        super().__init__(parent=parent, name=name)
+        self.targets = targets
+        self.action = action
 
 
-@dataclass
 class QuantityContextDecl(NamedNamespaceObject):
-    """A context declaration of quantities (world or context)."""
+    """A `world`, `pre`, `spec` or `post` block of quantities; its kind is its name."""
 
-    parent: object
-    name: str = ""
-    declaration: list[ContextQuantity | WorldQuantity] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    def __init__(self, parent, name, declaration) -> None:
+        super().__init__(parent=parent, name=name)
+        self.declaration = declaration
 
 
-class WorldContextDecl(QuantityContextDecl):
-    pass
-
-
-class PreContextDecl(QuantityContextDecl):
-    pass
-
-
-class SpecContextDecl(QuantityContextDecl):
-    pass
-
-
-class PostContextDecl(QuantityContextDecl):
-    pass
-
-
-@dataclass
 class ContextDeclReference:
-    parent: object
-    ref: QuantityContextDecl
+    def __init__(self, parent, ref) -> None:
+        self.parent = parent
+        self.ref = ref
 
 
-@dataclass
 class ConstraintSection(NamedNamespaceObject):
-    """A when/while/until section holding constraint items and its combination logic."""
+    """A `when`, `while` or `until` section and how its constraints combine."""
 
-    kind = ""
-
-    parent: object
-    constraints: list[ConstraintSpecification | ConstraintAlias] = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.kind)
-
-
-@dataclass
-class WhenSection(ConstraintSection):
-    kind = "when"
-    logic: str | None = None
-
-
-class WhileSection(ConstraintSection):
-    kind = "while"
-
-
-@dataclass
-class UntilSection(ConstraintSection):
-    kind = "until"
-    logic: str | None = None
+    def __init__(self, parent, kind, logic, constraints) -> None:
+        super().__init__(parent=parent, name=kind)
+        self.kind = kind
+        self.logic = logic or None
+        self.constraints = constraints

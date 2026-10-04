@@ -13,9 +13,17 @@ from rdf_utils.models.vocab import URI_DISTRIB_PRED_FROM_DISTRIB, URI_DISTRIB_TY
 from textx.exceptions import TextXSemanticError
 
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
-from motion_spec_dsl.rdf_parser.vocab import ALGO_EXT, CSTR_EXT, GEOM_OP, GEOM_PATH, QUDT_SCHEMA, TIME
-from support import BASE, BASE_TEXT, HOLD, MODELS, SNAPSHOT, SPEC, TWIST
+from motion_spec_dsl.rdf.dataset import build_dataset
+from motion_spec_dsl.rdf_parser.vocab import (
+    ALGO_EXT,
+    CSTR_EXT,
+    GEOM_OP,
+    GEOM_OP_EXT,
+    GEOM_PATH,
+    QUDT_SCHEMA,
+    TIME,
+)
+from support import BASE, BASE_TEXT, CTRL, HOLD, MODELS, SNAPSHOT, SPEC, TWIST
 
 PATH_INPUTS = (
     ",\n        direction up { as-seen-by: <kinova.base_link.base_link_origin> } = (0, 0, 1)"
@@ -68,7 +76,7 @@ def test_a_path_kind_is_typed_and_tracked(path, type_) -> None:
         )
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [node] = graph.subjects(RDF.type, type_)
     assert (node, RDF.type, GEOM_PATH.Path) in graph
@@ -87,14 +95,14 @@ def test_a_direction_between_two_frames_normalizes_the_pose_relating_them() -> N
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [op] = graph.subjects(RDF.type, GEOM_OP.PoseToDirection)
     assert str(graph.value(op, GEOM_OP.pose)).endswith("/pose-ee-base")
     assert str(graph.value(op, GEOM_OP.direction)).endswith("/to-ee")
 
 
-def test_a_difference_of_two_derived_scalars_subtracts_them() -> None:
+def test_a_controlled_difference_of_derived_scalars_runs_along_their_gradients_difference() -> None:
     source = (
         BASE_TEXT.replace(
             TWIST,
@@ -114,20 +122,28 @@ def test_a_difference_of_two_derived_scalars_subtracts_them() -> None:
         )
         .replace(
             HOLD,
-            f"{HOLD},\n        gap: keeping difference of <shared.spec.above-floor> and"
-            " <shared.spec.above-top> greater than 0.05 m",
+            f"{HOLD},\n        gap: keeping (<shared.spec.above-floor> - <shared.spec.above-top>)"
+            " greater than 0.05 m",
             1,
         )
+        .replace(CTRL, f"{CTRL},\n        pid ctrl-gap {{ constraint: <home.gap>, Kp: 1 }}", 1)
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [subtraction] = [
         node
         for node in graph.subjects(RDF.type, ALGO_EXT.Subtraction)
-        if "compute-difference-gap" in str(node)
+        if (node, GEOM_OP_EXT.gradient, None) in graph
     ]
     assert graph.value(subtraction, ALGO_EXT.minuend) != graph.value(subtraction, ALGO_EXT.subtrahend)
+    # The unit gradient is the gradients' difference -- one plus the other negated -- over its norm.
+    unit = graph.value(subtraction, GEOM_OP_EXT.gradient)
+    [normalize] = graph.subjects(ALGO_EXT.out, unit)
+    assert graph.value(normalize, ALGO_EXT.divisor) == graph.value(subtraction, GEOM_OP_EXT.norm)
+    [combine] = graph.subjects(ALGO_EXT.out, graph.value(normalize, ALGO_EXT.dividend))
+    assert (combine, RDF.type, ALGO_EXT.Addition) in graph
+    assert len(set(graph.objects(combine, ALGO_EXT["in"]))) == 2
 
 
 def test_a_post_declaration_is_in_scope_like_spec() -> None:
@@ -137,7 +153,7 @@ def test_a_post_declaration_is_in_scope_like_spec() -> None:
         HOLD, f"{HOLD},\n        lift: keeping <shared.world.pose-ee-base>.position.z greater than <post.reached>", 1
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [reached] = [s for s in graph.subjects(RDF.type, QUDT_SCHEMA.Quantity) if str(s).endswith("/reached")]
     assert float(graph.value(reached, QUDT_SCHEMA.value)) == 0.02
@@ -148,7 +164,7 @@ def test_elapsed_since_observed_begins_at_the_quantitys_phenomenon_time() -> Non
         HOLD, f"{HOLD},\n        seen: elapsed since <shared.world.pose-ee-base> observed less than 1.0 s", 1
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [constraint] = graph.subjects(RDF.type, CSTR_EXT.TimeConstraint)
     instant = graph.value(graph.value(constraint, TIME.hasTime), TIME.hasBeginning)
@@ -180,7 +196,7 @@ def test_a_sampled_scalar_draws_from_a_one_dimensional_distribution(tmp_path: Pa
     robmot = tmp_path / "sampled.robmot"
     robmot.write_text(source)
 
-    graph = MotionSpecDatasetBuilder(motion_spec_metamodel().model_from_file(str(robmot))).build()[0].default_graph
+    graph = build_dataset(motion_spec_metamodel().model_from_file(str(robmot)))[0].default_graph
     [lift] = graph.subjects(RDF.type, URI_DISTRIB_TYPE_SAMPLED_QUANTITY)
     assert str(graph.value(lift, URI_DISTRIB_PRED_FROM_DISTRIB)).endswith("lift-draw")
     assert graph.value(lift, QUDT_SCHEMA.value) is None

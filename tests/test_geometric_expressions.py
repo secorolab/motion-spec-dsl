@@ -9,7 +9,7 @@ import pytest
 from rdflib.namespace import RDF
 
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import (
     GEOM_OP,
     GEOM_OP_EXT,
@@ -62,7 +62,7 @@ ORIENTATION = "equal to <spec.home-pose>.orientation within <shared.spec.align-b
 def test_a_point_target_drives_the_rotation_vector_and_a_cone_the_gradient(relation, pointwise) -> None:
     source = HELD.replace("CONSTRAINT", f"{ALIGN} {relation}", 1).replace("CONTROLLER", PID, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     rotation_vectors = list(graph.subjects(RDF.type, GEOM_OP_EXT.RotationVectorFromDirections))
     gradients = list(graph.subjects(RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))
@@ -84,7 +84,7 @@ def test_a_bound_and_a_cone_at_one_value_do_not_share_a_chain() -> None:
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     assert len(list(graph.subjects(RDF.type, GEOM_OP_EXT.RotationVectorFromDirections))) == 1
     assert len(list(graph.subjects(RDF.type, GEOM_OP_EXT.AngleGradientFromDirections))) == 1
@@ -100,7 +100,7 @@ def test_plane_angle_gradient_keeps_the_authored_operand_order() -> None:
         1,
     ).replace("CONTROLLER", PID, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [angle] = graph.subjects(RDF.type, GEOM_OP.PlanarAngleFromDirections)
     [gradient] = graph.subjects(RDF.type, GEOM_OP_EXT.AngleGradientFromDirections)
@@ -118,7 +118,7 @@ def test_line_line_projection_keeps_the_authored_operand_order() -> None:
         1,
     ).replace("CONTROLLER", PID, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [op] = graph.subjects(RDF.type, GEOM_OP_EXT.LineOnLineProjection)
     assert str(graph.value(op, GEOM_OP.in1)).endswith("rail-a-axis")
@@ -153,7 +153,7 @@ def test_an_impedance_commands_the_wrench_its_subspace_takes(view, relation, mom
         "CONTROLLER", IMPEDANCE, 1
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     assert len(list(graph.subjects(RDF.type, RBDYN_OP_EXT.WrenchFromDirectionAndMoment))) == moments
     assert len(list(graph.subjects(RDF.type, RBDYN_OP.AddWrench))) == folds
@@ -186,7 +186,7 @@ def test_a_geometric_expression_commands_along_its_own_gradient(
     """The expression has no named axis, so its wrench reuses the operator's runtime gradient."""
     source = HELD.replace("CONSTRAINT", constraint, 1).replace("CONTROLLER", controller, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [op] = graph.subjects(RDF.type, operator)
     [command] = graph.subjects(RDF.type, wrench)
@@ -200,7 +200,7 @@ def test_a_norm_across_a_direction_keeps_the_vectors_kind() -> None:
         1,
     ).replace(",\n        CONTROLLER", "", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [op] = graph.subjects(RDF.type, GEOM_OP_EXT.VectorNorm)
     assert str(graph.value(op, GEOM_OP.direction)).endswith("base-up")

@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 from rdflib.namespace import RDF
+from scene_dsl.langs import build_instance_trees
 from textx import metamodel_from_file
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.scoping import SceneRefProvider, finalize_imported_scenes
+from motion_spec_dsl.classes.scoping import SceneRefProvider
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import GEOM_PATH
 from support import BASE, BASE_TEXT, HOLD, MODELS, SNAPSHOT
 
@@ -54,7 +55,7 @@ def test_a_scene_reference_resolves_to_one_visible_element(source, message) -> N
     """Only the scene reference provider is under test, so the grammar loads without the rest."""
     metamodel = metamodel_from_file(GRAMMAR, autokwd=True)
     metamodel.register_scope_providers({"*.*": SceneRefProvider()})
-    metamodel.register_model_processor(finalize_imported_scenes)
+    metamodel.register_model_processor(build_instance_trees)
     with pytest.raises(TextXSemanticError, match=message):
         metamodel.model_from_str(source, file_name=str(MODELS / "probe.robmot"))
 
@@ -98,6 +99,6 @@ constraint-handler (ns=app) handler-away {
 }
 """
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     assert len(set(graph.subjects(RDF.type, GEOM_PATH.LinearPath))) == 2

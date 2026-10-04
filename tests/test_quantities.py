@@ -30,7 +30,7 @@ from scene_dsl.classes.geom import (
 from scene_dsl.rdf.geom import add_orientation_coord
 
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import (
     ACT,
     CSTR,
@@ -63,7 +63,7 @@ from support import BASE, BASE_TEXT, HOLD, SNAPSHOT, SPEC, TWIST, UNTIL
 def test_a_quantity_keeps_the_unit_it_was_written_in(declaration, name, value, unit) -> None:
     source = BASE_TEXT.replace(SPEC, f"{SPEC},\n        {declaration}", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [node] = [s for s in graph.subjects(RDF.type, QUDT_SCHEMA.Quantity) if str(s).endswith(f"/{name}")]
     assert float(graph.value(node, QUDT_SCHEMA.value)) == pytest.approx(value)
@@ -101,7 +101,7 @@ def test_each_part_of_a_compound_keeps_its_own_unit(declaration, name, units) ->
     """10 cm must not be labelled 10 metres, even when one axis references another quantity."""
     source = BASE_TEXT.replace(SPEC, f"{SPEC},\n        {declaration}", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     for part, unit in units.items():
         node = next(s for s in graph.subjects() if str(s).endswith(f"{name}.{part}"))
@@ -112,7 +112,7 @@ def test_an_elapsed_threshold_keeps_the_milliseconds_it_was_written_in() -> None
     """owl-time has no unit below the second, so the magnitude and unit are qudt's."""
     source = BASE_TEXT.replace(HOLD, f"{HOLD},\n        wait: elapsed less than 10.0 ms", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     node = graph.value(next(graph.subjects(RDF.type, CSTR_EXT.TimeConstraint)), CSTR.threshold)
     assert (node, RDF.type, TIME.Duration) in graph
@@ -123,7 +123,7 @@ def test_an_elapsed_threshold_keeps_the_milliseconds_it_was_written_in() -> None
 def test_a_free_vector_is_a_dimensionless_vector_of_its_own_kind() -> None:
     source = BASE_TEXT.replace(SPEC, f"{SPEC},\n        free-vector weights = (1.0, 0.5, 0.0) 1", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [node] = [s for s in graph.subjects(RDF.type, QUDT_SCHEMA.Quantity) if str(s).endswith("/weights")]
     assert graph.value(node, QUDT_SCHEMA.hasQuantityKind) == QKIND.FreeVector
@@ -165,7 +165,7 @@ def test_an_orientation_is_typed_as_scene_dsl_types_it(block, scene_spec) -> Non
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
     coord = next(
         s
         for s in graph.subjects(RDF.type, GEOM_COORD.OrientationCoordinate)
@@ -206,7 +206,7 @@ def test_relative_orientation_composes_instead_of_decomposing() -> None:
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [composition] = graph.subjects(RDF.type, GEOM_OP_EXT.ComposeOrientation)
     orientation = graph.value(composition, GEOM_OP["composite"])
@@ -253,7 +253,7 @@ def test_a_joint_quantity_is_typed_measured_and_of_its_joint(keyword, spec, rela
         .replace(UNTIL, f"{UNTIL},\n        stopped: <shared.world.finger> {relation}", 1)
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [node] = graph.subjects(RDF.type, type_)
     assert (node, RDF.type, KC_STAT.JointReference) in graph
@@ -267,7 +267,7 @@ def test_an_authored_band_wins_over_the_tolerance_default() -> None:
         "guarded-motion", "tolerances { linear-velocity: 0.02 m/s }\n\nguarded-motion", 1
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     bands = {
         str(constraint).rsplit("/", 1)[-1]: float(graph.value(band, QUDT_SCHEMA.value))

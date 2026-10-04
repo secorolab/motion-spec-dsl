@@ -68,13 +68,11 @@ from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 class ROS(DefinedNamespace):
     Action: URIRef
     Topic: URIRef
-    Action: URIRef
     _extras = ["channel-name", "type-name", "field-path"]
     _NS = Namespace("https://index.ros.org/p/")
 
 
-# comp-rob2b's relation/coordinate split, per geometry domain
-# (coordinates.ttl:8-73): (<Domain>Reference, <Domain>Coordinate, of-<domain>, relation class)
+# comp-rob2b's relation/coordinate split: (<Domain>Reference, <Domain>Coordinate, of-<domain>, relation).
 GEOM_DOMAIN_SPLIT: dict[str, tuple[URIRef, URIRef, URIRef, URIRef]] = {
     "position": (
         URI_GEOM_TYPE_POSITION_REF,
@@ -202,20 +200,16 @@ CSTR_TYPE_NAME: dict[Any, str] = {
     QuantityType.PlaneAngle: QuantityType.Angle,
 }
 
-# Domain-constraint types whose grounded IRI is not `cstr:{Type}Constraint`:
-# a distance is the comp-rob2b LinearDistanceConstraint; an angle has no
-# comp-rob2b equivalent and lives in the secorolab extension. (namespace, local-name)
+# Constraint types not named `cstr:{Type}Constraint`: a length or distance is comp-rob2b's
+# LinearDistanceConstraint, an angle the secorolab extension's.
 CONSTRAINT_TYPE_OVERRIDE: dict[Any, tuple[Any, str]] = {
-    # A length constrained against a bound is comp-rob2b's linear-distance constraint, whether
-    # the model calls the value a length or a distance.
     QuantityType.Length: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Distance: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Angle: (CSTR_EXT, "AngleConstraint"),
 }
 
-# Quantity kinds are individuals, not classes; these namespaces distinguish them
-# from structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) during emission.
-_QKIND_PREFIXES = (str(QUDT_QKIND), str(QKIND_EXT))
+# Quantity kinds are individuals, not classes, unlike structural kinds such as geom-rel:Pose.
+QKIND_PREFIXES = (str(QUDT_QKIND), str(QKIND_EXT))
 
 CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
     QuantityType.Pose: WorldQuantityType.Pose,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 // SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
 // Author: Vamsi Kalagaturu
-// Guarded-motion and shared context declarations.
 
 import base
 import context
@@ -9,10 +8,9 @@ import path
 
 ContextSpec:
     "context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
-        context*=MotionContextDecl[","]
+        context*=QuantityContextDecl[","]
     "}"
 ;
-
 
 GuardedMotion:
     "guarded-motion" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
@@ -37,14 +35,12 @@ DetectDecl:
 SceneObjRef: "<" ref=[scene.Frame|FQN] ">" ;
 
 ConstraintSection:
-    WhenSection | WhileSection | UntilSection
+      kind="when" (logic=SectionLogic)? "{" constraints*=ConstraintItem[","]? "}"
+    | kind="while" "{" constraints*=ConstraintItem[","]? "}"
+    | kind="until" (logic=SectionLogic)? "{" constraints*=UntilItem[","]? "}"
 ;
 
-WhenSection:  "when"  (logic=WhenLogic)? "{" constraints*=ConstraintItem[","]? "}" ;
-WhileSection: "while" "{" constraints*=ConstraintItem[","]? "}" ;
-UntilSection: "until" (logic=UntilLogic)? "{" constraints*=UntilItem[","]? "}" ;
-WhenLogic:    "any" | "all" ;
-UntilLogic:   "any" | "all" ;
+SectionLogic: "any" | "all" ;
 
 UntilItem: ConstraintGroup | UntilAtom ;
 UntilAtom: GoalStatusConstraint | ConstraintItem ;
@@ -56,18 +52,14 @@ GoalStatusConstraint:
 GoalStatusToken: "succeeded" | "aborted" | "canceled" ;
 
 ConstraintGroup:
-    name=IRI_TRUNK logic=UntilLogic "{" constraints+=UntilAtom[","] "}"
+    name=IRI_TRUNK logic=SectionLogic "{" constraints+=UntilAtom[","] "}"
 ;
 
 ConstraintItem: ConstraintSpecification | ConstraintAlias ;
 ConstraintAlias: (name=IRI_TRUNK ":")? "<" ref=ConstraintRef ">" ;
 
-MotionContextDecl:
-    QuantityContextDecl
-;
-
 MotionContextItem:
-    MotionContextDecl | ContextDeclReference
+    QuantityContextDecl | ContextDeclReference
 ;
 
 ContextDeclReference:
@@ -75,24 +67,11 @@ ContextDeclReference:
 ;
 
 QuantityContextDecl:
-    WorldContextDecl | PreContextDecl | SpecContextDecl | PostContextDecl
+      name="world" "{" declaration+=WorldQuantityItem[","] "}"
+    | name=ContextDeclName "{" declaration+=ContextQuantityItem[","] "}"
 ;
 
-WorldContextDecl:
-    name="world" "{" declaration+=WorldQuantityItem[","] "}"
-;
-
-PreContextDecl:
-    name="pre" "{" declaration+=ContextQuantityItem[","] "}"
-;
-
-SpecContextDecl:
-    name="spec" "{" declaration+=ContextQuantityItem[","] "}"
-;
-
-PostContextDecl:
-    name="post" "{" declaration+=ContextQuantityItem[","] "}"
-;
+ContextDeclName: "pre" | "spec" | "post" ;
 
 WorldQuantityItem:
     WorldQuantityAlias | WorldQuantity
@@ -145,5 +124,4 @@ OutsideConstraint:
 
 ConstraintRef: target=[ConstraintTarget|FQN] ;
 
-// A monitor or controller may name a single constraint, or an until group monitored as one.
 ConstraintTarget: ConstraintSpecification | ConstraintGroup | ConstraintAlias | GoalStatusConstraint ;

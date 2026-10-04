@@ -5,149 +5,91 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from enum import StrEnum
 
 from textx import get_parent_of_type
 
 from motion_spec_dsl.classes.common import NamedNamespaceObject
 from motion_spec_dsl.classes.context import (
-    ContextQuantity,
-    ContextRef,
+    AngleBetweenView,
+    DistanceBetweenView,
+    DistanceFromView,
+    ProjectionOnView,
     QuantityType,
-    View,
-    _resolved_context_quantity,
 )
 
-if TYPE_CHECKING:
-    from motion_spec_dsl.classes.motion_spec import GuardedMotion
 
-
-@dataclass(eq=False)
 class ConstraintSpecification(NamedNamespaceObject):
-    """A single constraint: a view (LHS) compared against a reference by an expression,
-    satisfied within a band.
+    """A view compared against a reference, satisfied within its own band or the kind's default."""
 
-    The band belongs to the constraint rather than to the comparison: an equality needs one
-    because its target is a single point, and a one-sided gate needs one to say how close to
-    its threshold counts as arrived. Unstated, it falls back to the model-wide default for
-    the kind the error carries.
-    """
-
-    parent: object
-    name: str
-    view: View | None = None
-    expr: (
-        EqualityConstraint
-        | GreaterThanConstraint
-        | LessThanConstraint
-        | BilateralConstraint
-        | OutsideConstraint
-        | None
-    ) = None
-    tolerance: ContextRef | None = None
-    disabled: bool = False
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    def __init__(self, parent, disabled, name, view, expr, tolerance) -> None:
+        super().__init__(parent=parent, name=name)
+        self.disabled = disabled
+        self.view = view
+        self.expr = expr
+        self.tolerance = tolerance
 
 
-@dataclass(eq=False)
 class GoalStatusConstraint(NamedNamespaceObject):
-    """An until item met when a detect act's goal reaches the status it names.
+    """An until item met when a detect act's goal reaches a status; it has no view or band."""
 
-    It compares no world quantity, so it carries neither a view nor a band: the status is a
-    fact of the goal, not a measurement.
-    """
-
-    parent: object
-    name: str
-    act: object
-    status: str = ""
-    view: None = None
-    expr: None = None
-    tolerance: None = None
-    disabled: bool = False
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def status_constant(self) -> str:
-        """The action_msgs GoalStatus constant this compares against."""
-        return f"STATUS_{self.status.upper()}"
+    def __init__(self, parent, name, act, status) -> None:
+        super().__init__(parent=parent, name=name)
+        self.act = act
+        self.status = status
+        self.status_constant = f"STATUS_{status.upper()}"
+        self.disabled = False
+        self.view = None
+        self.expr = None
+        self.tolerance = None
 
 
-@dataclass(eq=False)
 class ConstraintGroup(NamedNamespaceObject):
-    """A named set of until constraints evaluated as one condition, so a motion can carry
-    several independent transitions -- each group is monitored on its own.
-    """
+    """Until constraints monitored as one condition, so a motion can have several transitions."""
 
-    parent: object
-    name: str
-    logic: str = "all"
-    constraints: list = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    def __init__(self, parent, name, logic, constraints) -> None:
+        super().__init__(parent=parent, name=name)
+        self.logic = logic
+        self.constraints = constraints
 
 
-@dataclass
 class ConstraintRef:
-    """A reference to a constraint declared within a motion."""
+    """A reference to a constraint declared within a motion, through any aliases."""
 
-    target: ConstraintSpecification | ConstraintGroup | ConstraintAlias
-    parent: object | None = field(default=None, repr=False, compare=False)
+    def __init__(self, parent, target) -> None:
+        self.parent = parent
+        self.target = target
+        # Only grammar attributes here: textX may initialize the aliases after this ref.
+        constraint = target
+        while isinstance(constraint, ConstraintAlias):
+            constraint = constraint.ref.target
+        self.constraint = constraint
+        self.name = target.name or constraint.name
 
     @property
-    def motion(self) -> GuardedMotion:
+    def motion(self):
         motion = get_parent_of_type("GuardedMotion", self.target)
         assert motion is not None
         return motion
 
-    @property
-    def constraint(self) -> ConstraintSpecification | ConstraintGroup:
-        return (
-            self.target.ref.constraint if isinstance(self.target, ConstraintAlias) else self.target
-        )
-
-    @property
-    def motion_name(self) -> str:
-        return self.motion.name
-
-    @property
-    def name(self) -> str:
-        return self.target.name
-
     def __str__(self) -> str:
-        return f"{self.motion.name}.{self.target.name}"
+        return f"{self.motion.name}.{self.name}"
 
 
-@dataclass
 class ConstraintAlias(NamedNamespaceObject):
-    """Local name in a section that references a constraint from another motion."""
+    """A local name in a section for a constraint of another motion."""
 
-    parent: object
-    name: str
-    ref: ConstraintRef
-
-    def __post_init__(self):
-        if not self.name:
-            self.name = self.ref.constraint.name
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def constraint(self) -> ConstraintSpecification:
-        return self.ref.constraint
+    def __init__(self, parent, name, ref) -> None:
+        constraint = ref.target
+        while isinstance(constraint, ConstraintAlias):
+            constraint = constraint.ref.target
+        super().__init__(parent=parent, name=name or constraint.name)
+        self.ref = ref
+        self.constraint = constraint
 
 
-def _flatten_constraint_items(items) -> list:
-    """Expand until groups into their member items; everything else passes through.
-
-    Callers that want the individual constraints -- validation, view emission, evaluators --
-    should not have to know whether a motion grouped them.
-    """
+def flatten_constraint_items(items) -> list:
+    """ITEMS with until groups expanded into their members."""
     out = []
     for item in items:
         if isinstance(item, ConstraintGroup):
@@ -157,139 +99,80 @@ def _flatten_constraint_items(items) -> list:
     return out
 
 
-def _resolved_spec(item: ConstraintSpecification | ConstraintAlias) -> ConstraintSpecification:
-    """Return the underlying ConstraintSpecification, resolving aliases."""
-    return item.ref.constraint if isinstance(item, ConstraintAlias) else item
+class ViewForm(StrEnum):
+    DistanceBetween = "distance-between"
+    DistanceFrom = "distance-from"
+    ProjectionOn = "projection-on"
+    Alignment = "alignment"
+    IncidentAngle = "incident-angle"
+    PlaneAngle = "plane-angle"
+    Norm = "norm"
 
 
-def _binary_view(constraint: ConstraintSpecification):
-    """The constraint's view as its `BinaryView` instance (any of the 4 binary forms), or None."""
-    return getattr(constraint.view, "binary", None)
+BINARY_VIEW_FORMS = {
+    DistanceBetweenView: ViewForm.DistanceBetween,
+    DistanceFromView: ViewForm.DistanceFrom,
+    ProjectionOnView: ViewForm.ProjectionOn,
+}
+
+ANGLE_VIEW_FORMS = {ViewForm.Alignment, ViewForm.IncidentAngle, ViewForm.PlaneAngle}
 
 
-def _binary_view_kind(constraint: ConstraintSpecification) -> str | None:
-    """The grammar rule name of the constraint's binary view, or None."""
-    binary = _binary_view(constraint)
-    return type(binary).__name__ if binary is not None else None
+def view_form(constraint) -> ViewForm | None:
+    """The form of a constraint's view; None for a plain quantity or expression view.
 
-
-def _is_distance_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `distance between A and B` form."""
-    return _binary_view_kind(constraint) == "DistanceBetweenView"
-
-
-def _is_difference_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `difference of A and B` form."""
-    return _binary_view_kind(constraint) == "DifferenceOfView"
-
-
-def _is_norm_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `norm of <q>.<subspace> [across <d>]` form."""
-    return getattr(constraint.view, "norm", None) is not None
-
-
-def _is_angle_between_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is any `angle between A and B` form."""
-    return _binary_view_kind(constraint) == "AngleBetweenView"
-
-
-def _is_geometric_distance_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `distance of A from B` (Table IIa) form."""
-    return _binary_view_kind(constraint) == "DistanceFromView"
-
-
-def _is_projection_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is a `projection of A on B` (Table IIa) form."""
-    return _binary_view_kind(constraint) == "ProjectionOnView"
-
-
-def _is_plane_operand(operand: ContextQuantity) -> bool:
-    """Whether an `angle between` operand is a plane rather than a versor direction."""
-    return _resolved_context_quantity(operand).type == QuantityType.Plane
-
-
-def _is_alignment_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the versor-versor `angle between A and B` form. Any new
-    call site must decide explicitly whether it wants this (versor-versor only) or the broader
-    `_is_angle_between_view`.
+    An angle from a plane to a direction has no form: validation rejects that operand order.
     """
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return not _is_plane_operand(binary.left) and not _is_plane_operand(binary.right)
+    view = constraint.view
+    if view is None:
+        return None
+    if view.norm is not None:
+        return ViewForm.Norm
+    binary = view.binary
+    if not isinstance(binary, AngleBetweenView):
+        return BINARY_VIEW_FORMS.get(type(binary))
+    left_plane = binary.left.type == QuantityType.Plane
+    right_plane = binary.right.type == QuantityType.Plane
+    if left_plane and right_plane:
+        return ViewForm.PlaneAngle
+    if right_plane:
+        return ViewForm.IncidentAngle
+    if not left_plane:
+        return ViewForm.Alignment
+    return None
 
 
-def _is_incident_angle_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the versor-plane `angle between A and B` form."""
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return not _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
-
-
-def _is_plane_angle_view(constraint: ConstraintSpecification) -> bool:
-    """Whether the constraint's view is the plane-plane `angle between A and B` form."""
-    if not _is_angle_between_view(constraint):
-        return False
-    binary = _binary_view(constraint)
-    return _is_plane_operand(binary.left) and _is_plane_operand(binary.right)
-
-
-@dataclass
 class EqualityConstraint:
-    """An equality constraint against a reference value."""
-
-    reference: ContextRef
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        assert self.reference is not None
+    def __init__(self, parent, reference) -> None:
+        self.parent = parent
+        self.reference = reference
 
 
-@dataclass
 class GreaterThanConstraint:
-    """A greater-than comparison against a threshold."""
-
-    threshold: ContextRef
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        assert self.threshold is not None
+    def __init__(self, parent, threshold) -> None:
+        self.parent = parent
+        self.threshold = threshold
 
 
-@dataclass
 class LessThanConstraint:
-    """A less-than comparison against a threshold."""
-
-    threshold: ContextRef
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        assert self.threshold is not None
+    def __init__(self, parent, threshold) -> None:
+        self.parent = parent
+        self.threshold = threshold
 
 
-@dataclass
 class BilateralConstraint:
-    """A within-bounds (lower..upper) constraint."""
+    """Satisfied within [lower, upper]."""
 
-    lower: ContextRef
-    upper: ContextRef
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        assert self.lower is not None
-        assert self.upper is not None
+    def __init__(self, parent, lower, upper) -> None:
+        self.parent = parent
+        self.lower = lower
+        self.upper = upper
 
 
-@dataclass
 class OutsideConstraint:
-    """Satisfied when the quantity is outside [lower, upper] (the complement of
-    BilateralConstraint's in-band). Used to detect a value leaving a ±band."""
+    """Satisfied outside [lower, upper]: a value leaving a band."""
 
-    lower: ContextRef
-    upper: ContextRef
-    parent: object | None = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self):
-        assert self.lower is not None
-        assert self.upper is not None
+    def __init__(self, parent, lower, upper) -> None:
+        self.parent = parent
+        self.lower = lower
+        self.upper = upper

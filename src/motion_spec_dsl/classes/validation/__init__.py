@@ -6,36 +6,26 @@
 from __future__ import annotations
 
 from motion_spec_dsl.classes.motion_spec import Model
-from motion_spec_dsl.classes.validation.common import (
-    motion_constraint_items,
-    motion_constraints,
-)
 from motion_spec_dsl.classes.validation.constraints import (
-    validate_alignment_views,
+    validate_admittance,
+    validate_alignment_targets,
     validate_bare_axis_selectors,
     validate_context_geometry,
-    validate_direction_cosine_components,
-    validate_euler_components,
+    validate_coordinate_components,
+    validate_direction_operands,
     validate_geometric_distance_views,
-    validate_line_plane_primitives,
+    validate_motion_sections,
     validate_motion_world_scope,
     validate_path_following,
-    validate_quaternion_components,
+    validate_resolved_views,
     validate_scalar_order_relations,
     validate_static_path_geometry,
-    validate_tolerance_defaults,
-    validate_two_subspace_coordinates,
     validate_unique_constraint_names,
     validate_unit_kinds,
     validate_view_operands,
     validate_world_quantities,
 )
-from motion_spec_dsl.classes.validation.detects import (
-    validate_camera_providers,
-    validate_detect_targets,
-    validate_goal_status_acts,
-    validate_subscription_targets,
-)
+from motion_spec_dsl.classes.validation.detects import validate_detects
 from motion_spec_dsl.classes.validation.execution_context import (
     validate_config_poses,
     validate_device_bindings,
@@ -59,49 +49,37 @@ from motion_spec_dsl.classes.validation.names import validate_namespace_uris
 from motion_spec_dsl.classes.validation.perturbations import validate_perturbations
 from motion_spec_dsl.classes.validation.ros import validate_ros
 
-__all__ = [
-    "motion_constraint_items",
-    "motion_constraints",
-    "validate_model",
-]
-
 
 def validate_model(model: Model, metamodel=None) -> None:
-    """Run every semantic validator for `model` (the textx model processor); raises on the
-    first violation.
-    """
+    """Run every semantic validator on MODEL, the textX model processor; raise on the first error."""
     del metamodel
     validate_namespace_uris(model)
+    validate_motion_sections(model)
     validate_unique_constraint_names(model)
     validate_static_path_geometry(model)
     validate_path_following(model)
-    validate_euler_components(model)
-    validate_quaternion_components(model)
-    validate_direction_cosine_components(model)
-    validate_two_subspace_coordinates(model)
+    validate_coordinate_components(model)
     validate_world_quantities(model)
     validate_context_geometry(model)
     validate_unit_kinds(model)
+    validate_admittance(model)
     validate_bare_axis_selectors(model)
     validate_expression_dimensions(model)
     validate_scalar_order_relations(model)
-    validate_alignment_views(model)
-    validate_line_plane_primitives(model)
+    validate_direction_operands(model)
+    validate_alignment_targets(model)
     validate_geometric_distance_views(model)
     validate_view_operands(model)
     validate_motion_world_scope(model)
-    validate_tolerance_defaults(model)
-    validate_detect_targets(model)
-    validate_subscription_targets(model)
-    validate_camera_providers(model)
-    validate_goal_status_acts(model)
+    validate_resolved_views(model)
+    validate_detects(model)
     validate_monitor_state_blocks(model)
     validate_handler_constraint_assembly(model)
     validate_handler_requirements(model)
     validate_controller_solver_assembly(model)
     validate_kinematics_solvers(model)
-    validate_controller_commands(model)
     validate_commanded_quantity_is_measured(model)
+    validate_controller_commands(model)
     validate_controlled_expressions(model)
     validate_mobile_platform_solver_quantity(model)
     validate_perturbations(model)

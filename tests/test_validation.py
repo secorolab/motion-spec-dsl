@@ -9,12 +9,11 @@ from rdflib.namespace import RDF
 from textx.exceptions import TextXError
 
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import AGN, EST, QUDT_SCHEMA
 from support import (
     ACTIONS,
     BASE,
-    BASE_TEXT,
     CTRL,
     EXEC,
     HOLD,
@@ -179,15 +178,15 @@ REJECTIONS = [
         BASE,
         [
             (TWIST, TWIST + PRESS_WRENCH),
-            (SPEC, AFTER_SPEC + "torque tq-lo = -1.0 Nm,\n        torque tq-hi = 1.0 Nm"),
+            (SPEC, AFTER_SPEC + "force f-lo = -1.0 N,\n        force f-hi = 1.0 N,\n        length arm = 1.0 m"),
             (
                 HOLD,
-                "hold-position: keeping (<shared.world.press-wrench>.force.z * "
-                "<shared.world.pose-ee-base>.position.x) outside <spec.tq-lo> and <spec.tq-hi>",
+                "hold-position: keeping (<shared.world.press-wrench>.force.z * <spec.arm> / "
+                "<shared.world.pose-ee-base>.position.x) outside <spec.f-lo> and <spec.f-hi>",
             ),
         ],
-        "multiplies two measured views",
-        id="controlled_expression_without_gradient",
+        "divides by a term the motion moves",
+        id="controlled_expression_dividing_by_a_moved_term",
     ),
     pytest.param(BASE, [(SPEC, AFTER_SPEC + "force zero-force = (0.0, 0.0, 0.0) m")], "Force", id="unit_of_wrong_kind"),
     pytest.param(
@@ -278,17 +277,6 @@ REJECTIONS = [
         [(HOLD, "hold-position: keeping <spec.home-pose> equal to <spec.home-pose>")],
         "constrains a whole pose",
         id="constraint_on_a_whole_context_pose",
-    ),
-    pytest.param(
-        BASE,
-        [
-            (HOLD, AFTER_HOLD + 
-                "gap: keeping difference of <shared.spec.satisfied-band> and"
-                " <shared.spec.satisfied-band> greater than 0.05 m"
-            )
-        ],
-        "neither a declared quantity nor a scalar",
-        id="difference_of_plain_values",
     ),
     pytest.param(
         BASE,
@@ -386,6 +374,82 @@ REJECTIONS = [
         "nothing on hardware can apply them",
         id="perturbation_on_hardware",
     ),
+    pytest.param(
+        BASE,
+        [(HOLD, HOLD.replace(" within <shared.spec.satisfied-band>", ""))],
+        "states no band",
+        id="equality_without_band",
+    ),
+    pytest.param(BASE, [("    when {}\n", "")], "states 0 'when' sections", id="motion_without_when"),
+    pytest.param(
+        BASE,
+        [("    handles: <home>", "    context { pre { length extra = 0.01 m } }\n    handles: <home>")],
+        "declares a 'pre' context",
+        id="handler_pre_context",
+    ),
+    pytest.param(
+        BASE, [(MONITOR, MONITOR.replace("0.3 s", "0.3 m"))], "debounces in 'm'", id="debounce_not_a_duration"
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                EXEC,
+                'ros (ns=app) {\n    publishers {\n        a: topic "/a" message "std_msgs/msg/Float64",\n    },\n'
+                '    publishers {\n        b: topic "/b" message "std_msgs/msg/Float64",\n    },\n}\n\n' + EXEC,
+            )
+        ],
+        "declares 'publishers' twice",
+        id="ros_group_repeated",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (TWIST, f"{TWIST},\n        joint-current finger {{ joint: <gripper.g_left_driver_joint> }}"),
+            (SPEC, f"{AFTER_SPEC}current idle = 0.02 A"),
+            (UNTIL, f"{UNTIL},\n        stopped: <shared.world.finger> less than <shared.spec.idle>"),
+            (CTRL, f"{AFTER_CTRL}pid ctrl-finger {{ constraint: <home.stopped>, Kp: 1 }}"),
+        ],
+        "is measured, no controller commands it",
+        id="commanded_joint_current",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                TWIST,
+                f"{TWIST},\n        joint-position left {{ joint: <gripper.g_left_driver_joint> }}"
+                ",\n        joint-position right { joint: <gripper.g_left_driver_joint> }",
+            ),
+            (HOLD, f"{AFTER_HOLD}gap: keeping (<shared.world.left> - <shared.world.right>) greater than 0.05 rad"),
+            (CTRL, f"{AFTER_CTRL}pid ctrl-gap {{ constraint: <home.gap>, Kp: 1 }}"),
+        ],
+        "is a joint, which moves in no Cartesian direction",
+        id="controlled_expression_over_joints",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                "equal to <shared.spec.zero-linvel>",
+                "equal to (<shared.spec.satisfied-band> + <shared.spec.satisfied-band>)",
+            )
+        ],
+        "compares a LinearVelocity with an expression that infers",
+        id="inline_expression_of_another_kind",
+    ),
+    pytest.param(
+        BASE,
+        [
+            (
+                SNAPSHOT,
+                f"{SNAPSHOT},\n            pose loose-pose = {{ position: (0.1, 0.2, 0.3) m,"
+                " orientation: euler { axes: xyz extrinsic, angles: (0.0, 0.0, 0.0) } }",
+            )
+        ],
+        "states no frames",
+        id="pose_without_frames",
+    ),
 ]
 
 
@@ -399,23 +463,13 @@ def test_an_invalid_model_is_rejected(model, edits, message) -> None:
         motion_spec_metamodel().model_from_str(source, file_name=str(model))
 
 
-def test_an_equality_without_a_band_is_not_emitted() -> None:
-    """The emitter refuses it: the default band depends on the kind its plans resolve."""
-    model = motion_spec_metamodel().model_from_str(
-        BASE_TEXT.replace(HOLD, HOLD.replace(" within <shared.spec.satisfied-band>", ""), 1),
-        file_name=str(BASE),
-    )
-    with pytest.raises(ValueError, match="states no band"):
-        MotionSpecDatasetBuilder(model).build()
-
-
 def test_an_estimated_wrench_names_its_observer() -> None:
     """The observer is a node of its own: one agent, a gain in Hz, a dimensionless filter."""
     source = BASE.read_text().replace(
         TWIST, TWIST + ESTIMATED % ",\n            re-tare-on:     { <aas.E_HOME_SETTLED> }", 1
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
     wrench = next(s for s in graph.subjects() if str(s).endswith("/world/press-wrench"))
     observer = graph.value(wrench, EST["estimated-by"])
 

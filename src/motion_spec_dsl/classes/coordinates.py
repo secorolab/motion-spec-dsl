@@ -6,135 +6,127 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+import operator
 
-
-_BINOPS = {
-    "+": lambda a, b: a + b,
-    "-": lambda a, b: a - b,
-    "*": lambda a, b: a * b,
-    "/": lambda a, b: a / b,
-}
+CONST_OPS = {"+": operator.add, "-": operator.sub, "*": operator.mul, "/": operator.truediv}
 
 
 def const_value(node) -> float:
     """An authored constant expression as a number: literals and `pi` under `+ - * /`."""
-    if isinstance(node, (int, float)):  # already folded
+    if isinstance(node, (int, float)):
         return float(node)
-    if hasattr(node, "head"):  # ConstExpr / ConstTerm: a head and (op, operand) pairs
+    # ConstExpr and ConstTerm: a head and (op, operand) steps.
+    if hasattr(node, "head"):
         value = const_value(node.head)
         for step in node.tail:
-            value = _BINOPS[step.op](value, const_value(step.operand))
+            value = CONST_OPS[step.op](value, const_value(step.operand))
         return value
-    if hasattr(node, "atom"):  # ConstFactor: an atom under an optional unary minus
+    # ConstFactor: an atom under an optional unary minus.
+    if hasattr(node, "atom"):
         value = const_value(node.atom)
         return -value if node.neg else value
-    if getattr(node, "group", None) is not None:
+    if node.group is not None:
         return const_value(node.group)
-    if getattr(node, "pi", False):
+    if node.pi:
         return math.pi
     return float(node.value)
 
 
-@dataclass
 class CoordinateElement:
-    parent: object
-    value: float | None = None
-    ref: object | None = None
-
-    def __post_init__(self) -> None:
-        if self.value is not None:
-            self.value = const_value(self.value)
+    def __init__(self, parent, value, ref) -> None:
+        self.parent = parent
+        self.value = const_value(value) if value is not None else None
+        self.ref = ref
 
 
-@dataclass
 class Coordinates:
-    parent: object
-    values: list[CoordinateElement] = field(default_factory=list)
+    def __init__(self, parent, values) -> None:
+        self.parent = parent
+        self.values = values
 
 
-@dataclass
 class PositionCoordinate:
-    parent: object
-    ref: object | None = None
-    coords: Coordinates | None = None
-    unit: str = ""
+    def __init__(self, parent, ref, coords, unit) -> None:
+        self.parent = parent
+        self.ref = ref
+        self.coords = coords
+        self.unit = unit
 
 
-@dataclass
 class EulerAngles:
-    parent: object
-    axes: str = "xyz"
-    extrinsic: bool = False
-    angles: Coordinates | None = None
-    unit: str = "rad"
+    def __init__(self, parent, axes, extrinsic, angles, unit) -> None:
+        self.parent = parent
+        self.axes = axes
+        self.extrinsic = extrinsic
+        self.angles = angles
+        self.unit = unit or "rad"
 
 
-@dataclass
 class Quaternion:
-    parent: object
-    xyzw: Coordinates | None = None
+    def __init__(self, parent, xyzw) -> None:
+        self.parent = parent
+        self.xyzw = xyzw
 
 
-@dataclass
 class DirectionCosineXYZ:
-    parent: object
-    x_axis: Coordinates | None = None
-    y_axis: Coordinates | None = None
-    z_axis: Coordinates | None = None
+    def __init__(self, parent, x_axis, y_axis, z_axis) -> None:
+        self.parent = parent
+        self.x_axis = x_axis
+        self.y_axis = y_axis
+        self.z_axis = z_axis
 
 
-@dataclass
 class RelativeOrientation:
     """A base orientation turned by a delta, composed rather than decomposed."""
 
-    parent: object
-    base: object | None = None
-    frame: object | None = None
-    euler: EulerAngles | None = None
-    quat: Quaternion | None = None
-    direction_cosine: DirectionCosineXYZ | None = None
+    def __init__(self, parent, base, frame, euler, quat, direction_cosine) -> None:
+        self.parent = parent
+        self.base = base
+        self.frame = frame
+        self.euler = euler
+        self.quat = quat
+        self.direction_cosine = direction_cosine
 
 
-@dataclass
 class OrientationCoordinate:
-    parent: object
-    ref: object | None = None
-    relative: RelativeOrientation | None = None
-    euler: EulerAngles | None = None
-    quat: Quaternion | None = None
-    direction_cosine: DirectionCosineXYZ | None = None
+    def __init__(self, parent, relative, ref, euler, quat, direction_cosine) -> None:
+        self.parent = parent
+        self.relative = relative
+        self.ref = ref
+        self.euler = euler
+        self.quat = quat
+        self.direction_cosine = direction_cosine
 
 
-@dataclass
 class VelocityTwistCoordinate:
-    parent: object
-    angular: Coordinates | None = None
-    angular_unit: str = ""
-    linear: Coordinates | None = None
-    linear_unit: str = ""
+    def __init__(self, parent, angular, angular_unit, linear, linear_unit) -> None:
+        self.parent = parent
+        self.angular = angular
+        self.angular_unit = angular_unit
+        self.linear = linear
+        self.linear_unit = linear_unit
 
 
-@dataclass
 class AccelerationTwistCoordinate:
-    parent: object
-    angular: Coordinates | None = None
-    angular_unit: str = ""
-    linear: Coordinates | None = None
-    linear_unit: str = ""
+    def __init__(self, parent, angular, angular_unit, linear, linear_unit) -> None:
+        self.parent = parent
+        self.angular = angular
+        self.angular_unit = angular_unit
+        self.linear = linear
+        self.linear_unit = linear_unit
 
 
-@dataclass
 class WrenchCoordinate:
-    parent: object
-    torque: Coordinates | None = None
-    torque_unit: str = ""
-    force: Coordinates | None = None
-    force_unit: str = ""
+    def __init__(self, parent, torque, torque_unit, force, force_unit) -> None:
+        self.parent = parent
+        self.torque = torque
+        self.torque_unit = torque_unit
+        self.force = force
+        self.force_unit = force_unit
 
 
-@dataclass
 class PoseCoordinate:
-    parent: object
-    position: PositionCoordinate
-    orientation: OrientationCoordinate
+    def __init__(self, parent, position, orientation) -> None:
+        self.parent = parent
+        self.position = position
+        self.orientation = orientation

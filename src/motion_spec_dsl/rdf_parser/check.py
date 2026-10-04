@@ -14,34 +14,24 @@ from motion_spec_dsl.rdf_parser.vocab import APP
 
 def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tuple[bool, str]:
     """Validate one application manifest and return conformance plus the SHACL report."""
-    app_model_path = Path(app_model).resolve()
-
-    # Load top-level, application model
-    g = rdflib.Dataset()
-    g.parse(app_model, format="json-ld")
-
-    # Metamodel/ontology prefixes resolve through the dev checkout or the rdf-utils
-    # cache; the model's own iri-map only declares where its imported graphs live.
-    install_metamodel_resolver(build_url_map(g, app_model_path))
-
-    # Load/import the referenced models
-    models = list({o for _, _, o, _ in g.quads((None, APP["import"], None, None))})
-    for o in models:
-        g.parse(location=o, format="json-ld")
-
-    return validate_dataset(g, meta_shacl=meta_shacl)
+    dataset = rdflib.Dataset()
+    dataset.parse(app_model, format="json-ld")
+    install_metamodel_resolver(build_url_map(dataset, Path(app_model).resolve()))
+    for location in {o for _, _, o, _ in dataset.quads((None, APP["import"], None, None))}:
+        dataset.parse(location=location, format="json-ld")
+    return validate_dataset(dataset, meta_shacl=meta_shacl)
 
 
-def validate_dataset(g: rdflib.Dataset, *, meta_shacl: bool = False) -> tuple[bool, str]:
+def validate_dataset(dataset: rdflib.Dataset, *, meta_shacl: bool = False) -> tuple[bool, str]:
     """Validate a loaded application dataset as one graph and return conformance plus the report.
 
     pyshacl validates each named graph of a dataset on its own, and shapes span documents.
     """
     data = rdflib.Graph()
-    for s, p, o, _graph in g.quads():
+    for s, p, o, _graph in dataset.quads():
         data.add((s, p, o))
     g_sh = rdflib.Dataset()
-    metamodels = {str(o) for _, _, o, _ in g.quads((None, APP["constraints"], None, None))}
+    metamodels = {str(o) for _, _, o, _ in dataset.quads((None, APP["constraints"], None, None))}
     if not metamodels:
         return (
             False,

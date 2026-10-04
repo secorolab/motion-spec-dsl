@@ -8,7 +8,7 @@ from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 from rdflib.namespace import RDF
 
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import ALGO_EXT, QUDT_QKIND, QUDT_SCHEMA
 from support import BASE, BASE_TEXT, SNAPSHOT, SPEC, TWIST, UNTIL
 
@@ -22,7 +22,7 @@ def test_precedence_nests_a_product_inside_a_difference_with_an_inferred_force()
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [subtraction] = graph.subjects(RDF.type, ALGO_EXT.Subtraction)
     [multiplication] = graph.subjects(RDF.type, ALGO_EXT.Multiplication)
@@ -42,7 +42,7 @@ def test_a_minus_offset_names_the_operand_it_takes_away() -> None:
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     [subtraction] = graph.subjects(RDF.type, ALGO_EXT.Subtraction)
     assert str(graph.value(subtraction, ALGO_EXT.subtrahend)).endswith("/lift")
@@ -69,4 +69,4 @@ def test_a_product_of_measured_views_is_accepted_where_only_a_monitor_reads_it()
         )
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    MotionSpecDatasetBuilder(model).build()
+    build_dataset(model)

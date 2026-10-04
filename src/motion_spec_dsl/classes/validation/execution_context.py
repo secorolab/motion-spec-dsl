@@ -4,83 +4,72 @@
 
 from __future__ import annotations
 
-from textx import get_children_of_type
+from scene_dsl.classes.ktree import KinematicTreeInstance
+from scene_dsl.classes.scene import Agent
+from scene_dsl.classes.sensors import ForceTorqueSensorSpec
+from textx import get_children_of_type, get_location
+from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.context import (
-    ConfigValue,
-    ContextQuantity,
-    QuantityType,
-    _pose_frame_names,
-)
+from motion_spec_dsl.classes.context import ConfigValue, ContextQuantity, QuantityType, pose_frame_names
 from motion_spec_dsl.classes.motion_spec import ContextSpec, ExecutionContext, Model
-from motion_spec_dsl.classes.validation.common import semantic_error
-
-# What a device can realize: an agent, its kinematic tree, or a sensor.
-_DEVICE_TARGETS = {"Agent", "KinematicTreeInstance", "ForceTorqueSensorSpec"}
 
 
 def validate_device_bindings(model: Model) -> None:
-    """Raise if a bound device has no address to read, or realizes something no device can."""
-    for context in (spec for spec in model.specs if isinstance(spec, ExecutionContext)):
-        devices = getattr(context.platform, "devices", None) or ()
+    """Reject devices with no config to read an address from, or bound to what no device realizes."""
+    for context in get_children_of_type(ExecutionContext, model):
+        devices = context.platform.devices if context.platform.kind == "real-world" else []
         if devices and not context.config:
-            raise semantic_error(
-                f"Execution context '{context.name}' binds devices but declares no 'config'. "
-                "Every bound device needs somewhere to read its address from.",
-                context,
+            raise TextXSemanticError(
+                f"execution context '{context.name}' binds devices but declares no 'config' -- "
+                "every bound device reads its address from it",
+                **get_location(context),
             )
-        seen: dict[str, str] = {}
+        bound: dict[str, str] = {}
         for binding in devices:
             target = binding.target
-            uri = getattr(target, "uri", None)
-            if uri is None:
-                raise semantic_error(
-                    f"Execution context '{context.name}' binds '{binding.device}' to "
-                    f"'{getattr(target, 'name', target)}', which is not an addressable element.",
-                    binding,
+            if not isinstance(target, (Agent, KinematicTreeInstance, ForceTorqueSensorSpec)):
+                raise TextXSemanticError(
+                    f"execution context '{context.name}' binds '{binding.device}' to a "
+                    f"{type(target).__name__} -- a device realizes an agent, its tree, or a sensor",
+                    **get_location(binding),
                 )
-            if type(target).__name__ not in _DEVICE_TARGETS:
-                raise semantic_error(
-                    f"Execution context '{context.name}' binds '{binding.device}' to a "
-                    f"{type(target).__name__}. A device realizes an agent or a sensor.",
-                    binding,
+            if str(target.uri) in bound:
+                raise TextXSemanticError(
+                    f"execution context '{context.name}' binds '{target.name}' to both "
+                    f"'{bound[str(target.uri)]}' and '{binding.device}' -- one element, one device",
+                    **get_location(binding),
                 )
-            if uri in seen:
-                raise semantic_error(
-                    f"Execution context '{context.name}' binds '{target.name}' twice: "
-                    f"'{seen[uri]}' and '{binding.device}'. One element, one device.",
-                    binding,
-                )
-            seen[uri] = binding.device
+            bound[str(target.uri)] = binding.device
 
 
 def validate_config_poses(model: Model) -> None:
-    """Raise if a pose read from the deployment config cannot be read once for the run."""
+    """Reject config-read poses that are not shared, not poses, unconfigured or unframed."""
     context = next((spec for spec in model.specs if isinstance(spec, ExecutionContext)), None)
     for quantity in get_children_of_type(ContextQuantity, model):
         if not isinstance(quantity.value, ConfigValue):
             continue
-        if not isinstance(getattr(quantity.parent, "parent", None), ContextSpec):
-            raise semantic_error(
-                f"Pose '{quantity.name}' reads the deployment config, so it must be declared in "
-                "a shared context: it is read once for the run, not per motion.",
-                quantity,
+        location = get_location(quantity)
+        if not isinstance(quantity.parent.parent, ContextSpec):
+            raise TextXSemanticError(
+                f"pose '{quantity.name}' reads the deployment config outside a shared context -- "
+                "it is read once for the run, not per motion",
+                **location,
             )
         if quantity.type != QuantityType.Pose:
-            raise semantic_error(
-                f"'{quantity.name}' reads the deployment config, which states poses; "
-                f"a {quantity.type} cannot come from one.",
-                quantity,
+            raise TextXSemanticError(
+                f"'{quantity.name}' reads the deployment config as a {quantity.type} -- the "
+                "config states poses",
+                **location,
             )
         if context is None or not context.config:
-            raise semantic_error(
-                f"Pose '{quantity.name}' reads the deployment config, but the exec-context "
-                'declares no `config: "<file>.toml"`.',
-                quantity,
+            raise TextXSemanticError(
+                f"pose '{quantity.name}' reads the deployment config -- the exec-context "
+                'declares no `config: "<file>.toml"`',
+                **location,
             )
-        if _pose_frame_names(quantity) is None:
-            raise semantic_error(
-                f"Pose '{quantity.name}' reads the deployment config, so the quantity it is "
-                "stated `for` must declare of/with-respect-to/as-seen-by frames.",
-                quantity,
+        if pose_frame_names(quantity) is None:
+            raise TextXSemanticError(
+                f"pose '{quantity.name}' reads the deployment config -- the quantity it is stated "
+                "`for` must declare of, wrt and as-seen-by frames",
+                **location,
             )

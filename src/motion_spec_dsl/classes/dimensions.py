@@ -1,29 +1,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Dimension algebra over quantity-expression trees.
-
-A pure, dependency-neutral home for the typing rules `+`/`-`/`*`/`/` obey: validation (does
-this expression type-check) and RDF emission (what kind/unit does an interior op node carry)
-call the same `infer`/`resolve_leaf` so the two never drift apart.
-"""
+"""Dimension algebra over quantity-expression trees, shared by validation and RDF emission."""
 
 from __future__ import annotations
 
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
+    ContextQuantityAlias,
+    ContextRef,
     QOpNode,
+    QuantityLeaf,
     QuantityType,
     ReferenceGeneratorType,
     WorldQuantity,
     WorldQuantityType,
-    _resolved_context_quantity,
+    op_tree,
 )
 from motion_spec_dsl.classes.units import DSL_UNITS
 
 Vector = tuple[int, int, int, int, int]  # (mass, length, time, angle, current)
 
-# The table this plan's semantic contract states (§1): every scalar quantity kind an
-# expression can produce, as its (mass, length, time, angle, current) exponents.
+# Every scalar kind an expression can produce, as its dimension exponents.
 DIMENSION_VECTOR: dict[QuantityType, Vector] = {
     QuantityType.Dimensionless: (0, 0, 0, 0, 0),
     QuantityType.PathParameter: (0, 0, 0, 0, 0),
@@ -45,8 +42,7 @@ DIMENSION_VECTOR: dict[QuantityType, Vector] = {
     QuantityType.ElectricCurrent: (0, 0, 0, 0, 1),
 }
 
-# Reverse lookup for a `*`/`/` result's derived vector. Several kinds share a vector; later
-# entries win, so a product/quotient names the plain scalar over the geometry-flavored one.
+# Several kinds share a vector; later entries win, so a product names the plain scalar.
 _VECTOR_PRIORITY = (
     QuantityType.Position,
     QuantityType.Distance,
@@ -71,28 +67,19 @@ VECTOR_QUANTITY_TYPE: dict[Vector, QuantityType] = {
     DIMENSION_VECTOR[qty_type]: qty_type for qty_type in _VECTOR_PRIORITY
 }
 
-# Position/Pose/Orientation are points and rotations, not scalars: `+`/`-` between two of the
-# same kind is exactly the pre-expression offset behavior; `*`/`/` on any of them is an error.
-GEOMETRY_TYPES = frozenset({QuantityType.Position, QuantityType.Pose, QuantityType.Orientation})
+# Points and rotations, not scalars: `+`/`-` only between two of the same kind, never `*`/`/`.
+GEOMETRY_TYPES = {QuantityType.Position, QuantityType.Pose, QuantityType.Orientation}
 
-# Whole vector/tensor kinds an expression never produces or consumes -- they stay on their
-# existing whole-quantity RDF operations (e.g. rbdyn-op:AddWrench).
-_UNSUPPORTED_CONTEXT_TYPES = frozenset(
-    {
-        QuantityType.VelocityTwist,
-        QuantityType.AccelerationTwist,
-        QuantityType.Wrench,
-        QuantityType.Direction,
-        QuantityType.FreeVector,
-    }
-)
+# Whole vector kinds that stay on their whole-quantity RDF operations, never in an expression.
+_UNSUPPORTED_CONTEXT_TYPES = {
+    QuantityType.VelocityTwist,
+    QuantityType.AccelerationTwist,
+    QuantityType.Wrench,
+    QuantityType.Direction,
+    QuantityType.FreeVector,
+}
 
-# A subspace of these composite kinds resolves to the same scalar QuantityType whether or not
-# an axis is picked (an established quirk this plan does not change, e.g. `.force` and
-# `.force.x` both type Force) -- so a scalar selector has to be checked structurally.
-# A bare axis (`<q>.x`) names one component of a context quantity that is itself a 3-vector --
-# no subspace, because the whole quantity is the subspace. A direction's and a free vector's
-# components are unitless; every other vector's carry the scalar spelling of its own dimension.
+# The kind of one component a bare axis (`<q>.x`) names on a 3-vector context quantity.
 VECTOR_COMPONENT_TYPE: dict[QuantityType, QuantityType] = {
     QuantityType.Direction: QuantityType.Dimensionless,
     QuantityType.FreeVector: QuantityType.Dimensionless,
@@ -111,6 +98,12 @@ _SUBSPACE_TYPE: dict[str, QuantityType] = {
     "torque": QuantityType.Torque,
 }
 
+_JOINT_TYPES = {
+    WorldQuantityType.JointPosition: QuantityType.Angle,
+    WorldQuantityType.JointVelocity: QuantityType.AngularVelocity,
+    WorldQuantityType.JointCurrent: QuantityType.ElectricCurrent,
+}
+
 
 class DimensionError(ValueError):
     """Dimension inference failed for a quantity-expression subexpression."""
@@ -127,183 +120,109 @@ def _pose_subspace_type(subspace, axis, leaf) -> QuantityType:
         return QuantityType.Distance if axis is not None else QuantityType.Position
     if subspace == "orientation":
         return QuantityType.Angle if axis is not None else QuantityType.Orientation
-    raise DimensionError(f"a pose has no '{subspace}' subspace.", leaf)
+    raise DimensionError(f"a pose has no '{subspace}' subspace", leaf)
 
 
-def _selected_subspace_type(subspace, axis, leaf, *, whole_label: str) -> QuantityType:
+def _selected_subspace_type(subspace, axis, leaf, whole_label: str) -> QuantityType:
     if subspace is None:
         raise DimensionError(
-            f"a whole {whole_label} is not supported in a quantity expression; "
-            "select a scalar subspace axis.",
+            f"a whole {whole_label} is not supported in a quantity expression -- "
+            "select a scalar subspace axis",
             leaf,
         )
     if axis is None:
-        raise DimensionError("select a scalar subspace axis.", leaf)
-    scalar = _SUBSPACE_TYPE.get(subspace)
-    if scalar is None:
-        raise DimensionError(f"a {whole_label} has no '{subspace}' subspace.", leaf)
-    return scalar
-
-
-def _world_leaf_type(world_type: WorldQuantityType, subspace, axis, leaf) -> QuantityType:
-    if world_type == WorldQuantityType.JointPosition:
-        return QuantityType.Angle
-    if world_type == WorldQuantityType.JointVelocity:
-        return QuantityType.AngularVelocity
-    if world_type == WorldQuantityType.JointCurrent:
-        return QuantityType.ElectricCurrent
-    if world_type == WorldQuantityType.Pose:
-        return _pose_subspace_type(subspace, axis, leaf)
-    return _selected_subspace_type(subspace, axis, leaf, whole_label=str(world_type))
-
-
-def _context_leaf_type(qty_type: QuantityType, subspace, axis, leaf) -> QuantityType:
-    if subspace is None and axis is not None:
-        component = VECTOR_COMPONENT_TYPE.get(qty_type)
-        if component is None:
-            raise DimensionError(f"a {qty_type} has no axis components.", leaf)
-        return component
-    if qty_type == QuantityType.Pose:
-        return _pose_subspace_type(subspace, axis, leaf)
-    if qty_type in _UNSUPPORTED_CONTEXT_TYPES:
-        return _selected_subspace_type(subspace, axis, leaf, whole_label=str(qty_type))
-    if subspace is not None:
-        raise DimensionError(f"a {qty_type} has no '{subspace}' subspace.", leaf)
-    return qty_type
+        raise DimensionError("select a scalar subspace axis", leaf)
+    if subspace not in _SUBSPACE_TYPE:
+        raise DimensionError(f"a {whole_label} has no '{subspace}' subspace", leaf)
+    return _SUBSPACE_TYPE[subspace]
 
 
 def resolve_leaf(leaf) -> QuantityType:
-    """The QuantityType of a quantity-expression leaf: a bare measure's unit, a world-quantity
-    view's subspace/axis, or a context quantity's declared (or subspace-selected) type.
-
-    Raises `DimensionError` for anything an expression cannot combine: a reference generator,
-    an unrecognized unit or subspace, or a whole wrench/twist with no scalar axis picked.
-    """
-    bare = getattr(leaf, "bare", None)
+    """The kind of an expression leaf: a measure's unit, or a quantity's view or declared type."""
+    bare = leaf.bare if isinstance(leaf, (QuantityLeaf, ContextRef)) else None
     if bare is not None:
         unit = DSL_UNITS.get(bare.unit)
-        vector = unit.vector if unit is not None else None
-        if vector is None:
-            raise DimensionError(f"'{bare.unit}' has no known dimension.", leaf)
-        return VECTOR_QUANTITY_TYPE.get(vector, QuantityType.Dimensionless)
-
-    quantity = getattr(leaf, "quantity", None)
-    subspace = getattr(leaf, "subspace", None)
-    axis = getattr(leaf, "axis", None)
+        if unit is None or unit.vector is None:
+            raise DimensionError(f"'{bare.unit}' has no known dimension", leaf)
+        return VECTOR_QUANTITY_TYPE.get(unit.vector, QuantityType.Dimensionless)
+    quantity, subspace, axis = leaf.quantity, leaf.subspace, leaf.axis
     if isinstance(quantity, WorldQuantity):
-        return _world_leaf_type(quantity.type, subspace, axis, leaf)
-    if isinstance(quantity, ContextQuantity):
-        quantity = _resolved_context_quantity(quantity)
-        if isinstance(quantity.type, ReferenceGeneratorType):
-            raise DimensionError(
-                f"'{quantity.name}' is a {quantity.type} reference generator, not a quantity "
-                "an expression can combine.",
-                leaf,
-            )
-        return _context_leaf_type(quantity.type, subspace, axis, leaf)
-    raise DimensionError("expression leaf resolves to no quantity.", leaf)
+        if quantity.type in _JOINT_TYPES:
+            return _JOINT_TYPES[quantity.type]
+        if quantity.type == WorldQuantityType.Pose:
+            return _pose_subspace_type(subspace, axis, leaf)
+        return _selected_subspace_type(subspace, axis, leaf, str(quantity.type))
+    if not isinstance(quantity, ContextQuantity):
+        raise DimensionError("expression leaf resolves to no quantity", leaf)
+    if isinstance(quantity, ContextQuantityAlias):
+        quantity = quantity.ref
+    qty_type = quantity.type
+    if isinstance(qty_type, ReferenceGeneratorType):
+        raise DimensionError(
+            f"'{quantity.name}' is a {qty_type} reference generator -- "
+            "an expression combines quantities",
+            leaf,
+        )
+    if subspace is None and axis is not None:
+        if qty_type not in VECTOR_COMPONENT_TYPE:
+            raise DimensionError(f"a {qty_type} has no axis components", leaf)
+        return VECTOR_COMPONENT_TYPE[qty_type]
+    if qty_type == QuantityType.Pose:
+        return _pose_subspace_type(subspace, axis, leaf)
+    if qty_type in _UNSUPPORTED_CONTEXT_TYPES:
+        return _selected_subspace_type(subspace, axis, leaf, str(qty_type))
+    if subspace is not None:
+        raise DimensionError(f"a {qty_type} has no '{subspace}' subspace", leaf)
+    return qty_type
 
 
-def _combine(op: str, vectors: list[Vector]) -> Vector:
-    if op == "multiply":
-        result: Vector = (0, 0, 0, 0, 0)
-        for vector in vectors:
-            result = (
-                result[0] + vector[0],
-                result[1] + vector[1],
-                result[2] + vector[2],
-                result[3] + vector[3],
-                result[4] + vector[4],
-            )
-        return result
-    dividend, divisor = vectors
-    return (
-        dividend[0] - divisor[0],
-        dividend[1] - divisor[1],
-        dividend[2] - divisor[2],
-        dividend[3] - divisor[3],
-        dividend[4] - divisor[4],
-    )
-
-
-def _infer_add_subtract(node: QOpNode, operand_types: list[QuantityType]) -> QuantityType:
+def infer(expr, resolve=resolve_leaf) -> QuantityType:
+    """The kind an expression, op tree or leaf evaluates to under the typing rules."""
+    node = op_tree(expr)
+    if not isinstance(node, QOpNode):
+        return resolve(node)
+    operand_types = [infer(operand, resolve) for operand in node.operands]
     first = operand_types[0]
-    geometry = first in GEOMETRY_TYPES or any(t in GEOMETRY_TYPES for t in operand_types)
-    if geometry:
-        # A geometry kind is a point/rotation, not a scalar: no vector, no collapsing several
-        # spellings into one -- every operand must be exactly the same kind.
+    if node.op in ("add", "subtract"):
+        # A geometry kind collapses no spellings: every operand must be exactly the same kind.
+        geometry = any(qty_type in GEOMETRY_TYPES for qty_type in operand_types)
+        first_vector = DIMENSION_VECTOR.get(first)
         for other in operand_types[1:]:
-            if other != first:
+            same = other == first if geometry else DIMENSION_VECTOR[other] == first_vector
+            if not same:
                 raise DimensionError(
                     f"'{first}' and '{other}' cannot be added or subtracted -- "
-                    "they are different kinds of quantity.",
+                    "they are different kinds of quantity",
                     node,
                 )
-        return first
-    # Several scalar kinds share one physical dimension under different authored spellings
-    # (a length and a projected distance are both metres) -- same vector is "same kind", and
-    # the result takes the vector's canonical spelling, same as a `*`/`/` result would.
-    first_vector = DIMENSION_VECTOR[first]
-    for other in operand_types[1:]:
-        if DIMENSION_VECTOR[other] != first_vector:
-            raise DimensionError(
-                f"'{first}' and '{other}' cannot be added or subtracted -- "
-                "they are different kinds of quantity.",
-                node,
-            )
-    return VECTOR_QUANTITY_TYPE[first_vector]
-
-
-def _infer_op(node: QOpNode, resolve_leaf) -> QuantityType:
-    operand_types = [_infer_node(operand, resolve_leaf) for operand in node.operands]
-    if node.op in ("add", "subtract"):
-        return _infer_add_subtract(node, operand_types)
-
-    if node.op == "divide":
-        divisor_bare = getattr(node.operands[1], "bare", None)
-        if divisor_bare is not None and divisor_bare.value == 0.0:
-            raise DimensionError("division by zero.", node)
-
+        return first if geometry else VECTOR_QUANTITY_TYPE[first_vector]
+    divisor = node.operands[-1]
+    if node.op == "divide" and isinstance(divisor, QuantityLeaf) and divisor.bare is not None:
+        if divisor.bare.value == 0.0:
+            raise DimensionError("division by zero", node)
     for qty_type in operand_types:
         if qty_type in GEOMETRY_TYPES:
             raise DimensionError(
-                f"'{qty_type}' is a geometry kind; multiply/divide need a scalar subspace "
-                "axis on each operand instead.",
+                f"'{qty_type}' is a geometry kind -- multiply and divide need a scalar "
+                "subspace axis on each operand",
                 node,
             )
-    vector = _combine(node.op, [DIMENSION_VECTOR[qty_type] for qty_type in operand_types])
-    result = VECTOR_QUANTITY_TYPE.get(vector)
-    if result is None:
+    vectors = [DIMENSION_VECTOR[qty_type] for qty_type in operand_types]
+    if node.op == "multiply":
+        vector = tuple(sum(exponents) for exponents in zip(*vectors))
+    else:
+        vector = tuple(a - b for a, b in zip(vectors[0], vectors[1]))
+    if vector not in VECTOR_QUANTITY_TYPE:
         raise DimensionError(
-            f"dimension {vector} from '{node.op}' of {operand_types} names no known quantity kind.",
+            f"dimension {vector} from '{node.op}' of {operand_types} names no known quantity kind",
             node,
         )
-    return result
-
-
-def _infer_node(node, resolve_leaf) -> QuantityType:
-    if isinstance(node, QOpNode):
-        return _infer_op(node, resolve_leaf)
-    return resolve_leaf(node)
-
-
-def infer(expr, resolve_leaf=resolve_leaf) -> QuantityType:
-    """The result QuantityType of a quantity-expression tree (a `QExpr` or an already-normalized
-    op tree/leaf), applying the typing rules in full.
-    """
-    tree = expr.as_op_tree() if hasattr(expr, "as_op_tree") else expr
-    return _infer_node(tree, resolve_leaf)
+    return VECTOR_QUANTITY_TYPE[vector]
 
 
 def same_scalar_dimension(declared, inferred: QuantityType) -> bool:
-    """Whether a declared/slot kind accepts an inferred one: identical, or two scalar
-    spellings of one physical dimension (a length and a projected distance are both metres).
-    A geometry kind accepts only itself; a non-QuantityType slot (legacy subspace string)
-    is not enforced here.
-    """
-    if declared == inferred:
-        return True
-    if not isinstance(declared, QuantityType):
+    """Whether a declared kind accepts an inferred one: identical, or one scalar dimension."""
+    if declared == inferred or not isinstance(declared, QuantityType):
         return True
     if declared in GEOMETRY_TYPES or inferred in GEOMETRY_TYPES:
         return False

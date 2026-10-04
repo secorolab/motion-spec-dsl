@@ -206,6 +206,10 @@ class QUDT_QKIND(DefinedNamespace):
     Force: URIRef
     Mass: URIRef
     ElectricCurrent: URIRef
+    Angle: URIRef
+    Dimensionless: URIRef
+    Frequency: URIRef
+    Time: URIRef
 
     _NS = NS_MM_QUDT_QTY
 
@@ -239,6 +243,7 @@ class GEOM_COORD(DefinedNamespace):
     DirectionCosineXYZ: URIRef
     EulerAngles: URIRef
     Quaternion: URIRef
+    QuaternionShape: URIRef
     VectorXYZ: URIRef
 
     of: URIRef
@@ -246,6 +251,7 @@ class GEOM_COORD(DefinedNamespace):
     x: URIRef
     y: URIRef
     z: URIRef
+    w: URIRef
     alpha: URIRef
     beta: URIRef
     gamma: URIRef
@@ -294,7 +300,6 @@ class GEOM_OP(DefinedNamespace):
     pose: URIRef
     to: URIRef
     distance: URIRef
-    direction: URIRef
     angle: URIRef
     out: URIRef
     axis: URIRef
@@ -351,13 +356,16 @@ class GEOM_OP_EXT(DefinedNamespace):
     PointOnLineProjection: URIRef
     LineLineToLinearDistance: URIRef
     LineOnLineProjection: URIRef
+    PointBodyLineToLinearDistance: URIRef
+    VectorNorm: URIRef
     gradient: URIRef
     path: URIRef
     tangent: URIRef
     linear: URIRef
-    gradient: URIRef
+    norm: URIRef
 
     _extras = [
+        "gradient-moment",
         "angular-distance",
         "path-parameter",
         "normal-a",
@@ -462,6 +470,9 @@ class ALGO_EXT(DefinedNamespace):
     Subtraction: URIRef
     VelocityProfile: URIRef
     Admittance: URIRef
+    AngularNormalization: URIRef
+    Multiplication: URIRef
+    Division: URIRef
     limits: URIRef
     out: URIRef
     target: URIRef
@@ -475,6 +486,9 @@ class ALGO_EXT(DefinedNamespace):
     progress: URIRef
     minuend: URIRef
     subtrahend: URIRef
+    dividend: URIRef
+    divisor: URIRef
+    normalization: URIRef
 
     _extras = [
         "in",
@@ -519,6 +533,7 @@ class CSTR_EXT(DefinedNamespace):
     AngleConstraint: URIRef
     AngularDistanceConstraint: URIRef
     TimeConstraint: URIRef
+    ElapsedDurationCoordinate: URIRef
 
     tolerance: URIRef
 
@@ -572,6 +587,7 @@ class GEOM_PATH(DefinedNamespace):
     Arc: URIRef
     Helix: URIRef
     Figure8: URIRef
+    PositiveDistanceShape: URIRef
 
     start: URIRef
     goal: URIRef
@@ -705,3 +721,33 @@ class SLV_EXT(DefinedNamespace):
     ForceCompositionSolver: URIRef
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/solver-specification#")
+
+
+# The SHACL files constraining each vocabulary's terms: a generated graph is checked against the
+# shapes of every vocabulary it uses.
+SHAPES = {
+    ALGO_EXT: (
+        f"{URI_SECORO_MM}/algorithm-extension.shacl.ttl",
+        f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",
+    ),
+    EL: (f"{URI_SECORO_MM}/behaviour/event_loop.shacl.ttl",),
+    ENV: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/environment.shacl.ttl",),
+    EXEC: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/execution-context.shacl.ttl",),
+    SENSORS: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    SOSA: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    GEOM_OP: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_OP_EXT: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_REL: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_REL_EXT: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_EXT: (f"{URI_SECORO_MM}/geometry/structural-entities-extension.shacl.ttl",),
+    GEOM_PATH: (f"{URI_SECORO_MM}/geometry/path.shacl.ttl",),
+    RBDYN_OP_EXT: (
+        f"{URI_SECORO_MM}/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
+    ),
+    CSTR_EXT: (f"{URI_SECORO_MM}/task/constraint-extension.shacl.ttl",),
+    CSTR_HDL_EXT: (f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",),
+    MAP_EXT: (f"{URI_SECORO_MM}/task/map-extension.shacl.ttl",),
+    SLV_EXT: (f"{URI_SECORO_MM}/task/solver-specification-extension.shacl.ttl",),
+    QKIND_EXT: (f"{URI_SECORO_MM}/qudt.shacl.ttl",),
+    TIME: (f"{URI_SECORO_MM}/time.shacl.ttl",),
+}

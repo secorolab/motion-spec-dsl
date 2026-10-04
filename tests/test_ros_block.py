@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.model import CSTR, ROS
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import GEOM_REL, QUDT_SCHEMA, SENSORS
 from rdflib import Literal
 from rdflib.namespace import PROV, RDF, RDFS, SOSA
@@ -35,7 +35,7 @@ def test_the_answer_states_its_status_and_its_result_fields() -> None:
         1,
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     answer = next(s for s in graph.subjects(RDF.type, ROS.Action) if str(s).endswith(".answer"))
     members = {
@@ -49,7 +49,7 @@ def test_a_monitor_publishes_its_event_as_its_topics_member() -> None:
     """A member with no value is how the graph says occurrence rather than payload."""
     source = BASE_TEXT.replace(EXEC, TOPICS + EXEC, 1).replace(MONITOR, OCCURRENCE, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     topic = next(graph.subjects(ROS["channel-name"], Literal("/events")))
     (member,) = graph.objects(topic, RDFS.member)
@@ -70,7 +70,7 @@ def test_a_standing_publish_reports_its_quantity_at_its_rate() -> None:
 """
     source = BASE_TEXT.replace(EXEC, block + EXEC, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     topic = next(graph.subjects(ROS["channel-name"], Literal("/ee")))
     [row] = graph.objects(topic, RDFS.member)
@@ -89,7 +89,7 @@ def test_a_detect_act_locates_its_object_and_its_status_is_an_equality() -> None
         .replace(UNTIL, LOCATED, 1)
     )
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     act = next(graph.subjects(RDF.type, ROS.Action))
     assert str(graph.value(act, ROS["type-name"])) == "aruco_perception/action/LocateObjects"
@@ -123,7 +123,7 @@ def test_a_pose_subscription_states_the_pose_it_reads() -> None:
         }"""
     source = BASE_TEXT.replace(EXEC, subscribers + EXEC, 1).replace(TWIST, TWIST + table_in_wrist, 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     topic = next(graph.subjects(ROS["channel-name"], Literal("/recognized_objects")))
     assert str(graph.value(topic, ROS["field-path"])) == "results.pose"
@@ -146,7 +146,7 @@ def test_a_camera_subscription_reads_the_scenes_camera() -> None:
 """
     source = robmot.read_text().replace("exec-context (ns=app)", subscribers + "exec-context (ns=app)", 1)
     model = motion_spec_metamodel().model_from_str(source, file_name=str(robmot))
-    graph = MotionSpecDatasetBuilder(model).build()[0].default_graph
+    graph = build_dataset(model)[0].default_graph
 
     topic = next(graph.subjects(ROS["channel-name"], Literal("/wrist/image")))
     assert str(graph.value(topic, SOSA.hasFeatureOfInterest)).endswith("/wrist")
