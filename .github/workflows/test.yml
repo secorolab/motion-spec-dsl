@@ -16,12 +16,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The patched rdflib must win over the PyPI rdflib the git dependencies pull in.
       - name: Install motion_spec_dsl
-        run: |
-          pip install pytest -e .
-          pip install --force-reinstall --no-deps \
-            "git+https://github.com/secorolab/rdflib.git@7.6.0-fix-multi-type-scoped-context"
+        run: pip install pytest -e .
 
       - name: Run tests
         run: pytest -q
