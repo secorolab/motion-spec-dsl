@@ -3,15 +3,14 @@
 # Author: Vamsi Kalagaturu
 """Rules only the local SHACL extensions check: no DSL validation states them."""
 
-from pathlib import Path
-
 import pytest
 from rdflib import Graph, Literal, Namespace, RDF, URIRef
 from rdflib.namespace import SH, XSD
 
+from motion_spec_dsl.rdf_parser.manifest import METAMODELS_URL, install_metamodel_resolver
+
 pyshacl = pytest.importorskip("pyshacl")
 
-METAMODELS = Path(__file__).resolve().parents[2] / "metamodels"
 QUDT = Namespace("http://qudt.org/schema/qudt/")
 QKIND = Namespace("http://qudt.org/vocab/quantitykind/")
 GEOM_COORD = Namespace("https://comp-rob2b.github.io/metamodels/geometry/coordinates#")
@@ -67,7 +66,8 @@ SECONDS = (QUDT.value, Literal(0.01, datatype=XSD.double))
     ],
 )
 def test_a_shape_accepts_or_rejects_its_focus(shape_file, shape, triples, conforms) -> None:
-    shapes = Graph().parse(METAMODELS / shape_file, format="turtle")
+    install_metamodel_resolver()
+    shapes = Graph().parse(METAMODELS_URL + shape_file, format="turtle")
     shapes.add((shape, SH.targetNode, FOCUS))
     data = Graph()
     for predicate, value in triples:

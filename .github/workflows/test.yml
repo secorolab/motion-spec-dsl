@@ -16,47 +16,34 @@ jobs:
         with:
           python-version: "3.12"
 
-      # This package is a workspace component. Its runtime siblings (rdf_utils,
-      # motion_spec, coord_dsl) and a patched rdflib are not on PyPI, so they are
-      # installed from git. The siblings under-declare their deps, so jinja2 (coord_dsl)
-      # is added explicitly. Assumes the secorolab repos are public; add a token otherwise.
-      - name: Install workspace siblings
-        run: |
-          pip install pytest textX pyshacl platformdirs textx_ls_core jinja2
-          pip install \
-            "git+https://github.com/secorolab/rdf-utils.git@main" \
-            "git+https://github.com/secorolab/motion-spec.git@dev" \
-            "git+https://github.com/secorolab/coord-dsl.git@main"
-
+      # The patched rdflib must win over the PyPI rdflib the git dependencies pull in.
       - name: Install motion_spec_dsl
-        run: pip install -e . --no-deps
-
-      # The patched rdflib must win over the PyPI rdflib the siblings pulled in.
-      - name: Pin patched rdflib
         run: |
+          pip install pytest -e .
           pip install --force-reinstall --no-deps \
             "git+https://github.com/secorolab/rdflib.git@7.6.0-fix-multi-type-scoped-context"
 
       - name: Run tests
         run: pytest -q
 
-      # Application-level SHACL gate for the maintained models. This does not repeat
-      # metamodel shape tests (owned by the metamodels repo) or run a build/simulator;
-      # it only proves the checked-in models still generate valid RDF against the
-      # metamodel this repo depends on.
-      - name: Checkout metamodels
-        uses: actions/checkout@v4
-        with:
-          repository: secorolab/metamodels
-          path: metamodels-checkout
-
-      - name: Three-model SHACL gate (gen ir + check)
+      # A change made in both repos sits on a motion-spec branch of the same name; else dev.
+      - name: Install motion-spec
         env:
-          METAMODELS_PATH: ${{ github.workspace }}/metamodels-checkout
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          repo=https://github.com/secorolab/motion-spec.git
+          ref=dev
+          if git ls-remote --exit-code --heads "$repo" "$BRANCH" > /dev/null; then ref="$BRANCH"; fi
+          pip install "git+$repo@$ref"
+
+      - name: SHACL gate (gen ir + check)
         run: |
           set -e
-          for name in pick_place_single pick_place_dual admittance_arc_single; do
-            out="$RUNNER_TEMP/${name}_shacl_gen"
-            (cd "models/$name" && motion-spec gen ir "$name.robmot" -o "$out")
-            motion-spec check "$out/generated/model/${name}-app.ld.json"
+          for model in 01_pick_and_place/pick_and_place \
+                       02_dual_arm_pick_and_place/dual_arm_pick_and_place \
+                       06_arc_tracing_with_admittance/arc_tracing_with_admittance; do
+            name=$(basename "$model")
+            out="$RUNNER_TEMP/shacl"
+            motion-spec gen ir "src/motion_spec_dsl/models/$model.robmot" -o "$out"
+            motion-spec check "$out/$name"/*/generated/model/"$name-app.ld.json"
           done
