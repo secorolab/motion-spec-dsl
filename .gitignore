@@ -7,5 +7,3 @@ build/
 .eggs/
 .venv/
 .ruff_cache/
-
-comp-rob2b/

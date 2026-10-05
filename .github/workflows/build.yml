@@ -22,7 +22,7 @@ jobs:
 
       - name: Lint (ruff)
         run: |
-          pip install ruff
+          pip install ruff==0.16.9
           ruff check src
 
       - name: Build sdist and wheel

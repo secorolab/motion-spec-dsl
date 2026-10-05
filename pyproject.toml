@@ -12,7 +12,7 @@ allow-direct-references = true
 [project]
 name = "motion_spec_dsl"
 dynamic = ["version"]
-description = "A DSL for specifying guarded motions, transforming .rob_mot files to JSON-LD."
+description = "A DSL for specifying guarded motions, transforming .robmot files to RDF."
 authors = [
     {name = "Sven Schneider", email = "sven.schneider@h-brs.de"},
     {name = "Vamsi Kalagaturu", email = "vamsikalagaturu@gmail.com"}
