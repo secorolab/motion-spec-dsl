@@ -23,14 +23,14 @@ textx list-languages
 textx check src/motion_spec_dsl/models/01_pick_and_place/pick_and_place.robmot
 ```
 
-## Development
+## Generate
 
-As CI does, with the patched rdflib:
+Emit a model as JSON-LD: the model graph, its application manifest and a provenance document.
 
 ```bash
-pip install pytest
-pip install --force-reinstall --no-deps \
-  "git+https://github.com/secorolab/rdflib.git@7.6.0-fix-multi-type-scoped-context"
-pytest -q
-ruff check src
+textx generate src/motion_spec_dsl/models/01_pick_and_place/pick_and_place.robmot \
+  --target jsonld -o out
 ```
+
+This writes `out/pick_and_place.ld.json`, `out/pick_and_place-app.ld.json` and
+`out/provenance/dsl.ld.json`.
