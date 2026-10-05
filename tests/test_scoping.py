@@ -9,7 +9,7 @@ import pytest
 from rdflib.namespace import RDF
 from scene_dsl.classes.geom import Frame
 from scene_dsl.classes.ktree import KinematicTreeTemplate
-from scene_dsl.langs import build_instance_trees, lower_frame_refs
+from scene_dsl.langs import build_instance_trees
 from textx import get_children_of_type, get_parent_of_type, metamodel_from_file
 from textx.exceptions import TextXSemanticError
 
@@ -65,13 +65,11 @@ def test_a_scene_reference_resolves_to_one_visible_element(source, message) -> N
 @pytest.mark.parametrize(
     ("named", "frame"),
     [
-        pytest.param("<pick_and_place_graph.cube>", "cube_origin", id="body"),
-        pytest.param("<kinova>", "base_link_origin", id="instanced_tree"),
-        pytest.param("<kinova.base_link>", "base_link_origin", id="instanced_body"),
-        pytest.param("<kinova.base_link.base_link_origin>", "base_link_origin", id="frame"),
+        pytest.param("<pick_and_place_graph.cube.cube_origin>", "cube_origin", id="graph_frame"),
+        pytest.param("<kinova.base_link.base_link_origin>", "base_link_origin", id="tree_frame"),
     ],
 )
-def test_a_body_or_tree_named_for_a_frame_stands_for_its_default_frame(named, frame) -> None:
+def test_a_frame_reference_resolves_to_the_scene_frame(named, frame) -> None:
     """A reference into an instanced tree lands on the copy's frame, not the template's."""
     source = f"""import "01_pick_and_place/pick_and_place.scenex"
 ns app = "https://example.org/app/"
@@ -84,7 +82,6 @@ context (ns=app) shared {{
     metamodel = metamodel_from_file(GRAMMAR, autokwd=True)
     metamodel.register_scope_providers({"*.*": SceneRefProvider()})
     metamodel.register_model_processor(build_instance_trees)
-    metamodel.register_model_processor(lower_frame_refs)
     model = metamodel.model_from_str(source, file_name=str(MODELS / "probe.robmot"))
     of, wrt = get_children_of_type("GeoPropPair", model)
 
@@ -92,40 +89,6 @@ context (ns=app) shared {{
     assert of.frame.name == frame
     assert get_parent_of_type(KinematicTreeTemplate, of.frame) is None
     assert (of.frame is wrt.frame) == (frame == "base_link_origin")
-
-
-def test_a_body_with_no_frame_cannot_stand_for_one(tmp_path: Path) -> None:
-    (tmp_path / "bare.scene").write_text(
-        """ns n = "https://example.test/"
-scene (ns=n) s { }
-"""
-    )
-    (tmp_path / "bare.scenex").write_text(
-        """import "bare.scene"
-ns n = "https://example.test/"
-scene inst (ns=n) sx {
-    scene: <s>
-    kgraph (ns=n) g { anchor: <world_body.world>
-        body world_body { frame world { } }
-        body bare { }
-    }
-}
-"""
-    )
-    source = """import "bare.scenex"
-ns app = "https://example.org/app/"
-context (ns=app) shared {
-    world {
-        pose p { of: <g.bare>, wrt: <g.world_body.world> }
-    }
-}
-"""
-    metamodel = metamodel_from_file(GRAMMAR, autokwd=True)
-    metamodel.register_scope_providers({"*.*": SceneRefProvider()})
-    metamodel.register_model_processor(build_instance_trees)
-    metamodel.register_model_processor(lower_frame_refs)
-    with pytest.raises(TextXSemanticError, match="'bare' has no frame to stand for it"):
-        metamodel.model_from_str(source, file_name=str(tmp_path / "probe.robmot"))
 
 
 def test_two_motions_each_declaring_a_trajectory_get_distinct_path_nodes() -> None:

@@ -158,7 +158,7 @@ scene inst (ns=mba_mjc) mobile_base_table_alignment_scene_mjc {
 
     obj <ws_objects.table> {
         model table-mjc as mjcf {
-            sys path = 'src/mjkdl/assets/table.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/table.xml'
             map body <mobile_base_table_alignment_graph.table> to "table"
         }
     }
@@ -188,14 +188,14 @@ scene inst (ns=mba_mjc) mobile_base_table_alignment_scene_mjc {
 
     agn <agents.left_arm> {
         model left-arm-mjc as mjcf {
-            sys path = 'src/mjkdl/assets/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <left_arm> to "base_link"
         }
     }
 
     agn <agents.right_arm> {
         model right-arm-mjc as mjcf {
-            sys path = 'src/mjkdl/assets/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <right_arm> to "base_link"
         }
     }

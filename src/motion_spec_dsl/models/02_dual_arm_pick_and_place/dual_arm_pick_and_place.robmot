@@ -23,7 +23,7 @@ context (ns=app) shared {
             as-seen-by: <kinova1.base_link.base_link_origin>
         },
         pose pose-cube1-base {
-            of:         <dual_arm_pick_and_place_graph.cube>,
+            of:         <dual_arm_pick_and_place_graph.cube.cube_origin>,
             wrt:        <kinova1.base_link.base_link_origin>,
             as-seen-by: <kinova1.base_link.base_link_origin>
         },
@@ -45,7 +45,7 @@ context (ns=app) shared {
             as-seen-by: <kinova2.base_link.base_link_origin>
         },
         pose pose-cube2-base {
-            of:         <dual_arm_pick_and_place_graph.cube2>,
+            of:         <dual_arm_pick_and_place_graph.cube2.cube2_origin>,
             wrt:        <kinova2.base_link.base_link_origin>,
             as-seen-by: <kinova2.base_link.base_link_origin>
         },

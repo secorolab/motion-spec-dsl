@@ -55,8 +55,8 @@ RosSubscriptionDecl:
 ;
 
 ObservedPose:
-    "{" "of" ":" "<" of=[scene.FrameLike|FQN] ">" ","
-        "wrt" ":" "<" wrt=[scene.FrameLike|FQN] ">" ","?
+    "{" "of" ":" "<" of=[scene.Frame|FQN] ">" ","
+        "wrt" ":" "<" wrt=[scene.Frame|FQN] ">" ","?
     "}"
 ;
 

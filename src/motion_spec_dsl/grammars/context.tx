@@ -17,7 +17,7 @@ GeometricProps:
 ;
 
 GeoPropPair:
-      key=FrameProp ":" "<" frame=[scene.FrameLike|FQN] ">"
+      key=FrameProp ":" "<" frame=[scene.Frame|FQN] ">"
     | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
     | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
     | key="estimated-from" ":" "<" agent=[scene.Agent|FQN] ">" observer=ObserverSpec
@@ -231,7 +231,7 @@ OrientationCoordinate:
 ;
 
 RelativeOrientation:
-    base=ContextRef "rotated" ("in" "<" frame=[scene.FrameLike|FQN] ">")? "by"
+    base=ContextRef "rotated" ("in" "<" frame=[scene.Frame|FQN] ">")? "by"
         (euler=EulerAngles | quat=Quaternion | direction_cosine=DirectionCosineXYZ)
 ;
 
@@ -283,7 +283,7 @@ SampledValue:
 ;
 
 DirectionBetween:
-    "=" "from" "<" from_frame=[scene.FrameLike|FQN] ">" "to" "<" to_frame=[scene.FrameLike|FQN] ">"
+    "=" "from" "<" from_frame=[scene.Frame|FQN] ">" "to" "<" to_frame=[scene.Frame|FQN] ">"
 ;
 
 VelocityTwistCoordinate:

@@ -15,7 +15,7 @@ scene inst (ns=tar_mjc) table_arm_real_scene_mjc {
 
     agn <agents.arm1> {
         model kinova-mjc as mjcf {
-            sys path = 'src/mjkdl/assets/kinova_gen3/gen3.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
             map tree <kinova> to "base_link"
         }
 
@@ -33,7 +33,7 @@ scene inst (ns=tar_mjc) table_arm_real_scene_mjc {
 
     agn <agents.gripper1> {
         model gripper-mjc as mjcf {
-            sys path = 'src/mjkdl/assets/robotiq_2f85/2f85.xml'
+            sys path = 'src/mj_kdl_wrapper/assets/robotiq_2f85/2f85.xml'
             map tree <gripper> to "base_mount"
         }
     }

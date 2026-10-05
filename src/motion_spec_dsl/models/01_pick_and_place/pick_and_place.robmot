@@ -23,7 +23,7 @@ context (ns=app) shared {
             as-seen-by: <kinova.base_link.base_link_origin>
         },
         pose pose-cube-base {
-            of:         <pick_and_place_graph.cube>,
+            of:         <pick_and_place_graph.cube.cube_origin>,
             wrt:        <kinova.base_link.base_link_origin>,
             as-seen-by: <kinova.base_link.base_link_origin>
         },
