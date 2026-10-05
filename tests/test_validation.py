@@ -405,13 +405,13 @@ REJECTIONS = [
     pytest.param(
         BASE,
         [
-            (TWIST, f"{TWIST},\n        joint-current finger {{ joint: <gripper.g_left_driver_joint> }}"),
-            (SPEC, f"{AFTER_SPEC}current idle = 0.02 A"),
+            (TWIST, f"{TWIST},\n        joint-velocity finger {{ joint: <gripper.g_left_driver_joint> }}"),
+            (SPEC, f"{AFTER_SPEC}angular-velocity idle = 0.02 rad/s"),
             (UNTIL, f"{UNTIL},\n        stopped: <shared.world.finger> less than <shared.spec.idle>"),
             (CTRL, f"{AFTER_CTRL}pid ctrl-finger {{ constraint: <home.stopped>, Kp: 1, Ki: 0, Kd: 0 }}"),
         ],
-        "is measured, no controller commands it",
-        id="commanded_joint_current",
+        "a joint is driven through its joint torque",
+        id="joint_controller_without_torque",
     ),
     pytest.param(
         BASE,
@@ -446,7 +446,7 @@ REJECTIONS = [
                 "equal to (<shared.world.pose-ee-base> + <shared.world.pose-ee-base>)",
             )
         ],
-        "a whole Pose is not supported in a quantity expression",
+        "compares a LinearVelocity with an expression that infers Pose",
         id="geometric_expression",
     ),
     pytest.param(

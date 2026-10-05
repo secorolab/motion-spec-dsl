@@ -37,7 +37,7 @@ AXIS_VECTORS = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)
 JOINT_TYPES = {
     WorldQuantityType.JointPosition,
     WorldQuantityType.JointVelocity,
-    WorldQuantityType.JointCurrent,
+    WorldQuantityType.JointForce,
 }
 
 

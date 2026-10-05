@@ -39,7 +39,6 @@ DIMENSION_VECTOR: dict[QuantityType, Vector] = {
     QuantityType.Force: (1, 1, -2, 0, 0),
     QuantityType.Torque: (1, 2, -2, 0, 0),
     QuantityType.Mass: (1, 0, 0, 0, 0),
-    QuantityType.ElectricCurrent: (0, 0, 0, 0, 1),
 }
 
 # Several kinds share a vector; later entries win, so a product names the plain scalar.
@@ -61,7 +60,6 @@ _VECTOR_PRIORITY = (
     QuantityType.Force,
     QuantityType.Torque,
     QuantityType.Mass,
-    QuantityType.ElectricCurrent,
 )
 VECTOR_QUANTITY_TYPE: dict[Vector, QuantityType] = {
     DIMENSION_VECTOR[qty_type]: qty_type for qty_type in _VECTOR_PRIORITY
@@ -101,7 +99,7 @@ _SUBSPACE_TYPE: dict[str, QuantityType] = {
 _JOINT_TYPES = {
     WorldQuantityType.JointPosition: QuantityType.Angle,
     WorldQuantityType.JointVelocity: QuantityType.AngularVelocity,
-    WorldQuantityType.JointCurrent: QuantityType.ElectricCurrent,
+    WorldQuantityType.JointForce: QuantityType.Torque,
 }
 
 

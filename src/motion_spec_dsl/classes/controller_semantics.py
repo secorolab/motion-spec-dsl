@@ -27,6 +27,7 @@ from motion_spec_dsl.classes.constraints import (
 )
 from motion_spec_dsl.classes.context import (
     BODY_LINE_DISTANCE_OP,
+    JOINT_SCALAR_TYPES,
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_DISTANCE_SUBSPACE,
     GEOMETRIC_PROJECTION_OPS,
@@ -57,7 +58,7 @@ SUBSPACE_ALIAS: dict[str, str] = {
 WHOLE_QUANTITY_SUBSPACES = {
     WorldQuantityType.JointPosition: "joint-position",
     WorldQuantityType.JointVelocity: "joint-velocity",
-    WorldQuantityType.JointCurrent: "joint-current",
+    WorldQuantityType.JointForce: "joint-force",
     WorldQuantityType.Pose: "pose",
 }
 
@@ -217,11 +218,11 @@ def controller_command_record(
             QuantityType.Torque if view_subspace in ANGULAR_SUBSPACES else QuantityType.Force
         )
     force_command = command_type == QuantityType.Force or view_subspace == "force"
-    joint_position = quantity is not None and quantity.type == WorldQuantityType.JointPosition
-    posture_torque = command_type == QuantityType.Torque and joint_position
+    joint_quantity = quantity is not None and quantity.type in JOINT_SCALAR_TYPES
+    posture_torque = command_type == QuantityType.Torque and joint_quantity
     moment_command = command_type == QuantityType.Torque and (
         view_subspace in ("alignment", "incident-angle", "plane-angle")
-        or (quantity is not None and not joint_position)
+        or (quantity is not None and not joint_quantity)
     )
     controlled_axes: tuple[tuple[str, str], ...] = ()
     if not (force_command or posture_torque):

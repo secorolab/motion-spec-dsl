@@ -73,7 +73,7 @@ _WHOLE_VIEW_TYPES = {
     WorldQuantityType.Wrench,
     WorldQuantityType.JointPosition,
     WorldQuantityType.JointVelocity,
-    WorldQuantityType.JointCurrent,
+    WorldQuantityType.JointForce,
 }
 
 

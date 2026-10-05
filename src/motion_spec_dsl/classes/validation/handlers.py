@@ -29,6 +29,7 @@ from motion_spec_dsl.classes.constraints import (
     view_form,
 )
 from motion_spec_dsl.classes.context import (
+    JOINT_SCALAR_TYPES,
     ContextQuantity,
     ContextQuantityAlias,
     GeometricPropKey,
@@ -57,11 +58,6 @@ _MOBILE_PLATFORM_QUANTITY_TYPE = {
     "VelocityDistribution": "VelocityTwist",
     "ForceDistribution": "Wrench",
     "ForceComposition": "Wrench",
-}
-# Measured joint quantities no controller commands.
-_MEASURED_ONLY = {
-    WorldQuantityType.JointCurrent: "joint current",
-    WorldQuantityType.JointVelocity: "joint velocity",
 }
 
 
@@ -219,7 +215,7 @@ def validate_controller_solver_assembly(model: Model) -> None:
 
 
 def validate_commanded_quantity_is_measured(model: Model) -> None:
-    """No controller commands a quantity a sensor or observer supplies, or a measured joint state."""
+    """No controller commands a quantity a sensor or observer supplies, or a joint without a torque."""
     for handler in get_children_of_type(ConstraintHandler, model):
         for controller in handler.controllers:
             resolved = controller.ref.controller if isinstance(controller, ControllerAlias) else controller
@@ -228,11 +224,15 @@ def validate_commanded_quantity_is_measured(model: Model) -> None:
             if quantity is None:
                 continue
             location = get_location(controller)
-            if quantity.type in _MEASURED_ONLY:
+            if (
+                quantity.type in JOINT_SCALAR_TYPES
+                and resolved.type != ControllerType.FeedForward
+                and resolved.command_type != QuantityType.Torque
+            ):
                 raise TextXSemanticError(
                     f"controller '{resolved.name}' drives '{constraint.name}' on "
-                    f"'{quantity.name}' -- a {_MEASURED_ONLY[quantity.type]} is measured, no "
-                    "controller commands it",
+                    f"'{quantity.name}' with no command -- a joint is driven through its joint "
+                    "torque ('as torque')",
                     **location,
                 )
             if resolved.type != ControllerType.FeedForward or not isinstance(
@@ -344,7 +344,7 @@ def validate_controller_commands(model: Model) -> None:
                 and solver.algorithm in {"ACHD", "RNE"}
                 and command.is_posture_torque_command
                 and quantity is not None
-                and quantity.type == WorldQuantityType.JointPosition
+                and quantity.type in JOINT_SCALAR_TYPES
                 and geo_prop(quantity.props, "joint") is None
             ):
                 raise TextXSemanticError(

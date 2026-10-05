@@ -63,7 +63,6 @@ DSL_UNITS: dict[str, DslUnit] = {
         QUDT_UNIT.UNITLESS, {QUDT_KIND.Dimensionless, QUDT_KIND.FreeVector}, (0, 0, 0, 0, 0)
     ),
     "kg": DslUnit(QUDT_UNIT["KiloGM"], {QUDT_KIND.Mass}, (1, 0, 0, 0, 0)),
-    "A": DslUnit(QUDT_UNIT.A, {QUDT_KIND.ElectricCurrent}, (0, 0, 0, 0, 1)),
 }
 
 ANGLE_UNITS: tuple[Any, ...] = (DSL_UNITS["rad"].iri, DSL_UNITS["deg"].iri)
@@ -88,7 +87,6 @@ QUDT_KIND_BY_QUANTITY_TYPE: dict[QuantityType, Any] = {
     QuantityType.Force: QUDT_KIND.Force,
     QuantityType.Torque: QUDT_KIND.Torque,
     QuantityType.Mass: QUDT_KIND.Mass,
-    QuantityType.ElectricCurrent: QUDT_KIND.ElectricCurrent,
     QuantityType.FreeVector: QUDT_KIND.FreeVector,
     QuantityType.Dimensionless: QUDT_KIND.Dimensionless,
     QuantityType.Duration: QUDT_KIND.Time,

@@ -26,6 +26,7 @@ from motion_spec_dsl.classes.constraints import (
     view_form,
 )
 from motion_spec_dsl.classes.context import (
+    JOINT_SCALAR_TYPES,
     ContextQuantity,
     ContextQuantityAlias,
     QuantityType,
@@ -245,7 +246,7 @@ def emit_solver_interfaces(
             solver.algorithm in {"ACHD", "RNE"}
             and command.is_posture_torque_command
             and qty is not None
-            and qty.type == WorldQuantityType.JointPosition
+            and qty.type in JOINT_SCALAR_TYPES
         ):
             torque_node = owned_uri(em, f"tau-{ctrl.name}", handler)
             em.graph.add((URIRef(ctrl.uri), CSTR_HDL["control-signal"], torque_node))

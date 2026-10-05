@@ -39,12 +39,6 @@ class SENSORS(DefinedNamespace):
     _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
 
 
-class ACT(DefinedNamespace):
-    JointCurrent: URIRef
-
-    _NS = Namespace(f"{URI_SECORO_MM}/robot/actuation#")
-
-
 class EST(DefinedNamespace):
     MomentumObserver: URIRef
 
@@ -205,7 +199,6 @@ class QUDT_QKIND(DefinedNamespace):
     Torque: URIRef
     Force: URIRef
     Mass: URIRef
-    ElectricCurrent: URIRef
     Angle: URIRef
     Dimensionless: URIRef
     Frequency: URIRef
@@ -516,6 +509,7 @@ class CSTR(DefinedNamespace):
     LinearVelocityConstraint: URIRef
     TorqueConstraint: URIRef
     ForceConstraint: URIRef
+    LinearDistanceConstraint: URIRef
 
     quantity: URIRef
     threshold: URIRef
@@ -532,6 +526,7 @@ class CSTR_EXT(DefinedNamespace):
     OutsideConstraint: URIRef
     AngleConstraint: URIRef
     AngularDistanceConstraint: URIRef
+    OrientationConstraint: URIRef
     TimeConstraint: URIRef
     ElapsedDurationCoordinate: URIRef
 

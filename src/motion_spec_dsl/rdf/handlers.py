@@ -39,6 +39,7 @@ from motion_spec_dsl.classes.context import (
     geo_prop,
 )
 from motion_spec_dsl.classes.controller_semantics import (
+    ANGULAR_SUBSPACES,
     constraint_view_subspace,
     controller_command_record,
     controller_solver,
@@ -162,7 +163,17 @@ def emit_controller_limits(em: Emission, controller_node: URIRef, controller: Co
     params = controller.params
     if params.output_saturation is not None:
         output = declared_uri(f"output-{controller.name}", controller)
-        add_quantity(em, output, command.command_type)
+        # Short of a force or torque, a feedback law outputs an acceleration along its constraint.
+        if controller.type == ControllerType.FeedForward or command.command_type in (
+            QuantityType.Force,
+            QuantityType.Torque,
+        ):
+            output_type = command.command_type
+        elif command.view_subspace in ANGULAR_SUBSPACES:
+            output_type = QuantityType.AngularAcceleration
+        else:
+            output_type = QuantityType.LinearAcceleration
+        add_quantity(em, output, output_type)
         emit_saturation(
             em,
             controller_node,

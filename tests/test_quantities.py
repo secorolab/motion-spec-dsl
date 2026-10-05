@@ -32,7 +32,6 @@ from scene_dsl.rdf.geom import add_orientation_coord
 from motion_spec_dsl.langs import motion_spec_metamodel
 from motion_spec_dsl.rdf.dataset import build_dataset
 from motion_spec_dsl.rdf_parser.vocab import (
-    ACT,
     CSTR,
     CSTR_EXT,
     GEOM_COORD,
@@ -227,15 +226,6 @@ def test_relative_orientation_composes_instead_of_decomposing() -> None:
     ("keyword", "spec", "relation", "type_", "kind", "unit"),
     [
         pytest.param(
-            "joint-current",
-            "current idle = 0.02 A",
-            "less than <shared.spec.idle>",
-            ACT.JointCurrent,
-            QUDT_QKIND.ElectricCurrent,
-            QUDT_UNIT.A,
-            id="current",
-        ),
-        pytest.param(
             "joint-velocity",
             "angular-velocity idle = 0.0 rad/s,\n        angular-velocity band = 0.05 rad/s",
             "equal to <shared.spec.idle> within <shared.spec.band>",
@@ -243,6 +233,15 @@ def test_relative_orientation_composes_instead_of_decomposing() -> None:
             QUDT_QKIND.AngularVelocity,
             QUDT_UNIT["RAD-PER-SEC"],
             id="velocity",
+        ),
+        pytest.param(
+            "joint-force",
+            "torque idle = 0.5 Nm",
+            "less than <shared.spec.idle>",
+            KC_STAT.JointForceCoordinate,
+            QUDT_QKIND.Torque,
+            QUDT_UNIT["N-M"],
+            id="force",
         ),
     ],
 )

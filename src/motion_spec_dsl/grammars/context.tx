@@ -9,7 +9,7 @@ WorldQuantity:
 ;
 
 NonGravityWorldQuantityType:
-    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-velocity" | "joint-current"
+    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-velocity" | "joint-force"
 ;
 
 GeometricProps:
@@ -92,7 +92,6 @@ ContextQuantityWithGeometryType:
 
 ScalarQuantityType:
     "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter" | "mass"
-    | "current"
 ;
 
 ToleranceQuantityType:
@@ -214,13 +213,12 @@ TimeUnit: 's' | 'ms' ;
 FrequencyUnit: 'Hz' ;
 DimensionlessUnit: '1' ;
 MassUnit: 'kg' ;
-CurrentUnit: 'A' ;
 
 Unit:
     LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
     AngularAccelerationUnit | AngularVelocityUnit |
     LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | FrequencyUnit |
-    DimensionlessUnit | MassUnit | CurrentUnit
+    DimensionlessUnit | MassUnit
 ;
 
 PositionCoordinate:

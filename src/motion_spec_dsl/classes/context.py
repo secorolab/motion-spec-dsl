@@ -24,16 +24,11 @@ class WorldQuantityType(StrEnum):
     Wrench = "Wrench"
     JointPosition = "JointPosition"
     JointVelocity = "JointVelocity"
-    JointCurrent = "JointCurrent"
-
-
-# DSL keywords whose established enum spelling is not their kebab-case form.
-_AUTHORED_KEYWORD_ALIASES = {"current": "ElectricCurrent"}
+    JointForce = "JointForce"
 
 
 def authored_enum(enum_type: type[EnumT], keyword: str) -> EnumT:
     """The enum member a kebab-case DSL keyword names."""
-    keyword = _AUTHORED_KEYWORD_ALIASES.get(keyword, keyword)
     normalized = keyword.replace("-", "").casefold()
     for member in enum_type:
         if member.value.replace("-", "").casefold() == normalized:
@@ -145,7 +140,6 @@ class QuantityType(StrEnum):
     Force = "Force"
     Torque = "Torque"
     Mass = "Mass"
-    ElectricCurrent = "ElectricCurrent"
     FreeVector = "FreeVector"
     Dimensionless = "Dimensionless"
     Duration = "Duration"
@@ -445,7 +439,7 @@ WORLD_SUBSPACE_SCALAR_TYPES = {
 JOINT_SCALAR_TYPES = {
     WorldQuantityType.JointPosition: QuantityType.Angle,
     WorldQuantityType.JointVelocity: QuantityType.AngularVelocity,
-    WorldQuantityType.JointCurrent: QuantityType.ElectricCurrent,
+    WorldQuantityType.JointForce: QuantityType.Torque,
 }
 
 POSE_SUBSPACE_SCALAR_TYPES = {

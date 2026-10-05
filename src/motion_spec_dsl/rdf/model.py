@@ -27,7 +27,6 @@ from rdf_utils.models.vocab import (
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 
 from motion_spec_dsl.rdf_parser.vocab import (
-    ACT,
     ALGO_EXT,
     AGN,
     APP,
@@ -166,10 +165,10 @@ WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
         (QUDT_UNIT["RAD-PER-SEC"],),
         {},
     ),
-    WorldQuantityType.JointCurrent: WorldSpec(
-        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, ACT.JointCurrent),
-        (QUDT_QKIND.ElectricCurrent,),
-        (QUDT_UNIT.A,),
+    WorldQuantityType.JointForce: WorldSpec(
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointForceCoordinate),
+        (QUDT_QKIND.Torque,),
+        (QUDT_UNIT["N-M"],),
         {},
     ),
 }
@@ -193,7 +192,6 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.PathParameter: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
     QuantityType.Mass: QUDT_UNIT["KiloGM"],
-    QuantityType.ElectricCurrent: QUDT_UNIT.A,
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
@@ -201,11 +199,12 @@ CSTR_TYPE_NAME: dict[Any, str] = {
 }
 
 # Constraint types not named `cstr:{Type}Constraint`: a length or distance is comp-rob2b's
-# LinearDistanceConstraint, an angle the secorolab extension's.
+# LinearDistanceConstraint, an angle or orientation the secorolab extension's.
 CONSTRAINT_TYPE_OVERRIDE: dict[Any, tuple[Any, str]] = {
     QuantityType.Length: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Distance: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Angle: (CSTR_EXT, "AngleConstraint"),
+    QuantityType.Orientation: (CSTR_EXT, "OrientationConstraint"),
 }
 
 # Quantity kinds are individuals, not classes, unlike structural kinds such as geom-rel:Pose.
@@ -218,7 +217,6 @@ CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
-    ("act", ACT),
     ("algo-ext", ALGO_EXT),
     ("application", APP),
     ("agn", AGN),
