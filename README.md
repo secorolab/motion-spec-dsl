@@ -1,34 +1,36 @@
 # motion-spec-dsl
 
-The textX authoring language for guarded robot motion. `.robmot` models compose
-scene and FSM models with typed context, constraints, monitors, controllers, and
-solvers.
+The textX language for guarded robot motion. A `.robmot` model composes scene and FSM models
+with typed context, constraints, monitors, controllers and solvers, and is emitted as JSON-LD.
 
-User documentation—including setup, the complete language reference, and model
-tutorials—is maintained in
-[`motion-spec`](https://github.com/secorolab/motion-spec/tree/dev/docs/sphinx/source/dsl).
+The language reference and tutorials are part of the
+[motion-spec documentation](https://secorolab.github.io/motion-spec/dsl/).
 
-## Development
+## Install
 
-Use the workspace virtual environment and install this checkout without
-re-resolving sibling packages:
+Python >= 3.10. rdf-utils, scene-dsl and coord-dsl are not on PyPI; `pyproject.toml` pulls
+them from git.
 
 ```bash
-cd /path/to/workspace
-source .venv/bin/activate
-python -m pip install --no-deps -e src/motion-spec-dsl
+git clone https://github.com/secorolab/motion-spec-dsl.git && cd motion-spec-dsl
+pip install -e .
 ```
 
-Verify language registration and parse the maintained model:
+Check that textX sees the language and parses an example:
 
 ```bash
 textx list-languages
-textx check src/motion-spec-dsl/src/motion_spec_dsl/models/01_pick_and_place/pick_and_place.robmot
+textx check src/motion_spec_dsl/models/01_pick_and_place/pick_and_place.robmot
 ```
 
-Run repository checks from `src/motion-spec-dsl`:
+## Development
+
+As CI does, with the patched rdflib:
 
 ```bash
-pytest
-ruff check src tests
+pip install pytest
+pip install --force-reinstall --no-deps \
+  "git+https://github.com/secorolab/rdflib.git@7.6.0-fix-multi-type-scoped-context"
+pytest -q
+ruff check src
 ```
