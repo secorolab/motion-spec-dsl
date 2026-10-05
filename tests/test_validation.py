@@ -156,7 +156,7 @@ REJECTIONS = [
         BASE,
         [
             (EXEC, ACTIONS + EXEC),
-            ("    when {}", "    find-ee: detect <world_tree.table> using <ros.action-clients.locate>\n\n    when {}"),
+            ("    when {}", "    find-ee: detect <world_tree.table.table_top> using <ros.action-clients.locate>\n\n    when {}"),
             (UNTIL, LOCATED),
         ],
         "nowhere to land",
@@ -260,7 +260,7 @@ REJECTIONS = [
         [
             (
                 "velocity-twist twist-ee-base {\n            of:         <gripper.g_base.g_pinch>,",
-                "velocity-twist twist-ee-base {\n            of:         <pick_and_place_graph.cube>,",
+                "velocity-twist twist-ee-base {\n            of:         <pick_and_place_graph.cube.cube_origin>,",
             )
         ],
         "declares no velocity-twist",
