@@ -33,7 +33,11 @@ from motion_spec_dsl.rdf.execution import (
 from motion_spec_dsl.rdf.handlers import emit_constraint_handler
 from motion_spec_dsl.rdf.model import GRAPH_BINDINGS
 from motion_spec_dsl.rdf.plans import derived_scalar_spec, resolve_constraint_quantity
-from motion_spec_dsl.rdf.quantities import emit_context_members, emit_context_quantities, emit_world_quantities
+from motion_spec_dsl.rdf.quantities import (
+    emit_context_members,
+    emit_context_quantities,
+    emit_world_quantities,
+)
 from motion_spec_dsl.rdf.solvers import emit_solvers
 from motion_spec_dsl.rdf.views import emit_map_operations, emit_path_following, emit_scalar_views
 from motion_spec_dsl.rdf_parser.vocab import ALGO_EXT, QUDT_SCHEMA

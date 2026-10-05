@@ -79,7 +79,12 @@ from motion_spec_dsl.classes.coordinates import (
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
-from motion_spec_dsl.classes.dimensions import DIMENSION_VECTOR, VECTOR_COMPONENT_TYPE, infer, same_scalar_dimension
+from motion_spec_dsl.classes.dimensions import (
+    DIMENSION_VECTOR,
+    VECTOR_COMPONENT_TYPE,
+    infer,
+    same_scalar_dimension,
+)
 from motion_spec_dsl.classes.motion_spec import GuardedMotion, Model, ToleranceDefault
 from motion_spec_dsl.classes.path import AdmittanceSpec, PathValue, ProfileSpec
 from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE

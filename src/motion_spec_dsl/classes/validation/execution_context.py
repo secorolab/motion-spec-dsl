@@ -10,7 +10,12 @@ from scene_dsl.classes.sensors import ForceTorqueSensorSpec
 from textx import get_children_of_type, get_location
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.context import ConfigValue, ContextQuantity, QuantityType, pose_frame_names
+from motion_spec_dsl.classes.context import (
+    ConfigValue,
+    ContextQuantity,
+    QuantityType,
+    pose_frame_names,
+)
 from motion_spec_dsl.classes.motion_spec import ContextSpec, ExecutionContext, Model
 
 

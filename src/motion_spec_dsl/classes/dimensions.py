@@ -195,9 +195,13 @@ def infer(expr, resolve=resolve_leaf) -> QuantityType:
                 )
         return first if geometry else VECTOR_QUANTITY_TYPE[first_vector]
     divisor = node.operands[-1]
-    if node.op == "divide" and isinstance(divisor, QuantityLeaf) and divisor.bare is not None:
-        if divisor.bare.value == 0.0:
-            raise DimensionError("division by zero", node)
+    if (
+        node.op == "divide"
+        and isinstance(divisor, QuantityLeaf)
+        and divisor.bare is not None
+        and divisor.bare.value == 0.0
+    ):
+        raise DimensionError("division by zero", node)
     for qty_type in operand_types:
         if qty_type in GEOMETRY_TYPES:
             raise DimensionError(

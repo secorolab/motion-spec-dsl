@@ -83,7 +83,11 @@ from motion_spec_dsl.rdf.emission import (
     emit_view,
     owned_uri,
 )
-from motion_spec_dsl.rdf.expressions import emit_context_ref_node, emit_expression_gradient, emit_op_tree
+from motion_spec_dsl.rdf.expressions import (
+    emit_context_ref_node,
+    emit_expression_gradient,
+    emit_op_tree,
+)
 from motion_spec_dsl.rdf.geometry import (
     emit_angle_normalization,
     emit_combined_pose_coordinate,

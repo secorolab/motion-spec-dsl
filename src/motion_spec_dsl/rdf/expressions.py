@@ -28,8 +28,18 @@ from motion_spec_dsl.classes.context import (
 from motion_spec_dsl.classes.coordinates import PoseCoordinate
 from motion_spec_dsl.classes.dimensions import infer, resolve_leaf
 from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE
-from motion_spec_dsl.classes.views import POSE_KINDS, context_subspace_kind, leaf_gradient, owning_motion
-from motion_spec_dsl.rdf.common import AXIS_VECTORS, ExpressionPlan, GeometricDistancePlan, gradient_scalar_id
+from motion_spec_dsl.classes.views import (
+    POSE_KINDS,
+    context_subspace_kind,
+    leaf_gradient,
+    owning_motion,
+)
+from motion_spec_dsl.rdf.common import (
+    AXIS_VECTORS,
+    ExpressionPlan,
+    GeometricDistancePlan,
+    gradient_scalar_id,
+)
 from motion_spec_dsl.rdf.emission import (
     Emission,
     add_quantity,

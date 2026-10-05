@@ -8,23 +8,23 @@ schema.org ship with it, and a second declaration of a W3C IRI is a second thing
 right.
 """
 
-from rdflib import URIRef
-from rdflib.namespace import SOSA, SSN, DefinedNamespace, Namespace
 from rdf_utils.namespace import (
-    URL_COMP_ROB2B,
-    URL_SECORO_MM,
-    NS_MM_QUDT,
-    NS_MM_QUDT_QTY,
-    NS_MM_GEOM,
-    NS_MM_GEOM_REL,
-    NS_MM_GEOM_COORD,
-    NS_MM_KC,
-    NS_MM_KC_STAT,
+    NS_MM_DYN_COORD,
+    NS_MM_DYN_ENT,
     NS_MM_EL,
     NS_MM_ENV,
-    NS_MM_DYN_ENT,
-    NS_MM_DYN_COORD,
+    NS_MM_GEOM,
+    NS_MM_GEOM_COORD,
+    NS_MM_GEOM_REL,
+    NS_MM_KC,
+    NS_MM_KC_STAT,
+    NS_MM_QUDT,
+    NS_MM_QUDT_QTY,
+    URL_COMP_ROB2B,
+    URL_SECORO_MM,
 )
+from rdflib import URIRef
+from rdflib.namespace import SOSA, DefinedNamespace, Namespace
 
 URI_CR2B_MM = f"{URL_COMP_ROB2B}/metamodels"
 URI_SECORO_MM = URL_SECORO_MM
@@ -34,7 +34,7 @@ class SENSORS(DefinedNamespace):
     ForceTorqueSensor: URIRef
     frame: URIRef
 
-    _extras = ["update-rate"]
+    _extras = ("update-rate",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
 
@@ -42,7 +42,7 @@ class SENSORS(DefinedNamespace):
 class EST(DefinedNamespace):
     MomentumObserver: URIRef
 
-    _extras = ["estimated-by", "estimation-gain", "filter-constant"]
+    _extras = ("estimated-by", "estimation-gain", "filter-constant")
 
     _NS = Namespace(f"{URI_SECORO_MM}/robot/estimation#")
 
@@ -50,7 +50,7 @@ class EST(DefinedNamespace):
 class APP(DefinedNamespace):
     path: URIRef
 
-    _extras = ["command-type", "constraints", "import", "iri-map", "order"]
+    _extras = ("command-type", "constraints", "import", "iri-map", "order")
 
     _NS = Namespace(f"{URI_CR2B_MM}/application/")
 
@@ -62,13 +62,13 @@ class ENV(DefinedNamespace):
     ObjectModel: URIRef
     RigidObject: URIRef
 
-    _extras = [
+    _extras = (
         "of-object",
         "has-object",
         "of-workspace",
         "has-workspace",
         "has-object-model",
-    ]
+    )
 
     _NS = NS_MM_ENV
 
@@ -84,7 +84,7 @@ class EXEC(DefinedNamespace):
 
     realizes: URIRef
 
-    _extras = [
+    _extras = (
         "has-config",
         "has-resource",
         "has-mapping",
@@ -94,7 +94,7 @@ class EXEC(DefinedNamespace):
         "model-entity",
         "runs-scene",
         "timestep",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/execution-context#")
 
@@ -106,14 +106,14 @@ class EL(DefinedNamespace):
     EventReaction: URIRef
     FlagReaction: URIRef
 
-    _extras = [
+    _extras = (
         "has-event",
         "ref-event",
         "has-flag",
         "ref-flag",
         "has-evt-reaction",
         "has-flg-reaction",
-    ]
+    )
 
     _NS = NS_MM_EL
 
@@ -137,7 +137,7 @@ class KC(DefinedNamespace):
     Joint: URIRef
     RevoluteJoint: URIRef
 
-    _extras = ["between-attachments"]
+    _extras = ("between-attachments",)
 
     _NS = NS_MM_KC
 
@@ -150,7 +150,7 @@ class KC_STAT(DefinedNamespace):
     JointForceCoordinate: URIRef
     JointForce: URIRef
 
-    _extras = ["of-joint"]
+    _extras = ("of-joint",)
 
     _NS = NS_MM_KC_STAT
 
@@ -172,7 +172,7 @@ class AGN(DefinedNamespace):
     AgentModel: URIRef
     ModelledAgent: URIRef
 
-    _extras = ["of-agent", "has-agent", "has-agent-model"]
+    _extras = ("of-agent", "has-agent", "has-agent-model")
 
     _NS = Namespace(f"{URI_SECORO_MM}/agent#")
 
@@ -218,7 +218,7 @@ class GEOM_REL(DefinedNamespace):
 
     of: URIRef
 
-    _extras = ["with-respect-to", "reference-point", "between-entities"]
+    _extras = ("with-respect-to", "reference-point", "between-entities")
 
     _NS = NS_MM_GEOM_REL
 
@@ -249,7 +249,7 @@ class GEOM_COORD(DefinedNamespace):
     beta: URIRef
     gamma: URIRef
 
-    _extras = [
+    _extras = (
         "of-pose",
         "of-position",
         "of-orientation",
@@ -266,7 +266,7 @@ class GEOM_COORD(DefinedNamespace):
         "linear-acceleration",
         "linear",
         "angular",
-    ]
+    )
 
     _NS = NS_MM_GEOM_COORD
 
@@ -300,7 +300,7 @@ class GEOM_OP(DefinedNamespace):
     y: URIRef
     z: URIRef
 
-    _extras = ["from", "absolute-velocity", "relative-velocity", "from-directions", "in"]
+    _extras = ("from", "absolute-velocity", "relative-velocity", "from-directions", "in")
 
     _NS = Namespace(f"{URI_CR2B_MM}/geometry/spatial-operators#")
 
@@ -357,14 +357,14 @@ class GEOM_OP_EXT(DefinedNamespace):
     linear: URIRef
     norm: URIRef
 
-    _extras = [
+    _extras = (
         "gradient-moment",
         "angular-distance",
         "path-parameter",
         "normal-a",
         "normal-b",
         "along-speed",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-operators#")
 
@@ -374,7 +374,7 @@ class RBDYN_ENT(DefinedNamespace):
     Mass: URIRef
     mass: URIRef
 
-    _extras = ["reference-point", "acts-on", "of-body"]
+    _extras = ("reference-point", "acts-on", "of-body")
 
     _NS = NS_MM_DYN_ENT
 
@@ -384,7 +384,7 @@ class RBDYN_COORD(DefinedNamespace):
     WrenchCoordinate: URIRef
     UniformGravitationalFieldCoordinate: URIRef
 
-    _extras = ["of-wrench", "as-seen-by", "force", "torque"]
+    _extras = ("of-wrench", "as-seen-by", "force", "torque")
 
     _NS = NS_MM_DYN_COORD
 
@@ -406,7 +406,7 @@ class RBDYN_OP(DefinedNamespace):
     in2: URIRef
     out: URIRef
 
-    _extras = ["from"]
+    _extras = ("from",)
 
     _NS = Namespace(f"{URI_CR2B_MM}/newtonian-rigid-body-dynamics/operators#")
 
@@ -438,7 +438,7 @@ class MAP(DefinedNamespace):
     z: URIRef
     w: URIRef
 
-    _extras = ["angular-velocity", "linear-velocity", "angular-acceleration", "linear-acceleration"]
+    _extras = ("angular-velocity", "linear-velocity", "angular-acceleration", "linear-acceleration")
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/map#")
 
@@ -483,7 +483,7 @@ class ALGO_EXT(DefinedNamespace):
     divisor: URIRef
     normalization: URIRef
 
-    _extras = [
+    _extras = (
         "in",
         "maximum-absolute-value",
         "lower-bound",
@@ -493,7 +493,7 @@ class ALGO_EXT(DefinedNamespace):
         "maximum-jerk",
         "release-threshold",
         "s-curve",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/algorithm#")
 
@@ -514,7 +514,7 @@ class CSTR(DefinedNamespace):
     quantity: URIRef
     threshold: URIRef
 
-    _extras = ["PositionConstraint", "reference-value", "lower-threshold", "upper-threshold"]
+    _extras = ("PositionConstraint", "reference-value", "lower-threshold", "upper-threshold")
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/constraint#")
 
@@ -532,7 +532,7 @@ class CSTR_EXT(DefinedNamespace):
 
     tolerance: URIRef
 
-    _extras = ["has-constraint"]
+    _extras = ("has-constraint",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/constraint#")
 
@@ -570,7 +570,7 @@ class MOT(DefinedNamespace):
     when: URIRef
     until: URIRef
 
-    _extras = ["while"]
+    _extras = ("while",)
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/motion-specification#")
 
@@ -598,7 +598,7 @@ class GEOM_PATH(DefinedNamespace):
     gerono: URIRef
     bernoulli: URIRef
 
-    _extras = ["plane-normal"]
+    _extras = ("plane-normal",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/path#")
 
@@ -624,7 +624,7 @@ class CSTR_HDL(DefinedNamespace):
     event: URIRef
     flag: URIRef
 
-    _extras = [
+    _extras = (
         "error-signal",
         "control-signal",
         "event-queue",
@@ -636,7 +636,7 @@ class CSTR_HDL(DefinedNamespace):
         "damping",
         "maximum-velocity",
         "measured-velocity",
-    ]
+    )
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/constraint-handler#")
 
@@ -646,7 +646,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
     SetpointGenerator: URIRef
     solver: URIRef
 
-    _extras = [
+    _extras = (
         "runs-in-state",
         "reference-signal",
         "mass",
@@ -656,7 +656,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
         "fallback-motion",
         "debounce-duration",
         "runs-solver",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/constraint-handler#")
 
@@ -689,7 +689,7 @@ class SLV(DefinedNamespace):
     root: URIRef
     gravity: URIRef
 
-    _extras = [
+    _extras = (
         "motion-drivers",
         "cartesian-force",
         "joint-force",
@@ -699,7 +699,7 @@ class SLV(DefinedNamespace):
         "linear-acceleration",
         "attached-to",
         "prioritization-hierarchy",
-    ]
+    )
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/solver-specification#")
 

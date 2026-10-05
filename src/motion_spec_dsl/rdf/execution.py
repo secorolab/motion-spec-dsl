@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rdf_utils.namespace import NS_MM_GEOM_REL, NS_MM_QUDT_QTY
-from rdflib.namespace import RDF, RDFS, SDO
+from rdflib.namespace import RDF, RDFS, SDO, SSN
 from rdflib.term import Literal, URIRef
 from textx import get_model
 
@@ -18,7 +18,7 @@ from motion_spec_dsl.classes.units import DSL_UNITS
 from motion_spec_dsl.rdf.emission import Emission, emit_scalar_quantity
 from motion_spec_dsl.rdf.geometry import view_node
 from motion_spec_dsl.rdf.model import ROS
-from motion_spec_dsl.rdf_parser.vocab import EXEC, GEOM_REL, SENSORS, SOSA, SSN
+from motion_spec_dsl.rdf_parser.vocab import EXEC, GEOM_REL, SENSORS, SOSA
 
 
 def emit_ros_action_server(em: Emission, server: RosActionServerDecl) -> None:

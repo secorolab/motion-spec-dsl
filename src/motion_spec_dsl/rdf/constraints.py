@@ -43,7 +43,11 @@ from motion_spec_dsl.classes.controller_semantics import constraint_view_subspac
 from motion_spec_dsl.classes.dimensions import infer
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
 from motion_spec_dsl.classes.units import DSL_UNITS, QUDT_KIND_BY_QUANTITY_TYPE
-from motion_spec_dsl.classes.views import TOLERANCE_DEFAULT_KIND, constraint_kind, context_subspace_kind
+from motion_spec_dsl.classes.views import (
+    TOLERANCE_DEFAULT_KIND,
+    constraint_kind,
+    context_subspace_kind,
+)
 from motion_spec_dsl.rdf.common import JOINT_TYPES, alignment_id, constraint_scalar_id
 from motion_spec_dsl.rdf.emission import (
     Emission,
@@ -63,7 +67,11 @@ from motion_spec_dsl.rdf.expressions import (
 from motion_spec_dsl.rdf.geometry import emit_profile_view_node, view_node
 from motion_spec_dsl.rdf.model import CONSTRAINT_TYPE_OVERRIDE, CSTR_TYPE_NAME, ROS, SCALAR_UNIT
 from motion_spec_dsl.rdf.plans import resolve_constraint_quantity
-from motion_spec_dsl.rdf.quantities import emit_context_members, emit_duration_measure, path_geometry_node
+from motion_spec_dsl.rdf.quantities import (
+    emit_context_members,
+    emit_duration_measure,
+    path_geometry_node,
+)
 from motion_spec_dsl.rdf_parser.vocab import (
     ALGO_EXT,
     CSTR,

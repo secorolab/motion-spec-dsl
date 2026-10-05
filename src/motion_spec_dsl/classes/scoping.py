@@ -5,11 +5,10 @@
 
 from __future__ import annotations
 
-from textx import get_children, get_location, get_model, get_parent_of_type, textx_isinstance
-from textx.exceptions import TextXSemanticError
-
 from scene_dsl.classes.ktree import KinematicTreeTemplate
 from scene_dsl.langs import InstancedRefScopeProvider
+from textx import get_children, get_location, get_model, get_parent_of_type, textx_isinstance
+from textx.exceptions import TextXSemanticError
 
 
 def _fqn(obj) -> str:

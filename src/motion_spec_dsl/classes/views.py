@@ -30,6 +30,7 @@ from motion_spec_dsl.classes.context import (
     GeometricPropKey,
     GeometricProps,
     GeoPropPair,
+    QuantityLeaf,
     QuantityType,
     ReferenceGeneratorType,
     View,
@@ -42,11 +43,13 @@ from motion_spec_dsl.classes.context import (
     op_tree,
     path_pose_endpoints,
     pose_frame_names,
-    QuantityLeaf,
     quantity_axis_frame,
     scalar_type,
 )
-from motion_spec_dsl.classes.controller_semantics import alignment_is_pointwise, constraint_view_subspace
+from motion_spec_dsl.classes.controller_semantics import (
+    alignment_is_pointwise,
+    constraint_view_subspace,
+)
 from motion_spec_dsl.classes.dimensions import VECTOR_COMPONENT_TYPE, infer
 from motion_spec_dsl.classes.motion_spec import ConstraintSection
 from motion_spec_dsl.classes.path import PathValue

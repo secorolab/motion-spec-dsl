@@ -10,7 +10,12 @@ from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
 from rdflib.namespace import RDF
 from rdflib.term import URIRef
 
-from motion_spec_dsl.classes.constraints import ANGLE_VIEW_FORMS, ConstraintSpecification, ViewForm, view_form
+from motion_spec_dsl.classes.constraints import (
+    ANGLE_VIEW_FORMS,
+    ConstraintSpecification,
+    ViewForm,
+    view_form,
+)
 from motion_spec_dsl.classes.context import (
     GEOMETRIC_DISTANCE_RELATION,
     ContextQuantityAlias,
@@ -20,10 +25,18 @@ from motion_spec_dsl.classes.context import (
     pose_frame_names,
     scalar_type,
 )
-from motion_spec_dsl.classes.controller_semantics import alignment_is_pointwise, constraint_view_subspace
+from motion_spec_dsl.classes.controller_semantics import (
+    alignment_is_pointwise,
+    constraint_view_subspace,
+)
 from motion_spec_dsl.classes.motion_spec import GuardedMotion
 from motion_spec_dsl.classes.views import resolve_world_quantity
-from motion_spec_dsl.rdf.common import alignment_id, constraint_scalar_id, gradient_scalar_id, scalar_id
+from motion_spec_dsl.rdf.common import (
+    alignment_id,
+    constraint_scalar_id,
+    gradient_scalar_id,
+    scalar_id,
+)
 from motion_spec_dsl.rdf.emission import (
     Emission,
     add_quantity,

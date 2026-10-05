@@ -27,10 +27,10 @@ from motion_spec_dsl.classes.constraints import (
 )
 from motion_spec_dsl.classes.context import (
     BODY_LINE_DISTANCE_OP,
-    JOINT_SCALAR_TYPES,
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_DISTANCE_SUBSPACE,
     GEOMETRIC_PROJECTION_OPS,
+    JOINT_SCALAR_TYPES,
     AngleBetweenView,
     ContextQuantityAlias,
     QuantityType,

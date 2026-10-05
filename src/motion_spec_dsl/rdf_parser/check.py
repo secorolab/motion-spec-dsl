@@ -35,17 +35,21 @@ def validate_dataset(dataset: rdflib.Dataset, *, meta_shacl: bool = False) -> tu
     if not metamodels:
         return (
             False,
-            "Validation Report\nConforms: False\n"
-            "No SHACL constraint files were listed in the application manifest.",
+            (
+                "Validation Report\nConforms: False\n"
+                "No SHACL constraint files were listed in the application manifest."
+            ),
         )
     for location in metamodels:
         try:
             g_sh.parse(location=location, format="turtle")
-        except Exception as exc:
+        except (OSError, SyntaxError) as exc:
             return (
                 False,
-                "Validation Report\nConforms: False\n"
-                f"Failed to load SHACL constraint graph {location}: {exc}",
+                (
+                    "Validation Report\nConforms: False\n"
+                    f"Failed to load SHACL constraint graph {location}: {exc}"
+                ),
             )
 
     conforms, _v_graph, v_text = pyshacl.validate(

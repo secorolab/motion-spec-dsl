@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from typing import Any, NamedTuple
 
-from rdflib import URIRef
-from rdflib.namespace import DefinedNamespace, Namespace, SDO, XSD
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_OF_ORIENT,
     URI_GEOM_PRED_OF_POSE,
@@ -25,16 +23,19 @@ from rdf_utils.models.vocab import (
     URI_QUDT_QK_LENGTH,
 )
 from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdflib import URIRef
+from rdflib.namespace import SDO, SSN, XSD, DefinedNamespace, Namespace
 
+from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 from motion_spec_dsl.rdf_parser.vocab import (
-    ALGO_EXT,
     AGN,
+    ALGO_EXT,
     APP,
-    EL,
     CSTR,
     CSTR_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
+    EL,
     EXEC,
     GEOM_COORD,
     GEOM_ENT,
@@ -47,9 +48,9 @@ from motion_spec_dsl.rdf_parser.vocab import (
     MAP,
     MAP_EXT,
     MOT,
+    QKIND_EXT,
     QUDT_QKIND,
     QUDT_SCHEMA,
-    QKIND_EXT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
@@ -58,16 +59,14 @@ from motion_spec_dsl.rdf_parser.vocab import (
     SLV,
     SLV_EXT,
     SOSA,
-    SSN,
     TIME,
 )
-from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 
 
 class ROS(DefinedNamespace):
     Action: URIRef
     Topic: URIRef
-    _extras = ["channel-name", "type-name", "field-path"]
+    _extras = ("channel-name", "type-name", "field-path")
     _NS = Namespace("https://index.ros.org/p/")
 
 
