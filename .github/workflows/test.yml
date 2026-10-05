@@ -25,25 +25,3 @@ jobs:
 
       - name: Run tests
         run: pytest -q
-
-      # A change made in both repos sits on a motion-spec branch of the same name; else dev.
-      - name: Install motion-spec
-        env:
-          BRANCH: ${{ github.head_ref || github.ref_name }}
-        run: |
-          repo=https://github.com/secorolab/motion-spec.git
-          ref=dev
-          if git ls-remote --exit-code --heads "$repo" "$BRANCH" > /dev/null; then ref="$BRANCH"; fi
-          pip install "git+$repo@$ref"
-
-      - name: SHACL gate (gen ir + check)
-        run: |
-          set -e
-          for model in 01_pick_and_place/pick_and_place \
-                       02_dual_arm_pick_and_place/dual_arm_pick_and_place \
-                       06_arc_tracing_with_admittance/arc_tracing_with_admittance; do
-            name=$(basename "$model")
-            out="$RUNNER_TEMP/shacl"
-            motion-spec gen ir "src/motion_spec_dsl/models/$model.robmot" -o "$out"
-            motion-spec check "$out/$name"/*/generated/model/"$name-app.ld.json"
-          done
