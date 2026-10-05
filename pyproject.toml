@@ -28,7 +28,7 @@ dependencies = [
     "rdf-utils @ git+https://github.com/minhnh/rdf-utils@main",
     "pyshacl>=0.25.0",
     "coord_dsl @ git+https://github.com/minhnh/coord-dsl@v1.0.0",
-    "scene-dsl @ git+https://github.com/secorolab/scene-dsl@main",
+    "scene-dsl @ git+https://github.com/secorolab/scene-dsl@v1.0.0",
 ]
 
 [project.entry-points."textx_languages"]
