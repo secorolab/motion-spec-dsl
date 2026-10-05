@@ -3,6 +3,6 @@
 # Author: Vamsi Kalagaturu
 """Motion-specification RDF/JSON-LD emission package."""
 
-from motion_spec_dsl.rdf.motion_spec import MotionSpecDatasetBuilder
+from motion_spec_dsl.rdf.dataset import build_dataset
 
-__all__ = ["MotionSpecDatasetBuilder"]
+__all__ = ["build_dataset"]

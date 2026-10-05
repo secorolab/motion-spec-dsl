@@ -1,176 +1,188 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Validate quantity-expression trees: dimension inference agrees with what `rdf/motion_spec.py`
-emits, because both call `classes.dimensions.infer`.
-"""
+"""Validate quantity expressions with the same `infer` the RDF emission uses."""
 
 from __future__ import annotations
 
 from scene_dsl.classes.distrib import NormalDistribution, UniformDistribution
-from textx import get_children_of_type
+from textx import get_children_of_type, get_location
+from textx.exceptions import TextXSemanticError
+from textx.scoping import get_included_models
 
-from motion_spec_dsl.classes.constraint_handler import _resolved_controller
+from motion_spec_dsl.classes.constraint_handler import (
+    ConstraintHandler,
+    ControllerAlias,
+    motion_context_quantities,
+    motion_world_quantities,
+)
+from motion_spec_dsl.classes.constraints import ConstraintSpecification
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
+    ContextQuantityAlias,
     ContextRef,
     QOpNode,
+    QuantityType,
     ReferenceValue,
     SampledValue,
     SnapshotValue,
     View,
-    WorldQuantity,
-    _resolved_context_quantity,
-    _resolved_world_quantity,
+    op_tree,
 )
+from motion_spec_dsl.classes.controller_semantics import controller_command_record
 from motion_spec_dsl.classes.dimensions import DimensionError, infer, same_scalar_dimension
 from motion_spec_dsl.classes.motion_spec import Model
-from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
-from motion_spec_dsl.rdf.common import _quantity_axis_frame
+from motion_spec_dsl.classes.views import leaf_gradient
+
+# Geometry is stated through map views of its components, never aliased whole.
+_GEOMETRIC_TYPES = {
+    QuantityType.Pose,
+    QuantityType.Position,
+    QuantityType.Orientation,
+    QuantityType.VelocityTwist,
+    QuantityType.AccelerationTwist,
+    QuantityType.Wrench,
+    QuantityType.Direction,
+}
 
 
 def validate_expression_dimensions(model: Model) -> None:
-    """Every authored quantity expression must type-check, and a declared quantity's stated
-    type must equal what its expression infers.
-    """
+    """Every expression must type-check, and a declared quantity must be what it infers."""
+    # (expression, object it is reported on, the quantity whose declared kind it must match)
+    expressions = []
     for quantity in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(quantity)
+        if isinstance(quantity, ContextQuantityAlias):
+            continue
         value = quantity.value
         if isinstance(value, ReferenceValue):
-            _check_declared(quantity, value.expr)
+            if quantity.type in _GEOMETRIC_TYPES:
+                raise TextXSemanticError(
+                    f"'{quantity.name}' aliases a whole {quantity.type} -- reference its "
+                    "components through their views",
+                    **get_location(quantity),
+                )
+            expressions.append((value.expr, quantity, quantity))
         elif isinstance(value, SnapshotValue) and value.tail:
-            _check_declared(quantity, value)
-
-    for ref in get_children_of_type(ContextRef, model):
-        if ref.expr is not None:
-            _infer_or_raise(ref.expr, ref)
-
-    for view in get_children_of_type(View, model):
-        if view.expr is not None:
-            _infer_or_raise(view.expr, view)
+            expressions.append((value, quantity, quantity))
+    expressions += [
+        (ref.expr, ref, None) for ref in get_children_of_type(ContextRef, model) if ref.expr
+    ]
+    expressions += [
+        (view.expr, view, None) for view in get_children_of_type(View, model) if view.expr
+    ]
+    for expr, obj, declared in expressions:
+        try:
+            inferred = infer(expr)
+        except DimensionError as exc:
+            raise TextXSemanticError(str(exc), **get_location(obj)) from exc
+        if declared is not None and not same_scalar_dimension(declared.type, inferred):
+            raise TextXSemanticError(
+                f"'{declared.name}' is declared {declared.type} but its expression infers "
+                f"{inferred}",
+                **get_location(declared),
+            )
 
 
 def validate_sampled_quantities(model: Model) -> None:
-    """A `sample <distribution>` scalar must draw from a 1-D uniform or normal distribution."""
+    """A sampled scalar draws one number: its distribution is a 1-D uniform or normal."""
     for quantity in get_children_of_type(ContextQuantity, model):
-        quantity = _resolved_context_quantity(quantity)
-        if not isinstance(quantity.value, SampledValue):
+        if isinstance(quantity, ContextQuantityAlias) or not isinstance(quantity.value, SampledValue):
             continue
-        spec = getattr(quantity.value.distribution, "spec", None)
+        spec = quantity.value.distribution.spec
         if isinstance(spec, (UniformDistribution, NormalDistribution)) and spec.dimension == 1:
             continue
-        raise semantic_error(
-            f"'{quantity.name}' samples a scalar quantity, which draws one number, so its "
-            "distribution must be a 1-D uniform or normal; a 3-D distribution belongs on a "
-            "scene pose.",
-            quantity,
+        raise TextXSemanticError(
+            f"'{quantity.name}' samples a scalar from a distribution that is no 1-D uniform or "
+            "normal -- a scalar draws one number, and a 3-D distribution belongs on a scene pose",
+            **get_location(quantity),
         )
+
+
+def _moved_leaves(node, world: dict) -> list:
+    """Every leaf of NODE the motion moves, with the (frame, half) it moves along."""
+    if isinstance(node, QOpNode):
+        return [moved for operand in node.operands for moved in _moved_leaves(operand, world)]
+    gradient = leaf_gradient(node, world)
+    return [] if gradient is None else [(node, gradient)]
+
+
+def _check_divisors(node, spec, location, world: dict) -> None:
+    if not isinstance(node, QOpNode):
+        return
+    if node.op == "divide" and _moved_leaves(node.operands[1], world):
+        raise TextXSemanticError(
+            f"constraint '{spec.name}' divides by a term the motion moves -- the expression has "
+            "no value where that term crosses zero; a monitor accepts it",
+            **location,
+        )
+    for operand in node.operands:
+        _check_divisors(operand, spec, location, world)
 
 
 def validate_controlled_expressions(model: Model) -> None:
-    """A controlled expression is driven along its own gradient, so that gradient has to be a
-    fact the model states rather than one the cycle discovers: the expression must be affine in
-    the views a solver moves, its coefficients must be measure literals, and all those views must
-    be seen by one frame. A monitor reads the value and keeps the full algebra.
+    """A controlled expression is driven along its own gradient, recomputed every cycle.
+
+    So every term the motion moves states a direction, all of them in one frame and one half, and
+    nothing divides by a moved term. A monitor keeps the full algebra.
     """
-    for handler in constraint_handlers(model):
+    models = get_included_models(model)
+    for handler in get_children_of_type(ConstraintHandler, model):
+        motion = handler.motion
+        context_quantities = motion_context_quantities(models, motion, handler)
+        world = motion_world_quantities(models, motion, handler, context_quantities)
         for entry in handler.controllers:
-            controller = _resolved_controller(entry)
+            controller = entry.ref.controller if isinstance(entry, ControllerAlias) else entry
             spec = controller.params.constraint.constraint
-            tree = _controlled_tree(spec)
-            if tree is None:
+            if not isinstance(spec, ConstraintSpecification):
                 continue
-            _check_affine(tree, spec, controller)
-            _check_one_frame(tree, spec, controller)
-
-
-def _controlled_tree(spec):
-    """The op tree a constraint acts on, or None when its view is not an expression. A snapshot
-    holds a sampled value rather than tracking one, so it is not one either.
-    """
-    view = getattr(spec, "view", None)
-    expr = getattr(view, "expr", None)
-    if expr is not None:
-        return expr.as_op_tree()
-    quantity = getattr(view, "quantity", None)
-    if isinstance(quantity, ContextQuantity):
-        value = _resolved_context_quantity(quantity).value
-        if isinstance(value, ReferenceValue):
-            return value.expr.as_op_tree()
-    return None
-
-
-def _measured_leaves(node) -> list:
-    """Every leaf of `node` viewing a world quantity -- the ones a solver actually moves."""
-    if isinstance(node, QOpNode):
-        return [leaf for operand in node.operands for leaf in _measured_leaves(operand)]
-    return [node] if isinstance(getattr(node, "quantity", None), WorldQuantity) else []
-
-
-def _is_literal(node) -> bool:
-    """Whether `node` is built only from measure literals, so its value is a generation-time
-    number a coefficient can be.
-    """
-    if isinstance(node, QOpNode):
-        return all(_is_literal(operand) for operand in node.operands)
-    return getattr(node, "bare", None) is not None
-
-
-def _check_affine(node, spec, controller) -> None:
-    if not isinstance(node, QOpNode):
-        return
-    # Only a product that reaches a measured view states a gradient; one built purely from
-    # context quantities is a coefficient in its own right and may be computed per cycle.
-    if node.op in ("multiply", "divide") and _measured_leaves(node):
-        if node.op == "divide" and _measured_leaves(node.operands[1]):
-            raise semantic_error(
-                f"Constraint '{spec.name}' divides by a view it measures; a controlled "
-                "expression divides only by a literal. A monitor accepts it.",
-                controller,
-            )
-        if len([operand for operand in node.operands if _measured_leaves(operand)]) > 1:
-            raise semantic_error(
-                f"Constraint '{spec.name}' multiplies two measured views, so its gradient "
-                "depends on what it measures; a controller cannot drive that yet. A monitor "
-                "accepts it.",
-                controller,
-            )
-        for operand in node.operands:
-            if not _measured_leaves(operand) and not _is_literal(operand):
-                raise semantic_error(
-                    f"Constraint '{spec.name}' scales a measured view by a runtime value; a "
-                    "controlled expression needs coefficients it can state at generation time. "
-                    "A monitor accepts it.",
-                    controller,
+            view = spec.view
+            quantity = view.quantity
+            if isinstance(quantity, ContextQuantityAlias):
+                quantity = quantity.ref
+            # A snapshot holds a sampled value rather than tracking one.
+            if view.expr is not None:
+                tree = op_tree(view.expr)
+            elif isinstance(quantity, ContextQuantity) and isinstance(quantity.value, ReferenceValue):
+                tree = op_tree(quantity.value.expr)
+            else:
+                continue
+            location = get_location(controller)
+            try:
+                moved = _moved_leaves(tree, world)
+            except ValueError as exc:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' has no direction to be driven along -- {exc}",
+                    **location,
+                ) from exc
+            if not moved:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' combines nothing the motion moves -- there is no "
+                    "direction to drive it along",
+                    **location,
                 )
-    for operand in node.operands:
-        _check_affine(operand, spec, controller)
-
-
-def _check_one_frame(tree, spec, controller) -> None:
-    frames = {
-        _quantity_axis_frame(_resolved_world_quantity(leaf.quantity))
-        for leaf in _measured_leaves(tree)
-    }
-    if len(frames) > 1:
-        rendered = ", ".join(sorted(str(frame) for frame in frames))
-        raise semantic_error(
-            f"Constraint '{spec.name}' combines views seen by different frames ({rendered}); "
-            "state them all as-seen-by one frame, since the gradient is one vector in one frame.",
-            controller,
-        )
-
-
-def _check_declared(quantity: ContextQuantity, expr) -> None:
-    inferred = _infer_or_raise(expr, quantity)
-    if not same_scalar_dimension(quantity.type, inferred):
-        raise semantic_error(
-            f"'{quantity.name}' is declared {quantity.type}, but its expression infers {inferred}.",
-            quantity,
-        )
-
-
-def _infer_or_raise(expr, obj):
-    try:
-        return infer(expr)
-    except DimensionError as exc:
-        raise semantic_error(str(exc), obj) from exc
+            _check_divisors(tree, spec, location, world)
+            frames = {frame for _leaf, (frame, _half) in moved}
+            if len(frames) > 1:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' combines terms moving in different frames "
+                    f"({', '.join(str(frame) for frame in frames)}) -- the gradient is one vector "
+                    "in one frame",
+                    **location,
+                )
+            halves = {half for _leaf, (_frame, half) in moved}
+            if len(halves) > 1:
+                raise TextXSemanticError(
+                    f"constraint '{spec.name}' spans the linear and the angular half -- one solver "
+                    "row carries one of them, so split it into one constraint per half",
+                    **location,
+                )
+            command = controller_command_record(controller)
+            if (command.is_force_command and halves == {"angular"}) or (
+                command.is_moment_command and halves == {"linear"}
+            ):
+                raise TextXSemanticError(
+                    f"controller '{controller.name}' commands a "
+                    f"{'force' if command.is_force_command else 'moment'} along the "
+                    f"{next(iter(halves))} half of '{spec.name}' -- a force pushes along a line "
+                    "and a moment turns about an axis",
+                    **location,
+                )

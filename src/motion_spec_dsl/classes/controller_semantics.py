@@ -14,27 +14,32 @@ from motion_spec_dsl.classes.constraint_handler import (
     ControllerEntry,
     ControllerType,
     SerialChainSolver,
-    _resolved_controller,
-    _resolved_solver,
+    SolverAlias,
 )
 from motion_spec_dsl.classes.constraints import (
+    ANGLE_VIEW_FORMS,
     BilateralConstraint,
     ConstraintSpecification,
     EqualityConstraint,
     LessThanConstraint,
+    ViewForm,
+    view_form,
 )
 from motion_spec_dsl.classes.context import (
     BODY_LINE_DISTANCE_OP,
     GEOMETRIC_DISTANCE_OPS,
     GEOMETRIC_DISTANCE_SUBSPACE,
     GEOMETRIC_PROJECTION_OPS,
+    JOINT_SCALAR_TYPES,
+    AngleBetweenView,
+    ContextQuantityAlias,
     QuantityType,
     SubSpace,
+    VectorXYZ,
     WorldQuantity,
+    WorldQuantityAlias,
     WorldQuantityType,
-    _geometric_operand_kind,
-    _resolved_context_quantity,
-    _resolved_world_quantity,
+    geometric_operand_kind,
     is_body_line_distance,
 )
 
@@ -49,11 +54,42 @@ SUBSPACE_ALIAS: dict[str, str] = {
     "torque": "torque",
 }
 
+# The subspace a view of a whole quantity reads, by the quantity's kind.
+WHOLE_QUANTITY_SUBSPACES = {
+    WorldQuantityType.JointPosition: "joint-position",
+    WorldQuantityType.JointVelocity: "joint-velocity",
+    WorldQuantityType.JointForce: "joint-force",
+    WorldQuantityType.Pose: "pose",
+}
+
+COMMAND_TYPES = {
+    SubSpace.LinVel: QuantityType.LinearVelocity,
+    SubSpace.Position: QuantityType.LinearVelocity,
+    SubSpace.AngVel: QuantityType.AngularVelocity,
+    SubSpace.Orientation: QuantityType.AngularVelocity,
+    SubSpace.Force: QuantityType.Force,
+    SubSpace.Torque: QuantityType.Torque,
+}
+
+# A whole `.orientation` view keeps its raw token; only the per-axis form becomes "rotation".
+ANGULAR_SUBSPACES = {
+    "orientation",
+    "rotation",
+    "angular",
+    "angular-velocity",
+    "alignment",
+    "incident-angle",
+    "plane-angle",
+}
+
+LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
+ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
+POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
+
 
 @dataclass(frozen=True)
 class ControllerCommandRecord:
-    """Resolved control-command shape for a controller+constraint: the commanded
-    quantity, its view subspace/axis, command type, and controlled Cartesian axes."""
+    """A controller's command: the quantity and view it drives, its type, and its axes."""
 
     controller: ControllerEntry
     constraint: ConstraintSpecification
@@ -62,106 +98,43 @@ class ControllerCommandRecord:
     axis: str | None
     command_type: QuantityType | None
     controlled_axes: tuple[tuple[str, str], ...]
-
-    @property
-    def is_force_command(self) -> bool:
-        """Whether this commands a force (by command type or a force view)."""
-        return self.command_type == QuantityType.Force or self.view_subspace == "force"
-
-    @property
-    def is_posture_torque_command(self) -> bool:
-        """Whether this commands a joint-space posture torque."""
-        return (
-            self.command_type == QuantityType.Torque
-            and self.quantity is not None
-            and self.quantity.type == WorldQuantityType.JointPosition
-        )
-
-    @property
-    def is_moment_command(self) -> bool:
-        """Whether this commands a Cartesian moment (a couple about an axis), not a joint torque.
-
-        An `angle between` view (versor-versor, versor-plane, or plane-plane) names its operands
-        rather than a world quantity, so it has none to classify by; its command is a couple
-        about the axis/axes it drives.
-        """
-        if self.command_type != QuantityType.Torque:
-            return False
-        if self.view_subspace in ("alignment", "incident-angle", "plane-angle"):
-            return True
-        return self.quantity is not None and self.quantity.type != WorldQuantityType.JointPosition
+    is_force_command: bool
+    is_posture_torque_command: bool
+    # A couple about an axis, not a joint torque; an angle view names no world quantity.
+    is_moment_command: bool
 
 
-# Resolved view subspaces whose command is a moment, not a force. A whole `.orientation` view
-# keeps its raw token; only the per-axis form aliases to "rotation".
-ANGULAR_SUBSPACES = frozenset(
-    {
-        "orientation",
-        "rotation",
-        "angular",
-        "angular-velocity",
-        "alignment",
-        "incident-angle",
-        "plane-angle",
-    }
-)
+def alignment_is_pointwise(constraint: ConstraintSpecification) -> bool:
+    """Whether an angle target names the direction itself (two rotational DOF), not a cone (one).
 
-LINEAR_AXES = tuple(("linear", axis) for axis in "xyz")
-ANGULAR_AXES = tuple(("angular", axis) for axis in "xyz")
-POSE_AXES = (*LINEAR_AXES, *ANGULAR_AXES)
-
-
-def _alignment_is_pointwise(constraint: ConstraintSpecification) -> bool:
-    """Whether an `angle between` constraint's target names the aligned direction itself (a point
-    on the sphere) rather than a cone around it: equality to a bare zero, a band opening at zero,
-    or `less than` (the same cone stated as a bound). A point target removes two rotational DOF;
-    a cone removes one. Shared by validation and RDF emission so the two never disagree on which
-    row a target drives -- see plan 10.
+    Equality to a bare zero, a band opening at zero, and `less than` all name the direction.
     """
     expr = constraint.expr
     if isinstance(expr, EqualityConstraint):
-        measure = expr.reference.bare
-        return measure is not None and measure.value == 0.0
+        return expr.reference.bare is not None and expr.reference.bare.value == 0.0
     if isinstance(expr, LessThanConstraint):
         return True
     if isinstance(expr, BilateralConstraint):
-        lower = expr.lower.bare
-        return lower is not None and lower.value == 0.0
+        return expr.lower.bare is not None and expr.lower.bare.value == 0.0
     return False
 
 
-def _alignment_controlled_axes(
-    constraint: ConstraintSpecification,
-) -> tuple[tuple[str, str], ...]:
-    """The angular axes an alignment drives: every axis but the reference direction's own, whose
-    rotation-vector component is identically zero -- that zero is the free spin about the axis.
-    """
-    binary = getattr(constraint.view, "binary", None)
-    reference = binary.right if type(binary).__name__ == "AngleBetweenView" else None
-    if reference is None:
-        return ANGULAR_AXES
-    coords = getattr(getattr(_resolved_context_quantity(reference), "value", None), "coords", None)
-    if coords is None or len(coords.values) != 3:
-        return ANGULAR_AXES
-    free = max(range(3), key=lambda i: abs(float(coords.values[i].value)))
-    return tuple(("angular", axis) for index, axis in enumerate("xyz") if index != free)
-
-
 def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | ControllerAlias):
-    """Resolve the authored, sole, or uniquely role-compatible solver for a controller.
+    """The solver a controller names, else the handler's one serial-chain or forwarding solver.
 
-    Only serial-chain dynamics and command-forwarding solvers bind implicitly to a
-    controller; a mobile-platform velocity/force solver is never an implicit controller
-    target -- it consumes an already-computed context signal, not a controller output.
+    A mobile-platform solver is never an implicit target: it consumes a computed signal.
     """
-    resolved = _resolved_controller(controller)
-    explicit = getattr(getattr(resolved, "solver", None), "solver", None)
-    if explicit is not None:
-        return _resolved_solver(explicit)
+    resolved = controller.ref.controller if isinstance(controller, ControllerAlias) else controller
+    if resolved.solver is not None:
+        explicit = resolved.solver.solver
+        return explicit.ref.solver if isinstance(explicit, SolverAlias) else explicit
     solvers = [
-        _resolved_solver(item)
+        solver
         for item in handler.solvers
-        if isinstance(_resolved_solver(item), (SerialChainSolver, CommandForwardingSolver))
+        if isinstance(
+            solver := item.ref.solver if isinstance(item, SolverAlias) else item,
+            (SerialChainSolver, CommandForwardingSolver),
+        )
     ]
     if len(solvers) == 1:
         return solvers[0]
@@ -172,168 +145,123 @@ def controller_solver(handler: ConstraintHandler, controller: ControllerEntry | 
     return candidates[0] if len(candidates) == 1 else None
 
 
-def axis_label(axis: object | None) -> str | None:
-    """Normalise an axis token to its `x`/`y`/`z` string."""
-    if axis is None:
-        return None
-    return str(getattr(axis, "value", axis))
-
-
 def infer_command_type(subspace: SubSpace | str | None) -> QuantityType | None:
-    """The command QuantityType (linear/angular velocity, force or torque) implied by a
-    view subspace, or None.
-    """
-    if subspace is None:
-        return None
-    # A `distance between <A> and <B>` view has no raw SubSpace enum (it resolves
-    # via constraint_view_subspace to the string "distance"); it is control-wise a
-    # linear command, the same as SubSpace.Position. Every Table IIa expression (plan 08) is
-    # linear-subspace too -- a length, signed or not, never an angle.
+    """The command type a view subspace implies: linear or angular velocity, force, or torque."""
+    # A distance and every Table II expression is a length, so its command is linear.
     if subspace == "distance" or subspace in GEOMETRIC_DISTANCE_SUBSPACE.values():
         return QuantityType.LinearVelocity
-    return {
-        SubSpace.LinVel: QuantityType.LinearVelocity,
-        SubSpace.Position: QuantityType.LinearVelocity,
-        SubSpace.AngVel: QuantityType.AngularVelocity,
-        SubSpace.Orientation: QuantityType.AngularVelocity,
-        SubSpace.Force: QuantityType.Force,
-        SubSpace.Torque: QuantityType.Torque,
-    }.get(subspace)
+    return COMMAND_TYPES.get(subspace)
 
 
 def constraint_view_subspace(constraint: ConstraintSpecification) -> str | None:
-    """The constraint's canonical distance, joint-position, or pose subspace."""
+    """The constraint's canonical distance, angle, joint, or pose subspace."""
     view = constraint.view
-    binary = getattr(view, "binary", None)
-    kind = type(binary).__name__ if binary is not None else None
-
-    if kind == "AngleBetweenView":
-        from_is_plane = _resolved_context_quantity(binary.left).type == QuantityType.Plane
-        to_is_plane = _resolved_context_quantity(binary.right).type == QuantityType.Plane
-        if from_is_plane and to_is_plane:
-            return "plane-angle"
-        if to_is_plane:
-            return "incident-angle"
-        return "alignment"
-
-    if kind == "DistanceBetweenView":
+    form = view_form(constraint)
+    if form in ANGLE_VIEW_FORMS:
+        return str(form)
+    if form == ViewForm.DistanceBetween:
         return "distance"
-
-    if kind == "DistanceFromView":
-        op_type = GEOMETRIC_DISTANCE_OPS.get(
-            (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
-        )
-        if op_type == "PointLineToLinearDistance" and is_body_line_distance(binary):
+    if form in (ViewForm.DistanceFrom, ViewForm.ProjectionOn):
+        binary = view.binary
+        kinds = (geometric_operand_kind(binary.left), geometric_operand_kind(binary.right))
+        if form == ViewForm.ProjectionOn:
+            op_type = GEOMETRIC_PROJECTION_OPS.get(kinds)
+        elif GEOMETRIC_DISTANCE_OPS.get(kinds) == "PointLineToLinearDistance" and (
+            is_body_line_distance(binary)
+        ):
             op_type = BODY_LINE_DISTANCE_OP
+        else:
+            op_type = GEOMETRIC_DISTANCE_OPS.get(kinds)
         return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
-
-    if kind == "ProjectionOnView":
-        op_type = GEOMETRIC_PROJECTION_OPS.get(
-            (_geometric_operand_kind(binary.left), _geometric_operand_kind(binary.right))
-        )
-        return GEOMETRIC_DISTANCE_SUBSPACE.get(op_type) if op_type else None
-
-    subspace = view.subspace
-    if subspace is None:
-        quantity = view.quantity
-        if isinstance(quantity, WorldQuantity):
-            quantity = _resolved_world_quantity(quantity)
-            if quantity.type == WorldQuantityType.JointPosition:
-                return "joint-position"
-            if quantity.type == WorldQuantityType.JointVelocity:
-                return "joint-velocity"
-            if quantity.type == WorldQuantityType.JointCurrent:
-                return "joint-current"
-            if quantity.type == WorldQuantityType.Pose:
-                return "pose"
-        return None
-
-    raw = str(getattr(subspace, "value", subspace))
     quantity = view.quantity
-    if (
+    if view.subspace is None:
+        if isinstance(quantity, WorldQuantity):
+            return WHOLE_QUANTITY_SUBSPACES.get(quantity.type)
+        return None
+    raw = str(view.subspace)
+    whole_pose_part = (
         isinstance(quantity, WorldQuantity)
-        and _resolved_world_quantity(quantity).type == WorldQuantityType.Pose
+        and quantity.type == WorldQuantityType.Pose
         and raw in {"position", "orientation"}
         and view.axis is None
-    ):
-        return raw
-    return SUBSPACE_ALIAS.get(raw, raw)
+    )
+    return raw if whole_pose_part else SUBSPACE_ALIAS.get(raw, raw)
 
 
-def resolved_constraint_quantity(
-    constraint: ConstraintSpecification,
-) -> WorldQuantity | None:
-    """The resolved WorldQuantity a constraint's view targets, or None."""
-    quantity = getattr(constraint.view, "quantity", None)
-    if isinstance(quantity, WorldQuantity):
-        return _resolved_world_quantity(quantity)
-    return None
+def resolved_constraint_quantity(constraint: ConstraintSpecification) -> WorldQuantity | None:
+    """The world quantity a constraint's view reads, aliases resolved, or None."""
+    quantity = constraint.view.quantity if constraint.view is not None else None
+    if isinstance(quantity, WorldQuantityAlias):
+        return quantity.ref
+    return quantity if isinstance(quantity, WorldQuantity) else None
 
 
 def controller_command_record(
     controller: ControllerEntry | ControllerAlias,
 ) -> ControllerCommandRecord:
-    """Resolve a controller's authored command type and controlled Cartesian axes."""
-    resolved_controller = _resolved_controller(controller)
-    constraint = resolved_controller.params.constraint.constraint
+    """A controller's command type and the Cartesian axes it controls."""
+    resolved = controller.ref.controller if isinstance(controller, ControllerAlias) else controller
+    constraint = resolved.params.constraint.constraint
     quantity = resolved_constraint_quantity(constraint)
-    if quantity is not None and quantity.type == WorldQuantityType.JointCurrent:
-        raise ValueError(
-            f"Controller '{resolved_controller.name}' drives constraint '{constraint.name}' on "
-            f"'{quantity.name}': a joint current is measured, nothing can command it"
-        )
-    if quantity is not None and quantity.type == WorldQuantityType.JointVelocity:
-        raise ValueError(
-            f"Controller '{resolved_controller.name}' drives constraint '{constraint.name}' on "
-            f"'{quantity.name}': a joint velocity is measured, no controller commands one"
-        )
     raw_subspace = constraint.view.subspace
-    axis = axis_label(getattr(constraint.view, "axis", None))
+    axis = constraint.view.axis
     view_subspace = constraint_view_subspace(constraint)
-    # `raw_subspace` is None for a `distance between <A> and <B>` view (no SubSpace enum); fall
-    # back to the resolved string subspace ("distance") so it still infers a linear command.
+    # A distance view has no raw subspace: the resolved "distance" still infers a linear command.
     command_type = (
-        resolved_controller.command_type
+        resolved.command_type
         or infer_command_type(raw_subspace)
         or infer_command_type(view_subspace)
     )
-    # An impedance law commands through f_ext; the constrained subspace picks force vs moment.
-    if resolved_controller.type == ControllerType.Impedance:
+    # An impedance law commands through f_ext; the constrained subspace picks force or moment.
+    if resolved.type == ControllerType.Impedance:
         command_type = (
             QuantityType.Torque if view_subspace in ANGULAR_SUBSPACES else QuantityType.Force
         )
-
-    controlled_axes: tuple[tuple[str, str], ...] = ()
-    whole_pose_command = (
-        quantity is not None
-        and quantity.type == WorldQuantityType.Pose
-        and raw_subspace is None
-        and isinstance(constraint.expr, EqualityConstraint)
-    )
     force_command = command_type == QuantityType.Force or view_subspace == "force"
-    posture_torque = (
-        command_type == QuantityType.Torque
-        and quantity is not None
-        and quantity.type == WorldQuantityType.JointPosition
+    joint_quantity = quantity is not None and quantity.type in JOINT_SCALAR_TYPES
+    posture_torque = command_type == QuantityType.Torque and joint_quantity
+    moment_command = command_type == QuantityType.Torque and (
+        view_subspace in ("alignment", "incident-angle", "plane-angle")
+        or (quantity is not None and not joint_quantity)
     )
+    controlled_axes: tuple[tuple[str, str], ...] = ()
     if not (force_command or posture_torque):
-        if whole_pose_command:
+        if (
+            quantity is not None
+            and quantity.type == WorldQuantityType.Pose
+            and raw_subspace is None
+            and isinstance(constraint.expr, EqualityConstraint)
+        ):
             controlled_axes = POSE_AXES
         elif raw_subspace in {SubSpace.Position, SubSpace.LinVel}:
             controlled_axes = (("linear", axis),) if axis is not None else LINEAR_AXES
         elif raw_subspace in {SubSpace.Orientation, SubSpace.AngVel}:
             controlled_axes = (("angular", axis),) if axis is not None else ANGULAR_AXES
         elif view_subspace == "alignment":
-            controlled_axes = _alignment_controlled_axes(constraint)
+            controlled_axes = ANGULAR_AXES
+            # The reference direction's own axis spins freely: its rotation-vector component is zero.
+            binary = constraint.view.binary
+            if isinstance(binary, AngleBetweenView):
+                reference = binary.right
+                if isinstance(reference, ContextQuantityAlias):
+                    reference = reference.ref
+                if isinstance(reference.value, VectorXYZ) and len(reference.value.coords.values) == 3:
+                    values = reference.value.coords.values
+                    free = max(range(3), key=lambda i: abs(float(values[i].value)))
+                    controlled_axes = tuple(
+                        ("angular", name) for index, name in enumerate("xyz") if index != free
+                    )
         elif view_subspace == "distance" and raw_subspace is None:
             controlled_axes = (("linear", "distance"),)
-
     return ControllerCommandRecord(
-        controller=resolved_controller,
+        controller=resolved,
         constraint=constraint,
         quantity=quantity,
         view_subspace=view_subspace,
-        axis=axis,
+        axis=str(axis) if axis is not None else None,
         command_type=command_type,
         controlled_axes=controlled_axes,
+        is_force_command=force_command,
+        is_posture_torque_command=posture_torque,
+        is_moment_command=moment_command,
     )

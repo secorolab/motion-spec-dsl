@@ -1,233 +1,121 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-
 """The model's ROS interface: what it publishes, subscribes to, calls, and serves."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
 from rdflib.namespace import Namespace
 
-from motion_spec_dsl.classes.common import NamedNamespaceObject, NamespaceDeclLike
-from motion_spec_dsl.classes.constraint_handler import EventName, RosTopicDecl
-from motion_spec_dsl.classes.motion_spec import RosActionDecl
+from motion_spec_dsl.classes.common import NamedNamespaceObject
 
 
-@dataclass
 class WorldQuantityRef:
-    """A reference to the world pose a subscription writes."""
+    """A world pose a subscription writes."""
 
-    parent: object
-    ref: object
+    def __init__(self, parent, ref) -> None:
+        self.parent = parent
+        self.ref = ref
 
 
-@dataclass
 class CameraTargetRef:
-    """A reference to the camera whose images a subscription carries."""
+    """A camera whose images a subscription carries."""
 
-    parent: object
-    ref: object
+    def __init__(self, parent, ref) -> None:
+        self.parent = parent
+        self.ref = ref
 
 
-@dataclass
 class RosActionServerDecl(NamedNamespaceObject):
-    """A served ROS action: the channel goals arrive on, and the event an accepted goal produces.
+    """A served ROS action: where goals arrive, and the event an accepted goal produces."""
 
-    What the goal is answered with is stated where the run reaches that point -- on the monitor
-    that watches the constraint -- rather than here, which knows only that goals arrive.
-    """
-
-    parent: object
-    name: str
-    channel_name: str
-    type_name: str
-    goal_event: EventName
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
+    def __init__(self, parent, name, channel_name, type_name, goal_event) -> None:
+        super().__init__(parent=parent, name=name)
+        self.channel_name = channel_name
+        self.type_name = type_name
+        self.goal_event = goal_event
 
 
-@dataclass(eq=False)
 class RosSubscriptionDecl(NamedNamespaceObject):
-    """A standing subscription: the channel it reads, and what it informs the model about.
+    """A standing subscription: detections and the poses they write, or a camera's images."""
 
-    A channel carrying detections states the world poses it writes and where in one detection
-    each pose is found. A channel carrying a camera's images states the camera and nothing more:
-    there is no pose in an image, and nothing in the control loop reads one.
-    """
-
-    parent: object
-    name: str
-    channel_name: str
-    type_name: str
-    pose_field: str | None = None
-    pose_container: str | None = None
-    observed: object | None = None
-    targets: list = field(default_factory=list)
-    cameras: list = field(default_factory=list)
-
-    def __post_init__(self):
-        super().__init__(parent=self.parent, name=self.name)
-
-    @property
-    def pose_path(self) -> str | None:
-        """The dotted path from one detection to the pose it reports, or None for a camera."""
-        if not self.pose_field or not self.pose_container:
-            return None
-        return f"{self.pose_container}.{self.pose_field}"
+    def __init__(
+        self,
+        parent,
+        name,
+        channel_name,
+        type_name,
+        targets,
+        pose_field,
+        pose_container,
+        observed,
+        cameras,
+    ) -> None:
+        super().__init__(parent=parent, name=name)
+        self.channel_name = channel_name
+        self.type_name = type_name
+        self.targets = targets
+        self.pose_field = pose_field
+        self.pose_container = pose_container
+        self.observed = observed
+        self.cameras = cameras
+        # A camera's images carry no pose.
+        self.pose_path = f"{pose_container}.{pose_field}" if pose_field and pose_container else None
 
 
-@dataclass
 class RosMeasurementAssign:
-    """One field of a standing message, and the measurement component it reports."""
+    """One field of a standing message and the quantity component it reports, read as a view."""
 
-    parent: object
-    path: list
-    quantity: object
-    selector: object
-
-    @property
-    def field_path(self) -> str:
-        return ".".join(self.path)
-
-    # A view is what the graph already calls "this component of that quantity", so a standing
-    # field is read as one: same node names, same scalar, same blackboard channel.
-    @property
-    def subspace(self):
-        return self.selector.subspace
-
-    @property
-    def axis(self):
-        return self.selector.axis
+    def __init__(self, parent, path, quantity, selector) -> None:
+        self.parent = parent
+        self.path = path
+        self.quantity = quantity
+        self.selector = selector
+        self.field_path = ".".join(path)
+        self.subspace = selector.subspace
+        self.axis = selector.axis
 
 
-@dataclass
 class RosStandingEntry:
     """One quantity a standing message reports, and the scene entity it reports it of."""
 
-    parent: object
-    quantity: object
-    subject: object | None = None
+    def __init__(self, parent, subject, quantity) -> None:
+        self.parent = parent
+        self.subject = subject
+        self.quantity = quantity
 
 
-@dataclass
 class RosStandingPub:
-    """A declared topic, published for the whole run at a stated rate.
+    """A declared topic published for the whole run at a rate; its node is the topic's."""
 
-    A monitor's `publish:` states a verdict while its motion is active. This states readings,
-    and belongs to the run rather than to any motion, so it keeps publishing between them. It
-    names no entity of its own: the topic is the thing being published, so these are further
-    facts about it.
-    """
-
-    parent: object
-    rate: object
-    topic: RosTopicDecl
-    # One entry of the message per quantity: a message carrying an array of them reports every
-    # one, and a message carrying a quantity whole reports the one it was given.
-    entries: list[RosStandingEntry] = field(default_factory=list)
-    fields: list = field(default_factory=list)
-
-    @property
-    def uri(self):
-        """The topic's own node: what is published always is a fact about the topic."""
-        return self.topic.uri
-
-    @property
-    def name(self) -> str:
-        return self.topic.name
+    def __init__(self, parent, rate, topic, entries, fields) -> None:
+        self.parent = parent
+        self.rate = rate
+        self.topic = topic
+        self.entries = entries
+        self.fields = fields
 
 
-@dataclass
-class _RosGroup:
+class RosGroup(NamedNamespaceObject):
     """One kind of ROS interface, named after the kind so an entry resolves by what it is."""
 
-    parent: object
-
-    @property
-    def name(self) -> str:
-        return self.GROUP
-
-    @property
-    def namespace(self) -> Namespace:
-        """Its entries mint under the block, so the group is a path segment like any other."""
-        return Namespace(self.parent.namespace + self.parent.name + "/")
+    def __init__(self, parent, name, entries) -> None:
+        super().__init__(parent=parent, name=name)
+        self.entries = entries
 
 
-@dataclass
-class RosPublishers(_RosGroup):
-    GROUP = "publishers"
-    topics: list[RosTopicDecl] = field(default_factory=list)
-
-
-@dataclass
-class RosSubscribers(_RosGroup):
-    GROUP = "subscribers"
-    subscriptions: list[RosSubscriptionDecl] = field(default_factory=list)
-
-
-@dataclass
-class RosActionClients(_RosGroup):
-    GROUP = "action-clients"
-    action_clients: list = field(default_factory=list)
-
-
-@dataclass
-class RosActionServers(_RosGroup):
-    GROUP = "action-servers"
-    action_servers: list[RosActionServerDecl] = field(default_factory=list)
-
-
-@dataclass
-class RosAlways(_RosGroup):
-    GROUP = "always"
-    standing: list[RosStandingPub] = field(default_factory=list)
-
-
-@dataclass
 class Ros:
-    """The model's ROS interface: what it publishes, what it subscribes to, what it calls, and
-    what it serves, each in a scope named after the kind and all minting IRIs in one namespace."""
+    """The model's ROS interface; entries resolve as `<ros.<kind>.<entry>>` and mint under `ns`."""
 
-    parent: object
-    ns: NamespaceDeclLike
-    publishers: RosPublishers | None = None
-    subscribers: RosSubscribers | None = None
-    action_clients: RosActionClients | None = None
-    action_servers: RosActionServers | None = None
-    standing: RosAlways | None = None
+    name = "ros"
 
-    @property
-    def name(self) -> str:
-        """`ros` names the block, so an entry resolves as `<ros.publishers.entry>` -- the
-        namespace is where its IRI is minted, not how it is referred to."""
-        return "ros"
-
-    @property
-    def namespace(self) -> Namespace:
-        return Namespace(self.ns.uri)
-
-    @property
-    def topics(self) -> list[RosTopicDecl]:
-        return self.publishers.topics if self.publishers else []
-
-    @property
-    def subscriptions(self) -> list[RosSubscriptionDecl]:
-        return self.subscribers.subscriptions if self.subscribers else []
-
-    @property
-    def clients(self) -> list:
-        return self.action_clients.action_clients if self.action_clients else []
-
-    @property
-    def servers(self) -> list[RosActionServerDecl]:
-        return self.action_servers.action_servers if self.action_servers else []
-
-    @property
-    def always(self) -> list[RosStandingPub]:
-        return self.standing.standing if self.standing else []
-
-    @property
-    def namespace(self) -> Namespace:
-        return Namespace(self.ns.uri)
+    def __init__(self, parent, ns, groups) -> None:
+        self.parent = parent
+        self.ns = ns
+        self.groups = groups
+        self.namespace = Namespace(ns.uri)
+        entries = {group.name: group.entries for group in groups}
+        self.topics = entries.get("publishers", [])
+        self.subscriptions = entries.get("subscribers", [])
+        self.clients = entries.get("action-clients", [])
+        self.servers = entries.get("action-servers", [])
+        self.always = entries.get("always", [])

@@ -1,0 +1,422 @@
+import "arc_tracing_with_admittance.fsm"
+import "../common/table_arm_sim.scenex"
+ns app = "https://secorolab.github.io/models/arc-tracing-with-admittance/"
+ns fsm = "https://secorolab.github.io/models/arc-tracing-with-admittance/fsm/"
+
+exec-context (ns=app) arc-tracing-with-admittance-exec {
+    runs-scene: <table_arm_sim_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+ros (ns=app) {
+    publishers {
+        forward-done: topic "/motion/forward_done" message "diagnostic_msgs/msg/DiagnosticStatus"
+    }
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        velocity-twist twist-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-forearm-shoulder {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.shoulder_link.shoulder_link_origin>,
+            as-seen-by: <kinova.shoulder_link.shoulder_link_origin>
+        },
+        joint-position elbow-angle {
+            joint: <kinova.joint_3>,
+            normalization: (-pi, pi) rad
+        },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <fsm.E_RUN_STARTED> }
+        }
+    },
+    spec {
+        length satisfied-band = 0.01 m,
+        // Forearm z runs along the elbow hinge, so y stands up when the arm is upright.
+        direction forearm-up { as-seen-by: <kinova.forearm_link.forearm_link_origin> } = (0, 1, 0),
+        // Shoulder z points down (joint_1 anchor is rolled 180 deg), so up is -z there.
+        direction shoulder-up { as-seen-by: <kinova.shoulder_link.shoulder_link_origin> } = (0, 0, -1),
+        angle align-band = 0.05 rad,
+        angle elbow-angle-target = pi rad,
+        torque elbow-torque-limit = 10.0 Nm,
+        // Gen3 large-actuator peak torque.
+        torque arm-torque-limit = 39.0 Nm,
+        angle gripper-open = 0.0 rad,
+        angle align-cone = 0.35 rad,
+        angle align-cone-hold = 0.05 rad,
+        angle satisfied-band-rot = 0.01 rad,
+        linear-velocity satisfied-band-vel = 0.01 m/s,
+        linear-velocity zero-linvel = 0.0 m/s,
+        linear-velocity descend-vel = -0.05 m/s,
+        length forward-distance = 0.05 m,
+        // The pinch site rests 0.041 m above the table top when the wrist touches it.
+        length contact-z = 0.045 m,
+        force force-threshold = 10.0 N,
+        force release-threshold = 3.0 N,
+        length comply-int-max = 0.02 m
+    }
+}
+
+tolerances {
+    linear-velocity:  0.01 m/s,
+    position:         0.01 m,
+    orientation:      0.01 rad
+}
+
+guarded-motion (ns=app) home {
+    description: "Hold the current end-effector pose"
+
+    context {
+        spec {
+            pose home-pose = snapshot of <shared.world.pose-ee-base> on event <fsm.E_HOME_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position equal to <spec.home-pose>.position within <shared.spec.satisfied-band>,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <spec.home-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm:    keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
+
+    until all {
+        settled-x: <shared.world.twist-ee-base>.linvel.x equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-y: <shared.world.twist-ee-base>.linvel.y equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>,
+        settled-z: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+    }
+}
+
+guarded-motion (ns=app) touchdown {
+    description: "Lower the TCP until it contacts the table"
+
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.pose-ee-base> on event <fsm.E_TOUCHDOWN_ENTERED>
+        }
+    }
+
+    when {}
+
+    while {
+        hold-x:           keeping <shared.world.pose-ee-base>.position.x equal to <spec.start-pose>.position.x within <shared.spec.satisfied-band>,
+        hold-y:           keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
+        lower-z:          keeping <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.descend-vel> within <shared.spec.satisfied-band-vel>,
+        hold-ori:         keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm:    keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
+
+    until all {
+        near-table:    <shared.world.pose-ee-base>.position.z less than <shared.spec.contact-z>,
+        contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+    }
+}
+
+guarded-motion (ns=app) forward {
+    description: "Move the TCP forward five centimetres"
+
+    context {
+        spec {
+            pose start-pose = snapshot of <shared.world.pose-ee-base> on event <fsm.E_FORWARD_ENTERED>,
+            length target-x = <spec.start-pose>.position.x + <shared.spec.forward-distance>,
+            velocity-profile forward-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.05 m/s^2,
+                measured-velocity: <shared.world.twist-ee-base>.linvel.x,
+                shape: trapezoidal
+            }
+        }
+    }
+
+    when {}
+
+    while {
+        move-forward:     keeping <shared.world.pose-ee-base>.position.x equal to <spec.target-x> within <shared.spec.satisfied-band>,
+        hold-y:           keeping <shared.world.pose-ee-base>.position.y equal to <spec.start-pose>.position.y within <shared.spec.satisfied-band>,
+        hold-z:           keeping <shared.world.pose-ee-base>.position.z equal to <spec.start-pose>.position.z within <shared.spec.satisfied-band>,
+        hold-ori:         keeping <shared.world.pose-ee-base>.orientation equal to <spec.start-pose>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm:    keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone-hold> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
+
+    until {
+        reached-forward: <shared.world.pose-ee-base>.position.x greater than <spec.target-x>
+    }
+}
+
+guarded-motion (ns=app) arc-motion {
+    description: "Trace an arc toward the table and yield to an external X force"
+
+    context {
+        spec {
+            linear-velocity min-arc-speed = 0.005 m/s,
+            velocity-profile arc-profile = profile {
+                max-velocity: 0.05 m/s,
+                max-acceleration: 0.05 m/s^2,
+                shape: trapezoidal
+            },
+            direction path-normal { as-seen-by: <kinova.base_link.base_link_origin> }
+                = (0.9863939238, 0.1643989873, 0.0),
+            length chord-x    = -0.05 m,
+            length chord-y    = 0.30 m,
+            length chord-y-lo = 0.27 m,
+            length chord-y-hi = 0.33 m,
+            length chord-z    = 0.0 m,
+            distance arc-height = 0.18 m,
+            pose initial-pose = snapshot of <shared.world.pose-ee-base> on event <fsm.E_ARC_STARTED>,
+            pose start-pose   = snapshot of <shared.world.pose-ee-base> on event <fsm.E_ARC_ENTERED>,
+            length end-x    = <spec.initial-pose>.position.x + <spec.chord-x>,
+            length end-y    = <spec.initial-pose>.position.y + <spec.chord-y>,
+            length end-y-lo = <spec.initial-pose>.position.y + <spec.chord-y-lo>,
+            length end-y-hi = <spec.initial-pose>.position.y + <spec.chord-y-hi>,
+            length end-z    = <spec.initial-pose>.position.z + <spec.chord-z>,
+            pose end-pose = {
+                position: (<spec.end-x>, <spec.end-y>, <spec.end-z>) m,
+                orientation: <spec.initial-pose>.orientation rotated by euler { axes: xyz extrinsic, angles: (0.0, 0.0, 45.0) deg }
+            },
+            // A re-planned arc keeps only the height share left: a full-height arc from mid-air overshoots.
+            distance remaining-height = <spec.arc-height> * ((<spec.end-y> - <spec.start-pose>.position.y) / <spec.chord-y>),
+            path arc-path = arc {
+                start:        <spec.start-pose>,
+                end:          <spec.end-pose>,
+                amplitude:    <spec.remaining-height>,
+                plane-normal: <spec.path-normal>
+            }
+        }
+    }
+
+    when {}
+
+    while {
+        follow-tangent:     moving <shared.world.pose-ee-base> along <spec.arc-path> with <spec.arc-profile>,
+        follow-position:    keeping <shared.world.pose-ee-base>.position on <spec.arc-path>,
+        follow-orientation: keeping <shared.world.pose-ee-base>.orientation on <spec.arc-path>,
+        align-forearm:      keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
+        advance:            progress of <shared.world.pose-ee-base> along <spec.arc-path> more than <spec.min-arc-speed>,
+        force-x:            <shared.world.ext-force>.force.x outside (-<shared.spec.force-threshold>) and <shared.spec.force-threshold>,
+        force-y:            <shared.world.ext-force>.force.y outside (-<shared.spec.force-threshold>) and <shared.spec.force-threshold>,
+        hold-elbow-angle:   keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        open-gripper:       keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
+
+    until all {
+        near-table:  <shared.world.pose-ee-base>.position.z less than <shared.spec.contact-z>,
+        at-target-y: <shared.world.pose-ee-base>.position.y between <spec.end-y-lo> and <spec.end-y-hi>
+    }
+}
+
+guarded-motion (ns=app) compliance {
+    description: "Yield along the measured external force"
+
+    context {
+        spec {
+            pose hold-orientation = snapshot of <shared.world.pose-ee-base> on event <fsm.E_ADMITTANCE_ENTERED>,
+            // A shove must not become an acceleration no arm can produce.
+            linear-acceleration comply-accel-max = 20.0 m/s^2,
+            angular-acceleration comply-angular-accel-max = 60.0 rad/s^2,
+            admittance velocity-x = {
+                force: <shared.world.ext-force>.force.x,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s,
+                deadband: 1.0 N
+            },
+            admittance velocity-y = {
+                force: <shared.world.ext-force>.force.y,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s,
+                deadband: 1.0 N
+            },
+            admittance velocity-z = {
+                force: <shared.world.ext-force>.force.z,
+                mass: 2.0,
+                damping: 30.0,
+                stiffness: 0.0,
+                max-velocity: 0.30 m/s,
+                deadband: 1.0 N
+            }
+        }
+    }
+
+    when {}
+
+    while {
+        comply-x:         keeping <shared.world.twist-ee-base>.linvel.x equal to <spec.velocity-x> within <shared.spec.satisfied-band-vel>,
+        comply-y:         keeping <shared.world.twist-ee-base>.linvel.y equal to <spec.velocity-y> within <shared.spec.satisfied-band-vel>,
+        comply-z:         keeping <shared.world.twist-ee-base>.linvel.z equal to <spec.velocity-z> within <shared.spec.satisfied-band-vel>,
+        comply-ori:       keeping <shared.world.pose-ee-base>.orientation equal to <spec.hold-orientation>.orientation within <shared.spec.satisfied-band-rot>,
+        align-forearm:    keeping angle between <shared.spec.forearm-up> and <shared.spec.shoulder-up> between 0 rad and <shared.spec.align-cone> within <shared.spec.align-band>,
+        hold-elbow-angle: keeping <shared.world.elbow-angle> equal to <shared.spec.elbow-angle-target>,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open> within <shared.spec.satisfied-band-rot>
+    }
+
+    until {
+        released all {
+            released-x: <shared.world.ext-force>.force.x between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>,
+            released-y: <shared.world.ext-force>.force.y between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>,
+            released-z: <shared.world.ext-force>.force.z between (-<shared.spec.release-threshold>) and <shared.spec.release-threshold>
+        },
+        table-contact all {
+            near-table:    <shared.world.pose-ee-base>.position.z less than <shared.spec.contact-z>,
+            contact-table: <shared.world.twist-ee-base>.linvel.z equal to <shared.spec.zero-linvel> within <shared.spec.satisfied-band-vel>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-home {
+    handles: <home>
+    runs-in: <fsm.S_HOME>
+    monitors {
+        mon-home-settled: monitor <home.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_HOME_SETTLED> }
+        }
+    }
+    controllers {
+        pid ctrl-home-hold-position    { constraint: <home.hold-position>,    Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-home-hold-orientation { constraint: <home.hold-orientation>, Kp: 120, Ki: 50,  Kd: 80, decay: 0 },
+        pid ctrl-home-hold-elbow-angle {
+            constraint: <home.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        feed-forward ctrl-home-open-gripper { constraint: <home.open-gripper> } via <gripper-solver>
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <agents.arm1>,
+            algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper-solver: command-forwarding {
+            agent: <agents.gripper1>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-touchdown {
+    handles: <touchdown>
+    runs-in: <fsm.S_TOUCHDOWN>
+    monitors {
+        mon-touchdown-contact: monitor <touchdown.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_CONTACT> }
+        }
+    }
+    controllers {
+        pid ctrl-touchdown-hold-x   { constraint: <touchdown.hold-x>,   Kp: 80,  Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-hold-y   { constraint: <touchdown.hold-y>,   Kp: 80,  Ki: 20, Kd: 25, decay: 0 },
+        pid ctrl-touchdown-lower-z  { constraint: <touchdown.lower-z>,  Kp: 200, Ki: 0,  Kd: 0,  decay: 0 },
+        pid ctrl-touchdown-hold-ori { constraint: <touchdown.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-touchdown-hold-elbow-angle {
+            constraint: <touchdown.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        feed-forward ctrl-touchdown-open-gripper { constraint: <touchdown.open-gripper> } via <handler-home.gripper-solver>
+    }
+    solvers { <handler-home.arm-solver>, <handler-home.gripper-solver> }
+}
+
+constraint-handler (ns=app) handler-forward {
+    handles: <forward>
+    runs-in: <fsm.S_FORWARD>
+    monitors {
+        mon-forward-done: monitor <forward.reached-forward> {
+            satisfied {
+                trigger: event <fsm.E_FORWARD_DONE>,
+                publish: to <ros.publishers.forward-done> { level: OK }
+            },
+            violated { publish: to <ros.publishers.forward-done> { level: ERROR } }
+        }
+    }
+    controllers {
+        pid ctrl-forward-move-forward { constraint: <forward.move-forward>, profile: <forward.spec.forward-profile>, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-hold-y       { constraint: <forward.hold-y>, measured-derivative: <shared.world.twist-ee-base>.linvel.y, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-hold-z       { constraint: <forward.hold-z>, measured-derivative: <shared.world.twist-ee-base>.linvel.z, Kp: 200, Ki: 100, Kd: 40, decay: 0 },
+        pid ctrl-forward-hold-ori     { constraint: <forward.hold-ori>, Kp: 120, Ki: 50, Kd: 80, decay: 0 },
+        pid ctrl-forward-hold-elbow-angle {
+            constraint: <forward.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        feed-forward ctrl-forward-open-gripper { constraint: <forward.open-gripper> } via <handler-home.gripper-solver>
+    }
+    solvers { <handler-home.arm-solver>, <handler-home.gripper-solver> }
+}
+
+constraint-handler (ns=app) handler-arc-motion {
+    handles: <arc-motion>
+    runs-in: <fsm.S_ARC>
+    monitors {
+        mon-arc-motion-advancing: monitor <arc-motion.advance> {
+            satisfied { flag: arc-motion-advancing }
+        },
+        mon-arc-motion-force-x: monitor <arc-motion.force-x> {
+            satisfied for 0.1 s { trigger: event <fsm.E_FORCE_DETECTED> }
+        },
+        mon-arc-motion-force-y: monitor <arc-motion.force-y> {
+            satisfied for 0.1 s { trigger: event <fsm.E_FORCE_DETECTED> }
+        },
+        mon-arc-motion-done: monitor <arc-motion.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_ARC_CONTACT> }
+        }
+    }
+    controllers {
+        pid ctrl-arc-motion-follow-tangent     { constraint: <arc-motion.follow-tangent>, Kp: 20, Ki: 4, Kd: 0, decay: 0 },
+        pid ctrl-arc-motion-follow-position    { constraint: <arc-motion.follow-position>, measured-derivative: <shared.world.twist-ee-base>.linvel, Kp: 200, Ki: 0, Kd: 40, decay: 0 },
+        pid ctrl-arc-motion-follow-orientation { constraint: <arc-motion.follow-orientation>, measured-derivative: <shared.world.twist-ee-base>.angvel, Kp: 240, Ki: 0, Kd: 160, decay: 0 },
+        pid ctrl-arc-motion-hold-elbow-angle {
+            constraint: <arc-motion.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        feed-forward ctrl-arc-motion-open-gripper { constraint: <arc-motion.open-gripper> } via <handler-home.gripper-solver>
+    }
+    solvers { <handler-home.arm-solver>, <handler-home.gripper-solver> }
+}
+
+constraint-handler (ns=app) handler-compliance {
+    handles: <compliance>
+    runs-in: <fsm.S_ADMITTANCE>
+    monitors {
+        mon-compliance-released: monitor <compliance.released> {
+            satisfied for 0.3 s { trigger: event <fsm.E_FORCE_GONE> }
+        },
+        mon-compliance-table-contact: monitor <compliance.table-contact> {
+            satisfied for 0.3 s { trigger: event <fsm.E_TABLE_CONTACT> }
+        }
+    }
+    controllers {
+        pid ctrl-compliance-comply-x   { constraint: <compliance.comply-x>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-y   { constraint: <compliance.comply-y>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-z   { constraint: <compliance.comply-z>, output-saturation: saturation { max: <compliance.spec.comply-accel-max> }, integral-saturation: saturation { max: <shared.spec.comply-int-max> }, Kp: 150, Ki: 800, Kd: 0, decay: 0 },
+        pid ctrl-compliance-comply-ori { constraint: <compliance.comply-ori>, measured-derivative: <shared.world.twist-ee-base>.angvel, output-saturation: saturation { max: <compliance.spec.comply-angular-accel-max> }, Kp: 240, Ki: 0, Kd: 160, decay: 0 },
+        pid ctrl-compliance-hold-elbow-angle {
+            constraint: <compliance.hold-elbow-angle>, output-saturation: saturation { max: <shared.spec.elbow-torque-limit> },
+            Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad
+        } as torque,
+        feed-forward ctrl-compliance-open-gripper { constraint: <compliance.open-gripper> } via <handler-home.gripper-solver>
+    }
+    solvers { <handler-home.arm-solver>, <handler-home.gripper-solver> }
+}

@@ -1,0 +1,45 @@
+ns fsm = "https://secorolab.github.io/models/base-rotation/fsm/"
+
+evt loop (ns=fsm) base_rotation_events {
+    evt E_STEP,
+    evt E_HOME_ENTERED,
+    evt E_HOME_SETTLED,
+    evt E_JOINT_SPACE_DONE,
+    evt E_ARC_ENTERED,
+    evt E_ARC_DONE,
+    evt E_ANGULAR_VELOCITY_DONE,
+    evt E_DONE_SETTLED
+}
+
+fsm (ns=fsm) base_rotation_fsm {
+    description: "Turn the arm 120 degrees about its base axis three ways: in joint space, back along the Cartesian arc, and at a constant angular velocity."
+
+    states { S_START, S_HOME, S_JOINT_SPACE, S_CARTESIAN_ARC, S_ANGULAR_VELOCITY, S_DONE }
+    evt loop: <base_rotation_events>
+    start: <S_START>
+    end: <S_DONE>
+
+    transitions {
+        T_START_HOME        { from: <S_START>,            to: <S_HOME> },
+        T_HOME_JOINT_SPACE  { from: <S_HOME>,             to: <S_JOINT_SPACE> },
+        T_JOINT_SPACE_ARC   { from: <S_JOINT_SPACE>,      to: <S_CARTESIAN_ARC> },
+        T_ARC_ANGULAR       { from: <S_CARTESIAN_ARC>,    to: <S_ANGULAR_VELOCITY> },
+        T_ANGULAR_DONE      { from: <S_ANGULAR_VELOCITY>, to: <S_DONE> }
+    }
+
+    reactions {
+        R_START {
+            when: <base_rotation_events.E_STEP>,
+            do:   <T_START_HOME>,
+            fires { <base_rotation_events.E_HOME_ENTERED> }
+        },
+        R_HOME_SETTLED { when: <base_rotation_events.E_HOME_SETTLED>, do: <T_HOME_JOINT_SPACE> },
+        R_JOINT_SPACE_DONE {
+            when: <base_rotation_events.E_JOINT_SPACE_DONE>,
+            do:   <T_JOINT_SPACE_ARC>,
+            fires { <base_rotation_events.E_ARC_ENTERED> }
+        },
+        R_ARC_DONE { when: <base_rotation_events.E_ARC_DONE>, do: <T_ARC_ANGULAR> },
+        R_ANGULAR_VELOCITY_DONE { when: <base_rotation_events.E_ANGULAR_VELOCITY_DONE>, do: <T_ANGULAR_DONE> }
+    }
+}

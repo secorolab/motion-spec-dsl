@@ -1,0 +1,25 @@
+ns tas_env = "https://secorolab.github.io/models/environments/table-arm-sim/"
+ns tas_agn = "https://secorolab.github.io/models/agents/table-arm-sim/"
+ns tas_scene = "https://secorolab.github.io/models/scenes/table-arm-sim/"
+
+obj set (ns=tas_env) ws_objects {
+    object table
+}
+
+ws set (ns=tas_env) workspaces {
+    workspace table_ws
+}
+
+agn set (ns=tas_agn) agents {
+    agent arm1,
+    agent gripper1
+}
+
+comp (ns=tas_env) comp_table of ws <workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=tas_scene) table_arm_sim_scene {
+    ws comp <comp_table>
+    agn set <agents>
+}

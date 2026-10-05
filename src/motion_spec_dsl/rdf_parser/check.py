@@ -3,8 +3,6 @@
 # Author: Vamsi Kalagaturu
 """Validate generated motion-spec RDF against its declared SHACL constraints."""
 
-import sys
-import argparse
 from pathlib import Path
 
 import pyshacl
@@ -16,57 +14,45 @@ from motion_spec_dsl.rdf_parser.vocab import APP
 
 def validate_manifest(app_model: str | Path, *, meta_shacl: bool = False) -> tuple[bool, str]:
     """Validate one application manifest and return conformance plus the SHACL report."""
-    app_model_path = Path(app_model).resolve()
+    dataset = rdflib.Dataset()
+    dataset.parse(app_model, format="json-ld")
+    install_metamodel_resolver(build_url_map(dataset, Path(app_model).resolve()))
+    for location in {o for _, _, o, _ in dataset.quads((None, APP["import"], None, None))}:
+        dataset.parse(location=location, format="json-ld")
+    return validate_dataset(dataset, meta_shacl=meta_shacl)
 
-    # Load top-level, application model
-    g = rdflib.Dataset()
-    g.parse(app_model, format="json-ld")
 
-    # Metamodel/ontology prefixes resolve through the dev checkout or the rdf-utils
-    # cache; the model's own iri-map only declares where its imported graphs live.
-    install_metamodel_resolver(build_url_map(g, app_model_path))
+def validate_dataset(dataset: rdflib.Dataset, *, meta_shacl: bool = False) -> tuple[bool, str]:
+    """Validate a loaded application dataset as one graph and return conformance plus the report.
 
-    # Load/import the referenced models
-    models = list({o for _, _, o, _ in g.quads((None, APP["import"], None, None))})
-    for o in models:
-        g.parse(location=o, format="json-ld")
-
+    pyshacl validates each named graph of a dataset on its own, and shapes span documents.
+    """
+    data = rdflib.Graph()
+    for s, p, o, _graph in dataset.quads():
+        data.add((s, p, o))
     g_sh = rdflib.Dataset()
-    metamodels = sorted(str(o) for _, _, o, _ in g.quads((None, APP["constraints"], None, None)))
+    metamodels = {str(o) for _, _, o, _ in dataset.quads((None, APP["constraints"], None, None))}
     if not metamodels:
         return (
             False,
-            "Validation Report\nConforms: False\n"
-            "No SHACL constraint files were listed in the application manifest.",
+            (
+                "Validation Report\nConforms: False\n"
+                "No SHACL constraint files were listed in the application manifest."
+            ),
         )
     for location in metamodels:
         try:
             g_sh.parse(location=location, format="turtle")
-        except Exception as exc:
+        except (OSError, SyntaxError) as exc:
             return (
                 False,
-                "Validation Report\nConforms: False\n"
-                f"Failed to load SHACL constraint graph {location}: {exc}",
+                (
+                    "Validation Report\nConforms: False\n"
+                    f"Failed to load SHACL constraint graph {location}: {exc}"
+                ),
             )
 
-    # Validate using Dataset directly
     conforms, _v_graph, v_text = pyshacl.validate(
-        data_graph=g, shacl_graph=g_sh, inference="none", meta_shacl=meta_shacl
+        data_graph=data, shacl_graph=g_sh, inference="none", meta_shacl=meta_shacl
     )
     return bool(conforms), v_text
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Compatibility entry point; the installed CLI is ``motion-spec check``."""
-    parser = argparse.ArgumentParser(prog="motion-spec check")
-    parser.add_argument("manifest")
-    parser.add_argument("--meta-shacl", action="store_true")
-    args = parser.parse_args(argv)
-
-    conforms, report = validate_manifest(args.manifest, meta_shacl=args.meta_shacl)
-    print(report)
-    return 0 if conforms else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

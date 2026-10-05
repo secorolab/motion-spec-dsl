@@ -1,0 +1,27 @@
+ns mba_env = "https://secorolab.github.io/models/environments/mobile-base-table-alignment/"
+ns mba_agn = "https://secorolab.github.io/models/agents/mobile-base-table-alignment/"
+ns mba_scene = "https://secorolab.github.io/models/scenes/mobile-base-table-alignment/"
+
+obj set (ns=mba_env) ws_objects {
+    object table
+}
+
+ws set (ns=mba_env) workspaces {
+    workspace table_ws
+}
+
+// Three agents: each drives its own solver, and each arm's chain is sliced from its own asset.
+agn set (ns=mba_agn) agents {
+    agent eddie,
+    agent left_arm,
+    agent right_arm
+}
+
+comp (ns=mba_env) comp_table of ws <workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=mba_scene) mobile_base_table_alignment_scene {
+    ws comp <comp_table>
+    agn set <agents>
+}

@@ -5,7 +5,7 @@
 
 from textx import GeneratorDesc, LanguageDesc
 
-from motion_spec_dsl.gens import _gen_graph
+from motion_spec_dsl.gens import gen_graph
 from motion_spec_dsl.langs import motion_spec_metamodel
 
 motion_spec_lang = LanguageDesc(
@@ -19,5 +19,5 @@ motion_spec_gen = GeneratorDesc(
     language="motion_spec_dsl",
     target="jsonld",
     description="Generate JSON-LD from a motion specification",
-    generator=_gen_graph,
+    generator=gen_graph,
 )

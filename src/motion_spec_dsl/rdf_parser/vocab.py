@@ -8,23 +8,23 @@ schema.org ship with it, and a second declaration of a W3C IRI is a second thing
 right.
 """
 
-from rdflib import URIRef
-from rdflib.namespace import SOSA, SSN, DefinedNamespace, Namespace
 from rdf_utils.namespace import (
-    URL_COMP_ROB2B,
-    URL_SECORO_MM,
-    NS_MM_QUDT,
-    NS_MM_QUDT_QTY,
-    NS_MM_GEOM,
-    NS_MM_GEOM_REL,
-    NS_MM_GEOM_COORD,
-    NS_MM_KC,
-    NS_MM_KC_STAT,
+    NS_MM_DYN_COORD,
+    NS_MM_DYN_ENT,
     NS_MM_EL,
     NS_MM_ENV,
-    NS_MM_DYN_ENT,
-    NS_MM_DYN_COORD,
+    NS_MM_GEOM,
+    NS_MM_GEOM_COORD,
+    NS_MM_GEOM_REL,
+    NS_MM_KC,
+    NS_MM_KC_STAT,
+    NS_MM_QUDT,
+    NS_MM_QUDT_QTY,
+    URL_COMP_ROB2B,
+    URL_SECORO_MM,
 )
+from rdflib import URIRef
+from rdflib.namespace import SOSA, DefinedNamespace, Namespace
 
 URI_CR2B_MM = f"{URL_COMP_ROB2B}/metamodels"
 URI_SECORO_MM = URL_SECORO_MM
@@ -34,21 +34,15 @@ class SENSORS(DefinedNamespace):
     ForceTorqueSensor: URIRef
     frame: URIRef
 
-    _extras = ["update-rate"]
+    _extras = ("update-rate",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
-
-
-class ACT(DefinedNamespace):
-    JointCurrent: URIRef
-
-    _NS = Namespace(f"{URI_SECORO_MM}/robot/actuation#")
 
 
 class EST(DefinedNamespace):
     MomentumObserver: URIRef
 
-    _extras = ["estimated-by", "estimation-gain", "filter-constant"]
+    _extras = ("estimated-by", "estimation-gain", "filter-constant")
 
     _NS = Namespace(f"{URI_SECORO_MM}/robot/estimation#")
 
@@ -56,7 +50,7 @@ class EST(DefinedNamespace):
 class APP(DefinedNamespace):
     path: URIRef
 
-    _extras = ["command-type", "constraints", "import", "iri-map", "order"]
+    _extras = ("command-type", "constraints", "import", "iri-map", "order")
 
     _NS = Namespace(f"{URI_CR2B_MM}/application/")
 
@@ -68,13 +62,13 @@ class ENV(DefinedNamespace):
     ObjectModel: URIRef
     RigidObject: URIRef
 
-    _extras = [
+    _extras = (
         "of-object",
         "has-object",
         "of-workspace",
         "has-workspace",
         "has-object-model",
-    ]
+    )
 
     _NS = NS_MM_ENV
 
@@ -90,7 +84,7 @@ class EXEC(DefinedNamespace):
 
     realizes: URIRef
 
-    _extras = [
+    _extras = (
         "has-config",
         "has-resource",
         "has-mapping",
@@ -100,7 +94,7 @@ class EXEC(DefinedNamespace):
         "model-entity",
         "runs-scene",
         "timestep",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/execution-context#")
 
@@ -112,14 +106,14 @@ class EL(DefinedNamespace):
     EventReaction: URIRef
     FlagReaction: URIRef
 
-    _extras = [
+    _extras = (
         "has-event",
         "ref-event",
         "has-flag",
         "ref-flag",
         "has-evt-reaction",
         "has-flg-reaction",
-    ]
+    )
 
     _NS = NS_MM_EL
 
@@ -143,7 +137,7 @@ class KC(DefinedNamespace):
     Joint: URIRef
     RevoluteJoint: URIRef
 
-    _extras = ["between-attachments"]
+    _extras = ("between-attachments",)
 
     _NS = NS_MM_KC
 
@@ -156,9 +150,21 @@ class KC_STAT(DefinedNamespace):
     JointForceCoordinate: URIRef
     JointForce: URIRef
 
-    _extras = ["of-joint"]
+    _extras = ("of-joint",)
 
     _NS = NS_MM_KC_STAT
+
+
+class KC_OP(DefinedNamespace):
+    ForwardPositionKinematics: URIRef
+
+    _NS = Namespace(f"{URI_CR2B_MM}/kinematic-chain/operators#")
+
+
+class KC_OP_EXT(DefinedNamespace):
+    ForwardVelocityKinematics: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/kinematic-chain/operators#")
 
 
 class AGN(DefinedNamespace):
@@ -166,7 +172,7 @@ class AGN(DefinedNamespace):
     AgentModel: URIRef
     ModelledAgent: URIRef
 
-    _extras = ["of-agent", "has-agent", "has-agent-model"]
+    _extras = ("of-agent", "has-agent", "has-agent-model")
 
     _NS = Namespace(f"{URI_SECORO_MM}/agent#")
 
@@ -184,7 +190,7 @@ class QUDT_QKIND(DefinedNamespace):
     Length: URIRef
     Distance: URIRef
     PlaneAngle: URIRef
-    Position: URIRef
+    PositionVector: URIRef
     AngularVelocity: URIRef
     LinearVelocity: URIRef
     AngularAcceleration: URIRef
@@ -193,7 +199,10 @@ class QUDT_QKIND(DefinedNamespace):
     Torque: URIRef
     Force: URIRef
     Mass: URIRef
-    ElectricCurrent: URIRef
+    Angle: URIRef
+    Dimensionless: URIRef
+    Frequency: URIRef
+    Time: URIRef
 
     _NS = NS_MM_QUDT_QTY
 
@@ -209,7 +218,7 @@ class GEOM_REL(DefinedNamespace):
 
     of: URIRef
 
-    _extras = ["with-respect-to", "reference-point", "between-entities"]
+    _extras = ("with-respect-to", "reference-point", "between-entities")
 
     _NS = NS_MM_GEOM_REL
 
@@ -227,6 +236,7 @@ class GEOM_COORD(DefinedNamespace):
     DirectionCosineXYZ: URIRef
     EulerAngles: URIRef
     Quaternion: URIRef
+    QuaternionShape: URIRef
     VectorXYZ: URIRef
 
     of: URIRef
@@ -234,11 +244,12 @@ class GEOM_COORD(DefinedNamespace):
     x: URIRef
     y: URIRef
     z: URIRef
+    w: URIRef
     alpha: URIRef
     beta: URIRef
     gamma: URIRef
 
-    _extras = [
+    _extras = (
         "of-pose",
         "of-position",
         "of-orientation",
@@ -255,7 +266,7 @@ class GEOM_COORD(DefinedNamespace):
         "linear-acceleration",
         "linear",
         "angular",
-    ]
+    )
 
     _NS = NS_MM_GEOM_COORD
 
@@ -282,7 +293,6 @@ class GEOM_OP(DefinedNamespace):
     pose: URIRef
     to: URIRef
     distance: URIRef
-    direction: URIRef
     angle: URIRef
     out: URIRef
     axis: URIRef
@@ -290,7 +300,7 @@ class GEOM_OP(DefinedNamespace):
     y: URIRef
     z: URIRef
 
-    _extras = ["from", "absolute-velocity", "relative-velocity", "from-directions", "in"]
+    _extras = ("from", "absolute-velocity", "relative-velocity", "from-directions", "in")
 
     _NS = Namespace(f"{URI_CR2B_MM}/geometry/spatial-operators#")
 
@@ -331,7 +341,7 @@ class GEOM_OP_EXT(DefinedNamespace):
     PathEvaluator: URIRef
     PathTangentFrame: URIRef
     TwistToLinearVelocityAlong: URIRef
-    # Table IIa (plan 08): in1/in2 are pose coordinates for the point-primitive ops below, but
+    # Table IIa: in1/in2 are pose coordinates for the point-primitive ops below, but
     # direction coordinates for the line-line pair -- same asymmetric reuse of in1/in2 the
     # AngleGradientFromDirections/RotationVectorFromDirections ops already establish.
     PointPlaneToLinearDistance: URIRef
@@ -339,19 +349,22 @@ class GEOM_OP_EXT(DefinedNamespace):
     PointOnLineProjection: URIRef
     LineLineToLinearDistance: URIRef
     LineOnLineProjection: URIRef
+    PointBodyLineToLinearDistance: URIRef
+    VectorNorm: URIRef
     gradient: URIRef
     path: URIRef
     tangent: URIRef
     linear: URIRef
-    gradient: URIRef
+    norm: URIRef
 
-    _extras = [
+    _extras = (
+        "gradient-moment",
         "angular-distance",
         "path-parameter",
         "normal-a",
         "normal-b",
         "along-speed",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-operators#")
 
@@ -361,7 +374,7 @@ class RBDYN_ENT(DefinedNamespace):
     Mass: URIRef
     mass: URIRef
 
-    _extras = ["reference-point", "acts-on", "of-body"]
+    _extras = ("reference-point", "acts-on", "of-body")
 
     _NS = NS_MM_DYN_ENT
 
@@ -371,7 +384,7 @@ class RBDYN_COORD(DefinedNamespace):
     WrenchCoordinate: URIRef
     UniformGravitationalFieldCoordinate: URIRef
 
-    _extras = ["of-wrench", "as-seen-by", "force", "torque"]
+    _extras = ("of-wrench", "as-seen-by", "force", "torque")
 
     _NS = NS_MM_DYN_COORD
 
@@ -393,7 +406,7 @@ class RBDYN_OP(DefinedNamespace):
     in2: URIRef
     out: URIRef
 
-    _extras = ["from"]
+    _extras = ("from",)
 
     _NS = Namespace(f"{URI_CR2B_MM}/newtonian-rigid-body-dynamics/operators#")
 
@@ -425,7 +438,7 @@ class MAP(DefinedNamespace):
     z: URIRef
     w: URIRef
 
-    _extras = ["angular-velocity", "linear-velocity", "angular-acceleration", "linear-acceleration"]
+    _extras = ("angular-velocity", "linear-velocity", "angular-acceleration", "linear-acceleration")
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/map#")
 
@@ -450,6 +463,9 @@ class ALGO_EXT(DefinedNamespace):
     Subtraction: URIRef
     VelocityProfile: URIRef
     Admittance: URIRef
+    AngularNormalization: URIRef
+    Multiplication: URIRef
+    Division: URIRef
     limits: URIRef
     out: URIRef
     target: URIRef
@@ -463,8 +479,11 @@ class ALGO_EXT(DefinedNamespace):
     progress: URIRef
     minuend: URIRef
     subtrahend: URIRef
+    dividend: URIRef
+    divisor: URIRef
+    normalization: URIRef
 
-    _extras = [
+    _extras = (
         "in",
         "maximum-absolute-value",
         "lower-bound",
@@ -474,7 +493,7 @@ class ALGO_EXT(DefinedNamespace):
         "maximum-jerk",
         "release-threshold",
         "s-curve",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/algorithm#")
 
@@ -490,11 +509,12 @@ class CSTR(DefinedNamespace):
     LinearVelocityConstraint: URIRef
     TorqueConstraint: URIRef
     ForceConstraint: URIRef
+    LinearDistanceConstraint: URIRef
 
     quantity: URIRef
     threshold: URIRef
 
-    _extras = ["PositionConstraint", "reference-value", "lower-threshold", "upper-threshold"]
+    _extras = ("PositionConstraint", "reference-value", "lower-threshold", "upper-threshold")
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/constraint#")
 
@@ -506,11 +526,13 @@ class CSTR_EXT(DefinedNamespace):
     OutsideConstraint: URIRef
     AngleConstraint: URIRef
     AngularDistanceConstraint: URIRef
+    OrientationConstraint: URIRef
     TimeConstraint: URIRef
+    ElapsedDurationCoordinate: URIRef
 
     tolerance: URIRef
 
-    _extras = ["has-constraint"]
+    _extras = ("has-constraint",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/constraint#")
 
@@ -548,7 +570,7 @@ class MOT(DefinedNamespace):
     when: URIRef
     until: URIRef
 
-    _extras = ["while"]
+    _extras = ("while",)
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/motion-specification#")
 
@@ -560,6 +582,7 @@ class GEOM_PATH(DefinedNamespace):
     Arc: URIRef
     Helix: URIRef
     Figure8: URIRef
+    PositiveDistanceShape: URIRef
 
     start: URIRef
     goal: URIRef
@@ -575,7 +598,7 @@ class GEOM_PATH(DefinedNamespace):
     gerono: URIRef
     bernoulli: URIRef
 
-    _extras = ["plane-normal"]
+    _extras = ("plane-normal",)
 
     _NS = Namespace(f"{URI_SECORO_MM}/geometry/path#")
 
@@ -601,7 +624,7 @@ class CSTR_HDL(DefinedNamespace):
     event: URIRef
     flag: URIRef
 
-    _extras = [
+    _extras = (
         "error-signal",
         "control-signal",
         "event-queue",
@@ -613,7 +636,7 @@ class CSTR_HDL(DefinedNamespace):
         "damping",
         "maximum-velocity",
         "measured-velocity",
-    ]
+    )
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/constraint-handler#")
 
@@ -623,7 +646,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
     SetpointGenerator: URIRef
     solver: URIRef
 
-    _extras = [
+    _extras = (
         "runs-in-state",
         "reference-signal",
         "mass",
@@ -633,7 +656,7 @@ class CSTR_HDL_EXT(DefinedNamespace):
         "fallback-motion",
         "debounce-duration",
         "runs-solver",
-    ]
+    )
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/constraint-handler#")
 
@@ -666,7 +689,7 @@ class SLV(DefinedNamespace):
     root: URIRef
     gravity: URIRef
 
-    _extras = [
+    _extras = (
         "motion-drivers",
         "cartesian-force",
         "joint-force",
@@ -676,7 +699,7 @@ class SLV(DefinedNamespace):
         "linear-acceleration",
         "attached-to",
         "prioritization-hierarchy",
-    ]
+    )
 
     _NS = Namespace(f"{URI_CR2B_MM}/task/solver-specification#")
 
@@ -693,3 +716,33 @@ class SLV_EXT(DefinedNamespace):
     ForceCompositionSolver: URIRef
 
     _NS = Namespace(f"{URI_SECORO_MM}/task/solver-specification#")
+
+
+# The SHACL files constraining each vocabulary's terms: a generated graph is checked against the
+# shapes of every vocabulary it uses.
+SHAPES = {
+    ALGO_EXT: (
+        f"{URI_SECORO_MM}/algorithm-extension.shacl.ttl",
+        f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",
+    ),
+    EL: (f"{URI_SECORO_MM}/behaviour/event_loop.shacl.ttl",),
+    ENV: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/environment.shacl.ttl",),
+    EXEC: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/execution-context.shacl.ttl",),
+    SENSORS: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    SOSA: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    GEOM_OP: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_OP_EXT: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_REL: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_REL_EXT: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_EXT: (f"{URI_SECORO_MM}/geometry/structural-entities-extension.shacl.ttl",),
+    GEOM_PATH: (f"{URI_SECORO_MM}/geometry/path.shacl.ttl",),
+    RBDYN_OP_EXT: (
+        f"{URI_SECORO_MM}/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
+    ),
+    CSTR_EXT: (f"{URI_SECORO_MM}/task/constraint-extension.shacl.ttl",),
+    CSTR_HDL_EXT: (f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",),
+    MAP_EXT: (f"{URI_SECORO_MM}/task/map-extension.shacl.ttl",),
+    SLV_EXT: (f"{URI_SECORO_MM}/task/solver-specification-extension.shacl.ttl",),
+    QKIND_EXT: (f"{URI_SECORO_MM}/qudt.shacl.ttl",),
+    TIME: (f"{URI_SECORO_MM}/time.shacl.ttl",),
+}

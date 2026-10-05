@@ -3,9 +3,11 @@
 # Author: Vamsi Kalagaturu
 """Resolve application-manifest IRIs to local model and metamodel files."""
 
+import os
 from pathlib import Path
 
-from rdf_utils.resolver import IriToFileResolver, install_resolver
+from rdf_utils.namespace import URL_COMP_ROB2B, URL_SECORO
+from rdf_utils.resolver import PKG_CACHE_ROOT, IriToFileResolver, install_resolver
 
 from motion_spec_dsl.rdf_parser.vocab import APP
 
@@ -13,11 +15,11 @@ PACKAGE_ROOT = Path(__file__).resolve().parents[3]
 METAMODELS_URL = "https://secorolab.github.io/metamodels/"
 COMP_ROB2B_URL = "https://comp-rob2b.github.io/metamodels/"
 
+_resolver = None
+
 
 def metamodels_root() -> Path | None:
     """Locate the local secorolab metamodels checkout (honours METAMODELS_PATH)."""
-    import os
-
     roots = []
     env_path = os.environ.get("METAMODELS_PATH")
     if env_path:
@@ -31,28 +33,21 @@ def metamodels_root() -> Path | None:
     return None
 
 
-def metamodel_url_map():
-    """Map the metamodel IRI prefixes to their local checkouts for the resolver.
+def metamodel_url_map() -> dict[str, str]:
+    """Map the metamodel IRI prefixes to their local checkouts, longest prefix first.
 
-    The checkout mapping is a dev workflow; without a checkout (an installed
-    deployment) this returns rdf-utils' own default map, so resolution reads and
-    populates the shared ``~/.cache/rdf-utils`` exactly like plain rdf-utils.
+    Without a checkout (an installed deployment) this is rdf-utils' own cache, read and filled
+    exactly as plain rdf-utils does.
     """
     root = metamodels_root()
     if root is None:
-        from os.path import join
-
-        from rdf_utils.namespace import URL_COMP_ROB2B, URL_SECORO
-        from rdf_utils.resolver import PKG_CACHE_ROOT
-
-        # The metamodel prefixes are listed too, and they are longer than the one a model's
-        # own iri-map claims for the whole host: without them a generated model resolves its
-        # metamodels into its own directory, so every generation downloads the set again.
+        # The metamodel prefixes are listed before the hosts: a generated model's iri-map claims
+        # the whole host, and would otherwise download every metamodel into its own directory.
         return {
-            URL_SECORO: join(PKG_CACHE_ROOT, "secoro"),
-            URL_COMP_ROB2B: join(PKG_CACHE_ROOT, "comp-rob2b"),
-            METAMODELS_URL: join(PKG_CACHE_ROOT, "secoro", "metamodels"),
-            COMP_ROB2B_URL: join(PKG_CACHE_ROOT, "comp-rob2b", "metamodels"),
+            METAMODELS_URL: str(Path(PKG_CACHE_ROOT) / "secoro" / "metamodels"),
+            COMP_ROB2B_URL: str(Path(PKG_CACHE_ROOT) / "comp-rob2b" / "metamodels"),
+            URL_SECORO: str(Path(PKG_CACHE_ROOT) / "secoro"),
+            URL_COMP_ROB2B: str(Path(PKG_CACHE_ROOT) / "comp-rob2b"),
         }
     url_map = {METAMODELS_URL: str(root)}
     comp_rob2b = root.parent / "comp-rob2b" / "metamodels"
@@ -61,87 +56,40 @@ def metamodel_url_map():
     return url_map
 
 
-_resolver = None
-
-
 def install_metamodel_resolver(extra_map: dict | None = None) -> None:
     """Point the process-wide resolver at the metamodels plus a model's own iri-map.
 
-    Longest prefix wins. Dev checkouts never download; the cache fallback
-    downloads a file on its first miss, exactly like rdf-utils' default resolver.
-    The one urllib opener lives here: callers only swap the model-specific part
-    of its map, they never build resolvers of their own.
+    rdf-utils takes the first matching prefix, so the metamodel prefixes precede the model's
+    map, which claims only its host root. Dev checkouts never download; the cache downloads a
+    file on its first miss. The one urllib opener lives here: callers swap only its map.
     """
     global _resolver
-
     url_map = {**metamodel_url_map(), **(extra_map or {})}
-    ordered = dict(sorted(url_map.items(), key=lambda item: len(item[0]), reverse=True))
     if _resolver is None:
-        _resolver = IriToFileResolver(ordered, download=metamodels_root() is None)
+        _resolver = IriToFileResolver(url_map, download=metamodels_root() is None)
     else:
-        _resolver.url_map = ordered
+        _resolver.url_map = url_map
     install_resolver(_resolver)
 
 
-def build_url_map(g, manifest_path):
-    """Build the IRI->local-path map declared by a manifest's iri-map entries.
+def build_url_map(dataset, manifest_path) -> dict[str, str]:
+    """The IRI-to-local-path map a manifest's iri-map entries declare, relative to the manifest.
 
-    Uses the quad API so it works for both union and non-union rdflib Datasets.
+    It reads quads, so it works on union and non-union rdflib Datasets alike.
     """
-    app_model_path = Path(manifest_path).resolve()
-
+    manifest_dir = Path(manifest_path).resolve().parent
     url_map = {}
-    iri_map_keys = list({o for _, _, o, _ in g.quads((None, APP["iri-map"], None, None))})
-    for key in iri_map_keys:
-        path_node = next((o for _, _, o, _ in g.quads((key, APP["path"], None, None))), None)
+    for key in {o for _, _, o, _ in dataset.quads((None, APP["iri-map"], None, None))}:
+        path_node = next((o for _, _, o, _ in dataset.quads((key, APP.path, None, None))), None)
         if path_node is None:
             continue
         value = str(path_node)
         if Path(value).is_absolute():
-            # Already absolute path, use as-is
             url_map[str(key)] = value
-        else:
-            # For existing models, the IRI mapping "models/" should resolve to the manifest directory itself
-            # For new DSL models, "models/" should resolve to a models/ subdirectory
-            if value == "models/":
-                # Try manifest directory first (for existing models)
-                manifest_dir_path = app_model_path.parent
-                # Try models subdirectory (for new DSL models)
-                models_subdir_path = app_model_path.parent / "models"
-
-                # Check which one contains the expected files by looking at imports
-                imports = list({o for _, _, o, _ in g.quads((None, APP["import"], None, None))})
-                if imports:
-                    # Take first import URL and extract the path part after the base URL
-                    first_import_url = str(imports[0])
-                    # The import URLs are like "https://secorolab.github.io/00-common/00-misc.json"
-                    # We want to extract "00-common/00-misc.json"
-                    import_path = None
-                    for base_url in [str(k) for k in iri_map_keys]:
-                        if first_import_url.startswith(base_url):
-                            import_path = first_import_url[len(base_url) :]
-                            break
-
-                    if import_path:
-                        if (manifest_dir_path / import_path).exists():
-                            url_map[str(key)] = str(manifest_dir_path)
-                        elif (models_subdir_path / import_path).exists():
-                            url_map[str(key)] = str(models_subdir_path)
-                        else:
-                            # Fallback to current working directory
-                            url_map[str(key)] = str(Path.cwd() / value)
-                    else:
-                        # Couldn't extract path, use models subdirectory by default
-                        url_map[str(key)] = str(models_subdir_path)
-                else:
-                    # No imports to check, use models subdirectory by default
-                    url_map[str(key)] = str(models_subdir_path)
-            else:
-                # For non-models paths, resolve normally relative to manifest
-                absolute_path = app_model_path.parent / value
-                if not absolute_path.exists():
-                    source_path = PACKAGE_ROOT / value
-                    absolute_path = source_path if source_path.exists() else Path.cwd() / value
-                url_map[str(key)] = str(absolute_path)
-
+            continue
+        path = manifest_dir / value
+        if not path.exists():
+            source_path = PACKAGE_ROOT / value
+            path = source_path if source_path.exists() else Path.cwd() / value
+        url_map[str(key)] = str(path)
     return url_map

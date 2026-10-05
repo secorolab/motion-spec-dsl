@@ -1,0 +1,33 @@
+ns ppd_env = "https://secorolab.github.io/models/environments/dual-arm-pick-and-place/"
+ns ppd_agn = "https://secorolab.github.io/models/agents/dual-arm-pick-and-place/"
+ns ppd_scene = "https://secorolab.github.io/models/scenes/dual-arm-pick-and-place/"
+
+obj set (ns=ppd_env) objects {
+    object cube,
+    object cube2
+}
+
+obj set (ns=ppd_env) ws_objects {
+    object table
+}
+
+ws set (ns=ppd_env) workspaces {
+    workspace table_ws
+}
+
+agn set (ns=ppd_agn) agents {
+    agent arm1,
+    agent gripper1,
+    agent arm2,
+    agent gripper2
+}
+
+comp (ns=ppd_env) comp_table of ws <workspaces.table_ws> {
+    obj <ws_objects.table>
+}
+
+scene (ns=ppd_scene) dual_arm_pick_and_place_scene {
+    obj set <objects>
+    ws comp <comp_table>
+    agn set <agents>
+}

@@ -1,0 +1,7 @@
+[agents.arm1]
+home = [0.0, 0.2618, 3.1416, -2.2689, 0.0, 0.9599, 1.5708]
+
+# The home TCP turned -120 deg about base z [m, extrinsic XYZ rad].
+[poses.look]
+position = [-0.337565, -0.587367, 0.433612]
+orientation = [0.0, 1.570796, -2.094395]

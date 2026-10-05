@@ -5,10 +5,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, NamedTuple
 
-from rdflib import URIRef
-from rdflib.namespace import DefinedNamespace, Namespace, SDO, XSD
 from rdf_utils.models.vocab import (
     URI_GEOM_PRED_OF_ORIENT,
     URI_GEOM_PRED_OF_POSE,
@@ -24,18 +22,20 @@ from rdf_utils.models.vocab import (
     URI_GEOM_TYPE_POSITION_REF,
     URI_QUDT_QK_LENGTH,
 )
-from rdf_utils.namespace import NS_MM_QUDT_QTY, NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdf_utils.namespace import NS_MM_QUDT_UNIT as QUDT_UNIT
+from rdflib import URIRef
+from rdflib.namespace import SDO, SSN, XSD, DefinedNamespace, Namespace
 
+from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 from motion_spec_dsl.rdf_parser.vocab import (
-    ACT,
-    ALGO_EXT,
     AGN,
+    ALGO_EXT,
     APP,
-    EL,
     CSTR,
     CSTR_EXT,
     CSTR_HDL,
     CSTR_HDL_EXT,
+    EL,
     EXEC,
     GEOM_COORD,
     GEOM_ENT,
@@ -48,9 +48,9 @@ from motion_spec_dsl.rdf_parser.vocab import (
     MAP,
     MAP_EXT,
     MOT,
+    QKIND_EXT,
     QUDT_QKIND,
     QUDT_SCHEMA,
-    QKIND_EXT,
     RBDYN_COORD,
     RBDYN_ENT,
     RBDYN_OP,
@@ -59,22 +59,18 @@ from motion_spec_dsl.rdf_parser.vocab import (
     SLV,
     SLV_EXT,
     SOSA,
-    SSN,
     TIME,
 )
-from motion_spec_dsl.classes.context import QuantityType, WorldQuantityType
 
 
 class ROS(DefinedNamespace):
     Action: URIRef
     Topic: URIRef
-    Action: URIRef
-    _extras = ["channel-name", "type-name", "field-path"]
+    _extras = ("channel-name", "type-name", "field-path")
     _NS = Namespace("https://index.ros.org/p/")
 
 
-# comp-rob2b's relation/coordinate split, per geometry domain
-# (coordinates.ttl:8-73): (<Domain>Reference, <Domain>Coordinate, of-<domain>, relation class)
+# comp-rob2b's relation/coordinate split: (<Domain>Reference, <Domain>Coordinate, of-<domain>, relation).
 GEOM_DOMAIN_SPLIT: dict[str, tuple[URIRef, URIRef, URIRef, URIRef]] = {
     "position": (
         URI_GEOM_TYPE_POSITION_REF,
@@ -97,10 +93,24 @@ GEOM_DOMAIN_SPLIT: dict[str, tuple[URIRef, URIRef, URIRef, URIRef]] = {
 }
 
 
-# Each entry: (rdf_types, qkinds, units, prop_map)
-# prop_map[subspace] = (view_subspace_uri, accel_subspace_uri, accel_prefix, scalar_type, view_rdf_type)
-WORLD_SPECS: dict[WorldQuantityType, tuple] = {
-    WorldQuantityType.VelocityTwist: (
+class WorldView(NamedTuple):
+    """One subspace of a world quantity, viewed as a scalar: its map subspace and view class."""
+
+    subspace: str
+    view_type: URIRef
+
+
+class WorldSpec(NamedTuple):
+    """A world quantity type's RDF types, quantity kinds and units, and its subspace views."""
+
+    rdf_types: tuple
+    kinds: tuple
+    units: tuple
+    views: dict[str, WorldView]
+
+
+WORLD_SPECS: dict[WorldQuantityType, WorldSpec] = {
+    WorldQuantityType.VelocityTwist: WorldSpec(
         (
             QUDT_SCHEMA.Quantity,
             GEOM_REL.VelocityTwist,
@@ -110,23 +120,11 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.AngularVelocity, QUDT_QKIND.LinearVelocity),
         (QUDT_UNIT["RAD-PER-SEC"], QUDT_UNIT["M-PER-SEC"]),
         {
-            "angular": (
-                "angular-velocity",
-                "angular-acceleration",
-                "ang",
-                QuantityType.AngularVelocity,
-                MAP_EXT.VelocityTwistCoordinateView,
-            ),
-            "linear": (
-                "linear-velocity",
-                "linear-acceleration",
-                "lin",
-                QuantityType.LinearVelocity,
-                MAP_EXT.VelocityTwistCoordinateView,
-            ),
+            "angular": WorldView("angular-velocity", MAP_EXT.VelocityTwistCoordinateView),
+            "linear": WorldView("linear-velocity", MAP_EXT.VelocityTwistCoordinateView),
         },
     ),
-    WorldQuantityType.Wrench: (
+    WorldQuantityType.Wrench: WorldSpec(
         (
             QUDT_SCHEMA.Quantity,
             RBDYN_ENT.Wrench,
@@ -136,11 +134,11 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.Torque, QUDT_QKIND.Force),
         (QUDT_UNIT["N-M"], QUDT_UNIT.N),
         {
-            "torque": ("torque", None, None, QuantityType.Torque, MAP_EXT.WrenchCoordinateView),
-            "force": ("force", None, None, QuantityType.Force, MAP_EXT.WrenchCoordinateView),
+            "torque": WorldView("torque", MAP_EXT.WrenchCoordinateView),
+            "force": WorldView("force", MAP_EXT.WrenchCoordinateView),
         },
     ),
-    WorldQuantityType.Pose: (
+    WorldQuantityType.Pose: WorldSpec(
         (
             QUDT_SCHEMA.Quantity,
             GEOM_REL.Pose,
@@ -150,38 +148,26 @@ WORLD_SPECS: dict[WorldQuantityType, tuple] = {
         (QUDT_QKIND.PlaneAngle, URI_QUDT_QK_LENGTH),
         (QUDT_UNIT["RAD"], QUDT_UNIT.M),
         {
-            "rotation": (
-                "rotation",
-                "angular-acceleration",
-                "ang",
-                QuantityType.PlaneAngle,
-                MAP_EXT.PoseCoordinateView,
-            ),
-            "distance": (
-                "position",
-                "linear-acceleration",
-                "lin",
-                QuantityType.Distance,
-                MAP_EXT.PoseCoordinateView,
-            ),
+            "rotation": WorldView("rotation", MAP_EXT.PoseCoordinateView),
+            "distance": WorldView("position", MAP_EXT.PoseCoordinateView),
         },
     ),
-    WorldQuantityType.JointPosition: (
+    WorldQuantityType.JointPosition: WorldSpec(
         (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointPositionCoordinate),
         (QUDT_QKIND.PlaneAngle,),
         (QUDT_UNIT.RAD,),
         {},
     ),
-    WorldQuantityType.JointVelocity: (
+    WorldQuantityType.JointVelocity: WorldSpec(
         (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointVelocityCoordinate),
         (QUDT_QKIND.AngularVelocity,),
         (QUDT_UNIT["RAD-PER-SEC"],),
         {},
     ),
-    WorldQuantityType.JointCurrent: (
-        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, ACT.JointCurrent),
-        (QUDT_QKIND.ElectricCurrent,),
-        (QUDT_UNIT.A,),
+    WorldQuantityType.JointForce: WorldSpec(
+        (QUDT_SCHEMA.Quantity, KC_STAT.JointReference, KC_STAT.JointForceCoordinate),
+        (QUDT_QKIND.Torque,),
+        (QUDT_UNIT["N-M"],),
         {},
     ),
 }
@@ -205,47 +191,23 @@ SCALAR_UNIT: dict[Any, Any] = {
     QuantityType.PathParameter: QUDT_UNIT.UNITLESS,
     QuantityType.Duration: QUDT_UNIT["SEC"],
     QuantityType.Mass: QUDT_UNIT["KiloGM"],
-    QuantityType.ElectricCurrent: QUDT_UNIT.A,
 }
 
 CSTR_TYPE_NAME: dict[Any, str] = {
     QuantityType.PlaneAngle: QuantityType.Angle,
 }
 
-# Domain-constraint types whose grounded IRI is not `cstr:{Type}Constraint`:
-# a distance is the comp-rob2b LinearDistanceConstraint; an angle has no
-# comp-rob2b equivalent and lives in the secorolab extension. (namespace, local-name)
+# Constraint types not named `cstr:{Type}Constraint`: a length or distance is comp-rob2b's
+# LinearDistanceConstraint, an angle or orientation the secorolab extension's.
 CONSTRAINT_TYPE_OVERRIDE: dict[Any, tuple[Any, str]] = {
-    # A length constrained against a bound is comp-rob2b's linear-distance constraint, whether
-    # the model calls the value a length or a distance.
     QuantityType.Length: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Distance: (CSTR, "LinearDistanceConstraint"),
     QuantityType.Angle: (CSTR_EXT, "AngleConstraint"),
+    QuantityType.Orientation: (CSTR_EXT, "OrientationConstraint"),
 }
 
-QUDT_KIND_BY_QUANTITY_TYPE: dict[Any, Any] = {
-    QuantityType.Pose: GEOM_REL.Pose,
-    QuantityType.Length: QUDT_QKIND.Length,
-    QuantityType.Position: QUDT_QKIND.Position,
-    QuantityType.Orientation: QUDT_QKIND.PlaneAngle,
-    QuantityType.Angle: QUDT_QKIND.PlaneAngle,
-    QuantityType.PlaneAngle: QUDT_QKIND.PlaneAngle,
-    QuantityType.VelocityTwist: GEOM_REL.VelocityTwist,
-    QuantityType.AccelerationTwist: GEOM_REL.AccelerationTwist,
-    QuantityType.Wrench: RBDYN_ENT.Wrench,
-    QuantityType.Direction: NS_MM_QUDT_QTY["Dimensionless"],
-    QuantityType.FreeVector: NS_MM_QUDT_QTY["FreeVector"],
-    QuantityType.Dimensionless: NS_MM_QUDT_QTY["Dimensionless"],
-    QuantityType.Duration: NS_MM_QUDT_QTY["Time"],
-    QuantityType.PathParameter: NS_MM_QUDT_QTY["Dimensionless"],
-    QuantityType.LinearJerk: QKIND_EXT.LinearJerk,
-    QuantityType.Mass: QUDT_QKIND.Mass,
-    QuantityType.ElectricCurrent: QUDT_QKIND.ElectricCurrent,
-}
-
-# Quantity kinds are individuals, not classes; these namespaces distinguish them
-# from structural kinds (geom-rel:Pose, rbdyn-ent:Wrench, …) during emission.
-_QKIND_PREFIXES = (str(QUDT_QKIND), str(QKIND_EXT))
+# Quantity kinds are individuals, not classes, unlike structural kinds such as geom-rel:Pose.
+QKIND_PREFIXES = (str(QUDT_QKIND), str(QKIND_EXT))
 
 CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
     QuantityType.Pose: WorldQuantityType.Pose,
@@ -254,7 +216,6 @@ CONTEXT_COMPOSITE_WORLD_TYPE: dict[QuantityType, WorldQuantityType] = {
 }
 
 GRAPH_BINDINGS: tuple[tuple[str, Any], ...] = (
-    ("act", ACT),
     ("algo-ext", ALGO_EXT),
     ("application", APP),
     ("agn", AGN),

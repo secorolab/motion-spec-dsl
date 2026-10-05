@@ -1,10 +1,10 @@
-import "../../src/motion_spec_dsl/models/admittance_arc_single/admittance_arc_single.fsm"
-import "../../src/motion_spec_dsl/models/admittance_arc_single/admittance_arc_single.scenex"
+import "../../src/motion_spec_dsl/models/06_arc_tracing_with_admittance/arc_tracing_with_admittance.fsm"
+import "../../src/motion_spec_dsl/models/common/table_arm_sim.scenex"
 ns app = "https://secorolab.github.io/models/base/"
-ns aas = "https://secorolab.github.io/models/admittance-arc-single/fsm/"
+ns aas = "https://secorolab.github.io/models/arc-tracing-with-admittance/fsm/"
 
 exec-context (ns=app) base-exec {
-    runs-scene: <admittance_arc_scene_mjc>
+    runs-scene: <table_arm_sim_scene_mjc>
     platform:   simulation { name: "MuJoCo" }
     timestep:   1.0 ms
 }
@@ -61,7 +61,7 @@ constraint-handler (ns=app) handler-home {
     }
     solvers {
         arm-solver: serial-chain {
-            agent: <agents.kinova_ft_2f85>,
+            agent: <agents.arm1>,
             algorithm: achd,
             gravity: (0.0, 0.0, 9.81) m/s^2
         }

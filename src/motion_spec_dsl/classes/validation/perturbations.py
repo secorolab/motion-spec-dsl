@@ -4,76 +4,75 @@
 
 from __future__ import annotations
 
+from textx import get_children_of_type, get_location
+from textx.exceptions import TextXSemanticError
+
+from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
 from motion_spec_dsl.classes.context import (
     ContextQuantity,
-    Measure,
+    ContextQuantityAlias,
     QuantityType,
-    _resolved_context_quantity,
+    geo_prop,
 )
 from motion_spec_dsl.classes.motion_spec import ExecutionContext, Model
-from motion_spec_dsl.classes.validation.common import constraint_handlers, semantic_error
-
-# What each authored slot of a perturbation's apply clause must name.
-_SLOT_TYPES = (
-    ("force", QuantityType.Force, "force magnitude"),
-    ("force_direction", QuantityType.Direction, "force direction"),
-    ("moment", QuantityType.Torque, "torque magnitude"),
-    ("moment_direction", QuantityType.Direction, "torque direction"),
-)
-
-
-def _named_quantity(ref) -> ContextQuantity | None:
-    quantity = getattr(ref, "quantity", None)
-    return _resolved_context_quantity(quantity) if isinstance(quantity, ContextQuantity) else None
 
 
 def validate_perturbations(model: Model) -> None:
-    """Raise if a perturbation runs on hardware or names a quantity of the wrong kind for the
-    slot it fills.
+    """Reject perturbations on hardware, and slots that name no quantity or one of the wrong kind.
 
-    That the body is one the run's scene holds is checked where the scene's object table
-    exists -- the IR pass that resolves it to a simulator body name.
+    That the body is in the run's scene is checked where the scene's object table exists.
     """
     context = next((spec for spec in model.specs if isinstance(spec, ExecutionContext)), None)
-    for handler in constraint_handlers(model):
-        perturbations = getattr(handler, "perturbations", []) or []
-        if not perturbations:
+    for handler in get_children_of_type(ConstraintHandler, model):
+        if not handler.perturbations:
             continue
-        if context is None or getattr(context.platform, "kind", "") != "simulation":
-            raise semantic_error(
-                f"Handler '{handler.name}' authors perturbations, but the execution context "
-                "does not run on a simulation platform: nothing on hardware can apply them.",
-                perturbations[0],
+        if context is None or context.platform.kind != "simulation":
+            raise TextXSemanticError(
+                f"handler '{handler.name}' authors perturbations, but the execution context is no "
+                "simulation -- nothing on hardware can apply them",
+                **get_location(handler.perturbations[0]),
             )
-        for perturbation in perturbations:
-            for attribute, expected, role in _SLOT_TYPES:
-                ref = getattr(perturbation, attribute, None)
+        for perturbation in handler.perturbations:
+            location = get_location(perturbation)
+            slots = [
+                (perturbation.force, QuantityType.Force, "force magnitude"),
+                (perturbation.force_direction, QuantityType.Direction, "force direction"),
+                (perturbation.moment, QuantityType.Torque, "torque magnitude"),
+                (perturbation.moment_direction, QuantityType.Direction, "torque direction"),
+                (perturbation.duration, QuantityType.Duration, "window"),
+            ]
+            for ref, expected, role in slots:
                 if ref is None:
                     continue
-                quantity = _named_quantity(ref)
-                if quantity is None:
-                    raise semantic_error(
-                        f"Perturbation '{perturbation.name}' states its {role} inline; it must "
-                        "name a declared quantity, so a richer force pattern can arrive as a "
-                        "new kind of quantity rather than as new handler syntax.",
-                        perturbation,
+                # An inline window is a duration too; every other slot names a declared quantity.
+                if expected == QuantityType.Duration and ref.bare is not None:
+                    if ref.bare.unit not in ("s", "ms"):
+                        raise TextXSemanticError(
+                            f"perturbation '{perturbation.name}' states a window in "
+                            f"'{ref.bare.unit}' -- a window is a duration, in 's' or 'ms'",
+                            **location,
+                        )
+                    continue
+                quantity = ref.quantity
+                if isinstance(quantity, ContextQuantityAlias):
+                    quantity = quantity.ref
+                if not isinstance(quantity, ContextQuantity):
+                    raise TextXSemanticError(
+                        f"perturbation '{perturbation.name}' states its {role} inline -- it names "
+                        "a declared quantity, so a richer pattern arrives as a new kind of quantity",
+                        **location,
                     )
                 if quantity.type != expected:
-                    raise semantic_error(
-                        f"Perturbation '{perturbation.name}' names '{quantity.name}' "
-                        f"({quantity.type}) as its {role}, which must be a {expected} quantity.",
-                        perturbation,
+                    raise TextXSemanticError(
+                        f"perturbation '{perturbation.name}' names '{quantity.name}' "
+                        f"({quantity.type}) as its {role} -- it must be a {expected}",
+                        **location,
                     )
-            if perturbation.duration is None:
-                continue
-            bare = getattr(perturbation.duration, "bare", None)
-            named = _named_quantity(perturbation.duration)
-            inline_ok = isinstance(bare, Measure) and bare.unit in ("s", "ms")
-            named_ok = named is not None and named.type == QuantityType.Duration
-            if not inline_ok and not named_ok:
-                raise semantic_error(
-                    f"Perturbation '{perturbation.name}' states a window that is not a duration; "
-                    "it holds for an inline 's' or 'ms' literal, or for a declared duration "
-                    "quantity.",
-                    perturbation,
-                )
+                if expected == QuantityType.Direction and not (
+                    geo_prop(quantity.props, "as-seen-by") or geo_prop(quantity.props, "wrt")
+                ):
+                    raise TextXSemanticError(
+                        f"perturbation '{perturbation.name}' direction '{quantity.name}' states no "
+                        "'as-seen-by' frame -- it is the frame the applied wrench is stated in",
+                        **location,
+                    )

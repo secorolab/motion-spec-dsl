@@ -1,0 +1,11 @@
+ns tar_agn = "https://secorolab.github.io/models/agents/table-arm-real/"
+ns tar_scene = "https://secorolab.github.io/models/scenes/table-arm-real/"
+
+agn set (ns=tar_agn) agents {
+    agent arm1,
+    agent gripper1
+}
+
+scene (ns=tar_scene) table_arm_real_scene {
+    agn set <agents>
+}

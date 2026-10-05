@@ -1,0 +1,23 @@
+import "mobile_base_driving.scene"
+import "scene_dsl:robots/eddie_base.ktree"
+
+ns mbd_mjc = "https://secorolab.github.io/models/scenes/mobile-base-driving-mjc/"
+
+ktree inst (ns=mbd_mjc) eddie of <eddie_base_tree>
+
+scene inst (ns=mbd_mjc) mobile_base_driving_scene_mjc {
+    scene: <mobile_base_driving_scene>
+
+    // Anchored at the platform's own ground frame: the MJCF's free joint lets it drive away.
+    kgraph (ns=mbd_mjc) mobile_base_driving_graph {
+        anchor: <eddie.base_footprint.base_footprint_origin>
+        tree <eddie>
+    }
+
+    agn <agents.eddie> {
+        model eddie-mjc as mjcf {
+            sys path = 'src/eddie_description/mujoco/mobile_platform.xml'
+            map tree <eddie> to "base"
+        }
+    }
+}

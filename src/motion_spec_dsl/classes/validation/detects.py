@@ -1,121 +1,84 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
-"""Validate perceived poses: where a result can land, whose status an until item may read, and
-that each observed object has exactly one source writing its pose."""
+"""Validate perceived poses: where a result lands, whose status an until item reads, one source."""
 
 from __future__ import annotations
 
-from textx import get_children_of_type
+from textx import get_children_of_type, get_location
+from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.constraints import GoalStatusConstraint, _flatten_constraint_items
-from motion_spec_dsl.classes.context import (
-    GeoPropPair,
-    WorldQuantity,
-    WorldQuantityType,
-)
-from motion_spec_dsl.classes.motion_spec import Model
+from motion_spec_dsl.classes.constraints import GoalStatusConstraint, flatten_constraint_items
+from motion_spec_dsl.classes.context import GeometricProps, WorldQuantity, WorldQuantityType
+from motion_spec_dsl.classes.motion_spec import GuardedMotion, Model
 from motion_spec_dsl.classes.ros import RosSubscriptionDecl
-from motion_spec_dsl.classes.validation.common import motion_specs, semantic_error
 
 
-def _pose_subjects(model: Model) -> dict[int, int]:
-    """Every scene entity's world-pose identity, keyed by the entity identity."""
+def validate_detects(model: Model) -> None:
+    """Reject a detect target with no world pose, a second producer of a pose, and foreign acts."""
+    # A scene entity's world pose, by the entity's identity.
     subjects = {}
     for quantity in get_children_of_type(WorldQuantity, model):
-        if quantity.type != WorldQuantityType.Pose:
+        if quantity.type != WorldQuantityType.Pose or not isinstance(quantity.props, GeometricProps):
             continue
-        for pair in getattr(quantity.props, "pairs", ()) or ():
-            if isinstance(pair, GeoPropPair) and pair.key == "of" and pair.frame is not None:
+        for pair in quantity.props.pairs:
+            if pair.key == "of" and pair.frame is not None:
                 subjects[id(pair.frame)] = id(quantity)
-    return subjects
-
-
-def validate_detect_targets(model: Model) -> None:
-    """A detect result is a pose: every target needs a world pose declared `of:` it to land in."""
-    subjects = _pose_subjects(model)
-    for motion in motion_specs(model):
+    motions = get_children_of_type(GuardedMotion, model)
+    observed = set()
+    for motion in motions:
+        declared = {id(act) for act in motion.detects}
         for act in motion.detects:
             for target in act.targets:
-                if id(target.ref) in subjects:
-                    continue
-                raise semantic_error(
-                    f"Detect '{act.name}' in motion '{motion.name}' locates "
-                    f"'{target.ref.name}', but no world pose is declared 'of:' it, so the "
-                    "result has nowhere to land.",
-                    act,
+                if id(target.ref) not in subjects:
+                    raise TextXSemanticError(
+                        f"detect '{act.name}' in motion '{motion.name}' locates "
+                        f"'{target.ref.name}' -- no world pose is declared 'of:' it, so the "
+                        "result has nowhere to land",
+                        **get_location(act),
+                    )
+                observed.add(subjects[id(target.ref)])
+        until = motion.until.constraints if motion.until is not None else []
+        for item in flatten_constraint_items(until):
+            if isinstance(item, GoalStatusConstraint) and id(item.act) not in declared:
+                raise TextXSemanticError(
+                    f"'{item.name}' reads the status of detect '{item.act.name}' -- motion "
+                    f"'{motion.name}' does not send it",
+                    **get_location(item),
                 )
-
-
-def validate_subscription_targets(model: Model) -> None:
-    """A subscription names each world pose it writes, and every pose has one producer."""
-    # Detects seed the set: a subscription and a detect claiming the same object is the same
-    # two-producer error as two subscriptions doing so.
-    subjects = _pose_subjects(model)
-    observed = {
-        subjects[id(target.ref)]
-        for motion in motion_specs(model)
-        for act in motion.detects
-        for target in act.targets
-        if id(target.ref) in subjects
-    }
-
+    provided = set()
     for sub in get_children_of_type(RosSubscriptionDecl, model):
+        location = get_location(sub)
         for target in sub.targets:
             if target.ref.type != WorldQuantityType.Pose:
-                raise semantic_error(
-                    f"Subscription '{sub.name}' observes '{target.ref.name}', which is not a pose.",
-                    sub,
+                raise TextXSemanticError(
+                    f"subscription '{sub.name}' observes '{target.ref.name}' -- it is not a pose",
+                    **location,
                 )
             if id(target.ref) in observed:
-                raise semantic_error(
-                    f"'{target.ref.name}' is observed by more than one source; a world pose has "
-                    "one producer.",
-                    sub,
+                raise TextXSemanticError(
+                    f"'{target.ref.name}' is observed by more than one source -- a world pose "
+                    "has one producer",
+                    **location,
                 )
             observed.add(id(target.ref))
-
-
-def validate_camera_providers(model: Model) -> None:
-    """A camera's channel carries one camera, an rgb one, and is the only channel carrying it.
-
-    The grammar already keeps images and detections apart -- a detection states where in the
-    message its pose sits and an image has no pose to place -- so what is left is how many.
-    """
-    provided: set[int] = set()
-    for sub in get_children_of_type(RosSubscriptionDecl, model):
         if len(sub.cameras) > 1:
-            raise semantic_error(
-                f"Subscription '{sub.name}' carries {len(sub.cameras)} cameras; a channel "
-                "carries one, or nothing tells the images apart.",
-                sub,
+            raise TextXSemanticError(
+                f"subscription '{sub.name}' carries {len(sub.cameras)} cameras -- a channel "
+                "carries one, or nothing tells the images apart",
+                **location,
             )
         for target in sub.cameras:
             camera = target.ref
             if camera.cam_type != "rgb":
-                raise semantic_error(
-                    f"Subscription '{sub.name}' carries '{camera.name}', which is a "
-                    f"{camera.cam_type} camera; only rgb is read.",
-                    sub,
+                raise TextXSemanticError(
+                    f"subscription '{sub.name}' carries '{camera.name}', a {camera.cam_type} "
+                    "camera -- only rgb is read",
+                    **location,
                 )
             if id(camera) in provided:
-                raise semantic_error(
-                    f"'{camera.name}' is carried by more than one channel; a camera has one "
-                    "provider.",
-                    sub,
+                raise TextXSemanticError(
+                    f"'{camera.name}' is carried by more than one channel -- a camera has one "
+                    "provider",
+                    **location,
                 )
             provided.add(id(camera))
-
-
-def validate_goal_status_acts(model: Model) -> None:
-    """A goal status is the outcome of an act this motion sends; another motion's act is not
-    running while this one is."""
-    for motion in motion_specs(model):
-        declared = {id(act) for act in motion.detects}
-        for item in _flatten_constraint_items(motion.until.constraints):
-            if not isinstance(item, GoalStatusConstraint) or id(item.act) in declared:
-                continue
-            raise semantic_error(
-                f"'{item.name}' reads the status of detect '{item.act.name}', which motion "
-                f"'{motion.name}' does not declare.",
-                item,
-            )

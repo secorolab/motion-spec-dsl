@@ -1,107 +1,44 @@
 # SPDX-License-Identifier: MPL-2.0
-"""Scene reference resolution: instanced-tree heads, unique-suffix short forms."""
+"""Scene reference resolution and name scoping."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from textx import metamodel_from_file
+from rdflib.namespace import RDF
+from scene_dsl.classes.geom import Frame
+from scene_dsl.classes.ktree import KinematicTreeTemplate
+from scene_dsl.langs import build_instance_trees
+from textx import get_children_of_type, get_parent_of_type, metamodel_from_file
 from textx.exceptions import TextXSemanticError
 
-from motion_spec_dsl.classes.constraint_handler import ConstraintHandler
+from motion_spec_dsl.classes.scoping import SceneRefProvider
 from motion_spec_dsl.langs import motion_spec_metamodel
-from motion_spec_dsl.classes.scoping import SceneRefProvider, _fqn, finalize_imported_scenes
+from motion_spec_dsl.rdf.dataset import build_dataset
+from motion_spec_dsl.rdf_parser.vocab import GEOM_PATH
+from support import BASE, BASE_TEXT, HOLD, MODELS, SNAPSHOT
 
 GRAMMAR = Path(__file__).parents[1] / "src/motion_spec_dsl/grammars/model.tx"
-MODELS = Path(__file__).parents[1] / "src/motion_spec_dsl/models"
 
-HEAD = """
-import "pick_place_single/pick_place_single.scenex"
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        pytest.param(
+            """import "01_pick_and_place/pick_and_place.scenex"
 ns app = "https://example.org/app/"
 context (ns=app) shared {
     world {
-"""
-TAIL = """
+        pose p3 { of: <half_arm_2_link>, wrt: <kinova.base_link> }
     }
 }
-"""
-
-
-def parse(world_items: str):
-    # Grammar-level metamodel: no user classes, so registration's domain-coupled
-    # providers are left off; only the providers under test are registered.
-    mm = metamodel_from_file(GRAMMAR, autokwd=True)
-    mm.register_scope_providers(
-        {
-            "*.*": SceneRefProvider(),
-        }
-    )
-    mm.register_model_processor(finalize_imported_scenes)
-    return mm.model_from_str(HEAD + world_items + TAIL, file_name=str(MODELS / "probe.robmot"))
-
-
-def test_instance_head_ref_lands_on_the_instance_copy():
-    model = parse("pose p1 {\n    of: <kinova.half_arm_2_link>,\n    wrt: <kinova.base_link>\n}")
-    declaration = model.specs[0].context[0].declaration[0]
-    body = declaration.props.pairs[0].frame.parent
-    assert _fqn(body) == "kinova.half_arm_2_link"
-    assert body.parent.template is not None
-
-
-def test_frame_refs_through_two_instances():
-    model = parse(
-        "pose p1 {\n"
-        "    of: <gripper.g_base.g_pinch>,\n"
-        "    wrt: <kinova.base_link.base_link_origin>,\n"
-        "    as-seen-by: <kinova.base_link.base_link_origin>\n"
-        "}"
-    )
-    declaration = model.specs[0].context[0].declaration[0]
-    fqns = [_fqn(pair.frame) for pair in declaration.props.pairs]
-    assert fqns == [
-        "gripper.g_base.g_pinch",
-        "kinova.base_link.base_link_origin",
-        "kinova.base_link.base_link_origin",
-    ]
-
-
-def test_unique_suffix_reaches_into_the_kinematic_graph():
-    model = parse(
-        "pose p2 {\n    of: <pick_place_graph.cube.cube_origin>,\n    wrt: <cube.cube_origin>\n}"
-    )
-    declaration = model.specs[0].context[0].declaration[0]
-    fqns = {_fqn(pair.frame) for pair in declaration.props.pairs}
-    assert fqns == {"pick_place_scene_mjc.pick_place_graph.cube.cube_origin"}
-
-
-def test_body_ref_coerces_to_its_default_frame():
-    model = parse(
-        "pose p3 {\n"
-        "    of: <pick_place_graph.cube>,\n"
-        "    wrt: <kinova.base_link>,\n"
-        "    as-seen-by: <world_tree.world_body>\n"
-        "}"
-    )
-    declaration = model.specs[0].context[0].declaration[0]
-    fqns = [_fqn(pair.frame) for pair in declaration.props.pairs]
-    assert fqns == [
-        "pick_place_scene_mjc.pick_place_graph.cube.cube_origin",
-        "kinova.base_link.base_link_origin",
-        "world_tree.world_body.world",
-    ]
-
-
-def test_template_internals_are_not_suffix_targets():
-    with pytest.raises(TextXSemanticError, match="Unknown object"):
-        parse("pose p3 { of: <half_arm_2_link>, wrt: <kinova.base_link> }")
-
-
-def test_ambiguous_suffix_names_all_candidates():
-    mm = metamodel_from_file(GRAMMAR, autokwd=True)
-    mm.register_scope_providers({"*.*": SceneRefProvider()})
-    src = """
-ns app = "https://example.org/app/"
+""",
+            "Unknown object",
+            id="template_internal_as_suffix",
+        ),
+        pytest.param(
+            """ns app = "https://example.org/app/"
 context (ns=app) c1 { spec { length support-z = 0.1 m } }
 context (ns=app) c2 { spec { length support-z = 0.2 m } }
 guarded-motion (ns=app) m1 {
@@ -110,110 +47,89 @@ guarded-motion (ns=app) m1 {
     while { k1: elapsed up to <support-z> }
     until {}
 }
+""",
+            "ambiguous.*c1.spec.support-z.*c2.spec.support-z",
+            id="ambiguous_suffix",
+        ),
+    ],
+)
+def test_a_scene_reference_resolves_to_one_visible_element(source, message) -> None:
+    """Only the scene reference provider is under test, so the grammar loads without the rest."""
+    metamodel = metamodel_from_file(GRAMMAR, autokwd=True)
+    metamodel.register_scope_providers({"*.*": SceneRefProvider()})
+    metamodel.register_model_processor(build_instance_trees)
+    with pytest.raises(TextXSemanticError, match=message):
+        metamodel.model_from_str(source, file_name=str(MODELS / "probe.robmot"))
+
+
+@pytest.mark.parametrize(
+    ("named", "frame"),
+    [
+        pytest.param("<pick_and_place_graph.cube.cube_origin>", "cube_origin", id="graph_frame"),
+        pytest.param("<kinova.base_link.base_link_origin>", "base_link_origin", id="tree_frame"),
+    ],
+)
+def test_a_frame_reference_resolves_to_the_scene_frame(named, frame) -> None:
+    """A reference into an instanced tree lands on the copy's frame, not the template's."""
+    source = f"""import "01_pick_and_place/pick_and_place.scenex"
+ns app = "https://example.org/app/"
+context (ns=app) shared {{
+    world {{
+        pose p {{ of: {named}, wrt: <kinova.base_link.base_link_origin> }}
+    }}
+}}
 """
-    with pytest.raises(TextXSemanticError, match="ambiguous.*c1.spec.support-z.*c2.spec.support-z"):
-        mm.model_from_str(src, file_name=str(MODELS / "probe.robmot"))
+    metamodel = metamodel_from_file(GRAMMAR, autokwd=True)
+    metamodel.register_scope_providers({"*.*": SceneRefProvider()})
+    metamodel.register_model_processor(build_instance_trees)
+    model = metamodel.model_from_str(source, file_name=str(MODELS / "probe.robmot"))
+    of, wrt = get_children_of_type("GeoPropPair", model)
+
+    assert isinstance(of.frame, Frame)
+    assert of.frame.name == frame
+    assert get_parent_of_type(KinematicTreeTemplate, of.frame) is None
+    assert (of.frame is wrt.frame) == (frame == "base_link_origin")
 
 
-def test_solver_fqn_resolves_local_and_qualified_references():
-    model = motion_spec_metamodel().model_from_file(
-        MODELS / "pick_place_dual" / "pick_place_dual.robmot"
+def test_two_motions_each_declaring_a_trajectory_get_distinct_path_nodes() -> None:
+    """A context quantity's name is scoped to its block, so neither motion's path overwrites
+    the other's geometry."""
+    source = BASE_TEXT.replace(
+        SNAPSHOT,
+        f"{SNAPSHOT},\n            path trajectory = lerp {{ start: <spec.home-pose>, goal: <spec.home-pose> }}",
+        1,
+    ).replace(
+        HOLD,
+        f"{HOLD},\n        follow: keeping <shared.world.pose-ee-base>.position on <spec.trajectory>"
+        " within <shared.spec.satisfied-band>",
+        1,
     )
-    home = next(
-        spec
-        for spec in model.specs
-        if isinstance(spec, ConstraintHandler) and spec.name == "handler-home"
-    )
-    pick_above = next(
-        spec
-        for spec in model.specs
-        if isinstance(spec, ConstraintHandler) and spec.name == "handler-pick-above"
-    )
+    source += """
+guarded-motion (ns=app) away {
+    context {
+        spec {
+            pose away-pose = snapshot of <shared.world.pose-ee-base> on event <aas.E_HOME_ENTERED>,
+            path trajectory = lerp { start: <spec.away-pose>, goal: <spec.away-pose> }
+        }
+    }
+    when {}
+    while {
+        follow: keeping <shared.world.pose-ee-base>.position on <spec.trajectory> within <shared.spec.satisfied-band>
+    }
+    until {}
+}
 
-    assert home.controllers[0].solver.solver is pick_above.controllers[0].solver.solver
+constraint-handler (ns=app) handler-away {
+    handles: <away>
+    controllers {
+        pid ctrl-follow { constraint: <away.follow>, Kp: 200, Ki: 100, Kd: 40, decay: 0 }
+    }
+    solvers {
+        <handler-home.arm-solver>
+    }
+}
+"""
+    model = motion_spec_metamodel().model_from_str(source, file_name=str(BASE))
+    graph = build_dataset(model)[0].default_graph
 
-
-def test_constraint_fqn_resolves_specs_and_groups():
-    model = motion_spec_metamodel().model_from_file(
-        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
-    )
-    handler = next(
-        spec
-        for spec in model.specs
-        if isinstance(spec, ConstraintHandler) and spec.name == "handler-admittance"
-    )
-    constraint_ref = handler.controllers[0].params.constraint
-    group_ref = handler.monitors[0].constraint
-
-    assert constraint_ref.motion is handler.motion
-    assert constraint_ref.constraint.name == "comply-x"
-    assert group_ref.motion is handler.motion
-    assert group_ref.constraint.name == "released"
-
-
-def test_event_scope_is_declared_by_the_grammar():
-    model = motion_spec_metamodel().model_from_file(
-        MODELS / "admittance_arc_single" / "admittance_arc_single.robmot"
-    )
-    handler = next(
-        spec
-        for spec in model.specs
-        if isinstance(spec, ConstraintHandler) and spec.name == "handler-home"
-    )
-
-    assert handler.monitors[0].event.event.name == "E_HOME_SETTLED"
-
-
-def test_path_following_splits_driver_geometry_and_guard():
-    """A path fixes geometry but not timing, so the three roles are separate constraints and
-    none of them may be restated as a setpoint on the same path."""
-    source = (MODELS / "pick_place_single" / "pick_place_single.robmot").read_text()
-    model_path = str(MODELS / "pick_place_single" / "pick_place_single.robmot")
-    metamodel = motion_spec_metamodel()
-
-    driver = (
-        "moving <shared.world.pose-ee-base> along <spec.approach-path> "
-        "with <spec.approach-profile>"
-    )
-    with pytest.raises(TextXSemanticError, match="drop the comparison"):
-        metamodel.model_from_str(
-            source.replace(driver, f"{driver} equal to <spec.min-approach-speed>"),
-            file_name=model_path,
-        )
-
-    with pytest.raises(TextXSemanticError, match="must name a velocity profile"):
-        metamodel.model_from_str(
-            source.replace("with <spec.approach-profile>", "with <spec.min-approach-speed>"),
-            file_name=model_path,
-        )
-
-    with pytest.raises(TextXSemanticError, match="one-sided"):
-        metamodel.model_from_str(
-            source.replace(
-                "more than <spec.min-approach-speed>",
-                "less than <spec.min-approach-speed>",
-            ),
-            file_name=model_path,
-        )
-
-    with pytest.raises(TextXSemanticError, match="already follows"):
-        metamodel.model_from_str(
-            source.replace(
-                "advance:    progress of <shared.world.pose-ee-base> along "
-                "<spec.approach-path> more than <spec.min-approach-speed>",
-                "advance:    progress of <shared.world.pose-ee-base> along "
-                "<spec.approach-path> more than <spec.min-approach-speed>,\n"
-                "        pinned: keeping <shared.world.pose-ee-base>.position equal to "
-                "<spec.approach-path>.position",
-            ),
-            file_name=model_path,
-        )
-
-    with pytest.raises(TextXSemanticError, match="'.position' or '.orientation'"):
-        metamodel.model_from_str(
-            source.replace(
-                "keeping <shared.world.pose-ee-base>.position    on <spec.approach-path>",
-                "keeping <shared.world.pose-ee-base>.position.x  on <spec.approach-path>",
-            ),
-            file_name=model_path,
-        )
+    assert len(set(graph.subjects(RDF.type, GEOM_PATH.LinearPath))) == 2

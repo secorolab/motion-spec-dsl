@@ -7,143 +7,139 @@ from __future__ import annotations
 
 from importlib.resources import files
 
+from scene_dsl.langs import build_instance_trees
 from textx import metamodel_from_file
 
-from motion_spec_dsl.classes.base import (
-    Import,
-    NamespaceDeclare,
-)
+from motion_spec_dsl.classes.base import Import, NamespaceDeclare
 from motion_spec_dsl.classes.constraint_handler import (
+    CommandForwardingSolver,
     ConstraintHandler,
     ControllerAlias,
     ControllerEntry,
     ControllerRef,
-    FeedForwardControllerParams,
-    ImpedanceControllerParams,
-    PIDControllerParams,
-    GravityValue,
     EventName,
-    StateName,
+    FeedForwardControllerParams,
+    GravityValue,
+    ImpedanceControllerParams,
+    MobilePlatformSolver,
     MonitorAction,
     MonitorEntry,
     MonitorStateBlock,
     PerturbationEntry,
+    PIDControllerParams,
     RosTopicDecl,
     SaturationSpec,
     SerialChainSolver,
-    MobilePlatformSolver,
-    CommandForwardingSolver,
     SolverAlias,
     SolverLimits,
     SolverRef,
+    StateName,
     UntilMonitorRef,
     WhenMonitorRef,
-    _resolved_controller,
 )
 from motion_spec_dsl.classes.constraints import (
     BilateralConstraint,
-    OutsideConstraint,
     ConstraintAlias,
-    ConstraintSpecification,
+    ConstraintGroup,
     ConstraintRef,
+    ConstraintSpecification,
     EqualityConstraint,
     GoalStatusConstraint,
     GreaterThanConstraint,
     LessThanConstraint,
-    ConstraintGroup,
+    OutsideConstraint,
 )
 from motion_spec_dsl.classes.context import (
-    ContextRef,
-    DirectionBetween,
-    ElapsedTime,
-    ProgressAlong,
-    MovingAlong,
-    OnPath,
-    NormView,
-    GeoPropPair,
-    GeometricProps,
-    ObserverSpec,
+    AngleBetweenView,
     ConfigValue,
-    QExpr,
+    ContextPath,
+    ContextQuantity,
+    ContextQuantityAlias,
+    ContextRef,
+    DerivedScalarValue,
+    DirectionBetween,
+    DistanceBetweenView,
+    DistanceFromView,
+    ElapsedTime,
+    GeometricProps,
+    GeoPropPair,
+    Measure,
+    MovingAlong,
+    NormView,
+    ObserverSpec,
+    OnPath,
+    ProgressAlong,
+    ProjectionOnView,
     QAddTail,
-    QTerm,
-    QMulTail,
+    QExpr,
     QFactor,
+    QMulTail,
+    QTerm,
     QuantityLeaf,
     ReferenceValue,
-    Measure,
     SampledValue,
     SelectorTail,
     SnapshotValue,
-    ContextQuantityAlias,
-    ContextQuantity,
-    ContextPath,
     VectorXYZ,
     View,
-    WorldQuantityAlias,
     WorldQuantity,
+    WorldQuantityAlias,
 )
 from motion_spec_dsl.classes.coordinates import (
-    Coordinates,
+    AccelerationTwistCoordinate,
+    ConstAtom,
+    ConstFactor,
     CoordinateElement,
+    Coordinates,
     DirectionCosineXYZ,
     EulerAngles,
-    AccelerationTwistCoordinate,
     OrientationCoordinate,
-    RelativeOrientation,
     PoseCoordinate,
     PositionCoordinate,
     Quaternion,
+    RelativeOrientation,
     VelocityTwistCoordinate,
     WrenchCoordinate,
 )
 from motion_spec_dsl.classes.motion_spec import (
+    ConstraintSection,
     ContextDeclReference,
     ContextSpec,
     DetectDecl,
     ExecutionContext,
-    RosActionDecl,
-    Model,
     GuardedMotion,
-    PostContextDecl,
-    PreContextDecl,
-    SpecContextDecl,
+    Model,
+    QuantityContextDecl,
+    RosActionDecl,
     SceneObjRef,
     ToleranceDefault,
     ToleranceDefaults,
-    WorldContextDecl,
-    WhenSection,
-    WhileSection,
-    UntilSection,
 )
 from motion_spec_dsl.classes.path import (
-    Figure8Spec,
-    LerpSpec,
-    ProfileSpec,
     AdmittanceSpec,
+    ArcSpec,
+    CircleSpec,
+    Figure8Spec,
+    HelixSpec,
+    LerpSpec,
     PathValue,
+    ProfileSpec,
 )
 from motion_spec_dsl.classes.ros import (
+    CameraTargetRef,
     Ros,
-    RosActionClients,
-    RosActionServers,
-    RosAlways,
-    RosPublishers,
-    RosSubscribers,
     RosActionServerDecl,
+    RosGroup,
     RosMeasurementAssign,
     RosStandingEntry,
     RosStandingPub,
     RosSubscriptionDecl,
     WorldQuantityRef,
-    CameraTargetRef,
 )
-from motion_spec_dsl.classes.scoping import SceneRefProvider, finalize_imported_scenes
+from motion_spec_dsl.classes.scoping import SceneRefProvider
 from motion_spec_dsl.classes.validation import validate_model
 
-
 GRAMMAR_PATH = str(files("motion_spec_dsl.grammars").joinpath("model.tx"))
-
 
 LANGUAGE_CLASSES = [
     Model,
@@ -153,6 +149,8 @@ LANGUAGE_CLASSES = [
     ContextSpec,
     ToleranceDefaults,
     ToleranceDefault,
+    ConstFactor,
+    ConstAtom,
     Coordinates,
     CoordinateElement,
     PositionCoordinate,
@@ -168,14 +166,14 @@ LANGUAGE_CLASSES = [
     GuardedMotion,
     PathValue,
     LerpSpec,
+    CircleSpec,
+    ArcSpec,
+    HelixSpec,
+    Figure8Spec,
     ProfileSpec,
     AdmittanceSpec,
-    Figure8Spec,
     ConstraintHandler,
-    WorldContextDecl,
-    PreContextDecl,
-    SpecContextDecl,
-    PostContextDecl,
+    QuantityContextDecl,
     ContextDeclReference,
     WorldQuantity,
     WorldQuantityAlias,
@@ -199,6 +197,11 @@ LANGUAGE_CLASSES = [
     SnapshotValue,
     ConfigValue,
     DirectionBetween,
+    DerivedScalarValue,
+    DistanceBetweenView,
+    AngleBetweenView,
+    DistanceFromView,
+    ProjectionOnView,
     ConstraintAlias,
     ConstraintGroup,
     ConstraintSpecification,
@@ -224,11 +227,7 @@ LANGUAGE_CLASSES = [
     MonitorAction,
     PerturbationEntry,
     Ros,
-    RosPublishers,
-    RosSubscribers,
-    RosActionClients,
-    RosActionServers,
-    RosAlways,
+    RosGroup,
     RosTopicDecl,
     RosSubscriptionDecl,
     WorldQuantityRef,
@@ -246,40 +245,34 @@ LANGUAGE_CLASSES = [
     ControllerAlias,
     ControllerEntry,
     ControllerRef,
-    FeedForwardControllerParams,
-    ImpedanceControllerParams,
     PIDControllerParams,
+    ImpedanceControllerParams,
+    FeedForwardControllerParams,
     SerialChainSolver,
     MobilePlatformSolver,
     CommandForwardingSolver,
     SolverAlias,
     SolverLimits,
     SolverRef,
-    WhenSection,
-    WhileSection,
-    UntilSection,
+    ConstraintSection,
 ]
 
 
 class HandlerControllerScopeProvider:
-    """Resolve controller refs against controllers declared in the target handler."""
+    """Resolve a controller ref against the controllers of the handler it names."""
 
     def __call__(self, obj: ControllerRef, attr, obj_ref):
-        """Resolve `obj_ref` to a controller declared in the ref's handler."""
         del attr
-        handler = obj.handler
-        if handler is None or not isinstance(handler, ConstraintHandler):
+        if not isinstance(obj.handler, ConstraintHandler):
             return None
-        for controller in getattr(handler, "controllers", []):
+        for controller in obj.handler.controllers:
             if controller.name == obj_ref.obj_name:
-                return _resolved_controller(controller)
+                return controller.ref.controller if isinstance(controller, ControllerAlias) else controller
         return None
 
 
 def motion_spec_metamodel():
-    """Build the textx metamodel for the motion_spec DSL with its scope providers and
-    model-validation processor.
-    """
+    """The textX metamodel for the motion-spec DSL, with its scope providers and validation."""
     metamodel = metamodel_from_file(GRAMMAR_PATH, autokwd=True, classes=LANGUAGE_CLASSES)
     metamodel.register_scope_providers(
         {
@@ -288,6 +281,6 @@ def motion_spec_metamodel():
         }
     )
     # Fill imported scene instance trees before anything walks scene objects.
-    metamodel.register_model_processor(finalize_imported_scenes)
+    metamodel.register_model_processor(build_instance_trees)
     metamodel.register_model_processor(validate_model)
     return metamodel

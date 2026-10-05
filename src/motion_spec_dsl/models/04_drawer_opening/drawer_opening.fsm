@@ -1,0 +1,94 @@
+ns fsm = "https://secorolab.github.io/models/drawer-opening/fsm/"
+
+evt loop (ns=fsm) drawer_opening_fsm_events {
+    evt E_STEP,
+    evt E_STAGE1_ENTERED,
+    evt E_AT_PRE1,
+    evt E_AT_HANDLE1,
+    evt E_GRASPED1,
+    evt E_GRASP_MISSED1,
+    evt E_PULL1_ENTERED,
+    evt E_OPENED1,
+    evt E_OVERTRAVEL1,
+    evt E_GRASP_LOST1,
+    evt E_RETREATED1,
+    evt E_STAGE2_ENTERED,
+    evt E_STAGED2,
+    evt E_PRESSED2,
+    evt E_AT_HANDLE2,
+    evt E_GRASPED2,
+    evt E_GRASP_MISSED2,
+    evt E_PULL2_ENTERED,
+    evt E_OPENED2,
+    evt E_OVERTRAVEL2,
+    evt E_GRASP_LOST2,
+    evt E_PRESS_LOST2,
+    evt E_RELEASE_ENTERED,
+    evt E_RELEASED
+}
+
+// Cabinet 1 unheld: its drawer drags it along. Cabinet 2 held down by arm 2: its drawer opens.
+fsm (ns=fsm) drawer_opening_fsm {
+    description: "Pull a stiff drawer from a free cabinet, then from one the second arm holds down."
+
+    states {
+        S_START,
+        S_STAGE1,
+        S_APPROACH1,
+        S_GRASP1,
+        S_PULL1,
+        S_RETREAT1,
+        S_STAGE2,
+        S_PRESS2,
+        S_APPROACH2,
+        S_GRASP2,
+        S_PULL2,
+        S_RELEASE,
+        S_DONE
+    }
+
+    evt loop: <drawer_opening_fsm_events>
+
+    start: <S_START>
+    end:   <S_DONE>
+
+    transitions {
+        T_START_STAGE1      { from: <S_START>,     to: <S_STAGE1> },
+        T_STAGE1_APPROACH1  { from: <S_STAGE1>,    to: <S_APPROACH1> },
+        T_APPROACH1_GRASP1  { from: <S_APPROACH1>, to: <S_GRASP1> },
+        T_GRASP1_PULL1      { from: <S_GRASP1>,    to: <S_PULL1> },
+        T_GRASP1_RELEASE    { from: <S_GRASP1>,    to: <S_RELEASE> },
+        T_PULL1_RETREAT1    { from: <S_PULL1>,     to: <S_RETREAT1> },
+        T_RETREAT1_STAGE2   { from: <S_RETREAT1>,  to: <S_STAGE2> },
+        T_STAGE2_PRESS2     { from: <S_STAGE2>,    to: <S_PRESS2> },
+        T_PRESS2_APPROACH2  { from: <S_PRESS2>,    to: <S_APPROACH2> },
+        T_APPROACH2_GRASP2  { from: <S_APPROACH2>, to: <S_GRASP2> },
+        T_GRASP2_PULL2      { from: <S_GRASP2>,    to: <S_PULL2> },
+        T_GRASP2_RELEASE    { from: <S_GRASP2>,    to: <S_RELEASE> },
+        T_PULL2_DONE        { from: <S_PULL2>,     to: <S_DONE> },
+        T_PULL2_RELEASE     { from: <S_PULL2>,     to: <S_RELEASE> },
+        T_RELEASE_DONE      { from: <S_RELEASE>,   to: <S_DONE> }
+    }
+
+    reactions {
+        R_STEP_START     { when: <drawer_opening_fsm_events.E_STEP>,          do: <T_START_STAGE1>,     fires { <drawer_opening_fsm_events.E_STAGE1_ENTERED> } },
+        R_AT_PRE1        { when: <drawer_opening_fsm_events.E_AT_PRE1>,       do: <T_STAGE1_APPROACH1> },
+        R_AT_HANDLE1     { when: <drawer_opening_fsm_events.E_AT_HANDLE1>,    do: <T_APPROACH1_GRASP1> },
+        R_GRASPED1       { when: <drawer_opening_fsm_events.E_GRASPED1>,      do: <T_GRASP1_PULL1>,     fires { <drawer_opening_fsm_events.E_PULL1_ENTERED> } },
+        R_GRASP_MISSED1  { when: <drawer_opening_fsm_events.E_GRASP_MISSED1>, do: <T_GRASP1_RELEASE>,   fires { <drawer_opening_fsm_events.E_RELEASE_ENTERED> } },
+        R_OPENED1        { when: <drawer_opening_fsm_events.E_OPENED1>,       do: <T_PULL1_RETREAT1> },
+        R_OVERTRAVEL1    { when: <drawer_opening_fsm_events.E_OVERTRAVEL1>,   do: <T_PULL1_RETREAT1> },
+        R_GRASP_LOST1    { when: <drawer_opening_fsm_events.E_GRASP_LOST1>,   do: <T_PULL1_RETREAT1> },
+        R_RETREATED1     { when: <drawer_opening_fsm_events.E_RETREATED1>,    do: <T_RETREAT1_STAGE2>,  fires { <drawer_opening_fsm_events.E_STAGE2_ENTERED> } },
+        R_STAGED2        { when: <drawer_opening_fsm_events.E_STAGED2>,       do: <T_STAGE2_PRESS2> },
+        R_PRESSED2       { when: <drawer_opening_fsm_events.E_PRESSED2>,      do: <T_PRESS2_APPROACH2> },
+        R_AT_HANDLE2     { when: <drawer_opening_fsm_events.E_AT_HANDLE2>,    do: <T_APPROACH2_GRASP2> },
+        R_GRASPED2       { when: <drawer_opening_fsm_events.E_GRASPED2>,      do: <T_GRASP2_PULL2>,     fires { <drawer_opening_fsm_events.E_PULL2_ENTERED> } },
+        R_GRASP_MISSED2  { when: <drawer_opening_fsm_events.E_GRASP_MISSED2>, do: <T_GRASP2_RELEASE>,   fires { <drawer_opening_fsm_events.E_RELEASE_ENTERED> } },
+        R_OPENED2        { when: <drawer_opening_fsm_events.E_OPENED2>,       do: <T_PULL2_DONE> },
+        R_OVERTRAVEL2    { when: <drawer_opening_fsm_events.E_OVERTRAVEL2>,   do: <T_PULL2_RELEASE>,    fires { <drawer_opening_fsm_events.E_RELEASE_ENTERED> } },
+        R_GRASP_LOST2    { when: <drawer_opening_fsm_events.E_GRASP_LOST2>,   do: <T_PULL2_RELEASE>,    fires { <drawer_opening_fsm_events.E_RELEASE_ENTERED> } },
+        R_PRESS_LOST2    { when: <drawer_opening_fsm_events.E_PRESS_LOST2>,   do: <T_PULL2_RELEASE>,    fires { <drawer_opening_fsm_events.E_RELEASE_ENTERED> } },
+        R_RELEASED       { when: <drawer_opening_fsm_events.E_RELEASED>,      do: <T_RELEASE_DONE> }
+    }
+}
