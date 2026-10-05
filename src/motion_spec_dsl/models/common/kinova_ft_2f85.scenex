@@ -1,0 +1,30 @@
+import "wrist_ft.scenex"
+import "scene_dsl:robots/kinova_gen3_7dof.ktree"
+import "scene_dsl:robots/robotiq_2f85.ktree"
+
+ns kfg = "https://secorolab.github.io/models/common/kinova-ft-2f85/"
+
+ktree inst (ns=kfg) kinova of <kinova_tree>
+ktree inst (ns=kfg) gripper of <gripper_tree>
+
+ktree (ns=kfg) kinova_ft_2f85 {
+    root: <kinova.base_link.base_link_origin>
+    tree <kinova>
+    tree <ft_tree>
+    tree <gripper>
+
+    joints {
+        fixed ft_on_pinch_site {
+            parent: <kinova.bracelet_link.pinch_site>
+            child: <ft_tree.wrist_ft_body.wrist_ft_body_origin>
+        }
+        fixed gripper_on_ft {
+            parent: <ft_tree.wrist_ft_body.wrist_ft_mount>
+            child: <gripper.g_base_mount.g_mount_interface>
+        }
+        serial {
+            root: <kinova.base_link.base_link_origin>
+            tip: <gripper.g_base.g_pinch>
+        }
+    }
+}

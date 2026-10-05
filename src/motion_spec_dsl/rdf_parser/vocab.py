@@ -1,0 +1,748 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+# Author: Vamsi Kalagaturu
+"""RDF vocabulary shared by motion-spec emission and parsing.
+
+External vocabularies are re-exported from rdflib rather than redeclared: SOSA/SSN and
+schema.org ship with it, and a second declaration of a W3C IRI is a second thing to keep
+right.
+"""
+
+from rdf_utils.namespace import (
+    NS_MM_DYN_COORD,
+    NS_MM_DYN_ENT,
+    NS_MM_EL,
+    NS_MM_ENV,
+    NS_MM_GEOM,
+    NS_MM_GEOM_COORD,
+    NS_MM_GEOM_REL,
+    NS_MM_KC,
+    NS_MM_KC_STAT,
+    NS_MM_QUDT,
+    NS_MM_QUDT_QTY,
+    URL_COMP_ROB2B,
+    URL_SECORO_MM,
+)
+from rdflib import URIRef
+from rdflib.namespace import SOSA, DefinedNamespace, Namespace
+
+URI_CR2B_MM = f"{URL_COMP_ROB2B}/metamodels"
+URI_SECORO_MM = URL_SECORO_MM
+
+
+class SENSORS(DefinedNamespace):
+    ForceTorqueSensor: URIRef
+    frame: URIRef
+
+    _extras = ("update-rate",)
+
+    _NS = Namespace(f"{URI_SECORO_MM}/robot/sensors#")
+
+
+class EST(DefinedNamespace):
+    MomentumObserver: URIRef
+
+    _extras = ("estimated-by", "estimation-gain", "filter-constant")
+
+    _NS = Namespace(f"{URI_SECORO_MM}/robot/estimation#")
+
+
+class APP(DefinedNamespace):
+    path: URIRef
+
+    _extras = ("command-type", "constraints", "import", "iri-map", "order")
+
+    _NS = Namespace(f"{URI_CR2B_MM}/application/")
+
+
+class ENV(DefinedNamespace):
+    Object: URIRef
+    Workspace: URIRef
+    ModelledObject: URIRef
+    ObjectModel: URIRef
+    RigidObject: URIRef
+
+    _extras = (
+        "of-object",
+        "has-object",
+        "of-workspace",
+        "has-workspace",
+        "has-object-model",
+    )
+
+    _NS = NS_MM_ENV
+
+
+class EXEC(DefinedNamespace):
+    ExecutionContext: URIRef
+    Simulation: URIRef
+    RealWorld: URIRef
+    SystemResource: URIRef
+    ResourceWithPath: URIRef
+
+    path: URIRef
+
+    realizes: URIRef
+
+    _extras = (
+        "has-config",
+        "has-resource",
+        "has-mapping",
+        "maps",
+        "has-body",
+        "has-kinematic-tree",
+        "model-entity",
+        "runs-scene",
+        "timestep",
+    )
+
+    _NS = Namespace(f"{URI_SECORO_MM}/execution-context#")
+
+
+class EL(DefinedNamespace):
+    EventLoop: URIRef
+    Event: URIRef
+    Flag: URIRef
+    EventReaction: URIRef
+    FlagReaction: URIRef
+
+    _extras = (
+        "has-event",
+        "ref-event",
+        "has-flag",
+        "ref-flag",
+        "has-evt-reaction",
+        "has-flg-reaction",
+    )
+
+    _NS = NS_MM_EL
+
+
+class GEOM_ENT(DefinedNamespace):
+    Point: URIRef
+    UnitVector: URIRef
+    Frame: URIRef
+    KinematicTree: URIRef
+    SimplicialComplex: URIRef
+    RigidBody: URIRef
+    start: URIRef
+    end: URIRef
+    origin: URIRef
+    simplices: URIRef
+
+    _NS = NS_MM_GEOM
+
+
+class KC(DefinedNamespace):
+    Joint: URIRef
+    RevoluteJoint: URIRef
+
+    _extras = ("between-attachments",)
+
+    _NS = NS_MM_KC
+
+
+class KC_STAT(DefinedNamespace):
+    JointReference: URIRef
+    JointPositionCoordinate: URIRef
+    JointVelocityCoordinate: URIRef
+    JointAccelerationCoordinate: URIRef
+    JointForceCoordinate: URIRef
+    JointForce: URIRef
+
+    _extras = ("of-joint",)
+
+    _NS = NS_MM_KC_STAT
+
+
+class KC_OP(DefinedNamespace):
+    ForwardPositionKinematics: URIRef
+
+    _NS = Namespace(f"{URI_CR2B_MM}/kinematic-chain/operators#")
+
+
+class KC_OP_EXT(DefinedNamespace):
+    ForwardVelocityKinematics: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/kinematic-chain/operators#")
+
+
+class AGN(DefinedNamespace):
+    Agent: URIRef
+    AgentModel: URIRef
+    ModelledAgent: URIRef
+
+    _extras = ("of-agent", "has-agent", "has-agent-model")
+
+    _NS = Namespace(f"{URI_SECORO_MM}/agent#")
+
+
+class QUDT_SCHEMA(DefinedNamespace):
+    Quantity: URIRef
+    hasQuantityKind: URIRef
+    unit: URIRef
+    value: URIRef
+
+    _NS = NS_MM_QUDT
+
+
+class QUDT_QKIND(DefinedNamespace):
+    Length: URIRef
+    Distance: URIRef
+    PlaneAngle: URIRef
+    PositionVector: URIRef
+    AngularVelocity: URIRef
+    LinearVelocity: URIRef
+    AngularAcceleration: URIRef
+    LinearAcceleration: URIRef
+    AccelerationEnergy: URIRef
+    Torque: URIRef
+    Force: URIRef
+    Mass: URIRef
+    Angle: URIRef
+    Dimensionless: URIRef
+    Frequency: URIRef
+    Time: URIRef
+
+    _NS = NS_MM_QUDT_QTY
+
+
+class GEOM_REL(DefinedNamespace):
+    LinearDistance: URIRef
+    PointToPointDistance: URIRef
+    Orientation: URIRef
+    Pose: URIRef
+    Position: URIRef
+    VelocityTwist: URIRef
+    AccelerationTwist: URIRef
+
+    of: URIRef
+
+    _extras = ("with-respect-to", "reference-point", "between-entities")
+
+    _NS = NS_MM_GEOM_REL
+
+
+class GEOM_COORD(DefinedNamespace):
+    DirectionCoordinate: URIRef
+    DistanceReference: URIRef
+    LinearDistanceCoordinate: URIRef
+    OrientationCoordinate: URIRef
+    PositionCoordinate: URIRef
+    PoseCoordinate: URIRef
+    PoseDifferenceCoordinate: URIRef
+    VelocityTwistCoordinate: URIRef
+    AccelerationTwistCoordinate: URIRef
+    DirectionCosineXYZ: URIRef
+    EulerAngles: URIRef
+    Quaternion: URIRef
+    QuaternionShape: URIRef
+    VectorXYZ: URIRef
+
+    of: URIRef
+
+    x: URIRef
+    y: URIRef
+    z: URIRef
+    w: URIRef
+    alpha: URIRef
+    beta: URIRef
+    gamma: URIRef
+
+    _extras = (
+        "of-pose",
+        "of-position",
+        "of-orientation",
+        "of-velocity",
+        "of-acceleration",
+        "as-seen-by",
+        "direction-cosine-x",
+        "direction-cosine-y",
+        "direction-cosine-z",
+        "axes-sequence",
+        "angular-velocity",
+        "linear-velocity",
+        "angular-acceleration",
+        "linear-acceleration",
+        "linear",
+        "angular",
+    )
+
+    _NS = NS_MM_GEOM_COORD
+
+
+class GEOM_OP(DefinedNamespace):
+    RotateDirectionDistalToProximalWithPose: URIRef
+    AddVelocityTwist: URIRef
+    AddAccelerationTwist: URIRef
+    ComposePose: URIRef
+    TransformVelocityTwistToDistal: URIRef
+    RotateVelocityTwistToProximalWithPose: URIRef
+    TransformAccelerationTwistToDistal: URIRef
+    PoseToAngleAroundAxis: URIRef
+    PoseToLinearDistance: URIRef
+    PoseToDirection: URIRef
+    PlanarAngleFromDirections: URIRef
+    InvertAngle: URIRef
+    InvertPose: URIRef
+
+    in1: URIRef
+    in2: URIRef
+    composite: URIRef
+    direction: URIRef
+    pose: URIRef
+    to: URIRef
+    distance: URIRef
+    angle: URIRef
+    out: URIRef
+    axis: URIRef
+    x: URIRef
+    y: URIRef
+    z: URIRef
+
+    _extras = ("from", "absolute-velocity", "relative-velocity", "from-directions", "in")
+
+    _NS = Namespace(f"{URI_CR2B_MM}/geometry/spatial-operators#")
+
+
+class GEOM_REL_EXT(DefinedNamespace):
+    PoseDifference: URIRef
+
+    PointPlaneDistance: URIRef
+    PointLineDistance: URIRef
+    LineLineDistance: URIRef
+
+    AngularDistance: URIRef
+    DirectionDirectionAngularDistance: URIRef
+    DirectionPlaneAngularDistance: URIRef
+    PlanePlaneAngularDistance: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-relations#")
+
+
+class GEOM_EXT(DefinedNamespace):
+    Line: URIRef
+    Plane: URIRef
+
+    direction: URIRef
+    normal: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/geometry/structural-entities#")
+
+
+class GEOM_OP_EXT(DefinedNamespace):
+    ComposeOrientation: URIRef
+    PoseDiffEvaluator: URIRef
+    PoseToAngularDistance: URIRef
+    RotationVectorFromDirections: URIRef
+    AngleGradientFromDirections: URIRef
+    DirectionPlaneToAngularDistance: URIRef
+    PathProjection: URIRef
+    PathEvaluator: URIRef
+    PathTangentFrame: URIRef
+    TwistToLinearVelocityAlong: URIRef
+    # Table IIa: in1/in2 are pose coordinates for the point-primitive ops below, but
+    # direction coordinates for the line-line pair -- same asymmetric reuse of in1/in2 the
+    # AngleGradientFromDirections/RotationVectorFromDirections ops already establish.
+    PointPlaneToLinearDistance: URIRef
+    PointLineToLinearDistance: URIRef
+    PointOnLineProjection: URIRef
+    LineLineToLinearDistance: URIRef
+    LineOnLineProjection: URIRef
+    PointBodyLineToLinearDistance: URIRef
+    VectorNorm: URIRef
+    gradient: URIRef
+    path: URIRef
+    tangent: URIRef
+    linear: URIRef
+    norm: URIRef
+
+    _extras = (
+        "gradient-moment",
+        "angular-distance",
+        "path-parameter",
+        "normal-a",
+        "normal-b",
+        "along-speed",
+    )
+
+    _NS = Namespace(f"{URI_SECORO_MM}/geometry/spatial-operators#")
+
+
+class RBDYN_ENT(DefinedNamespace):
+    Wrench: URIRef
+    Mass: URIRef
+    mass: URIRef
+
+    _extras = ("reference-point", "acts-on", "of-body")
+
+    _NS = NS_MM_DYN_ENT
+
+
+class RBDYN_COORD(DefinedNamespace):
+    WrenchReference: URIRef
+    WrenchCoordinate: URIRef
+    UniformGravitationalFieldCoordinate: URIRef
+
+    _extras = ("of-wrench", "as-seen-by", "force", "torque")
+
+    _NS = NS_MM_DYN_COORD
+
+
+class RBDYN_OP(DefinedNamespace):
+    TransformWrenchToProximal: URIRef
+    RotateWrenchToDistalWithPose: URIRef
+    RotateWrenchToProximalWithPose: URIRef
+    WrenchFromPositionDirectionAndMagnitude: URIRef
+    AddWrench: URIRef
+
+    position: URIRef
+    pose: URIRef
+    to: URIRef
+    magnitude: URIRef
+    direction: URIRef
+    wrench: URIRef
+    in1: URIRef
+    in2: URIRef
+    out: URIRef
+
+    _extras = ("from",)
+
+    _NS = Namespace(f"{URI_CR2B_MM}/newtonian-rigid-body-dynamics/operators#")
+
+
+class RBDYN_OP_EXT(DefinedNamespace):
+    WrenchFromDirectionAndMoment: URIRef
+
+    moment: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/newtonian-rigid-body-dynamics/operators#")
+
+
+class MAP(DefinedNamespace):
+    View: URIRef
+    PoseCoordinateView: URIRef
+    VelocityTwistCoordinateView: URIRef
+    AccelerationTwistCoordinateView: URIRef
+    WrenchCoordinateView: URIRef
+
+    superobject: URIRef
+    subobject: URIRef
+    subspace: URIRef
+    position: URIRef
+    torque: URIRef
+    force: URIRef
+    axis: URIRef
+    x: URIRef
+    y: URIRef
+    z: URIRef
+    w: URIRef
+
+    _extras = ("angular-velocity", "linear-velocity", "angular-acceleration", "linear-acceleration")
+
+    _NS = Namespace(f"{URI_CR2B_MM}/task/map#")
+
+
+class MAP_EXT(DefinedNamespace):
+    PoseCoordinateView: URIRef
+    VelocityTwistCoordinateView: URIRef
+    AccelerationTwistCoordinateView: URIRef
+    WrenchCoordinateView: URIRef
+    PoseDifferenceView: URIRef
+    position: URIRef
+    orientation: URIRef
+    linear: URIRef
+    angular: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/task/map#")
+
+
+class ALGO_EXT(DefinedNamespace):
+    Saturation: URIRef
+    Addition: URIRef
+    Subtraction: URIRef
+    VelocityProfile: URIRef
+    Admittance: URIRef
+    AngularNormalization: URIRef
+    Multiplication: URIRef
+    Division: URIRef
+    limits: URIRef
+    out: URIRef
+    target: URIRef
+    mass: URIRef
+    damping: URIRef
+    stiffness: URIRef
+    shape: URIRef
+    trapezoidal: URIRef
+    parameter: URIRef
+    path: URIRef
+    progress: URIRef
+    minuend: URIRef
+    subtrahend: URIRef
+    dividend: URIRef
+    divisor: URIRef
+    normalization: URIRef
+
+    _extras = (
+        "in",
+        "maximum-absolute-value",
+        "lower-bound",
+        "upper-bound",
+        "maximum-velocity",
+        "maximum-acceleration",
+        "maximum-jerk",
+        "release-threshold",
+        "s-curve",
+    )
+
+    _NS = Namespace(f"{URI_SECORO_MM}/algorithm#")
+
+
+class CSTR(DefinedNamespace):
+    Constraint: URIRef
+    EqualityConstraint: URIRef
+    UnilateralConstraint: URIRef
+    GreaterThanConstraint: URIRef
+    LessThanConstraint: URIRef
+    BilateralConstraint: URIRef
+    AngularVelocityConstraint: URIRef
+    LinearVelocityConstraint: URIRef
+    TorqueConstraint: URIRef
+    ForceConstraint: URIRef
+    LinearDistanceConstraint: URIRef
+
+    quantity: URIRef
+    threshold: URIRef
+
+    _extras = ("PositionConstraint", "reference-value", "lower-threshold", "upper-threshold")
+
+    _NS = Namespace(f"{URI_CR2B_MM}/task/constraint#")
+
+
+class CSTR_EXT(DefinedNamespace):
+    ConstraintExpression: URIRef
+    ConstraintConjunction: URIRef
+    ConstraintDisjunction: URIRef
+    OutsideConstraint: URIRef
+    AngleConstraint: URIRef
+    AngularDistanceConstraint: URIRef
+    OrientationConstraint: URIRef
+    TimeConstraint: URIRef
+    ElapsedDurationCoordinate: URIRef
+
+    tolerance: URIRef
+
+    _extras = ("has-constraint",)
+
+    _NS = Namespace(f"{URI_SECORO_MM}/task/constraint#")
+
+
+class QKIND_EXT(DefinedNamespace):
+    LinearJerk: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/qudt/quantity-kind#")
+
+
+class TIME(DefinedNamespace):
+    Instant: URIRef
+    TimePosition: URIRef
+    ProperInterval: URIRef
+    Duration: URIRef
+    TRS: URIRef
+    unitSecond: URIRef
+
+    inTimePosition: URIRef
+    hasTime: URIRef
+    hasTRS: URIRef
+    numericPosition: URIRef
+    hasBeginning: URIRef
+    hasEnd: URIRef
+    hasDuration: URIRef
+    numericDuration: URIRef
+    unitType: URIRef
+
+    _NS = Namespace("http://www.w3.org/2006/time#")
+
+
+class MOT(DefinedNamespace):
+    GuardedMotion: URIRef
+
+    when: URIRef
+    until: URIRef
+
+    _extras = ("while",)
+
+    _NS = Namespace(f"{URI_CR2B_MM}/task/motion-specification#")
+
+
+class GEOM_PATH(DefinedNamespace):
+    Path: URIRef
+    LinearPath: URIRef
+    Circle: URIRef
+    Arc: URIRef
+    Helix: URIRef
+    Figure8: URIRef
+    PositiveDistanceShape: URIRef
+
+    start: URIRef
+    goal: URIRef
+    end: URIRef
+    anchor: URIRef
+    center: URIRef
+    axis: URIRef
+    radius: URIRef
+    amplitude: URIRef
+    pitch: URIRef
+    revolutions: URIRef
+    form: URIRef
+    gerono: URIRef
+    bernoulli: URIRef
+
+    _extras = ("plane-normal",)
+
+    _NS = Namespace(f"{URI_SECORO_MM}/geometry/path#")
+
+
+class CSTR_HDL(DefinedNamespace):
+    ConstraintHandler: URIRef
+    ConstraintEvaluator: URIRef
+    AssignmentEvaluator: URIRef
+    ErrorEvaluator: URIRef
+    Controller: URIRef
+    ProportionalIntegralDerivative: URIRef
+    ImpedanceController: URIRef
+    DecayingIntegralTerm: URIRef
+    Monitor: URIRef
+    EdgeTriggeredMonitor: URIRef
+    LevelTriggeredMonitor: URIRef
+    motion: URIRef
+    evaluators: URIRef
+    monitors: URIRef
+    controllers: URIRef
+    constraint: URIRef
+    error: URIRef
+    event: URIRef
+    flag: URIRef
+
+    _extras = (
+        "error-signal",
+        "control-signal",
+        "event-queue",
+        "proportional-gain",
+        "integral-gain",
+        "derivative-gain",
+        "decay-rate",
+        "stiffness",
+        "damping",
+        "maximum-velocity",
+        "measured-velocity",
+    )
+
+    _NS = Namespace(f"{URI_CR2B_MM}/task/constraint-handler#")
+
+
+class CSTR_HDL_EXT(DefinedNamespace):
+    FeedForwardController: URIRef
+    SetpointGenerator: URIRef
+    solver: URIRef
+
+    _extras = (
+        "runs-in-state",
+        "reference-signal",
+        "mass",
+        "damping",
+        "stiffness",
+        "force",
+        "fallback-motion",
+        "debounce-duration",
+        "runs-solver",
+    )
+
+    _NS = Namespace(f"{URI_SECORO_MM}/task/constraint-handler#")
+
+
+class SLV(DefinedNamespace):
+    VelocityCompositionSolver: URIRef
+    ForceDistributionSolver: URIRef
+    SolverWithInputAndOutput: URIRef
+    MotionDrivers: URIRef
+    AccelerationConstraintSpecification: URIRef
+    CartesianForceSpecification: URIRef
+    JointForceSpecification: URIRef
+    AccelerationConstraint: URIRef
+    AxisAligned: URIRef
+    PrioritizationLevel: URIRef
+    AccelerationConstrainedHybridDynamicsAlgorithm: URIRef
+    RecursiveNewtonEulerAlgorithm: URIRef
+
+    constraints: URIRef
+    force: URIRef
+    subspace: URIRef
+    axis: URIRef
+    x: URIRef
+    y: URIRef
+    z: URIRef
+    configuration: URIRef
+    velocity: URIRef
+    output: URIRef
+    solver: URIRef
+    root: URIRef
+    gravity: URIRef
+
+    _extras = (
+        "motion-drivers",
+        "cartesian-force",
+        "joint-force",
+        "acceleration-constraint",
+        "acceleration-energy",
+        "angular-acceleration",
+        "linear-acceleration",
+        "attached-to",
+        "prioritization-hierarchy",
+    )
+
+    _NS = Namespace(f"{URI_CR2B_MM}/task/solver-specification#")
+
+
+class SIM(DefinedNamespace):
+    Perturbation: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/simulation#")
+
+
+class SLV_EXT(DefinedNamespace):
+    CommandForwardingSolver: URIRef
+    VelocityDistributionSolver: URIRef
+    ForceCompositionSolver: URIRef
+
+    _NS = Namespace(f"{URI_SECORO_MM}/task/solver-specification#")
+
+
+# The SHACL files constraining each vocabulary's terms: a generated graph is checked against the
+# shapes of every vocabulary it uses.
+SHAPES = {
+    ALGO_EXT: (
+        f"{URI_SECORO_MM}/algorithm-extension.shacl.ttl",
+        f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",
+    ),
+    EL: (f"{URI_SECORO_MM}/behaviour/event_loop.shacl.ttl",),
+    ENV: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/environment.shacl.ttl",),
+    EXEC: (f"{URI_SECORO_MM}/acceptance-criteria/bdd/execution-context.shacl.ttl",),
+    SENSORS: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    SOSA: (f"{URI_SECORO_MM}/robot/sensors.shacl.ttl",),
+    GEOM_OP: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_OP_EXT: (f"{URI_SECORO_MM}/geometry/spatial-operators-extension.shacl.ttl",),
+    GEOM_REL: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_REL_EXT: (f"{URI_SECORO_MM}/geometry/spatial-relations-extension.shacl.ttl",),
+    GEOM_EXT: (f"{URI_SECORO_MM}/geometry/structural-entities-extension.shacl.ttl",),
+    GEOM_PATH: (f"{URI_SECORO_MM}/geometry/path.shacl.ttl",),
+    RBDYN_OP_EXT: (
+        f"{URI_SECORO_MM}/newtonian-rigid-body-dynamics/operators-extension.shacl.ttl",
+    ),
+    CSTR_EXT: (f"{URI_SECORO_MM}/task/constraint-extension.shacl.ttl",),
+    CSTR_HDL_EXT: (f"{URI_SECORO_MM}/task/constraint-handler-extension.shacl.ttl",),
+    MAP_EXT: (f"{URI_SECORO_MM}/task/map-extension.shacl.ttl",),
+    SLV_EXT: (f"{URI_SECORO_MM}/task/solver-specification-extension.shacl.ttl",),
+    QKIND_EXT: (f"{URI_SECORO_MM}/qudt.shacl.ttl",),
+    TIME: (f"{URI_SECORO_MM}/time.shacl.ttl",),
+}

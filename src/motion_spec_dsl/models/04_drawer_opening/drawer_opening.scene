@@ -1,0 +1,30 @@
+ns dro_env = "https://secorolab.github.io/models/environments/drawer-opening/"
+ns dro_agn = "https://secorolab.github.io/models/agents/drawer-opening/"
+ns dro_scene = "https://secorolab.github.io/models/scenes/drawer-opening/"
+
+obj set (ns=dro_env) ws_objects {
+    object table,
+    object cabinet1,
+    object cabinet2
+}
+
+ws set (ns=dro_env) workspaces {
+    workspace table_ws
+}
+
+agn set (ns=dro_agn) agents {
+    agent arm1,
+    agent gripper1,
+    agent arm2
+}
+
+comp (ns=dro_env) comp_table of ws <workspaces.table_ws> {
+    obj <ws_objects.table>
+    obj <ws_objects.cabinet1>
+    obj <ws_objects.cabinet2>
+}
+
+scene (ns=dro_scene) drawer_opening_scene {
+    ws comp <comp_table>
+    agn set <agents>
+}

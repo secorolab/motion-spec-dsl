@@ -1,0 +1,103 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+
+import base
+import context
+import path
+import motion_spec
+import constraint_handler
+
+Model:
+    imports*=Import
+    namespaces*=NamespaceDeclare
+    specs+=Specification
+;
+
+Specification:
+    ContextSpec | ExecutionContext | ToleranceDefaults | Ros | GuardedMotion | ConstraintHandler
+;
+
+Ros:
+    "ros" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" "{"
+        (groups+=RosGroup ","?)*
+    "}"
+;
+
+RosGroup:
+      name="publishers"     "{" entries+=RosTopicDecl[","] ","? "}"
+    | name="subscribers"    "{" entries+=RosSubscriptionDecl[","] ","? "}"
+    | name="action-clients" "{" entries+=RosActionDecl[","] ","? "}"
+    | name="action-servers" "{" entries+=RosActionServerDecl[","] ","? "}"
+    | name="always"         "{" entries+=RosStandingPub[","] ","? "}"
+;
+
+RosStandingPub:
+    "publish" "at" rate=Measure "to" "<" topic=[RosTopicDecl|FQN] ">"
+    "with" ("{" entries+=RosStandingEntry[","] ","? "}" | entries+=RosStandingEntry)
+    ("{" fields+=RosMeasurementAssign[","] ","? "}")?
+;
+
+RosStandingEntry:
+    ("<" subject=[OBJECT|FQN] ">" ":")? "<" quantity=[WorldQuantity|FQN] ">"
+;
+
+RosMeasurementAssign:
+    path+=ID['.'] ":" "<" quantity=[WorldQuantity|FQN] ">" selector=SelectorTail
+;
+
+RosSubscriptionDecl:
+    name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING "{"
+        ( "observes" "{" targets+=WorldQuantityRef[","] ","? "}"
+          pose_field=ID "from" pose_container=ID (observed=ObservedPose)? ","?
+        | "observes" "{" cameras+=CameraTargetRef[","] ","? "}" )
+    "}"
+;
+
+ObservedPose:
+    "{" "of" ":" "<" of=[scene.Frame|FQN] ">" ","
+        "wrt" ":" "<" wrt=[scene.Frame|FQN] ">" ","?
+    "}"
+;
+
+WorldQuantityRef: "<" ref=[WorldQuantity|FQN] ">" ;
+CameraTargetRef:  "<" ref=[scene.CameraSensorSpec|FQN] ">" ;
+
+ToleranceDefaults:
+    "tolerances" "{" defaults+=ToleranceDefault[","] "}"
+;
+
+ToleranceDefault:
+    kind=ToleranceQuantityType ":" band=ContextRef
+;
+
+ExecutionContext:
+    "exec-context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        "runs-scene" ":" "<" scene=[scene.SceneInstance|FQN] ">"
+        "platform"   ":" platform=Platform
+        ("config"    ":" config=STRING)?
+        "timestep"   ":" timestep=ConstExpr timestep_unit=TimeUnit
+    "}"
+;
+
+Platform:
+    RealWorldPlatform | SimulationPlatform
+;
+
+RealWorldPlatform:
+    kind="real-world"
+        ("{" devices+=DeviceBinding[","] "}")?
+;
+
+DeviceBinding:
+    "<" target=[OBJECT|FQN] ">" "realized" "by" device=DeviceKind
+;
+
+DeviceKind:
+    "KinovaGen3-2F85" | "KinovaGen3" | "Robotiq2F85" | "RobotiqFT300s"
+;
+
+SimulationPlatform:
+    kind="simulation"
+        "{" "name" ":" name=STRING "}"
+;

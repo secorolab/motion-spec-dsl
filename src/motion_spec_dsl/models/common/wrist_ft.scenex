@@ -1,0 +1,35 @@
+ns wft = "https://secorolab.github.io/models/common/wrist-ft/"
+
+ktree (ns=wft) ft_tree {
+    root: <wrist_ft_body.wrist_ft_body_origin>
+    body wrist_ft_body {
+        // The bracelet mating face; +z runs along the tool axis, the bracelet's -z.
+        frame wrist_ft_body_origin { }
+        // The sensing element sits mid-cylinder, as on the real tool; the MJCF sensor site is yawed a half turn.
+        frame wrist_ft_site {
+            pose wrist_ft_site_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.0325) m
+                orientation: euler { axes: xyz extrinsic angles: (0, 0, 180) unit: deg }
+            }
+        }
+        frame wrist_ft_mount {
+            pose wrist_ft_mount_in_wrist_ft_body {
+                wrt: <wrist_ft_body.wrist_ft_body_origin>
+                xyz: (0.0, 0.0, 0.065) m
+                orientation: euler { angles: (0.0, 0.0, 0.0) unit: rad }
+            }
+        }
+        // The measured 1.195 kg tool less the gripper's 1.061604 kg, as a 75 mm solid cylinder.
+        inertia {
+            frame: <wrist_ft_site>
+            mass: 0.133396 kg
+            inertia-matrix: (
+                (9.386e-5, 0.0, 0.0),
+                (0.0, 9.386e-5, 0.0),
+                (0.0, 0.0, 9.379e-5)
+            ) kg*m^2
+        }
+    }
+    joints { }
+}

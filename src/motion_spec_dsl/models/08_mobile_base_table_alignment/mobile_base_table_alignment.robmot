@@ -1,0 +1,189 @@
+import "mobile_base_table_alignment.fsm"
+import "mobile_base_table_alignment.scenex"
+ns app = "https://secorolab.github.io/models/mobile-base-table-alignment/"
+ns fsm = "https://secorolab.github.io/models/mobile-base-table-alignment/fsm/"
+
+exec-context (ns=app) mobile-base-table-alignment-exec {
+    runs-scene: <mobile_base_table_alignment_scene_mjc>
+    platform:   simulation { name: "MuJoCo" }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-left-ee-table {
+            of:         <left_arm.bracelet_link.bracelet_link_origin>,
+            wrt:        <mobile_base_table_alignment_graph.table.table_top>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        pose pose-left-shoulder-table {
+            of:         <left_arm.shoulder_link.shoulder_link_origin>,
+            wrt:        <mobile_base_table_alignment_graph.table.table_top>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        pose pose-right-ee-table {
+            of:         <right_arm.bracelet_link.bracelet_link_origin>,
+            wrt:        <mobile_base_table_alignment_graph.table.table_top>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        pose pose-right-shoulder-table {
+            of:         <right_arm.shoulder_link.shoulder_link_origin>,
+            wrt:        <mobile_base_table_alignment_graph.table.table_top>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        velocity-twist twist-left-ee-base {
+            of:         <left_arm.bracelet_link.bracelet_link_origin>,
+            wrt:        <left_arm.base_link.base_link_origin>,
+            ref-point:  <left_arm.bracelet_link.bracelet_link_origin>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        velocity-twist twist-right-ee-base {
+            of:         <right_arm.bracelet_link.bracelet_link_origin>,
+            wrt:        <right_arm.base_link.base_link_origin>,
+            ref-point:  <right_arm.bracelet_link.bracelet_link_origin>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        pose pose-left-base-table {
+            of:         <left_arm.base_link.base_link_origin>,
+            wrt:        <mobile_base_table_alignment_graph.table.table_top>,
+            as-seen-by: <mobile_base_table_alignment_graph.table.table_top>
+        },
+        joint-position left-redundancy {
+            joint: <left_arm.joint_3>,
+            normalization: (-pi, pi) rad
+        },
+        joint-position right-redundancy {
+            joint: <right_arm.joint_1>,
+            normalization: (-pi, pi) rad
+        }
+    },
+    spec {
+        // Each shoulder is measured from its own hand inward, so they agree only with the platform centred.
+        direction table-edge     { as-seen-by: <mobile_base_table_alignment_graph.table.table_top> } = (-1, 0, 0),
+        direction table-edge-rev { as-seen-by: <mobile_base_table_alignment_graph.table.table_top> } = (1, 0, 0),
+        line left-hand-edge  { of: <left_arm.bracelet_link.bracelet_link_origin>, along: <shared.spec.table-edge> },
+        line right-hand-edge { of: <right_arm.bracelet_link.bracelet_link_origin>, along: <shared.spec.table-edge-rev> },
+        length right-along = projection of <shared.world.pose-right-shoulder-table> on <shared.spec.right-hand-edge>,
+        length centred-band        = 0.005 m,
+        force  centred-force-limit = 40.0 N,
+
+        // Square means the shoulder line, fixed to the platform, parallel to the contact line.
+        direction shoulder-line { as-seen-by: <left_arm.base_link.base_link_origin> } = (0, 0.70710678, -0.70710678),
+        angle  square-target       = 0.0 rad,
+        angle  square-band         = 0.02 rad,
+        torque square-torque-limit = 150.0 Nm,
+
+        // How far a hand may drift from where it started before the contact counts as lost.
+        length contact-band = 0.010 m,
+
+        pose left-ee-hold  = snapshot of <shared.world.pose-left-ee-table> on event <fsm.E_ALIGN_ENTERED>,
+        pose right-ee-hold = snapshot of <shared.world.pose-right-ee-table> on event <fsm.E_ALIGN_ENTERED>,
+        length ee-pos-band = 0.01 m,
+        angle  ee-ori-band = 0.05 rad,
+
+        angle left-redundancy-target  = snapshot of <shared.world.left-redundancy> on event <fsm.E_ALIGN_ENTERED>,
+        angle right-redundancy-target = snapshot of <shared.world.right-redundancy> on event <fsm.E_ALIGN_ENTERED>,
+        torque redundancy-torque-limit = 10.0 Nm,
+
+        velocity-twist platform-velocity {
+            of:         <eddie.base_link.base_link_origin>,
+            wrt:        <eddie.base_footprint.base_footprint_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+        wrench platform-force {
+            of:         <eddie.base_link.base_link_origin>,
+            ref-point:  <eddie.base_link.base_link_origin>,
+            as-seen-by: <eddie.base_link.base_link_origin>
+        },
+
+        torque arm-torque-limit = 35.0 Nm
+    }
+}
+
+tolerances {
+    linear-velocity: 0.01 m/s,
+    position:        0.01 m,
+    orientation:     0.01 rad
+}
+
+guarded-motion (ns=app) align {
+    description: "Hold each hand where it started while the base squares to the edge and centres between them"
+
+    context {}
+
+    when {}
+
+    while {
+        left-hold-pos:    keeping <shared.world.pose-left-ee-table>.position    equal to <shared.spec.left-ee-hold>.position    within <shared.spec.ee-pos-band>,
+        left-hold-ori:    keeping <shared.world.pose-left-ee-table>.orientation equal to <shared.spec.left-ee-hold>.orientation within <shared.spec.ee-ori-band>,
+        right-hold-pos:   keeping <shared.world.pose-right-ee-table>.position    equal to <shared.spec.right-ee-hold>.position    within <shared.spec.ee-pos-band>,
+        right-hold-ori:   keeping <shared.world.pose-right-ee-table>.orientation equal to <shared.spec.right-ee-hold>.orientation within <shared.spec.ee-ori-band>,
+        left-redundancy:  keeping <shared.world.left-redundancy> equal to <shared.spec.left-redundancy-target>,
+        right-redundancy: keeping <shared.world.right-redundancy> equal to <shared.spec.right-redundancy-target>,
+        square:           keeping angle between <shared.spec.shoulder-line> and <shared.spec.table-edge> equal to <shared.spec.square-target> within <shared.spec.square-band>,
+        centred:          keeping projection of <shared.world.pose-left-shoulder-table> on <shared.spec.left-hand-edge> equal to ( <shared.spec.right-along> ) within <shared.spec.centred-band>
+    }
+
+    until {
+        aligned all {
+            squared:      angle between <shared.spec.shoulder-line> and <shared.spec.table-edge> equal to <shared.spec.square-target> within <shared.spec.square-band>,
+            centred-done: projection of <shared.world.pose-left-shoulder-table> on <shared.spec.left-hand-edge> equal to ( <shared.spec.right-along> ) within <shared.spec.centred-band>
+        },
+        contact-lost any {
+            left-contact-lost:  distance between <shared.world.pose-left-ee-table> and <shared.spec.left-ee-hold> greater than <shared.spec.contact-band>,
+            right-contact-lost: distance between <shared.world.pose-right-ee-table> and <shared.spec.right-ee-hold> greater than <shared.spec.contact-band>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-align {
+    handles: <align>
+    runs-in: <fsm.S_ALIGN>
+    monitors {
+        mon-align-aligned: monitor <align.aligned> {
+            satisfied for 0.5 s { trigger: event <fsm.E_ALIGNED> }
+        },
+        mon-align-contact-lost: monitor <align.contact-lost> {
+            satisfied { trigger: event <fsm.E_CONTACT_LOST> }
+        }
+    }
+    controllers {
+        pid ctrl-align-left-hold-pos  { constraint: <align.left-hold-pos>,  measured-derivative: <shared.world.twist-left-ee-base>.linvel,  Kp: 9000, Ki: 1200, Kd: 280, decay: 0.99 } via <handler-align.left-arm-solver>,
+        pid ctrl-align-left-hold-ori  { constraint: <align.left-hold-ori>,  measured-derivative: <shared.world.twist-left-ee-base>.angvel,  Kp: 4000, Ki: 600,  Kd: 500, decay: 0.99 } via <handler-align.left-arm-solver>,
+        pid ctrl-align-right-hold-pos { constraint: <align.right-hold-pos>, measured-derivative: <shared.world.twist-right-ee-base>.linvel, Kp: 9000, Ki: 1200, Kd: 280, decay: 0.99 } via <handler-align.right-arm-solver>,
+        pid ctrl-align-right-hold-ori { constraint: <align.right-hold-ori>, measured-derivative: <shared.world.twist-right-ee-base>.angvel, Kp: 4000, Ki: 600,  Kd: 500, decay: 0.99 } via <handler-align.right-arm-solver>,
+        pid ctrl-align-left-redundancy  { constraint: <align.left-redundancy>,  output-saturation: saturation { max: <shared.spec.redundancy-torque-limit> }, Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad } as torque via <handler-align.left-arm-solver>,
+        pid ctrl-align-right-redundancy { constraint: <align.right-redundancy>, output-saturation: saturation { max: <shared.spec.redundancy-torque-limit> }, Kp: 70, Ki: 0, Kd: 15, decay: 0, error-normalization: (-pi, pi) rad } as torque via <handler-align.right-arm-solver>,
+        pid ctrl-align-square  { constraint: <align.square>,  output-saturation: saturation { max: <shared.spec.square-torque-limit> }, Kp: 30000, Ki: 0, Kd: 1500, decay: 0 } as torque apply at <eddie.base_link> via <handler-align.platform-force-solver>,
+        pid ctrl-align-centred { constraint: <align.centred>, output-saturation: saturation { max: <shared.spec.centred-force-limit> }, Kp: 12000, Ki: 0, Kd: 400, decay: 0 } as force apply at <eddie.base_link> via <handler-align.platform-force-solver>
+    }
+    solvers {
+        // Gravity in each arm's root frame: the arms mount tilted on the tower.
+        left-arm-solver: serial-chain {
+            agent:     <agents.left_arm>,
+            algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity:   (9.726078, -0.905395, -0.905405) m/s^2
+        },
+        right-arm-solver: serial-chain {
+            agent:     <agents.right_arm>,
+            algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity:   (9.726078, 0.905395, -0.905405) m/s^2
+        },
+        platform-velocity-solver: mobile-platform {
+            agent:         <agents.eddie>,
+            algorithm:     velocity-composition,
+            configuration: "hddc2b_platform",
+            quantity:      <shared.spec.platform-velocity>
+        },
+        platform-force-solver: mobile-platform {
+            agent:         <agents.eddie>,
+            algorithm:     force-distribution,
+            configuration: "aligned",
+            quantity:      <shared.spec.platform-force>
+        }
+    }
+}

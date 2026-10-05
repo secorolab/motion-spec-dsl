@@ -1,0 +1,11 @@
+# Both flanges square to the table rim, 2 mm clear of it so the first step finds no contact (IK within joint ranges).
+[agents.left_arm]
+home = [-1.089634, 1.159181, 2.386599, -1.665731, 0.427674, 1.783850, -1.048878]
+
+[agents.right_arm]
+home = [-1.057967, 0.758782, 0.032583, -1.847175, 0.929129, 0.652015, 0.348041]
+
+[platform]
+wheel_diameter = [0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047]
+# At 1.0 the castors swing round to trail in about a second instead of stalling the base for six.
+w_align = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

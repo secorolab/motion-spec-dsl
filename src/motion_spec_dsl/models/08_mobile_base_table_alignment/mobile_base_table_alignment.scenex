@@ -1,0 +1,202 @@
+import "mobile_base_table_alignment.scene"
+import "scene_dsl:robots/eddie_base.ktree"
+import "scene_dsl:robots/kinova_gen3_7dof.ktree"
+
+ns mba_mjc = "https://secorolab.github.io/models/scenes/mobile-base-table-alignment-mjc/"
+
+ktree inst (ns=mba_mjc) eddie of <eddie_base_tree>
+ktree inst (ns=mba_mjc) left_arm of <kinova_tree>
+ktree inst (ns=mba_mjc) right_arm of <kinova_tree>
+
+// One tree per arm (a tree states one composition); the massless mount is base_link's torso bracket.
+ktree (ns=mba_mjc) left_arm_tree {
+    root: <left_arm_mount.left_arm_mount_origin>
+    tree <left_arm>
+
+    body left_arm_mount {
+        frame left_arm_mount_origin { }
+        inertia {
+            frame: <left_arm_mount_origin>
+            mass: 0.0 kg
+            inertia-matrix: (
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed left_arm_on_mount {
+            parent: <left_arm_mount.left_arm_mount_origin>
+            child: <left_arm.base_link.base_link_origin>
+        }
+        serial {
+            root: <left_arm.base_link.base_link_origin>
+            tip: <left_arm.bracelet_link.bracelet_link_origin>
+        }
+    }
+}
+
+ktree (ns=mba_mjc) right_arm_tree {
+    root: <right_arm_mount.right_arm_mount_origin>
+    tree <right_arm>
+
+    body right_arm_mount {
+        frame right_arm_mount_origin { }
+        inertia {
+            frame: <right_arm_mount_origin>
+            mass: 0.0 kg
+            inertia-matrix: (
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0)
+            ) kg*m^2
+        }
+    }
+
+    joints {
+        fixed right_arm_on_mount {
+            parent: <right_arm_mount.right_arm_mount_origin>
+            child: <right_arm.base_link.base_link_origin>
+        }
+        serial {
+            root: <right_arm.base_link.base_link_origin>
+            tip: <right_arm.bracelet_link.bracelet_link_origin>
+        }
+    }
+}
+
+// A castor base is a branching tree, so the platform declares no composition of its own.
+ktree (ns=mba_mjc) mobile_base_table_alignment_tree {
+    root: <eddie.base_footprint.base_footprint_origin>
+    tree <eddie>
+    tree <left_arm_tree>
+    tree <right_arm_tree>
+
+    joints {
+        fixed left_mount_on_tower {
+            parent: <eddie.base_link.left_arm_attachment>
+            child: <left_arm_tree.left_arm_mount.left_arm_mount_origin>
+        }
+        fixed right_mount_on_tower {
+            parent: <eddie.base_link.right_arm_attachment>
+            child: <right_arm_tree.right_arm_mount.right_arm_mount_origin>
+        }
+    }
+}
+
+scene inst (ns=mba_mjc) mobile_base_table_alignment_scene_mjc {
+    scene: <mobile_base_table_alignment_scene>
+
+    // No joint holds the robot: its MJCF free joint lets it drive away from where it stands.
+    kgraph (ns=mba_mjc) mobile_base_table_alignment_graph {
+        anchor: <world_body.world>
+        tree <mobile_base_table_alignment_tree>
+
+        body world_body {
+            frame world { }
+        }
+
+        body table {
+            // A quarter turn puts the long 1.6 m edge, not the 1.2 m end, towards the robot.
+            frame table_top {
+                pose table_in_world {
+                    wrt: <world_body.world>
+                    xyz: (1.15, -0.35, 0.72) m
+                    orientation: euler { axes: xyz extrinsic angles: (0, 0, 90) unit: deg }
+                }
+            }
+            // Cameras ride the table: a camera needs a body the simulator builds.
+            frame overhead_cam {
+                pose overhead_cam_on_table {
+                    wrt: <table.table_top>
+                    xyz: (0.126, 0.657, 4.355) m
+                    orientation: quat {
+                        xyzw: (0.000084961, 0.008496955, 0.999913912, 0.009998139)
+                    }
+                }
+            }
+            frame side_cam {
+                pose side_cam_on_table {
+                    wrt: <table.table_top>
+                    xyz: (-1.812, 1.584, 1.040) m
+                    orientation: quat {
+                        xyzw: (0.213761886, -0.411961985, -0.786230125, 0.407964911)
+                    }
+                }
+            }
+            frame table_com {
+                pose table_com_in_table_top {
+                    wrt: <table.table_top>
+                    xyz: (0.0, 0.0, -0.05100416904566816) m
+                    orientation: quat {
+                        xyzw: (0.7071067811865489, 0.0, 0.7071067811865489, 0.0)
+                    }
+                }
+            }
+            // table.xml states no <inertial>: MuJoCo derives these from the top and leg geoms.
+            inertia {
+                frame: <table_com>
+                mass: 84.26442414492935 kg
+                inertia-matrix: (
+                    (32.454207471081375, 0.0, 0.0),
+                    (0.0, 21.92592723136972, 0.0),
+                    (0.0, 0.0, 12.75746156052865)
+                ) kg*m^2
+            }
+        }
+
+        // A body no joint holds is one nothing can measure, so the table is bolted to the world.
+        joints {
+            fixed table_on_world {
+                parent: <world_body.world>
+                child: <table.table_top>
+            }
+        }
+    }
+
+    obj <ws_objects.table> {
+        model table-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/table.xml'
+            map body <mobile_base_table_alignment_graph.table> to "table"
+        }
+    }
+
+    agn <agents.eddie> {
+        model eddie-mjc as mjcf {
+            sys path = 'src/eddie_description/mujoco/mobile_platform.xml'
+            map tree <eddie> to "base"
+        }
+
+        camera overhead {
+            frame: <mobile_base_table_alignment_graph.table.overhead_cam>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 45.0 deg
+            update-rate: 30.0 Hz
+        }
+
+        camera side {
+            frame: <mobile_base_table_alignment_graph.table.side_cam>
+            type: rgb
+            resolution: (1280, 720)
+            fov: 45.0 deg
+            update-rate: 30.0 Hz
+        }
+    }
+
+    agn <agents.left_arm> {
+        model left-arm-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            map tree <left_arm> to "base_link"
+        }
+    }
+
+    agn <agents.right_arm> {
+        model right-arm-mjc as mjcf {
+            sys path = 'src/mj_kdl_wrapper/assets/kinova_gen3/gen3.xml'
+            map tree <right_arm> to "base_link"
+        }
+    }
+}

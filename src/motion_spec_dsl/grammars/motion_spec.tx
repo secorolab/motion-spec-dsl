@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+
+import base
+import context
+import path
+
+ContextSpec:
+    "context" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        context*=QuantityContextDecl[","]
+    "}"
+;
+
+GuardedMotion:
+    "guarded-motion" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        ("description" ":" description=STRING)?
+        "context"  "{" context*=MotionContextItem[","] "}"
+        detects*=DetectDecl
+        sections+=ConstraintSection
+    "}"
+;
+
+RosActionDecl:
+    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING
+    ("{" pose_field=ID "from" pose_container=ID ","? "}")?
+;
+
+DetectDecl:
+    name=IRI_TRUNK ":" "detect"
+    ("{" targets+=SceneObjRef[","] ","? "}" | targets+=SceneObjRef)
+    "using" "<" action=[RosActionDecl|FQN] ">"
+;
+
+SceneObjRef: "<" ref=[scene.Frame|FQN] ">" ;
+
+ConstraintSection:
+      kind="when" (logic=SectionLogic)? "{" constraints*=ConstraintItem[","]? "}"
+    | kind="while" "{" constraints*=ConstraintItem[","]? "}"
+    | kind="until" (logic=SectionLogic)? "{" constraints*=UntilItem[","]? "}"
+;
+
+SectionLogic: "any" | "all" ;
+
+UntilItem: ConstraintGroup | UntilAtom ;
+UntilAtom: GoalStatusConstraint | ConstraintItem ;
+
+GoalStatusConstraint:
+    name=IRI_TRUNK ":" "<" act=[DetectDecl|IRI_TRUNK] ">" ".status" "equal" "to" status=GoalStatusToken
+;
+
+GoalStatusToken: "succeeded" | "aborted" | "canceled" ;
+
+ConstraintGroup:
+    name=IRI_TRUNK logic=SectionLogic "{" constraints+=UntilAtom[","] "}"
+;
+
+ConstraintItem: ConstraintSpecification | ConstraintAlias ;
+ConstraintAlias: (name=IRI_TRUNK ":")? "<" ref=ConstraintRef ">" ;
+
+MotionContextItem:
+    QuantityContextDecl | ContextDeclReference
+;
+
+ContextDeclReference:
+    "<" ref=[QuantityContextDecl|FQN] ">"
+;
+
+QuantityContextDecl:
+      name="world" "{" declaration+=WorldQuantityItem[","] "}"
+    | name=ContextDeclName "{" declaration+=ContextQuantityItem[","] "}"
+;
+
+ContextDeclName: "pre" | "spec" | "post" ;
+
+WorldQuantityItem:
+    WorldQuantityAlias | WorldQuantity
+;
+
+WorldQuantityAlias:
+    (name=IRI_TRUNK ":")? "<" ref=[WorldQuantity|FQN] ">"
+;
+
+ContextQuantityItem:
+    ContextQuantityAlias | ContextPath | ContextQuantity
+;
+
+ContextQuantityAlias:
+    (name=IRI_TRUNK ":")? "<" ref=[ContextQuantity|FQN] ">"
+;
+
+ContextPath:
+    "path" name=IRI_TRUNK value=PathValue
+;
+
+ConstraintSpecification:
+    disabled?='@disable' name=IRI_TRUNK ":"
+    ("keeping")? view=View expr=ConstraintRelation? ("within" tolerance=ContextRef)?
+;
+
+ConstraintRelation:
+    EqualityConstraint | GreaterThanConstraint | LessThanConstraint | BilateralConstraint | OutsideConstraint
+;
+
+EqualityConstraint:
+    "equal" "to" reference=ContextRef
+;
+
+GreaterThanConstraint:
+    ("greater" "than" | "more" "than" | "is" "larger" "than" | "away" "from") threshold=ContextRef
+;
+
+LessThanConstraint:
+    ("less" "than" | "is" "smaller" "than" | "up" "to") threshold=ContextRef
+;
+
+BilateralConstraint:
+    "between" lower=ContextRef "and" upper=ContextRef
+;
+
+OutsideConstraint:
+    "outside" lower=ContextRef "and" upper=ContextRef
+;
+
+ConstraintRef: target=[ConstraintTarget|FQN] ;
+
+ConstraintTarget: ConstraintSpecification | ConstraintGroup | ConstraintAlias | GoalStatusConstraint ;

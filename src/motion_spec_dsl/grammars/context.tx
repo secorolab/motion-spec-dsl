@@ -1,0 +1,369 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+
+import base
+
+WorldQuantity:
+    type=NonGravityWorldQuantityType name=IRI_TRUNK ("{" props=GeometricProps "}")?
+;
+
+NonGravityWorldQuantityType:
+    "velocity-twist" | "wrench" | "pose" | "joint-position" | "joint-velocity" | "joint-force"
+;
+
+GeometricProps:
+    pairs+=GeoPropPair[","]
+;
+
+GeoPropPair:
+      key=FrameProp ":" "<" frame=[scene.Frame|FQN] ">"
+    | key="joint"      ":" "<" joint=[scene.RevoluteJoint|FQN] ">"
+    | key="ft-sensor"  ":" "<" sensor=[scene.ForceTorqueSensorSpec|FQN] ">"
+    | key="estimated-from" ":" "<" agent=[scene.Agent|FQN] ">" observer=ObserverSpec
+    | key="re-tare-on" ":" "{" events+=EventName[","] ","? "}"
+    | key="normalization" ":" normalization=AngleRange
+    | key=PrimitiveDirectionProp ":" "<" quantity=[ContextQuantity|ScopedName] ">"
+;
+
+FrameProp:
+    "of" | "wrt" | "ref-point" | "as-seen-by"
+;
+
+PrimitiveDirectionProp:
+    "normal" | "along"
+;
+
+AngleRange: "(" lower=AngleBound "," upper=AngleBound ")" unit=AngleUnit ;
+
+ObserverSpec: "{" "gain" ":" gain=FLOAT gain_unit=FrequencyUnit "," "filter" ":" filter=FLOAT "}" ;
+
+AngleBound: value=ConstExpr ;
+
+ConstExpr: head=ConstTerm tail*=AddTail ;
+AddTail: op=AddOp operand=ConstTerm ;
+ConstTerm: head=ConstFactor tail*=MulTail ;
+MulTail: op=MulOp operand=ConstFactor ;
+ConstFactor: neg?="-" atom=ConstAtom ;
+ConstAtom: pi?="pi" | value=NUMBER_LIT | "(" group=ConstExpr ")" ;
+AddOp: "+" | "-" ;
+MulOp: "*" | "/" ;
+
+NUMBER_LIT: /\d+(\.\d+)?([eE][+-]?\d+)?/ ;
+
+QuantityValue:
+    ScalarQuantity | VectorXYZ
+;
+
+ScalarQuantity:
+    "=" Measure
+;
+
+Measure: value=ConstExpr unit=Unit ;
+
+VectorXYZ:
+    "=" coords=Coordinates (unit=Unit)?
+;
+
+Coordinates: "(" values+=CoordinateElement[","] ")" ;
+CoordinateElement: value=ConstExpr | ref=ContextRef ;
+
+QuantityType:
+    ContextQuantityWithGeometryType | ScalarQuantityType
+;
+
+ContextQuantityWithGeometryType:
+    "pose"                |
+    "position"            |
+    "orientation"         |
+    "velocity-twist"      |
+    "acceleration-twist"  |
+    "wrench"              |
+    "angular-velocity"    |
+    "linear-velocity"     |
+    "linear-acceleration" |
+    "angular-acceleration"|
+    "linear-jerk"         |
+    "force"               |
+    "torque"              |
+    "direction"           |
+    "free-vector"
+;
+
+ScalarQuantityType:
+    "length" | "distance" | "angle" | "dimensionless" | "duration" | "path-parameter" | "mass"
+;
+
+ToleranceQuantityType:
+    ContextQuantityWithGeometryType | "dimensionless" | "duration" | "path-parameter"
+;
+
+View:
+    binary=BinaryView
+    |
+    elapsed=ElapsedTime
+    |
+    progress=ProgressAlong
+    |
+    moving=MovingAlong
+    |
+    on=OnPath
+    |
+    norm=NormView
+    |
+    "(" expr=QExpr ")"
+    |
+    (
+        "<" quantity=[ConstraintViewQuantity|FQN] ">"
+        selector=SelectorTail?
+    )
+;
+
+BinaryView:
+    DistanceBetweenView | AngleBetweenView | DistanceFromView | ProjectionOnView
+;
+
+DistanceBetweenView:
+    "distance" "between"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "and"
+    "<" right=[ConstraintViewQuantity|FQN] ">"
+;
+
+AngleBetweenView:
+    "angle" "between"
+    "<" left=[AlignDirectionOperand|FQN] ">"
+    "and"
+    "<" right=[AlignDirectionOperand|FQN] ">"
+;
+
+DistanceFromView:
+    "distance" "of"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "from"
+    "<" right=[ConstraintViewQuantity|FQN] ">"
+;
+
+ProjectionOnView:
+    "projection" "of"
+    "<" left=[ConstraintViewQuantity|FQN] ">"
+    "on"
+    "<" right=[ContextQuantity|FQN] ">"
+;
+
+ConstraintViewQuantity: WorldQuantity | ContextQuantity ;
+
+AlignDirectionOperand: ContextQuantity ;
+
+GeometricPrimitiveType:
+    "plane" | "line"
+;
+
+ElapsedTime:
+    marker?="elapsed" ("since" "<" observed=[WorldQuantity|FQN] ">" "observed")?
+;
+
+ProgressAlong:
+    "progress" "of" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef
+;
+
+MovingAlong:
+    "moving" "<" moved=[WorldQuantity|FQN] ">" "along" path=ContextRef "with" profile=ContextRef
+;
+
+OnPath:
+    "<" moved=[WorldQuantity|FQN] ">" selector=SelectorTail? "on" path=ContextRef
+;
+
+NormView:
+    "norm" "of" "<" quantity=[ConstraintViewQuantity|FQN] ">" selector=SelectorTail? ("across" across=ContextRef)?
+;
+
+SelectorTail:
+    "." subspace=SubSpace ("." axis=Axis)? | "." axis=Axis
+;
+
+SubSpace:
+    "angacc"      |
+    "angvel"      |
+    "linacc"      |
+    "linvel"      |
+    "torque"      |
+    "force"       |
+    "orientation" |
+    "position"
+;
+
+Axis:
+    "x" | "y" | "z"
+;
+
+LinearAxis: "x" | "y" | "z" ;
+
+LengthUnit: 'mm' | 'cm' | 'm' ;
+AngleUnit: 'rad' | 'deg' ;
+AngularVelocityUnit: 'rad/s' | 'deg/s' ;
+AngularAccelerationUnit: 'rad/s^2' | 'deg/s^2' ;
+LinearVelocityUnit: "m/s" | "cm/s" ;
+LinearAccelerationUnit: 'm/s^2' ;
+LinearJerkUnit: 'm/s^3' ;
+ForceUnit: 'N' ;
+TorqueUnit: 'Nm' ;
+TimeUnit: 's' | 'ms' ;
+FrequencyUnit: 'Hz' ;
+DimensionlessUnit: '1' ;
+MassUnit: 'kg' ;
+
+Unit:
+    LinearAccelerationUnit | LinearJerkUnit | LinearVelocityUnit |
+    AngularAccelerationUnit | AngularVelocityUnit |
+    LengthUnit | AngleUnit | TorqueUnit | ForceUnit | TimeUnit | FrequencyUnit |
+    DimensionlessUnit | MassUnit
+;
+
+PositionCoordinate:
+    ref=ContextRef | coords=Coordinates unit=LengthUnit
+;
+
+OrientationCoordinate:
+    relative=RelativeOrientation | ref=ContextRef | euler=EulerAngles | quat=Quaternion
+    | direction_cosine=DirectionCosineXYZ
+;
+
+RelativeOrientation:
+    base=ContextRef "rotated" ("in" "<" frame=[scene.Frame|FQN] ">")? "by"
+        (euler=EulerAngles | quat=Quaternion | direction_cosine=DirectionCosineXYZ)
+;
+
+EulerAxes: 'xyz' | 'xzy' | 'yxz' | 'yzx' | 'zxy' | 'zyx' ;
+
+EulerAngles:
+    "euler" "{" "axes" ":" axes=EulerAxes extrinsic?="extrinsic"
+        "," "angles" ":" angles=Coordinates (unit=AngleUnit)?
+    "}"
+;
+
+Quaternion:
+    "quat" "{" "xyzw" ":" xyzw=Coordinates "}"
+;
+
+DirectionCosineXYZ:
+    "direction-cosine" "{"
+        "x" ":" x_axis=Coordinates ","
+        "y" ":" y_axis=Coordinates ","
+        "z" ":" z_axis=Coordinates
+    "}"
+;
+
+ContextQuantity:
+      type="velocity-profile" name=IRI_TRUNK value=ProfileSpec
+    | type="admittance" name=IRI_TRUNK value=AdmittanceSpec
+    | type=GeometricPrimitiveType name=IRI_TRUNK "{" props=GeometricProps "}"
+    | type=ContextQuantityWithGeometryType name=IRI_TRUNK ("{" props=GeometricProps "}")? value=PlainContextQuantityValue?
+    | type=ScalarContextQuantityType name=IRI_TRUNK value=PlainContextQuantityValue?
+;
+
+ScalarContextQuantityType:
+    ScalarQuantityType
+;
+
+PlainContextQuantityValue:
+    SampledValue | QuantityValue | SnapshotValue | DirectionBetween | PoseCoordinate
+    | VelocityTwistCoordinate
+    | AccelerationTwistCoordinate | WrenchCoordinate | ConfigValue | ReferenceValue
+    | DerivedScalarValue
+;
+
+DerivedScalarValue:
+    "=" view=BinaryView
+;
+
+SampledValue:
+    "=" "sample" "<" distribution=[scene.Distribution|FQN] ">" unit=Unit
+;
+
+DirectionBetween:
+    "=" "from" "<" from_frame=[scene.Frame|FQN] ">" "to" "<" to_frame=[scene.Frame|FQN] ">"
+;
+
+VelocityTwistCoordinate:
+    "=" "{" "angular-velocity" ":" angular=Coordinates angular_unit=AngularVelocityUnit ","
+            "linear-velocity"  ":" linear=Coordinates  linear_unit=LinearVelocityUnit
+    "}"
+;
+
+AccelerationTwistCoordinate:
+    "=" "{" "angular-acceleration" ":" angular=Coordinates angular_unit=AngularAccelerationUnit ","
+            "linear-acceleration"  ":" linear=Coordinates  linear_unit=LinearAccelerationUnit
+    "}"
+;
+
+WrenchCoordinate:
+    "=" "{" "torque" ":" torque=Coordinates torque_unit=TorqueUnit ","
+            "force"  ":" force=Coordinates  force_unit=ForceUnit
+    "}"
+;
+
+AdmittanceSpec:
+    "=" "{"
+        "force" ":" force=View ","
+        "mass" ":" mass=ConstExpr ","
+        "damping" ":" damping=ConstExpr ","
+        "stiffness" ":" stiffness=ConstExpr
+        "," "max-velocity" ":" max_velocity=ConstExpr (max_velocity_unit=LinearVelocityUnit)?
+        ("," "max-excursion" ":" max_excursion=ConstExpr (max_excursion_unit=LengthUnit)?)?
+        ("," "deadband" ":" deadband=ConstExpr (deadband_unit=ForceUnit)?)?
+        ("," "release-threshold" ":" release_threshold=ConstExpr (release_threshold_unit=ForceUnit)?)?
+    "}"
+;
+
+ProfileSpec:
+    "=" "profile" "{"
+        "max-velocity" ":" max_velocity=ContextRef ","
+        "max-acceleration" ":" max_acceleration=ContextRef
+        ("," "measured-velocity" ":" measured_velocity=View)?
+        ("," "max-jerk" ":" max_jerk=ContextRef)?
+        ("," "shape" ":" shape=VelocityProfileShape)?
+    "}"
+;
+
+VelocityProfileShape: "trapezoidal" | "s-curve" ;
+
+SnapshotValue:
+    "=" "snapshot" "of" source=View tail*=QAddTail
+    "on" "event" trigger=EventName
+;
+
+ConfigValue:
+    "=" "[" "config" "." key=CONFIG_KEY "]" "for" source=View
+;
+
+CONFIG_KEY: /[A-Za-z_][A-Za-z0-9_-]*(\.[A-Za-z_][A-Za-z0-9_-]*)*/ ;
+
+PoseCoordinate:
+    "=" "{"
+        "position" ":" position=PositionCoordinate ","
+        "orientation" ":" orientation=OrientationCoordinate
+    "}"
+;
+
+ContextRef:
+    "<" quantity=[ContextQuantity|ScopedName] ">" selector=SelectorTail?
+  | bare=Measure
+  | "(" expr=QExpr ")"
+;
+
+ReferenceValue:
+    "=" expr=QExpr
+;
+
+QExpr: head=QTerm tail*=QAddTail ;
+QAddTail: op=AddOp operand=QTerm ;
+QTerm: head=QFactor tail*=QMulTail ;
+QMulTail: op=MulOp operand=QFactor ;
+QFactor: neg?="-"? ( "(" group=QExpr ")" | leaf=QuantityLeaf ) ;
+QuantityLeaf:
+    "<" quantity=[LeafQuantity|ScopedName] ">" selector=SelectorTail?
+  | bare=Measure
+;
+LeafQuantity: WorldQuantity | ContextQuantity ;

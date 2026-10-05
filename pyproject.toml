@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.metadata]
+# rdf-utils, coord-dsl and scene-dsl are on no index.
+allow-direct-references = true
+
+[project]
+name = "motion_spec_dsl"
+dynamic = ["version"]
+description = "A DSL for specifying guarded motions, transforming .robmot files to RDF."
+authors = [
+    {name = "Sven Schneider", email = "sven.schneider@h-brs.de"},
+    {name = "Vamsi Kalagaturu", email = "vamsikalagaturu@gmail.com"}
+]
+maintainers = [
+    {name = "Vamsi Kalagaturu", email = "vamsikalagaturu@gmail.com"}
+]
+license = { text = "MPL-2.0" }
+requires-python = ">=3.10"
+dependencies = [
+    "textX>=4.1.0",
+    "rdflib>=7.6.0",
+    "rdf-utils @ git+https://github.com/minhnh/rdf-utils@main",
+    "pyshacl>=0.25.0",
+    "coord_dsl @ git+https://github.com/secorolab/coord-dsl@main",
+    "scene-dsl @ git+https://github.com/secorolab/scene-dsl@main",
+]
+
+[project.entry-points."textx_languages"]
+"motion_spec" = "motion_spec_dsl.registration:motion_spec_lang"
+
+[project.entry-points."textx_generators"]
+"motion_spec_jsonld" = "motion_spec_dsl.registration:motion_spec_gen"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/motion_spec_dsl"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "error::DeprecationWarning",
+    # rdflib and pyshacl still reach these deprecated rdflib APIs internally.
+    "ignore:ConjunctiveGraph is deprecated, use Dataset instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.contexts is deprecated, use Dataset\\.graphs instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.default_context is deprecated, use Dataset\\.default_graph instead\\.:DeprecationWarning",
+    "ignore:Dataset\\.identifier is deprecated and will be removed in future versions\\.:DeprecationWarning",
+]

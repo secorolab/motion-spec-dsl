@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: MPL-2.0
+// SPDX-FileCopyrightText: 2026 SECORO AG (secoro.uni-bremen.de)
+// Author: Vamsi Kalagaturu
+
+import base
+import context
+import motion_spec
+
+SaturationSpec:
+    "saturation" "{"
+        (
+            "max" ":" maximum=ContextRef |
+            "lower" ":" lower=ContextRef "," "upper" ":" upper=ContextRef
+        )
+    "}"
+;
+
+ConstraintHandler:
+    "constraint-handler" "(" "ns" "=" ns=[NamespaceDeclare|FQN] ")" name=IRI_TRUNK "{"
+        ("context"    "{" context*=MotionContextItem[","] "}")?
+        "handles"      ":" "<" motion=[GuardedMotion|IRI_TRUNK] ">"
+        ("runs-in"     ":" runs_in=StateName)?
+        ("monitors"    "{" monitors*=MonitorEntry[","]? "}")?
+        "controllers"  "{" controllers*=ControllerItem[","]? "}"
+        "solvers"      "{" solvers+=SolverItem[","] "}"
+        ("perturbations" "{" perturbations*=PerturbationEntry[","] ","? "}")?
+    "}"
+;
+
+PerturbationEntry:
+    name=IRI_TRUNK ":" "on" "<" body=[scene.RigidBody|FQN] ">" "apply"
+    (
+        "force" force=ContextRef "along" force_direction=ContextRef
+        ("torque" moment=ContextRef "about" moment_direction=ContextRef)?
+        |
+        "torque" moment=ContextRef "about" moment_direction=ContextRef
+    )
+    ("when" (gate_logic=SectionLogic)? "{" gate*=ConstraintItem[","]? "}")?
+    ("for" duration=ContextRef)?
+;
+
+ControllerItem: ControllerAlias | ControllerEntry ;
+ControllerAlias: (name=IRI_TRUNK ":")? "<" ref=ControllerRef ">" ;
+SolverItem: SolverAlias | SolverEntry ;
+SolverAlias: (name=IRI_TRUNK ":")? "<" ref=SolverRef ">" ;
+
+MonitorEntry:
+    name=IRI_TRUNK ":" "monitor" "<" constraint=MonitorTarget ">" "{"
+        states*=MonitorStateBlock[","] ","?
+    "}"
+;
+
+MonitorStateBlock:
+    state=MonitorState ("for" sustain=Measure)? "{" actions+=MonitorAction[","] ","? "}"
+;
+
+MonitorState: "satisfied" | "violated" ;
+
+MonitorAction:
+      "trigger" ":" "event" event=EventName
+    | "hold"    ":" "<" fallback=[GuardedMotion|IRI_TRUNK] ">"
+    | "flag"    ":" flag=IRI_TRUNK
+    | "publish" ":" "events" "{" events+=EventName[","] ","? "}" "to" "<" topic=[RosTopicDecl|FQN] ">"
+    | "publish" ":" "to" "<" topic=[RosTopicDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}" ("at" rate=Measure)?
+    | "publish" ":" value=RosFieldValue "to" "<" topic=[RosTopicDecl|FQN] ">" ("at" rate=Measure)?
+    | "result"  ":" outcome=GoalStatusToken "<" server=[RosActionServerDecl|FQN] ">" "{" fields+=RosFieldAssign[","] ","? "}"
+;
+
+RosFieldAssign: path+=ID['.'] ":" value=RosFieldValue ;
+
+RosFieldValue: literal=FLOAT | literal=STRING | constant=ID ;
+
+RosTopicDecl: name=IRI_TRUNK ":" "topic" channel_name=STRING "message" type_name=STRING ;
+
+RosActionServerDecl:
+    name=IRI_TRUNK ":" "action" channel_name=STRING "type" type_name=STRING "{"
+        "on-goal" ":" "produce" "event" goal_event=EventName ","?
+    "}"
+;
+
+ControllerEntry:
+    (
+        type="pid" name=IRI_TRUNK "{" params=PIDControllerParams "}" |
+        type="impedance" name=IRI_TRUNK "{" params=ImpedanceControllerParams "}" |
+        type="feed-forward" name=IRI_TRUNK "{" params=FeedForwardControllerParams "}"
+    )
+    ("as" command_type=QuantityType)?
+    ("apply" "at" "<" apply_at=[scene.RigidBody|FQN] ">")?
+    ("via" "<" solver=SolverRef ">")?
+;
+
+PIDControllerParams:
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
+    ("," "profile" ":" profile=ContextRef)?
+    ("," "measured-derivative" ":" measured_derivative=View)?
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+    ("," "integral-saturation" ":" integral_saturation=SaturationSpec)?
+    "," terms+=KpParam "," terms+=KiParam "," terms+=KdParam
+    ("," terms+=DecayParam)?
+    ("," "error-normalization" ":" error_normalization=AngleRange)?
+;
+
+ImpedanceControllerParams:
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+    ("," terms+=KiParam)?
+    "," (
+        terms+=StiffnessParam ("," terms+=DampingParam)? |
+        terms+=DampingParam ("," terms+=StiffnessParam)?
+    )
+;
+
+FeedForwardControllerParams:
+    ("constraint" ":")? "<" constraint=ConstraintRef ">"
+    ("," "output-saturation" ":" output_saturation=SaturationSpec)?
+;
+
+KpParam: name="Kp" ":" value=ConstExpr ;
+KiParam: name="Ki" ":" value=ConstExpr ;
+KdParam: name="Kd" ":" value=ConstExpr ;
+DecayParam: name="decay" ":" value=ConstExpr ;
+StiffnessParam: name="stiffness" ":" value=ConstExpr ;
+DampingParam: name="damping" ":" value=ConstExpr ;
+MonitorTarget: UntilMonitorRef | WhenMonitorRef | ConstraintRef ;
+UntilMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "until" ;
+WhenMonitorRef: motion=[GuardedMotion|IRI_TRUNK] "." "when" ;
+ControllerRef: handler=[ConstraintHandler|IRI_TRUNK] "." controller=[ControllerEntry|IRI_TRUNK] ;
+SolverRef: solver=[SolverEntry|FQN] ;
+
+SolverEntry: SerialChainSolver | MobilePlatformSolver | CommandForwardingSolver ;
+
+SerialChainSolver:
+    name=IRI_TRUNK ":" "serial-chain" "{"
+        "agent"     ":" "<" agent=[scene.Agent|FQN] ">" ","
+        "algorithm" ":" algorithm=SerialChainAlgorithm
+        ("," limits=SolverLimits)?
+        ("," "gravity" ":" gravity_value=GravityValue)?
+    "}"
+;
+SerialChainAlgorithm: "achd" | "rne" | "fpk" | "fvk" ;
+
+MobilePlatformSolver:
+    name=IRI_TRUNK ":" "mobile-platform" "{"
+        "agent"         ":" "<" agent=[scene.Agent|FQN] ">" ","
+        "algorithm"     ":" algorithm=MobilePlatformAlgorithm ","
+        "configuration" ":" configuration=STRING ","
+        "quantity"      ":" quantity=ContextRef
+    "}"
+;
+MobilePlatformAlgorithm:
+    "velocity-composition" | "velocity-distribution" | "force-composition" | "force-distribution"
+;
+
+CommandForwardingSolver:
+    name=IRI_TRUNK ":" "command-forwarding" "{"
+        "agent" ":" "<" agent=[scene.Agent|FQN] ">"
+    "}"
+;
+
+SolverLimits:
+    "limits" "{" entries+=TorqueLimit "}"
+;
+TorqueLimit: target="torque" ":" saturation=SaturationSpec ;
+
+GravityValue: ("=")? coords=Coordinates unit=LinearAccelerationUnit | ref=ContextRef ;

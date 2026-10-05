@@ -1,0 +1,8 @@
+# Platform data the kinematic tree cannot state; pivots, axles and trails come from eddie_base.ktree.
+
+[platform]
+# Effective rolling diameter: 0.105 m tyres sink ~0.15 mm under the 94.8 kg platform (measured in sim).
+wheel_diameter = [0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047, 0.1047]
+
+# Castor alignment, scaled by the wrench: at 0.05 a reversal yaws the base 0.22 rad/s, at 0.2 it stays in band.
+w_align = [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]

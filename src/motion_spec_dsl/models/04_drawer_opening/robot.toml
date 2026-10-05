@@ -1,0 +1,6 @@
+[agents.arm1]
+# The staging pose in front of cabinet 1's drawer, so the run starts without a swing.
+home = [0.6108, 1.1514, 3.1867, -1.7031, 0.6447, 1.363, -0.2045]
+
+[agents.arm2]
+home = [0.09, 0.64, 3.1416, -1.24, 0.0, -1.2616, 0.0]

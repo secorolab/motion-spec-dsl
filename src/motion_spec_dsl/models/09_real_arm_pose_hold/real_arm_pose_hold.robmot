@@ -1,0 +1,143 @@
+import "real_arm_pose_hold.fsm"
+import "../common/table_arm_real.scenex"
+ns app = "https://secorolab.github.io/models/real-arm-pose-hold/"
+ns fsm = "https://secorolab.github.io/models/real-arm-pose-hold/fsm/"
+
+exec-context (ns=app) real-arm-pose-hold-exec {
+    runs-scene: <table_arm_real_scene_mjc>
+    platform:   real-world {
+                    <agents.arm1> realized by KinovaGen3,
+                    <agents.gripper1> realized by Robotiq2F85,
+                    <wrist_ft> realized by RobotiqFT300s
+                }
+    config:     "robot.toml"
+    timestep:   1.0 ms
+}
+
+context (ns=app) shared {
+    world {
+        pose pose-ee-base {
+            of:         <gripper.g_base.g_pinch>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        pose pose-elbow-base {
+            of:         <kinova.forearm_link.forearm_link_origin>,
+            wrt:        <kinova.base_link.base_link_origin>,
+            as-seen-by: <kinova.base_link.base_link_origin>
+        },
+        joint-position gripper-pos {
+            joint: <gripper.g_left_driver_joint>
+        },
+        // Recorded only: what the arm was pushed with while holding.
+        wrench ext-force {
+            ref-point:  <ft_tree.wrist_ft_body.wrist_ft_site>,
+            as-seen-by: <kinova.base_link.base_link_origin>,
+            ft-sensor:  <wrist_ft>,
+            re-tare-on: { <fsm.E_RUN_STARTED> }
+        }
+    },
+    spec {
+        // Captured once: re-captured per state, the hold would walk with the standing error.
+        pose start-pose       = snapshot of <shared.world.pose-ee-base> on event <fsm.E_RUN_STARTED>,
+        // The 7th joint is free under six constraints, so the elbow is held too or it sinks.
+        length support-z      = snapshot of <shared.world.pose-elbow-base>.position.z on event <fsm.E_RUN_STARTED>,
+        angle gripper-closed  = 0.8 rad,
+        angle gripper-open    = 0.0 rad,
+        angle grasp-threshold = 0.65 rad,
+        // Gen3 large-actuator peak torque.
+        torque arm-torque-limit = 39.0 Nm
+    }
+}
+
+tolerances {
+    position:         0.05 m,
+    orientation:      0.01 rad
+}
+
+guarded-motion (ns=app) hold-close {
+    description: "Hold the starting pose while the gripper closes"
+
+    context {}
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
+        close-gripper:    keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-closed>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
+    }
+
+    until {
+        closed: <shared.world.gripper-pos> greater than <shared.spec.grasp-threshold>
+    }
+}
+
+guarded-motion (ns=app) hold-open {
+    description: "Hold the same pose while the gripper opens"
+
+    context {}
+
+    when {}
+
+    while {
+        hold-position:    keeping <shared.world.pose-ee-base>.position    equal to <shared.spec.start-pose>.position,
+        hold-orientation: keeping <shared.world.pose-ee-base>.orientation equal to <shared.spec.start-pose>.orientation,
+        open-gripper:     keeping <shared.world.gripper-pos> equal to <shared.spec.gripper-open>,
+        support-elbow-z:  keeping <shared.world.pose-elbow-base>.position.z equal to <shared.spec.support-z>
+    }
+
+    until {
+        opened: <shared.world.gripper-pos> equal to <shared.spec.gripper-open>
+    }
+}
+
+constraint-handler (ns=app) handler-hold-close {
+    handles: <hold-close>
+    runs-in: <fsm.S_CLOSE>
+    monitors {
+        mon-hold-close-done: monitor <hold-close.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_GRIPPER_CLOSED> }
+        }
+    }
+    controllers {
+        pid ctrl-hold-close-hold-position    { constraint: <hold-close.hold-position>,    Kp: 550, Ki: 50, Kd: 47, decay: 0 },
+        pid ctrl-hold-close-hold-orientation { constraint: <hold-close.hold-orientation>, Kp: 250, Ki: 50, Kd: 32, decay: 0 },
+        feed-forward ctrl-hold-close-close-gripper { constraint: <hold-close.close-gripper> },
+        impedance ctrl-hold-close-support-elbow-z { constraint: <hold-close.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
+            apply at <kinova.forearm_link>
+    }
+    solvers {
+        arm-solver: serial-chain {
+            agent:     <agents.arm1>,
+            algorithm: achd,
+            limits {   torque: saturation { max: <shared.spec.arm-torque-limit> } },
+            gravity:   (0.0, 0.0, 9.81) m/s^2
+        },
+        gripper-solver: command-forwarding {
+            agent: <agents.gripper1>
+        }
+    }
+}
+
+constraint-handler (ns=app) handler-hold-open {
+    handles: <hold-open>
+    runs-in: <fsm.S_OPEN>
+    monitors {
+        mon-hold-open-done: monitor <hold-open.until> {
+            satisfied for 0.3 s { trigger: event <fsm.E_GRIPPER_OPENED> }
+        }
+    }
+    controllers {
+        pid ctrl-hold-open-hold-position    { constraint: <hold-open.hold-position>,    Kp: 550, Ki: 50, Kd: 47, decay: 0 },
+        pid ctrl-hold-open-hold-orientation { constraint: <hold-open.hold-orientation>, Kp: 250, Ki: 50, Kd: 32, decay: 0 },
+        feed-forward ctrl-hold-open-open-gripper { constraint: <hold-open.open-gripper> },
+        impedance ctrl-hold-open-support-elbow-z { constraint: <hold-open.support-elbow-z>, Ki: 200, stiffness: 2500, damping: 80 }
+            apply at <kinova.forearm_link>
+    }
+    solvers {
+        <handler-hold-close.arm-solver>,
+        <handler-hold-close.gripper-solver>
+    }
+}
