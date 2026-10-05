@@ -27,7 +27,7 @@ dependencies = [
     "rdflib>=7.6.0",
     "rdf-utils @ git+https://github.com/minhnh/rdf-utils@main",
     "pyshacl>=0.25.0",
-    "coord_dsl @ git+https://github.com/secorolab/coord-dsl@main",
+    "coord_dsl @ git+https://github.com/minhnh/coord-dsl@v1.0.0",
     "scene-dsl @ git+https://github.com/secorolab/scene-dsl@main",
 ]
 
